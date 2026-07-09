@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+
+# Go (for later)
+bin/
+*.test
+coverage.out
+
+# Superpowers process artifacts (plans, specs, scratch) — not shipped
+docs/superpowers/
+.superpowers/
+
+# Agent pipeline artifacts — local paper-trail, not shipped
+# (process definition: pipeline/README.md, tracked)
+pipeline/*
+!pipeline/README.md
+
+# Session scratch
+.claude/scheduled_tasks.lock
+
+# Per-session isolated worktrees — ephemeral checkouts, not shipped
+# (process definition: .claude/worktrees/README.md, tracked)
+.claude/worktrees/*
+!.claude/worktrees/README.md
