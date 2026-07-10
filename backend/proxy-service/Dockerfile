@@ -1,8 +1,8 @@
 FROM golang:1.26.4-alpine AS build
 WORKDIR /src
-COPY go.mod ./
+COPY proxy-service/go.mod ./
 RUN go mod download
-COPY . .
+COPY proxy-service/. .
 RUN CGO_ENABLED=0 go build -o /out/proxy-service ./cmd/proxy-service
 
 FROM alpine:3.20
