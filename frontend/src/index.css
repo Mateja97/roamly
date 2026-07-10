@@ -1,0 +1,16 @@
+@import './styles/tokens.css';
+
+:root {
+  font:
+    var(--font-size-md)/1.5 -apple-system,
+    'Segoe UI',
+    Inter,
+    Roboto,
+    sans-serif;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
