@@ -118,7 +118,7 @@ merge: nothing reaches `main` without you.
   `main` as their parent merges.
 - **Resume:** if `pipeline/<slug>/product-tasks.md` already exists with
   `decision: proceed`, it skips research/product and goes straight to build —
-  e.g. `/run-pipeline-auto booking` picks up the approved booking tasks.
+  e.g. `/run-pipeline-auto rate-limiting` picks up the approved rate-limiting tasks.
 - **Routine:** to run it on a schedule (a cron cloud agent), wrap
   `/run-pipeline-auto <slug>` in a scheduled task. Best for "keep advancing"
   cadence; a one-shot build is simpler run once, unattended, in a local session.

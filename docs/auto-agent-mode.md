@@ -54,7 +54,7 @@ git worktree remove ../claude-workspace-build
   product → build end to end.
 - **Resume from approved tasks:** if `pipeline/<slug>/product-tasks.md` already
   exists with `decision: proceed`, it skips research/product and goes straight
-  to build. e.g. `/run-pipeline-auto booking`.
+  to build. e.g. `/run-pipeline-auto rate-limiting`.
 
 ## What you do
 
