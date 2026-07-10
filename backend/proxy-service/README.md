@@ -14,7 +14,7 @@ requests to internal services over gRPC.
 
 ## HTTP status codes
 
-proxy-service returns exactly one of these five statuses — nothing else.
+proxy-service returns exactly one of these six statuses — nothing else.
 `internal/api` translates gRPC codes returned by `backend/shared/clients`
 calls into this set:
 
@@ -24,9 +24,13 @@ calls into this set:
 | `codes.NotFound` | 404 |
 | `codes.InvalidArgument`, `codes.FailedPrecondition` | 400 |
 | `codes.PermissionDenied`, `codes.Unauthenticated` | 403 |
+| `codes.AlreadyExists` | 409 |
 | everything else (`Internal`, `Unavailable`, `DeadlineExceeded`, `Unknown`, ...) | 500 |
 
-Success is always 200, regardless of HTTP verb — no 201/204.
+Success is always 200, regardless of HTTP verb — no 201/204. 409 exists
+specifically so a resource conflict (`ErrConflict` → `codes.AlreadyExists`,
+see GO_STANDARDS.md's Errors section) stays distinguishable from a genuine
+internal failure.
 
 ## Configuration
 
