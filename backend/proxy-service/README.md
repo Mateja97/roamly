@@ -4,13 +4,29 @@ Public entrypoint of the platform. Terminates HTTP from clients and forwards
 requests to internal services over gRPC.
 
 **Status:** scaffolded — `GET /healthz` only. Add routes under
-`internal/httpapi` and a caller resolver under `internal/identity` as real
-features land.
+`internal/api`, one file per endpoint, as real features land. See
+"Layering (inside internal/)" in [GO_STANDARDS.md](../../GO_STANDARDS.md).
 
 ## Responsibilities
 
 - Terminate public HTTP, translate to internal gRPC calls.
 - The only service the frontend talks to directly.
+
+## HTTP status codes
+
+proxy-service returns exactly one of these five statuses — nothing else.
+`internal/api` translates gRPC codes returned by `backend/shared/clients`
+calls into this set:
+
+| gRPC code | HTTP status |
+|---|---|
+| `codes.OK` | 200 |
+| `codes.NotFound` | 404 |
+| `codes.InvalidArgument`, `codes.FailedPrecondition` | 400 |
+| `codes.PermissionDenied`, `codes.Unauthenticated` | 403 |
+| everything else (`Internal`, `Unavailable`, `DeadlineExceeded`, `Unknown`, ...) | 500 |
+
+Success is always 200, regardless of HTTP verb — no 201/204.
 
 ## Configuration
 
