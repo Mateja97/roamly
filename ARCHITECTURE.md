@@ -40,7 +40,7 @@ services directly.
 | proxy-service | Public HTTP entrypoint, routing, HTTP→gRPC translation | HTTP (public) | none | scaffolded — /healthz only |
 | auth-service | AuthN: login, JWT issue/refresh, token validation | gRPC | publishes auth events (TBD) | planned |
 | users-service | User profiles and account data | gRPC | publishes/consumes user events (TBD) | planned |
-| shared | Library, not a service: logging, kafka helpers, config, error types | n/a | n/a | planned |
+| shared | Library, not a service: proto, models (per-service), gRPC clients, db helpers, middleware, error types, logging, kafka helpers, config | n/a | n/a | planned |
 
 ## Frontend (`frontend/`)
 
