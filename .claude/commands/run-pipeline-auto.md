@@ -87,6 +87,13 @@ Order tasks by dependency. For each task `Tn`:
    `task-plan.md` path, the `engineering-notes.md` path, the base branch to
    use, AND — for `area: frontend` — the `design-spec.md` path and the
    screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
+   - **`area: frontend` only (no pause):** if `frontend-engineer` reports
+     `NEEDS_DESIGN`, re-dispatch `designer` with the task id, the
+     `design-spec.md` path, and the reported gap to append an addendum.
+     Standard additions auto-apply, same as step 2 above. Record the
+     addendum in the final run report. Then re-dispatch `frontend-engineer`
+     to resume the same task. This does not count toward the review loop's
+     3-round cap below.
 4. Review loop (max **3** rounds):
    - Dispatch `reviewer` with the PR, `product-tasks.md`, the task id,
      `task-type: feature`, the `task-plan.md` path, `engineering-notes.md`,

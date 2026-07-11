@@ -68,6 +68,15 @@ For each task `Tn`:
    `task-plan.md` path, the `engineering-notes.md` path, and — for
    `area: frontend` — the `design-spec.md` path and the screenshots directory
    `pipeline/<slug>/screenshots/<Tn>/`.
+   - **`area: frontend` only:** if `frontend-engineer` reports
+     `NEEDS_DESIGN`, re-dispatch the `designer` agent with the task id, the
+     `design-spec.md` path, and the reported gap (screen + status code +
+     what's missing) so it appends an addendum rather than redoing the
+     whole task's design. **CHECKPOINT:** show the user the addendum and
+     wait for confirmation (same `**Standard additions:**` handling as the
+     design checkpoint in step 1 above). Then re-dispatch
+     `frontend-engineer` to resume the same task. This does not count
+     toward the review loop's 3-round cap below.
 3. Review loop (max **3** rounds):
    - Dispatch the `reviewer` agent with the PR, the `product-tasks.md` path, the
      task id, `task-type: feature`, the `task-plan.md` path, the
