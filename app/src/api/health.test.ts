@@ -1,3 +1,4 @@
+// tsconfig restricts `types` to ["jest"]; this test uses Node's `global`.
 /// <reference types="node" />
 import { fetchHealth } from './health';
 

@@ -28,8 +28,9 @@ a spec.
   value(s) with a computed WCAG contrast ratio for every new text/background
   pairing, or a full component recipe in the standard's own format — then
   Edit `DESIGN_STANDARDS.md` to add it in the matching section (and note
-  that `frontend/src/styles/tokens.css` needs the same token, which the
-  frontend-engineer adds and commits with the task). List every addition
+  that `frontend/src/styles/tokens.css` — or `app/src/theme/tokens.ts` for
+  `area: app` — needs the same token, which the frontend-engineer or
+  app-engineer adds and commits with the task). List every addition
   under a `**Standard additions:**` line at the top of your design-spec
   section — name + one-line rationale each; write `**Standard additions:**
   none` when there are none. The orchestrator surfaces these at the design
