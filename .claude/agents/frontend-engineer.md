@@ -81,7 +81,11 @@ gate is "probably fine":
 1. Branch `feature/<slug>-<taskid>` off `main` — unless the orchestrator gives
    you a different base branch (stacked dependent task), then branch off that.
 2. **Fix**: implement only what the task's acceptance criteria require, under
-   `frontend/`, following the standards above.
+   `frontend/`, following the standards above. Every API call handles all
+   outcomes the typed client can return (success + `400/403/404/409/500`,
+   per `FRONTEND_STANDARDS.md`'s Error handling section) — the generic
+   error banner recipe in `DESIGN_STANDARDS.md` covers any status
+   `design-spec.md` doesn't call out explicitly.
 3. **Test**: `tsc --noEmit` then `npm test`. On any failure, fix and re-run —
    loop until both are green. Don't move to lint with red tests.
 4. **Lint**: `npm run lint` (ESLint). Fix findings and re-run until clean. If
@@ -144,6 +148,17 @@ and the blocking error to `engineering-notes.md`, commit and push the branch
 as-is, and report the blocker in your final message. A recorded blocker
 costs one review round; thrashing costs the whole quota.
 
+## Design gap escalation
+If a status code needs something structurally different from the generic
+error banner (e.g. `403` should block access or redirect, not just show a
+message) and `design-spec.md` is silent on it, stop — don't invent the
+treatment inline. Report back **NEEDS_DESIGN** instead of your normal
+branch/PR report (see "Report back" below): name the screen, the status
+code, and what treatment is missing. The orchestrator re-dispatches the
+`designer` agent with that gap and resumes you once `design-spec.md` has
+the addendum — same idea as the Convergence guard above, but routed to the
+designer instead of recorded as a blocker.
+
 ## Resolve pass
 Read **every** comment in `review-log.md` — Critical, Important, and Minor
 alike. Fix each one; a Minor label means low severity, not optional. If a
@@ -162,4 +177,6 @@ approves.
 
 ## Report back
 Invoke the `caveman` skill: branch, PR url, test result (e.g. `tsc+test
-green`), taskid. Do not restate the diff.
+green`), taskid. Do not restate the diff. On a `NEEDS_DESIGN` escalation
+(see "Design gap escalation" above), report that instead: taskid, screen,
+status code, what's missing — no branch/PR yet since the task isn't done.
