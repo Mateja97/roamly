@@ -81,8 +81,22 @@ Dispatch `product` → `product-tasks.md`.
 - `reject` / `defer` → **STOP**, report the rationale.
 - `proceed` → continue to Build immediately.
 
-## 3. Build (dependency order, stacked)
-Order tasks by dependency. For each task `Tn`:
+## 3. Build (parallel chains, stacked within a chain)
+Partition tasks into independent dependency **chains**: a chain is a task with
+base `main` plus everything that (transitively) depends on it. Chains share no
+tasks and no branches, so they run **concurrently** — this is the pipeline's
+main speedup, turning an N-task build from N× serial into ~max-chain-length.
+
+- Dispatch the chains in parallel (see `superpowers:dispatching-parallel-agents`).
+  Track each chain's current task independently.
+- **Within** a chain, run its tasks strictly serially in dependency order — a
+  stacked child can't branch off a parent that isn't built yet.
+- Each chain only touches its own `feature/<slug>-<tn>` branches, so the step 0
+  worktree keeps concurrent chains from colliding.
+- Escalation stays per-chain: a task that fails its review loop skips only the
+  tasks that depend on it (its own chain's tail); other chains are unaffected.
+
+For each task `Tn` in a chain (chains advance in parallel; steps below are per task):
 0. **Skip already-shipped tasks:** check `gh pr list --state merged --search "T<n>" --base main`
    (or `git log main --oneline --grep "T<n>"`) for a PR/commit that already
    shipped `Tn` into `main`. If found, skip straight to the next task — do not
