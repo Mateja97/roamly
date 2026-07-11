@@ -1,11 +1,18 @@
 # Design Standards
 
-The visual design system for `frontend/`. Dark, minimalist, olive-green,
-premium. The `designer` agent applies these tokens per task; when a task
-genuinely needs something missing, it extends this file via the
-`**Standard additions:**` flow (see "Delivery mechanics") rather than
-improvising one-off values. (Backend conventions live in
-`GO_STANDARDS.md`, frontend code conventions in `FRONTEND_STANDARDS.md`.)
+The visual design system for **Roamly** — the app that helps people find and
+explore activities (the opening flow asks *home / nearby / abroad*, then shows
+activities to match). Shared by `frontend/` and `app/`. Dark, minimalist,
+**deep-wine and gold**, premium. The `designer` agent applies these tokens per
+task; when a task genuinely needs something missing, it extends this file via
+the `**Standard additions:**` flow (see "Delivery mechanics") rather than
+improvising one-off values. (Backend conventions live in `GO_STANDARDS.md`,
+frontend code conventions in `FRONTEND_STANDARDS.md`.)
+
+The two brand colors are fixed: **wine `#7D2027`** (the background the app
+lives on) and **gold `#CE9042`** (the accent — headings, CTAs, links, icons,
+borders, and the logo). Everything else in the palette is a supporting token
+tuned so text stays WCAG-AA readable on wine — see "Accessibility".
 
 The Accessibility/Touch/Motion/Forms rules below incorporate the applicable
 parts of the [ui-ux-pro-max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill)
@@ -16,29 +23,31 @@ for today (see "Deferred" below for what's intentionally left out).
 
 ## Palette
 
-Elevation comes from stepping up the surface color, not from shadows —
-shadows read as cheap on a dark background. This is the same technique
-premium dark UIs (Linear/Vercel/Stripe-style dark modes) use.
+Elevation comes from stepping up the surface color and from a **gold hairline
+top edge**, not from shadows — shadows read as cheap on a dark background.
+Deep wine + gold hairlines is the premium wine-label / luxury-menu move, and
+puts the gold brand into the structure, not only the text.
 
 | Token | Hex | Use |
 |---|---|---|
-| `--bg` | `#14160F` | app background — near-black, warm olive tint |
-| `--surface` | `#1B1E14` | cards, panels |
-| `--surface-hover` | `#242819` | hover/elevated surface |
-| `--border` | `#2E331F` | dividers, low-contrast borders |
-| `--primary` | `#8A9A5B` | buttons, links, focus rings |
-| `--primary-hover` | `#A4B378` | primary, lighter |
-| `--primary-active` | `#6E7C46` | primary, darker (pressed) |
-| `--text` | `#EDEFE6` | primary text — warm off-white |
-| `--text-muted` | `#9BA08C` | secondary text |
-| `--text-disabled` | `#5C6152` | disabled text |
-| `--success` | `#7FA65B` | close to primary — reads as on-brand |
-| `--warning` | `#C9A227` | muted gold |
-| `--error` | `#CC7350` | muted rust/terracotta, not alarm-red |
-| `--error-hover` | `#D98963` | destructive button, hover |
-| `--card-highlight` | `#383E26` | 1px lighter top edge on cards (decorative) |
-| `--glow` | `rgba(138,154,91,0.15)` | radial accent behind ONE focal element per screen |
-| `--surface-gradient` | — | faint top-lit gradient for large cards (`#1D2016 → #1B1E14`) |
+| `--bg` | `#7D2027` | app background — brand wine |
+| `--surface` | `#8A2C35` | cards, panels (one step lighter than `--bg`) |
+| `--surface-hover` | `#97363F` | hover/elevated surface |
+| `--border` | `#5C171C` | dividers, low-contrast borders (deep-wine hairline) |
+| `--primary` | `#CE9042` | brand gold — buttons, links, focus rings, headings, icons |
+| `--primary-hover` | `#DCA35A` | primary, lighter |
+| `--primary-active` | `#B67C34` | primary, darker (pressed) |
+| `--ink` | `#2A0E11` | label color ON gold/light fills (near-black wine) |
+| `--text` | `#F5EBDD` | primary/body text — warm cream |
+| `--text-muted` | `#E0C9AE` | secondary text — warm tan |
+| `--text-disabled` | `#B0857A` | disabled text |
+| `--success` | `#A3D18E` | light sage — reads on wine, distinct from gold |
+| `--warning` | `#E8C572` | light amber — distinct from brand gold |
+| `--error` | `#F5B79B` | light coral — true red disappears on wine |
+| `--error-hover` | `#F0A588` | destructive fill, hover (darker coral) |
+| `--card-highlight` | `rgba(206,144,66,0.5)` | gold 1px top edge on cards (decorative) |
+| `--glow` | `rgba(206,144,66,0.15)` | radial gold accent behind ONE focal element per screen |
+| `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
 | `--radius-full` | `999px` | pills/badges |
 
 ## Accessibility
@@ -46,27 +55,33 @@ premium dark UIs (Linear/Vercel/Stripe-style dark modes) use.
 Every text/background token pair actually used in the UI must hit **WCAG AA**
 contrast before it ships: 4.5:1 for normal text, 3:1 for large text (≥24px,
 or ≥18.66px bold) and UI components (borders, icons). Disabled controls are
-exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` (2.36:1) is
-fine as-is.
+exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
 
-- **Filled `--primary` buttons/controls use `--bg` as the label color**, not
-  `--text` — `--text` on `--primary` is only 2.64:1 (fails even the large-text
-  bar); `--bg` on `--primary` is 5.95:1.
-- `--error` is deliberately lighter than a "pure rust" would be
-  (`#CC7350`, not `#B5533C`) specifically so error text clears 4.5:1 at the
-  normal `--font-size-sm` it's typically rendered at — don't darken it back
-  down without re-checking contrast.
-- Pre-computed pairings for the v2 component recipes (don't re-derive):
-  `--bg` on `--error` (destructive button label) 5.33:1 ✓ · `--bg` on
-  `--error-hover` 6.69:1 ✓ · `--success` on `--surface` 6.04:1 ✓ ·
-  `--warning` on `--surface` 6.98:1 ✓ · `--error` on `--surface` 4.94:1 ✓ ·
-  `--text-muted` on `--surface-hover` 5.60:1 ✓.
+- **Body text is never gold.** Gold `--primary` on wine `--bg` is only
+  **3.65:1** — it clears the 3:1 bar for large text (≥24px / ≥18.66px bold),
+  CTAs, icons, and borders, but **fails 4.5:1 for normal body copy**. Body and
+  paragraph text uses `--text` (cream, 8.5:1) or `--text-muted` (tan, 6.2:1).
+  Gold is for headings, the logo, CTAs, links, and accents — not running text.
+- **Filled `--primary` (gold) buttons/controls use `--ink` as the label
+  color**, not `--text` and not `--bg` — wine `--bg` on gold is only 3.65:1
+  (fails the button-label bar); `--ink` on `--primary` is **6.6:1**.
+- `--error` is a deliberately **light coral** (`#F5B79B`), not a saturated
+  red — a true red camouflages against the wine background and also can't
+  clear 4.5:1 on it. Error *text* clears 4.5:1 on `--surface` at the light
+  coral value; don't darken it back toward red without re-checking contrast.
+- Pre-computed pairings for the component recipes (don't re-derive):
+  `--text` on `--bg` 8.5:1 ✓ · `--text-muted` on `--bg` 6.2:1 ✓ ·
+  `--primary` on `--bg` 3.65:1 (large/UI only) · `--ink` on `--primary`
+  6.6:1 ✓ · `--text` on `--surface` 7.1:1 ✓ · `--text-muted` on `--surface`
+  5.3:1 ✓ · `--primary` on `--surface` 3.1:1 (large/UI only) · `--success` on
+  `--surface` 4.84:1 ✓ · `--warning` on `--surface` 5.08:1 ✓ · `--error` on
+  `--surface` 4.86:1 ✓ · `--ink` on `--error` (destructive label) 10.4:1 ✓.
 - When a task's design-spec introduces a new text/background pairing (not
   just the ones listed above), the `designer` agent must compute its
   contrast ratio before using it, and pick an existing token combination (or
   write a `**Standard additions:**` entry per the "Delivery mechanics" rule
-  below) rather than assume a
-  token that reads fine on one surface also reads fine on another.
+  below) rather than assume a token that reads fine on one surface also reads
+  fine on another.
 - Focus rings are 2–4px (the `--primary` border-color swap already used on
   inputs satisfies this at the low end — don't go thinner).
 - Every non-text UI element (icon-only buttons, if any appear later) needs a
@@ -82,18 +97,17 @@ fine as-is.
 ## Touch & interaction
 
 - Interactive elements (buttons, inputs, links acting as controls) are
-  **minimum 44×44px** — `.sign-in-card button` and `.event-card button`
-  both get an explicit `min-height: 44px` for this reason (measured short
-  by ~1.5px on `padding: var(--space-3) 0` alone).
+  **minimum 44×44px** — buttons and card actions get an explicit
+  `min-height: 44px` for this reason (measured short by ~1.5px on
+  `padding: var(--space-3) 0` alone).
 - Maintain at least `--space-2` (8px) gap between adjacent interactive
   elements so touch targets don't crowd each other.
 - Every tap/click gets visible feedback within ~100ms — the existing
   hover/active token swaps (`--primary-hover`/`--primary-active`) satisfy
   this; never rely on a hover-only state as the sole feedback (hover doesn't
   exist on touch).
-- Buttons are disabled for the duration of their async action (already the
-  pattern here: Reserve/Sign in disable and relabel while in flight) —
-  don't let a user re-trigger a request that's already running.
+- Buttons are disabled for the duration of their async action — don't let a
+  user re-trigger a request that's already running.
 
 ## Motion
 
@@ -121,9 +135,9 @@ fine as-is.
 - Target 60–75 characters per line for any paragraph-length text (this
   app's copy is short labels/status lines so far — this matters once a
   screen carries real paragraph copy).
-- Numbers that update in place (the remaining-ticket count) use tabular
-  (monospace-width) figures — `font-variant-numeric: tabular-nums` — so the
-  digit width doesn't shift the surrounding layout when the count changes.
+- Numbers that update in place use tabular (monospace-width) figures —
+  `font-variant-numeric: tabular-nums` — so the digit width doesn't shift the
+  surrounding layout when the count changes.
 
 ## Spacing & shape
 
@@ -131,7 +145,8 @@ fine as-is.
   `--space-4` 16px, `--space-6` 24px, `--space-8` 32px, `--space-12` 48px,
   `--space-16` 64px.
 - `--radius`: `8px` on cards, buttons, inputs — soft but not pill-shaped.
-- No box-shadows for elevation; a 1px `--border` line is enough.
+- No box-shadows for elevation; a 1px `--border` line plus the gold top edge
+  is enough.
 
 ## Depth & accents
 
@@ -139,8 +154,9 @@ Flat `--surface` + a uniform 1px `--border` reads as unfinished. These are
 the sanctioned depth devices — tokenized, and still no drop shadows:
 
 - **Card top highlight**: cards set `border-top-color: var(--card-highlight)`
-  — a 1px lighter top edge that reads as light hitting the surface (the
-  Linear/Vercel dark-mode trick). Decorative; no contrast requirement.
+  — a 1px **gold** top edge that reads as light hitting the surface (the
+  Linear/Vercel dark-mode trick, recolored to the brand gold). Decorative; no
+  contrast requirement.
 - **Primary glow**: at most ONE per screen, behind the screen's focal
   element (the primary CTA or the stat display), via
   `background: radial-gradient(ellipse at 50% 0%, var(--glow), transparent 70%)`
@@ -168,13 +184,13 @@ variant): `--text-disabled` label on `--surface-hover`, inert.
 
 | Variant | Rest | Hover | Active | Use |
 |---|---|---|---|---|
-| Primary | `--primary` bg, `--bg` label | `--primary-hover` bg | `--primary-active` bg | THE action of the screen — one per view |
+| Primary | `--primary` bg, `--ink` label (6.6:1) | `--primary-hover` bg | `--primary-active` bg | THE action of the screen — one per view |
 | Secondary | transparent, 1px `--border`, `--text` label | `--surface-hover` bg, `--primary` border | `--surface` bg | alternate actions, empty-state CTAs |
 | Ghost | no bg/border, `--text-muted` label | `--text` label, `--surface-hover` bg | `--surface` bg | low-emphasis (Sign out, Cancel) |
-| Destructive | `--error` bg, `--bg` label (5.33:1) | `--error-hover` bg (6.69:1) | `--error` bg | irreversible actions only |
+| Destructive | `--error` bg, `--ink` label (10.4:1) | `--error-hover` bg | `--error` bg | irreversible actions only |
 
 In-flight: keep the variant's rest colors, swap label to progressive form
-("Reserving…") with an inline Spinner, disable interaction — don't drop to
+("Loading…") with an inline Spinner, disable interaction — don't drop to
 the disabled gray (the action is live, not unavailable).
 
 ### Text input
@@ -187,12 +203,12 @@ placeholder `--text-disabled`, `min-height: 44px`, padding `--space-3` /
 
 ### Badge / pill
 
-For statuses (`reserved`, `confirmed`, `sold out`). `--font-size-xs`,
-uppercase, `letter-spacing: 0.05em`, weight 500, padding `--space-1`
-`--space-2`, `--radius-full`, transparent bg, 1px border in the badge's
-color, text in the same color: neutral `--text-muted`/`--border` border ·
-success `--success` · warning `--warning` · error `--error`. (Ratios on
-`--surface`: 6.04 / 6.98 / 4.94 — all pass.) Non-interactive; no hover.
+For statuses. `--font-size-xs`, uppercase, `letter-spacing: 0.05em`, weight
+500, padding `--space-1` `--space-2`, `--radius-full`, transparent bg, 1px
+border in the badge's color, text in the same color: neutral
+`--text-muted`/`--border` border · success `--success` · warning `--warning`
+· error `--error`. (Ratios on `--surface`: 5.3 / 4.84 / 5.08 / 4.86 — all
+pass 4.5.) Non-interactive; no hover.
 
 ### Skeleton loader
 
@@ -214,11 +230,11 @@ with the static "…" in the label.
 
 Baseline fallback for any API error a task's design doesn't call out
 explicitly (see `FRONTEND_STANDARDS.md`'s Error handling section).
-`--surface` bg, `--error` text/icon (4.94:1 on `--surface`, already
-pre-computed in Accessibility above), 1px `--border`-weight outline in
-`--error`, `--radius`, `--space-3` padding. Reserves its layout space so it
-doesn't shift surrounding elements on appear/dismiss (per "No layout jump"
-below). Dismissible: a Ghost-style close control, keyboard-operable,
+`--surface` bg, `--error` text/icon (4.86:1 on `--surface`, pre-computed in
+Accessibility above), 1px `--border`-weight outline in `--error`, `--radius`,
+`--space-3` padding. Reserves its layout space so it doesn't shift
+surrounding elements on appear/dismiss (per "No layout jump" below).
+Dismissible: a Ghost-style close control, keyboard-operable,
 `min-height: 44px` / `min-width: 44px` touch target, ≥`--space-2` from
 adjacent content. Message text comes straight from the server response the
 typed client surfaces — this recipe prescribes presentation, not wording.
@@ -245,19 +261,63 @@ Ghost-button actions right. Single row at all widths.
 
 ### Stat display
 
-For the number that IS the screen (remaining tickets). Label above:
-`--font-size-sm` `--text-muted`, uppercase, `letter-spacing: 0.05em`.
-Value: `--font-size-2xl` `--text`, `tabular-nums`. Eligible for the one
-per-screen `--glow`. Sub-line (delta/status) `--font-size-sm` in the
-relevant semantic color.
+For the number that IS the screen. Label above: `--font-size-sm`
+`--text-muted`, uppercase, `letter-spacing: 0.05em`. Value: `--font-size-2xl`
+`--primary` (gold — this is large text, clears 3:1) or `--text` (cream),
+`tabular-nums`. Eligible for the one per-screen `--glow`. Sub-line
+(delta/status) `--font-size-sm` in the relevant semantic color.
+
+### Choice card (home / nearby / abroad)
+
+The opening flow's core control — the three activity-scope options. Each is a
+full-width card (stacked on mobile, 3-up on wide): `--surface`, 1px `--border`
+with gold `--card-highlight` top edge, `--radius`, `--space-6` padding, tap
+target well over 44px. Contents: 20px `--primary` (gold) icon → title
+`--font-size-lg` `--text` → one-line hint `--font-size-sm` `--text-muted`.
+Rest → hover/press: `--surface-hover` bg + border → `--primary`. The selected
+card carries a `--primary` border and is the eligible spot for the one
+per-screen `--glow`. Fully keyboard-operable (it's a control, not decoration)
+with a visible focus border. ponytail: three cards is the whole flow today —
+don't build a generic wizard/stepper abstraction until a second step exists.
 
 ## Icons
 
-`lucide-react`, one family only. `stroke-width: 1.75` everywhere. 16px
-inline with text (buttons, rows), 20px standalone (empty states). Color:
-`currentColor` — icons inherit their text context, never carry their own
-palette. Paired with visible text → `aria-hidden="true"`; icon-only
-control → `aria-label` required. Never emoji.
+`lucide-react` (web) / `lucide-react-native` (app), one family only.
+`stroke-width: 1.75` everywhere. 16px inline with text (buttons, rows), 20px
+standalone (empty states, choice cards). Color: `currentColor` — icons
+inherit their text context, never carry their own palette. Paired with
+visible text → `aria-hidden="true"`; icon-only control → `aria-label`
+required. Never emoji.
+
+## Logo
+
+The Roamly logo is a **wordmark** — "Roamly" set in the brand system font
+stack (weight 650, tightened letter-spacing) in gold `--primary`, with a
+**dashed gold travel-route** underneath: a filled start dot on the left, a
+dashed path, and an open destination ring on the right. The route is the
+brand's "find and explore a journey" idea made literal; it is part of the
+lockup, not optional decoration.
+
+- **Source of record**: `frontend/public/roamly-wordmark.svg`. The app mirrors
+  it into `app/assets/roamly-wordmark.svg` when a screen needs it (same
+  manual-sync model as the token files — see "Delivery mechanics"). The
+  wordmark renders as live `<text>` in the system font, so it stays editable
+  and matches the UI type; it is not outlined to paths.
+- **Color**: gold `#CE9042` on the wine background. On any other background,
+  swap the SVG `fill` to `currentColor` and set the color in context — never
+  recolor the wordmark outside the wine/gold/cream family.
+- **Square mark / favicon**: `frontend/public/favicon.svg` — a gold "R"
+  monogram with the gold pin-dot on a wine rounded-square, for favicons, app
+  tiles, and any spot too small for the full wordmark. Use the monogram, not
+  a squeezed wordmark, below ~96px wide.
+- **Clear space & min size**: keep at least the cap-height of "R" clear on all
+  sides; don't render the full wordmark below ~120px wide (use the monogram
+  instead). Don't stretch, rotate, add shadows, or place it on a busy
+  background.
+- **Raster app icons** (`app/assets/icon.png`, adaptive/monochrome icons,
+  splash) are still the default Expo placeholders. Generating those PNGs is
+  outside this doc's tooling; the mark above is the source a designer/engineer
+  exports them from when that task comes up (see "Deferred").
 
 ## Layout
 
@@ -265,7 +325,7 @@ control → `aria-label` required. Never emoji.
   `--space-4` below tablet width, `--space-6` above.
 - Vertical rhythm: `--space-8` between page sections, `--space-6` card
   padding, `--space-4` between heading and its content.
-- Cards: `--surface`, 1px `--border` with `--card-highlight` top edge,
+- Cards: `--surface`, 1px `--border` with gold `--card-highlight` top edge,
   `--radius`, `--space-6` padding.
 - One focal element per screen (largest type or the glow), everything else
   steps down — if everything is prominent, nothing is.
@@ -283,8 +343,7 @@ the palette:
   convention (iOS: top-left back control / edge-swipe gesture; Android:
   the system back gesture/button) rather than inventing a custom back
   control — a router provides this for free once one is introduced (see
-  "Deferred" below: no router/nav pattern exists yet, don't design one
-  speculatively).
+  "Deferred" below).
 - **Touch targets**: the existing 44×44px floor (see "Touch & interaction"
   above) already satisfies both iOS HIG's 44pt minimum and Android
   Material's 48dp recommendation — no separate mobile sizing rule needed.
@@ -296,7 +355,7 @@ the palette:
   `--surface-gradient` require a gradient library on React Native
   (`expo-linear-gradient`) not yet a project dependency — skip these two
   accents for `area: app` tasks until a task genuinely needs them; the
-  card top-highlight border device works identically on both platforms
+  gold card top-highlight border device works identically on both platforms
   (it's just a border color).
 
 ## Delivery mechanics
@@ -308,6 +367,11 @@ the palette:
   This file is manually kept in sync with `tokens.css`; there is currently
   no automated check that the two don't drift (a known gap — closing it is
   a separate initiative, not this doc's job).
+- **Rebrand status**: this doc is the source of record for the wine/gold
+  system. The token files (`tokens.css`, `tokens.ts`) and the raster app
+  icons still carry earlier values and are updated by the frontend/app
+  engineers on their task branches when they touch the affected surface —
+  same designer→engineer flow every token change uses.
 - Components consume `var(--token)` (web) or the `tokens.ts` constants
   (app) in colocated styles — never a hard-coded color, size, or spacing
   value that a token already covers.
@@ -329,8 +393,8 @@ Every design-spec must account for:
 - **No layout jump**: reserve space for conditional content (errors,
   confirmations) rather than letting it push surrounding elements when it
   appears/disappears.
-- **Consistent feedback per action**: every async action (submit, reserve,
-  fetch) has an explicit loading, success, and error treatment — never a
+- **Consistent feedback per action**: every async action (submit, fetch,
+  select) has an explicit loading, success, and error treatment — never a
   silent no-op while a request is in flight.
 - **Focus and keyboard reachability**: interactive elements need a visible
   focus state (a border/outline color change is enough — this system uses
@@ -340,12 +404,10 @@ Every design-spec must account for:
 
 ## Forms & feedback
 
-- Labels are always visible, never placeholder-only (already the pattern:
-  `SignInForm`'s "User identifier" label persists; the placeholder
-  `e.g. alice` is a hint, not the label).
+- Labels are always visible, never placeholder-only (the placeholder is a
+  hint, not the label).
 - Errors render below the affected field/action, not in a toast/banner
-  disconnected from it (already the pattern on both `SignInForm` and
-  `EventPage`).
+  disconnected from it.
 - Validate on blur, not on every keystroke — don't design a red-error state
   that would fire while the user is still mid-typing. (Implementation detail
   lives in `FRONTEND_STANDARDS.md`; the design-spec just shouldn't imply
@@ -360,15 +422,18 @@ These categories exist in the source guidance this system draws from but
 have no surface area in the app yet. Don't design for them speculatively;
 revisit when the trigger condition below actually appears:
 
-- **Image optimization / lazy loading** — no images in the app yet.
-- **Navigation patterns** (bottom nav, deep linking, back-stack) — the app
-  is two conditionally-rendered screens with no router; revisit if/when a
-  real router or a 3rd top-level screen is added.
+- **Raster logo assets** — the wordmark and square mark exist as SVG; the
+  Expo raster icons (`icon.png`, adaptive/monochrome, splash) and any PNG
+  favicon still need exporting from the mark when a branding task takes it on.
+- **Activity imagery / lazy loading** — no images in the app yet; once
+  activity cards carry photos, add image optimization and lazy loading here.
+- **Navigation patterns** (bottom nav, deep linking, back-stack) — the app is
+  a short flow with no router yet; revisit if/when a real router or a fourth
+  top-level screen is added.
 - **Charts & data visualization** — no charts yet.
-- **Light mode** — this system is deliberately dark-only (not a dark variant
-  of a light-first system); revisit only if a real light-mode requirement
-  appears, and then design both modes together, not one inferred from the
-  other.
+- **Light mode** — this system is deliberately dark-only (deep wine is the
+  base, not a dark variant of a light-first system); revisit only if a real
+  light-mode requirement appears, and then design both modes together.
 
 ## Values are a first pass
 
