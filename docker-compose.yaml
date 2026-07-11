@@ -34,5 +34,15 @@ services:
     depends_on:
       - proxy-service
 
+  app:
+    build:
+      context: ./app
+      args:
+        EXPO_PUBLIC_PROXY_URL: http://localhost:8080
+    ports:
+      - "4174:4174"
+    depends_on:
+      - proxy-service
+
 volumes:
   postgres-data:

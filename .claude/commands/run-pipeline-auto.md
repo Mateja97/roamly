@@ -91,30 +91,32 @@ Order tasks by dependency. For each task `Tn`:
 1. **Base branch:** if `Tn` depends on `Tm`, base = `Tm`'s branch
    (`feature/<slug>-<tm>`); otherwise base = `main`. This **stacks** dependent
    PRs so the whole chain builds before any merge.
-2. **`area: frontend` only — design (no pause):** dispatch the `designer`
-   agent with the `product-tasks.md` path, the task id `Tn`,
+2. **`area: frontend` or `area: app` — design (no pause):** dispatch the
+   `designer` agent with the `product-tasks.md` path, the task id `Tn`,
    `DESIGN_STANDARDS.md`, and the `design-spec.md` path (append its
    section). Standard additions auto-apply — the designer edits
    `DESIGN_STANDARDS.md` itself; there is no checkpoint. Record every
    addition it reports for the final run report (the PR merge gate is the
    human approval). `area: backend` tasks skip this step.
-3. Dispatch the area's engineer (`backend-engineer` | `frontend-engineer`) with
-   the `product-tasks.md` path, the task id, `task-type: feature`, the
-   `task-plan.md` path, the `engineering-notes.md` path, the base branch to
-   use, AND — for `area: frontend` — the `design-spec.md` path and the
-   screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
-   - **`area: frontend` only (no pause):** if `frontend-engineer` reports
-     `NEEDS_DESIGN`, re-dispatch `designer` with the task id, the
+3. Dispatch the area's engineer (`backend-engineer` | `frontend-engineer` |
+   `app-engineer`) with the `product-tasks.md` path, the task id,
+   `task-type: feature`, the `task-plan.md` path, the `engineering-notes.md`
+   path, the base branch to use, AND — for `area: frontend` or `area: app`
+   — the `design-spec.md` path and the screenshots directory
+   `pipeline/<slug>/screenshots/<Tn>/`.
+   - **`area: frontend` or `area: app` only (no pause):** if the engineer
+     reports `NEEDS_DESIGN`, re-dispatch `designer` with the task id, the
      `design-spec.md` path, and the reported gap to append an addendum.
      Standard additions auto-apply, same as step 2 above. Record the
-     addendum in the final run report. Then re-dispatch `frontend-engineer`
+     addendum in the final run report. Then re-dispatch the same engineer
      to resume the same task. This does not count toward the review loop's
      3-round cap below.
 4. Review loop (max **3** rounds):
    - Dispatch `reviewer` with the PR, `product-tasks.md`, the task id,
      `task-type: feature`, the `task-plan.md` path, `engineering-notes.md`,
-     `review-log.md`, and — for `area: frontend` — the `design-spec.md`
-     path and the screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
+     `review-log.md`, and — for `area: frontend` or `area: app` — the
+     `design-spec.md` path and the screenshots directory
+     `pipeline/<slug>/screenshots/<Tn>/`.
    - `changes-requested` → re-dispatch the same area engineer (resolve mode,
      `review-log.md` path) → re-review.
    - `approved` → `gh pr ready` (mark ready). **Do NOT merge.**

@@ -16,10 +16,10 @@ Invoke the `caveman-review` skill. Write each comment as one line:
 ## Inputs (from the orchestrator)
 - The PR (branch or number) to review — read it with `gh pr diff` / `git diff`.
 - Absolute path to `product-tasks.md` (acceptance criteria) and the task ID.
-- For `area: frontend` tasks: absolute path to `design-spec.md` (this task's
-  design section).
-- For `area: frontend` tasks: absolute path to the screenshots directory
-  (`pipeline/<slug>/screenshots/<taskid>/`).
+- For `area: frontend` or `area: app` tasks: absolute path to `design-spec.md`
+  (this task's design section).
+- For `area: frontend` or `area: app` tasks: absolute path to the screenshots
+  directory (`pipeline/<slug>/screenshots/<taskid>/`).
 - For `task-type: feature` tasks: absolute path to `task-plan.md` (this
   task's brainstorm + plan section).
 - Absolute path to `engineering-notes.md`.
@@ -27,24 +27,28 @@ Invoke the `caveman-review` skill. Write each comment as one line:
 
 ## Review
 1. Check the diff against the task's acceptance criteria FIRST, then the area's
-   standards (`GO_STANDARDS.md` for `area: backend`, `FRONTEND_STANDARDS.md` for
-   `area: frontend`) and correctness.
-2. For `area: frontend` tasks, also check the diff against `design-spec.md`,
-   screen-by-screen: wrong token, a missing state (hover/disabled/error/
-   loading/empty), or an off-spec layout are findings like any other, tagged
-   the same severities. Separately, verify every API call's error branches
-   are actually handled per `FRONTEND_STANDARDS.md`'s Error handling
-   section — an empty `catch`, unhandled promise, or discarded error-union
-   member is a finding (Critical if it can crash/hang the UI, Important
-   otherwise), not folded silently into the generic standards check above.
-3. For `area: frontend` tasks, Read every image in the screenshots
-   directory against the design-spec section: layout structure, hierarchy
-   (is the spec'd focal element actually focal?), spacing rhythm, depth
-   treatment, and obvious breakage (overflow, misalignment, unstyled
-   elements). A screen that uses the right tokens but visibly deviates from
-   the spec'd layout is a finding like any other. A state the design-spec
-   lists with no screenshot and no `engineering-notes.md` justification is
-   a Minor finding.
+   standards (`GO_STANDARDS.md` for `area: backend`, `FRONTEND_STANDARDS.md`
+   for `area: frontend`, `APP_STANDARDS.md` for `area: app`) and correctness.
+2. For `area: frontend` or `area: app` tasks, also check the diff against
+   `design-spec.md`, screen-by-screen: wrong token, a missing state
+   (hover/disabled/error/loading/empty), or an off-spec layout are findings
+   like any other, tagged the same severities. Separately, verify every API
+   call's error branches are actually handled per `FRONTEND_STANDARDS.md`'s
+   (or `APP_STANDARDS.md`'s) Error handling section — an empty `catch`,
+   unhandled promise, or discarded error-union member is a finding (Critical
+   if it can crash/hang the UI, Important otherwise), not folded silently
+   into the generic standards check above.
+3. For `area: frontend` or `area: app` tasks, Read every image in the
+   screenshots directory against the design-spec section: layout structure,
+   hierarchy (is the spec'd focal element actually focal?), spacing rhythm,
+   depth treatment, and obvious breakage (overflow, misalignment, unstyled
+   elements). For `area: app`, remember the screenshot is a
+   `react-native-web` approximation (see `ARCHITECTURE.md`'s Deployment
+   section) — judge layout/tokens/spacing, not native chrome fidelity. A
+   screen that uses the right tokens but visibly deviates from the spec'd
+   layout is a finding like any other. A state the design-spec lists with no
+   screenshot and no `engineering-notes.md` justification is a Minor
+   finding.
 4. For `task-type: feature` tasks, check the diff against `task-plan.md`'s
    Plan: does it match, or is a deviation explained somewhere (inline
    comment or `engineering-notes.md`)? An unexplained deviation is a finding

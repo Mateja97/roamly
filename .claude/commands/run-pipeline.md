@@ -47,13 +47,14 @@ Dispatch the `product` agent with the `research.md` path and the
   confirmation.
 
 ## 3. Per task (in priority / dependency order)
-Each task carries an `area: backend | frontend` tag. Dispatch the matching
-engineer: `backend-engineer` for `area: backend`, `frontend-engineer` for
-`area: frontend`. The reviewer uses the tag to pick the right standards. Respect
-`depends` (a frontend task often waits on its backend task).
+Each task carries an `area: backend | frontend | app` tag. Dispatch the
+matching engineer: `backend-engineer` for `area: backend`, `frontend-engineer`
+for `area: frontend`, `app-engineer` for `area: app`. The reviewer uses the
+tag to pick the right standards. Respect `depends` (a frontend/app task often
+waits on its backend task).
 
 For each task `Tn`:
-1. **`area: frontend` only:** dispatch the `designer` agent with the
+1. **`area: frontend` or `area: app`:** dispatch the `designer` agent with the
    `product-tasks.md` path, the task id `Tn`, `DESIGN_STANDARDS.md`, and the
    `design-spec.md` path (append its section).
    **CHECKPOINT:** show the user the task's new `design-spec.md` section and
@@ -62,27 +63,27 @@ For each task `Tn`:
    already edited `DESIGN_STANDARDS.md`; on rejection, re-dispatch the
    designer to remove or redo the rejected addition before building.
    `area: backend` tasks skip this step entirely — go straight to step 2.
-2. Dispatch the area's engineer (`backend-engineer` or `frontend-engineer`) with
-   the `product-tasks.md` path, the task id `Tn`, `task-type: feature`
-   (every task `/run-pipeline` produces is a feature task), the
-   `task-plan.md` path, the `engineering-notes.md` path, and — for
-   `area: frontend` — the `design-spec.md` path and the screenshots directory
-   `pipeline/<slug>/screenshots/<Tn>/`.
-   - **`area: frontend` only:** if `frontend-engineer` reports
+2. Dispatch the area's engineer (`backend-engineer`, `frontend-engineer`, or
+   `app-engineer`) with the `product-tasks.md` path, the task id `Tn`,
+   `task-type: feature` (every task `/run-pipeline` produces is a feature
+   task), the `task-plan.md` path, the `engineering-notes.md` path, and —
+   for `area: frontend` or `area: app` — the `design-spec.md` path and the
+   screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
+   - **`area: frontend` or `area: app` only:** if the engineer reports
      `NEEDS_DESIGN`, re-dispatch the `designer` agent with the task id, the
      `design-spec.md` path, and the reported gap (screen + status code +
      what's missing) so it appends an addendum rather than redoing the
      whole task's design. **CHECKPOINT:** show the user the addendum and
      wait for confirmation (same `**Standard additions:**` handling as the
-     design checkpoint in step 1 above). Then re-dispatch
-     `frontend-engineer` to resume the same task. This does not count
-     toward the review loop's 3-round cap below.
+     design checkpoint in step 1 above). Then re-dispatch the same engineer
+     to resume the same task. This does not count toward the review loop's
+     3-round cap below.
 3. Review loop (max **3** rounds):
    - Dispatch the `reviewer` agent with the PR, the `product-tasks.md` path, the
      task id, `task-type: feature`, the `task-plan.md` path, the
      `engineering-notes.md` path, the `review-log.md` path, and — for
-     `area: frontend` — the `design-spec.md` path and the screenshots directory
-     `pipeline/<slug>/screenshots/<Tn>/`.
+     `area: frontend` or `area: app` — the `design-spec.md` path and the
+     screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
    - `changes-requested` → re-dispatch the same area engineer in resolve mode
      with the `review-log.md` path, then re-review.
    - `approved` with unresolved Minor findings still listed → re-dispatch the
