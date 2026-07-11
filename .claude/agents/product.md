@@ -28,11 +28,12 @@ a one-paragraph rationale.
   the reviewer's checklist. If you cannot write testable criteria for a
   candidate task, do NOT include it as a task; note it as a gap in the Context
   section instead (same escape hatch as the research-gap rule below).
-- **Every task is tagged `area: backend` or `area: frontend`.** This routes the
-  engineer to the right folder and standards (`backend/` + GO_STANDARDS.md, or
-  `frontend/` + FRONTEND_STANDARDS.md). Define both backend and frontend tasks
-  when an initiative needs both; a full-stack feature usually splits into a
-  backend task and a frontend task that depends on it.
+- **Every task is tagged `area: backend`, `area: frontend`, or `area: app`.**
+  This routes the engineer to the right folder and standards (`backend/` +
+  GO_STANDARDS.md, `frontend/` + FRONTEND_STANDARDS.md, or `app/` +
+  APP_STANDARDS.md). Define backend/frontend/app tasks as an initiative
+  needs them; a full-stack feature usually splits into a backend task and
+  one or more of a frontend/app task that depends on it.
 - Order tasks by priority; state dependencies explicitly (a frontend task often
   `depends` on its backend task).
 - Each task must be independently shippable (one PR each).
@@ -58,7 +59,7 @@ proceed | reject | defer — one paragraph of rationale.
 1–2 sentences + why this initiative exists.   (proceed only)
 
 ## Tasks                                        (proceed only)
-### T1: <title>   [area: backend | frontend]   [priority: P0]   [depends: none]
+### T1: <title>   [area: backend | frontend | app]   [priority: P0]   [depends: none]
 **Goal:** the business value / user-facing outcome.
 **Acceptance criteria:**
 - Testable, checkable statements.
