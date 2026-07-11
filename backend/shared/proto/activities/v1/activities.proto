@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package activities.v1;
+
+option go_package = "backend/shared/proto/activities/v1;activitiesv1";
+
+// ActivitiesService owns the activity catalog and answers scoped, filtered
+// queries against it. Stateless about users: callers supply whatever
+// location context a scope needs on every request.
+service ActivitiesService {
+  rpc QueryActivities(QueryActivitiesRequest) returns (QueryActivitiesResponse);
+}
+
+enum Scope {
+  SCOPE_UNSPECIFIED = 0;
+  // Activities within the service's configured radius of home_location.
+  SCOPE_HOME = 1;
+  // Activities within the service's configured radius of current_location.
+  SCOPE_NEARBY = 2;
+  // Activities whose country differs from home_country.
+  SCOPE_OUTSIDE_COUNTRY = 3;
+}
+
+enum Category {
+  CATEGORY_UNSPECIFIED = 0;
+  CATEGORY_FOOD_AND_DRINK = 1;
+  CATEGORY_HISTORY_AND_CULTURE = 2;
+  CATEGORY_NATURE_AND_OUTDOORS = 3;
+  CATEGORY_ART_AND_DESIGN = 4;
+  CATEGORY_SPORTS = 5;
+  CATEGORY_ENTERTAINMENT_AND_WELLNESS = 6;
+}
+
+enum PriceTier {
+  PRICE_TIER_UNSPECIFIED = 0;
+  PRICE_TIER_BUDGET = 1;
+  PRICE_TIER_MODERATE = 2;
+  PRICE_TIER_PREMIUM = 3;
+  PRICE_TIER_LUXURY = 4;
+}
+
+message Location {
+  double lat = 1;
+  double lng = 2;
+}
+
+message QueryActivitiesRequest {
+  Scope scope = 1;
+
+  // Required when scope == SCOPE_NEARBY.
+  Location current_location = 2;
+  // Required when scope == SCOPE_HOME.
+  Location home_location = 3;
+  // Required when scope == SCOPE_OUTSIDE_COUNTRY.
+  string home_country = 4;
+
+  // Filters, all optional, combined as AND. An unfiltered request returns
+  // all in-scope activities.
+  repeated Category categories = 5; // OR within this field.
+  PriceTier price_tier = 6;         // PRICE_TIER_UNSPECIFIED = no filter.
+  double min_rating = 7;            // 0 = no filter.
+  // Further narrows the scope radius (SCOPE_HOME / SCOPE_NEARBY only).
+  // 0 = no filter. Setting it for SCOPE_OUTSIDE_COUNTRY is a validation error.
+  double max_distance_km = 8;
+}
+
+message Activity {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  Category category = 4;
+  Location location = 5;
+  string country = 6;
+  PriceTier price_tier = 7;
+  double rating = 8;
+  repeated string image_refs = 9;
+  repeated string tags = 10;
+  // Distance from the request's reference location, in kilometers.
+  // Only populated for SCOPE_HOME / SCOPE_NEARBY; 0 otherwise.
+  double distance_km = 11;
+}
+
+message QueryActivitiesResponse {
+  repeated Activity activities = 1;
+}
