@@ -98,8 +98,9 @@ Order tasks by dependency. For each task `Tn`:
 4. Review loop (max **3** rounds):
    - Dispatch `reviewer` with the PR, `product-tasks.md`, the task id,
      `task-type: feature`, the `task-plan.md` path, `engineering-notes.md`,
-     `review-log.md`, and — for `area: frontend` — the `design-spec.md`
-     path and the screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
+     `review-log.md`, and — for `area: frontend` or `area: app` — the
+     `design-spec.md` path and the screenshots directory
+     `pipeline/<slug>/screenshots/<Tn>/`.
    - `changes-requested` → re-dispatch the same area engineer (resolve mode,
      `review-log.md` path) → re-review.
    - `approved` → `gh pr ready` (mark ready). **Do NOT merge.**

@@ -82,8 +82,8 @@ For each task `Tn`:
    - Dispatch the `reviewer` agent with the PR, the `product-tasks.md` path, the
      task id, `task-type: feature`, the `task-plan.md` path, the
      `engineering-notes.md` path, the `review-log.md` path, and — for
-     `area: frontend` — the `design-spec.md` path and the screenshots directory
-     `pipeline/<slug>/screenshots/<Tn>/`.
+     `area: frontend` or `area: app` — the `design-spec.md` path and the
+     screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
    - `changes-requested` → re-dispatch the same area engineer in resolve mode
      with the `review-log.md` path, then re-review.
    - `approved` with unresolved Minor findings still listed → re-dispatch the
