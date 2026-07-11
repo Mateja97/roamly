@@ -270,20 +270,56 @@ control → `aria-label` required. Never emoji.
 - One focal element per screen (largest type or the glow), everything else
   steps down — if everything is prominent, nothing is.
 
+## Mobile-specific
+
+For `area: app` tasks. Colors, type scale, and spacing values are identical
+to `area: frontend` — the platform difference is interaction chrome, not
+the palette:
+
+- **Safe areas**: every top-level screen renders inside a safe-area
+  container (RN's `SafeAreaView` or equivalent) — never let content sit
+  under a device notch, status bar, or home indicator.
+- **Navigation chrome**: back navigation follows each platform's native
+  convention (iOS: top-left back control / edge-swipe gesture; Android:
+  the system back gesture/button) rather than inventing a custom back
+  control — a router provides this for free once one is introduced (see
+  "Deferred" below: no router/nav pattern exists yet, don't design one
+  speculatively).
+- **Touch targets**: the existing 44×44px floor (see "Touch & interaction"
+  above) already satisfies both iOS HIG's 44pt minimum and Android
+  Material's 48dp recommendation — no separate mobile sizing rule needed.
+- **No hover state**: mobile has no hover; every interaction that relies on
+  `--surface-hover`/hover-only feedback on web needs its rest/active pair
+  to carry the full feedback on mobile (already true per "Touch &
+  interaction" above — never rely on hover as the sole feedback).
+- **Depth devices deferred**: `--glow` (radial gradient) and
+  `--surface-gradient` require a gradient library on React Native
+  (`expo-linear-gradient`) not yet a project dependency — skip these two
+  accents for `area: app` tasks until a task genuinely needs them; the
+  card top-highlight border device works identically on both platforms
+  (it's just a border color).
+
 ## Delivery mechanics
 
 - Tokens are CSS custom properties in `frontend/src/styles/tokens.css`,
   imported once from `index.css`.
-- Components consume `var(--token)` in colocated `.css` files — never a
-  hard-coded color, size, or spacing value that a token already covers.
+- For `area: app`, the same values live as TypeScript constants in
+  `app/src/theme/tokens.ts` — React Native has no CSS custom properties.
+  This file is manually kept in sync with `tokens.css`; there is currently
+  no automated check that the two don't drift (a known gap — closing it is
+  a separate initiative, not this doc's job).
+- Components consume `var(--token)` (web) or the `tokens.ts` constants
+  (app) in colocated styles — never a hard-coded color, size, or spacing
+  value that a token already covers.
 - The `designer` agent (`.claude/agents/designer.md`) composes these tokens
-  and recipes into a `design-spec.md` per frontend task. A task that
+  and recipes into a `design-spec.md` per frontend/app task. A task that
   genuinely needs something new is a `DESIGN_STANDARDS.md` addition the
   designer writes into this file directly (flagged as `**Standard
   additions:**` in its spec section, approved at the design checkpoint);
-  the frontend-engineer mirrors any new token into `tokens.css` and commits
-  both on the task branch, so additions ship — and revert — with the
-  feature that needed them.
+  the frontend-engineer or app-engineer mirrors any new token into
+  `tokens.css` or `tokens.ts` respectively and commits it on the task
+  branch, so additions ship — and revert — with the feature that needed
+  them.
 
 ## UX baseline (not just visual polish)
 
