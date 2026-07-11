@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, StyleSheet, Text } from 'react-native';
 import { fetchHealth } from './src/api/health';
 import { colors, fontSize, space } from './src/theme/tokens';
 
