@@ -63,6 +63,28 @@ Design-level rules (contrast, touch-target sizing, motion timing) live in
   `src/api/` — components never call `fetch` directly.
 - Request/response types are explicit TypeScript types.
 
+## Error handling
+
+- The typed client in `src/api/` never throws an opaque error for an API
+  response — it resolves to a discriminated result: success, or one of the
+  fixed statuses `proxy-service` can return (`400 | 403 | 404 | 409 | 500`),
+  each carrying the server's message. See `GO_STANDARDS.md`'s Errors
+  section and `backend/proxy-service/README.md`'s HTTP status codes table
+  for where this set comes from.
+- Every call site handles the result. An ignored error branch (empty
+  `catch`, unhandled promise, discarded union member) is a bug, not a style
+  nit.
+- **Baseline:** the shared generic error banner (see `DESIGN_STANDARDS.md`'s
+  Error banner/toast recipe) covers any status the task's `design-spec.md`
+  doesn't call out explicitly. It's always available — "no explicit design"
+  is never an excuse to swallow an error.
+- **Escalate, don't improvise:** if a status code needs something
+  structurally different from "show the generic banner" (e.g. `403` should
+  block access or redirect, not just toast) and `design-spec.md` is silent
+  on it, that's a design gap — raise it (see
+  `.claude/agents/frontend-engineer.md`'s Design gap escalation), don't
+  invent the treatment inline.
+
 ## Testing
 
 - **Vitest** + **React Testing Library**.
