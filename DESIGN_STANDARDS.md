@@ -210,6 +210,19 @@ rotation. Lives inside buttons (next to the in-flight label) and inline
 status lines — never a full-page overlay. `prefers-reduced-motion`: replace
 with the static "…" in the label.
 
+### Error banner/toast
+
+Baseline fallback for any API error a task's design doesn't call out
+explicitly (see `FRONTEND_STANDARDS.md`'s Error handling section).
+`--surface` bg, `--error` text/icon (4.94:1 on `--surface`, already
+pre-computed in Accessibility above), 1px `--border`-weight outline in
+`--error`, `--radius`, `--space-3` padding. Reserves its layout space so it
+doesn't shift surrounding elements on appear/dismiss (per "No layout jump"
+below). Dismissible: a Ghost-style close control, keyboard-operable,
+`min-height: 44px` / `min-width: 44px` touch target, ≥`--space-2` from
+adjacent content. Message text comes straight from the server response the
+typed client surfaces — this recipe prescribes presentation, not wording.
+
 ### Empty state
 
 Never a lone muted sentence. Centered in the content area, `--space-12`
