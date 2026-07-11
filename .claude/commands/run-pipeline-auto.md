@@ -31,7 +31,23 @@ models multiply their quota cost.
 ## 0. Isolate (worktree)
 Autopilot builds must never share a working tree with another session — parallel
 sessions collide (`git add -A` in one sweeps another's uncommitted edits).
-Before anything else, compute `<slug>` (see Setup) and isolate:
+Before anything else, compute `<slug>` (see Setup).
+
+**Cleanup first:** for every directory under `.claude/worktrees/` other than
+`<slug>`, check whether it's fully shipped: read its
+`pipeline/<other-slug>/product-tasks.md` for task IDs and run `gh pr list
+--state merged --search "T<n>" --base main` (or `git log main --oneline
+--grep "T<n>"`) for each — the same check Build step 0 below already uses
+per-task. If every task is merged, remove it: `git worktree remove
+.claude/worktrees/<other-slug>`, then delete its feature branches (`git
+for-each-ref --format='%(refname:short)' "refs/heads/feature/<other-slug>-*"`,
+`git branch -D` each). If `product-tasks.md` doesn't exist yet or any task is
+unmerged, leave that worktree alone — it may be another session's
+in-progress work. This is opportunistic: skip a worktree you can't
+confidently classify rather than guessing, and never touch `<slug>`'s own
+worktree here.
+
+Then isolate:
 - If `.claude/worktrees/<slug>` already exists (resuming a prior run), call
   `EnterWorktree` with `path: .claude/worktrees/<slug>`.
 - Otherwise call `EnterWorktree` with `name: <slug>` to create a fresh worktree
