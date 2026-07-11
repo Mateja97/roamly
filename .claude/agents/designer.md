@@ -36,7 +36,8 @@ a spec.
   serves a real need of THIS task, not a nice-to-have.
 - Cover every screen and every state the task's acceptance criteria implies
   (loading, error, empty, disabled, success/confirmation) — a state left
-  undesigned is a gap the frontend-engineer will have to guess at.
+  undesigned is a gap the frontend-engineer will escalate back to you (see
+  `.claude/agents/frontend-engineer.md`'s Design gap escalation).
 - Business/UX language: describe layout, hierarchy, and which token goes
   where — no component names, no JSX, no CSS.
 - **Accessibility is not optional.** For every text/background token pairing
@@ -52,7 +53,12 @@ a spec.
   treatment (never a silent no-op); conditional content (errors,
   confirmations) reserves its layout space so it doesn't shift surrounding
   elements when it appears; interactive elements get a visible focus
-  treatment and must be keyboard-operable, not click-only.
+  treatment and must be keyboard-operable, not click-only. For error states
+  specifically, only spec a distinct treatment when a status code's UX
+  genuinely differs from a message (e.g. a permission-denied response
+  should block access, not just toast) — otherwise `DESIGN_STANDARDS.md`'s
+  generic error banner recipe is the intended default; don't over-spec
+  every status code out of habit.
 - **Touch targets and motion**: every interactive element you spec is at
   least 44×44px with ≥8px (`--space-2`) from its neighbors; any state
   change you describe animates only position/opacity, not size, and stays

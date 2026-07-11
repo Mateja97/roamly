@@ -32,7 +32,11 @@ Invoke the `caveman-review` skill. Write each comment as one line:
 2. For `area: frontend` tasks, also check the diff against `design-spec.md`,
    screen-by-screen: wrong token, a missing state (hover/disabled/error/
    loading/empty), or an off-spec layout are findings like any other, tagged
-   the same severities.
+   the same severities. Separately, verify every API call's error branches
+   are actually handled per `FRONTEND_STANDARDS.md`'s Error handling
+   section — an empty `catch`, unhandled promise, or discarded error-union
+   member is a finding (Critical if it can crash/hang the UI, Important
+   otherwise), not folded silently into the generic standards check above.
 3. For `area: frontend` tasks, Read every image in the screenshots
    directory against the design-spec section: layout structure, hierarchy
    (is the spec'd focal element actually focal?), spacing rhythm, depth
