@@ -15,6 +15,7 @@ import (
 
 	"proxy-service/internal/api"
 	"proxy-service/internal/health"
+	"proxy-service/internal/middleware"
 )
 
 func main() {
@@ -38,7 +39,7 @@ func main() {
 	mux.HandleFunc("GET /healthz", health.Handler())
 	mux.HandleFunc("POST /activities/query", api.NewQueryActivitiesHandler(activitiesClient, logger).Handle)
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: middleware.CORS(mux)}
 
 	serveErr := make(chan error, 1)
 	go func() {
