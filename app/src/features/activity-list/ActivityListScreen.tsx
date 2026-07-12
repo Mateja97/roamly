@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ElementRef } from 'react';
 import {
   AccessibilityInfo,
+  BackHandler,
   findNodeHandle,
   Pressable,
   SafeAreaView,
@@ -10,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { ArrowLeft, SearchX, SlidersHorizontal } from 'lucide-react-native';
+import { SearchX, SlidersHorizontal } from 'lucide-react-native';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { ActivityCard, ActivityCardSkeleton } from '../../components/ActivityCard';
@@ -66,6 +67,25 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
     };
   }, [runQuery]);
 
+  // design-spec.md requires the platform-native back control/gesture, not a
+  // custom on-screen button — but T3/T4 deliberately have no stack
+  // navigator yet (see App.tsx), so there's no navigator-provided gesture
+  // to defer to either. Android's hardware back button is itself a native
+  // platform affordance (RN's BackHandler), not a custom control, so it's
+  // wired here.
+  // ponytail: iOS has no equivalent without a navigator (BackHandler is a
+  // no-op on iOS) — no back path exists there today. Accepted per
+  // DESIGN_STANDARDS.md's own "Navigation patterns... no router yet"
+  // deferral; add a router (and this becomes free on both platforms) once a
+  // third screen/back-stack need shows up. See engineering-notes.md.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onBack]);
+
   function focusCount() {
     const handle = countRef.current && findNodeHandle(countRef.current);
     if (handle) AccessibilityInfo.setAccessibilityFocus(handle);
@@ -117,22 +137,11 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   const filterCount = activeFilterCount(appliedFilters);
   const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
   const showDistance = selection.scope !== 'outside_country';
-  const backFocus = useFocusable();
   const filtersFocus = useFocusable();
 
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <Pressable
-          onPress={onBack}
-          onFocus={backFocus.onFocus}
-          onBlur={backFocus.onBlur}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          style={[styles.backButton, backFocus.focused && styles.iconButtonFocused]}
-        >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={1.75} />
-        </Pressable>
         <Text style={styles.headerTitle}>{SCOPE_TITLES[selection.scope]}</Text>
         <Pressable
           ref={filtersButtonRef}
@@ -259,18 +268,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.default,
-    alignItems: 'center',
-    justifyContent: 'center',
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  iconButtonFocused: {
-    backgroundColor: colors.surfaceHover,
   },
   headerTitle: {
     flex: 1,

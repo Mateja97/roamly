@@ -1,4 +1,4 @@
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, BackHandler } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
@@ -79,14 +79,25 @@ describe('ActivityListScreen', () => {
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
   });
 
-  it('calls onBack when the back button is pressed', async () => {
+  it('calls onBack on Android hardware back press — no custom back control per design-spec.md', async () => {
     mockedQuery.mockResolvedValue(successResult([]));
+    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     const onBack = jest.fn();
     render(<ActivityListScreen selection={{ scope: 'home' }} onBack={onBack} />);
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
-    fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+
+    const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
+    expect(registration).toBeTruthy();
+    const handler = registration![1] as () => boolean;
+    expect(handler()).toBe(true);
     expect(onBack).toHaveBeenCalledTimes(1);
+
+    // afterEach's resetAllMocks() would otherwise leave addEventListener
+    // returning undefined for every later test's own BackHandler
+    // registration (real `.remove()` call on unmount) — restore explicitly.
+    addBackListener.mockRestore();
   });
 
   it('opens the Filter sheet from the header Filters button', async () => {

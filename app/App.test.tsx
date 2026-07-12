@@ -1,4 +1,4 @@
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, BackHandler } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import App from './App';
 import { queryActivities } from './src/api/activities';
@@ -39,13 +39,19 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
   });
 
-  it('Back on the activity list returns to the scope picker', async () => {
+  it('Android hardware back on the activity list returns to the scope picker (no custom back control)', async () => {
+    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
-    fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+    const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
+    const handler = registration![1] as () => boolean;
+    act(() => {
+      handler();
+    });
     expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
+    addBackListener.mockRestore();
   });
 });

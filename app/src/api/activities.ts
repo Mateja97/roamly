@@ -54,8 +54,14 @@ export async function queryActivities(body: ActivitiesQueryRequest): Promise<Act
   }
 
   if (res.ok) {
-    const data = (await res.json()) as { activities: Activity[] };
-    return { status: 'success', activities: data.activities };
+    try {
+      const data = (await res.json()) as { activities: Activity[] };
+      return { status: 'success', activities: data.activities };
+    } catch {
+      // Malformed 200 body — same discriminated-error shape as every other
+      // failure path, so callers never have to special-case a thrown reject.
+      return { status: 500, message: 'Something went wrong. Please try again.' };
+    }
   }
 
   let message = 'Something went wrong. Please try again.';

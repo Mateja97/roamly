@@ -160,13 +160,17 @@ export function FilterSheet({ visible, initialFilters, onApply, onClose }: Filte
                 setDraft((prev) => ({ ...prev, maxDistanceKm }))
               )}
             </FilterGroup>
-
-            {error && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
           </ScrollView>
+
+          {/* Sibling of the ScrollView, not inside it — design-spec.md calls
+              for the Apply error to surface "above the footer (reserved
+              space)", i.e. always visible, not scrollable out of view with
+              the filter groups on a long list. */}
+          {error && (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
 
           <View style={styles.footer}>
             <Pressable
@@ -301,6 +305,7 @@ const styles = StyleSheet.create({
     borderColor: colors.error,
     borderRadius: radius.default,
     padding: space[3],
+    marginTop: space[3],
   },
   errorText: {
     fontSize: fontSize.sm,
