@@ -1,3 +1,4 @@
+import { AccessibilityInfo } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { ScopePickerScreen } from './ScopePickerScreen';
@@ -12,6 +13,13 @@ jest.mock('expo-location', () => ({
 const mockedLocation = jest.mocked(Location);
 
 describe('ScopePickerScreen', () => {
+  beforeEach(() => {
+    // afterEach's resetAllMocks wipes the RN jest preset's default
+    // AccessibilityInfo mock implementations too — re-arm them each test so
+    // ScopePickerScreen's reduce-motion check doesn't call `.then` on undefined.
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
+    jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
+  });
   afterEach(() => jest.resetAllMocks());
 
   it('renders the three scope choices', () => {

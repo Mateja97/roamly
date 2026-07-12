@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Ref } from 'react';
 import {
   AccessibilityInfo,
@@ -26,6 +26,16 @@ type ScopePickerScreenProps = {
 export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
   const { state, requestLocation } = useNearbyLocation();
   const messageRef = useRef<View>(null);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  // prefers-reduced-motion: skip the spinning Spinner and rely on the
+  // static "…" already in nearbyHint below (DESIGN_STANDARDS.md Spinner
+  // recipe: "replace with the static '…' in the label").
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => sub.remove();
+  }, []);
 
   const nearbyBusy = state.status === 'requesting-permission' || state.status === 'locating';
 
@@ -63,12 +73,20 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
             onPress={() => onScopeSelected({ scope: 'home' })}
           />
           <ChoiceCard
+            // Clicking (not tabbing to) a Pressable on web leaves it
+            // DOM-focused with no reliable onBlur, so `focused` can stay
+            // stuck true after a tap — remount on every status change to
+            // drop it instead of leaving a lingering gold border once the
+            // card returns to its default state (react-native-web
+            // focus-retention quirk; keyed on `state.status` rather than
+            // just `busy` since the denied path never goes through busy).
+            key={state.status}
             icon={Navigation}
             title="Nearby"
             hint={nearbyHint}
             busy={nearbyBusy}
             onPress={handleNearbyPress}
-            accessoryRight={nearbyBusy ? <Spinner /> : undefined}
+            accessoryRight={nearbyBusy && !reduceMotion ? <Spinner /> : undefined}
           />
           <ChoiceCard
             icon={Globe}
@@ -168,6 +186,10 @@ const styles = StyleSheet.create({
   },
   messageRegion: {
     marginTop: space[4],
+    // ponytail: minHeight: 1 (not a true reserved height) is safe only
+    // because this is the last element in the column — nothing below it to
+    // push down when the message appears. Give it a real min-height sized
+    // to the ErrorMessage block if a sibling is ever added below.
     minHeight: 1,
   },
   errorBox: {

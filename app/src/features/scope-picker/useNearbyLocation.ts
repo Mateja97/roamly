@@ -15,6 +15,28 @@ type UseNearbyLocation = {
   requestLocation: () => Promise<Coordinates | null>;
 };
 
+// expo-location's LocationOptions has no timeout field, so a GPS fix that
+// never settles (indoors/no signal) would hang the "locating" state forever.
+// ponytail: 15s is a reasonable GPS-fix bound, not a spec'd number — tune if
+// real-device testing shows it's too eager/lax.
+const LOCATION_TIMEOUT_MS = 15000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('location request timed out')), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 // Encapsulates the Nearby card's async flow (permission check → request →
 // GPS fix) so ScopePickerScreen only needs to render off `state`.
 export function useNearbyLocation(): UseNearbyLocation {
@@ -41,7 +63,7 @@ export function useNearbyLocation(): UseNearbyLocation {
 
     setState({ status: 'locating' });
     try {
-      const position = await Location.getCurrentPositionAsync({});
+      const position = await withTimeout(Location.getCurrentPositionAsync({}), LOCATION_TIMEOUT_MS);
       setState({ status: 'idle' });
       return { latitude: position.coords.latitude, longitude: position.coords.longitude };
     } catch {

@@ -54,4 +54,27 @@ describe('useNearbyLocation', () => {
 
     await waitFor(() => expect(result.current.state).toEqual({ status: 'unavailable' }));
   });
+
+  it('reports unavailable when the GPS fix hangs past the timeout, not just on an immediate rejection', async () => {
+    jest.useFakeTimers();
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+    // A real hung GPS fix never resolves or rejects — this promise never settles.
+    mockedLocation.getCurrentPositionAsync.mockReturnValue(new Promise(() => {}) as never);
+
+    const { result } = renderHook(() => useNearbyLocation());
+    let requestPromise: Promise<unknown>;
+    act(() => {
+      requestPromise = result.current.requestLocation();
+    });
+
+    await waitFor(() => expect(result.current.state).toEqual({ status: 'locating' }));
+
+    await act(async () => {
+      jest.advanceTimersByTime(15000);
+      await requestPromise;
+    });
+
+    expect(result.current.state).toEqual({ status: 'unavailable' });
+    jest.useRealTimers();
+  });
 });
