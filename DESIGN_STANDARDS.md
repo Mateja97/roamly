@@ -48,6 +48,7 @@ puts the gold brand into the structure, not only the text.
 | `--card-highlight` | `rgba(206,144,66,0.5)` | gold 1px top edge on cards (decorative) |
 | `--glow` | `rgba(206,144,66,0.15)` | radial gold accent behind ONE focal element per screen |
 | `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
+| `--scrim` | `rgba(42,14,17,0.72)` | modal dim behind bottom sheets/overlays (wine-black tint) |
 | `--radius-full` | `999px` | pills/badges |
 
 ## Accessibility
@@ -280,6 +281,90 @@ per-screen `--glow`. Fully keyboard-operable (it's a control, not decoration)
 with a visible focus border. ponytail: three cards is the whole flow today —
 don't build a generic wizard/stepper abstraction until a second step exists.
 
+### Activity card
+
+The visual, image-led card for one browseable activity in a list (title,
+category, price tier, rating, image, distance/location). The List row recipe
+is for compact text rows; this is richer. Non-interactive display card for
+MVP (no detail screen yet — see Deferred); still exposed as a single
+screen-reader group.
+
+Structure (image-top):
+- **Image** at the top, full card width, fixed 3:2 aspect ratio (space
+  reserved so nothing jumps as it loads), `--radius` on the top corners only.
+  - Loading: `--surface-hover` placeholder block at the reserved ratio, using
+    the Skeleton loader opacity pulse.
+  - Broken/missing: `--surface-hover` block with a centered 20px `--text-muted`
+    `ImageOff` icon — never a broken-image glyph, never collapse the box.
+  - Image *optimization* and *lazy-loading* are the engineer's concern
+    (FRONTEND_STANDARDS / APP_STANDARDS); this recipe fixes only the reserved
+    box and its loading/broken look.
+- **Body**, `--space-4` padding, on `--surface` with the gold `--card-highlight`
+  top edge and 1px `--border`:
+  - Row 1: category **Badge/pill** (neutral variant) left; **rating** right —
+    16px `--primary` star icon (gold on `--surface` = 3.1:1, a UI icon, clears
+    3:1) + value `--font-size-sm` `--text` (7.1:1) with `tabular-nums`.
+  - Title `--font-size-lg` `--text` (7.1:1), up to 2 lines then ellipsis
+    (truncate, never clip — honor dynamic text scaling).
+  - Meta row: 16px `MapPin` + distance/location `--font-size-sm` `--text-muted`
+    (5.3:1) · price tier `--font-size-sm` `--text-muted` (e.g. "$$"). All
+    `--text-muted` on `--surface`.
+
+No new color tokens. `--space-4` between stacked cards. ponytail: static
+display card — no press/hover/focus-as-button until a detail route exists to
+navigate to.
+
+### Filter chip (selectable / removable)
+
+The interactive sibling of the (non-interactive) Badge/pill, for two jobs: a
+multi/single-select option inside the Bottom sheet, and a removable
+active-filter chip on a list. `--font-size-sm`, weight 500, `--radius-full`,
+padding `--space-2` `--space-3`, `min-height: 44px`, ≥`--space-2` from
+neighbors, fully keyboard-operable with a visible focus border. Press/active
+feedback carries on touch (no hover reliance).
+
+- **Unselected** (sheet option): transparent bg, 1px `--border`, `--text-muted`
+  label (5.3:1 on `--surface`).
+- **Selected** (sheet option): `--surface-hover` bg, 2px `--primary` border,
+  `--text` label (7.1:1), leading 16px `--primary` `Check` icon — selection is
+  never color-only.
+- **Removable** (active-filter chip on a list): `--surface-hover` bg, 1px
+  `--border`, `--text` label + trailing 16px `X` icon in `--text-muted`. The
+  whole chip is one 44×44 remove control; `aria-label` "Remove <filter>
+  filter". Press → `--surface` bg.
+
+No new color tokens.
+
+### Bottom sheet
+
+A modal panel that slides up from the bottom edge for a focused, in-context
+sub-task (e.g. the activity Filter control) — used instead of a full-screen
+route when the choice is quick.
+
+- **Scrim**: `--scrim` over the screen behind, dimming and disabling it.
+  Tapping the scrim dismisses (the keyboard/AT path is the close control
+  below — never scrim-tap only).
+- **Panel**: `--surface` bg with the gold `--card-highlight` top edge, top
+  corners `--radius`, full width, pinned to the bottom; height grows to
+  content up to ~85% of the viewport, then scrolls internally. `--space-6`
+  padding; bottom padding extends past the safe-area inset so the footer
+  clears the home indicator (Mobile-specific).
+- **Header row**: a 4px `--border` drag-handle bar centered at the very top
+  (grabber affordance), title `--font-size-lg` `--text` left, a Ghost close
+  control (`X`, 44×44, `aria-label` "Close") right.
+- **Footer**: sticky at the bottom of the panel — a full-width Primary button
+  (the sheet's one action, e.g. "Apply filters") plus a Ghost "Clear all",
+  ≥`--space-2` between them.
+- Motion: panel slides in on `transform` (translateY) while the scrim fades on
+  `opacity`, 150–300ms ease-out; exit ease-in; `prefers-reduced-motion` →
+  instant, no slide. Never animate height.
+- Focus: on open, focus moves into the panel and is trapped there; on close
+  (button, scrim, or the platform back gesture / Android hardware back — never
+  a custom back control) focus returns to the trigger. Android back closes the
+  sheet, not the screen.
+
+Uses the new `--scrim` token (mirror into `tokens.css` / `tokens.ts`).
+
 ## Icons
 
 `lucide-react` (web) / `lucide-react-native` (app), one family only.
@@ -425,8 +510,11 @@ revisit when the trigger condition below actually appears:
 - **Raster logo assets** — the wordmark and square mark exist as SVG; the
   Expo raster icons (`icon.png`, adaptive/monochrome, splash) and any PNG
   favicon still need exporting from the mark when a branding task takes it on.
-- **Activity imagery / lazy loading** — no images in the app yet; once
-  activity cards carry photos, add image optimization and lazy loading here.
+- **Activity image loading/optimization** — activity cards carry photos as of
+  the activities MVP, so the Activity card recipe now defines the reserved
+  image box plus its loading/broken states. Image *optimization* and
+  *lazy-loading* remain the engineer's implementation concern
+  (FRONTEND_STANDARDS / APP_STANDARDS), not a design token.
 - **Navigation patterns** (bottom nav, deep linking, back-stack) — the app is
   a short flow with no router yet; revisit if/when a real router or a fourth
   top-level screen is added.

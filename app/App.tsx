@@ -1,46 +1,24 @@
 import { useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
 import { ScopePickerScreen } from './src/features/scope-picker/ScopePickerScreen';
-import { colors, fontSize, space } from './src/theme/tokens';
 import type { ScopeSelection } from './src/features/scope-picker/types';
 
 // ponytail: a plain useState screen-switch, not a router — this is a linear
 // 2-screen flow (T3 picks a scope, T4 lists activities for it). Add
 // React Navigation only if a third route/back-stack need shows up (see
-// APP_STANDARDS.md).
+// APP_STANDARDS.md). `onBack` is a plain callback that returns to
+// scope-picker; the list screen wires it to Android's hardware back button
+// (a real native affordance, not a custom control) since there is no stack
+// navigator installed to provide the native back gesture itself — see
+// ActivityListScreen.tsx and T4's engineering notes.
 type Screen = { name: 'scope-picker' } | { name: 'activity-list'; selection: ScopeSelection };
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>({ name: 'scope-picker' });
 
   if (screen.name === 'activity-list') {
-    // T4 builds the real list screen against `screen.selection`; this is the
-    // placeholder that proves the hand-off works end to end.
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.stub}>
-          <Text style={styles.title}>Scope selected: {screen.selection.scope}</Text>
-        </View>
-      </SafeAreaView>
-    );
+    return <ActivityListScreen selection={screen.selection} onBack={() => setScreen({ name: 'scope-picker' })} />;
   }
 
   return <ScopePickerScreen onScopeSelected={(selection) => setScreen({ name: 'activity-list', selection })} />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  stub: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space[2],
-  },
-  title: {
-    color: colors.text,
-    fontSize: fontSize.lg,
-  },
-});

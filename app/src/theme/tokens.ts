@@ -23,6 +23,7 @@ export const colors = {
   errorHover: '#F0A588',
 
   cardHighlight: 'rgba(206,144,66,0.5)',
+  scrim: 'rgba(42,14,17,0.72)',
 } as const;
 
 export const fontSize = {
