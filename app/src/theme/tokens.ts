@@ -3,25 +3,26 @@
 // area:app task genuinely needs the depth accent (see DESIGN_STANDARDS.md's
 // Mobile-specific section).
 export const colors = {
-  bg: '#14160f',
-  surface: '#1b1e14',
-  surfaceHover: '#242819',
-  border: '#2e331f',
+  bg: '#7D2027',
+  surface: '#8A2C35',
+  surfaceHover: '#97363F',
+  border: '#5C171C',
 
-  primary: '#8a9a5b',
-  primaryHover: '#a4b378',
-  primaryActive: '#6e7c46',
+  primary: '#CE9042',
+  primaryHover: '#DCA35A',
+  primaryActive: '#B67C34',
 
-  text: '#edefe6',
-  textMuted: '#9ba08c',
-  textDisabled: '#5c6152',
+  ink: '#2A0E11',
+  text: '#F5EBDD',
+  textMuted: '#E0C9AE',
+  textDisabled: '#B0857A',
 
-  success: '#7fa65b',
-  warning: '#c9a227',
-  error: '#cc7350',
-  errorHover: '#d98963',
+  success: '#A3D18E',
+  warning: '#E8C572',
+  error: '#F5B79B',
+  errorHover: '#F0A588',
 
-  cardHighlight: '#383e26',
+  cardHighlight: 'rgba(206,144,66,0.5)',
 } as const;
 
 export const fontSize = {
