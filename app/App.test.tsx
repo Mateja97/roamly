@@ -1,21 +1,15 @@
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen } from '@testing-library/react-native';
 import App from './App';
-import * as health from './src/api/health';
 
 describe('App', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
+  it('opens on the scope picker', () => {
+    render(<App />);
+    expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
   });
 
-  it('shows healthy once proxy-service responds ok', async () => {
-    jest.spyOn(health, 'fetchHealth').mockResolvedValue();
+  it('hands off the selected scope after choosing Home', () => {
     render(<App />);
-    expect(await screen.findByText(/proxy-service: healthy/i)).toBeTruthy();
-  });
-
-  it('shows unreachable if proxy-service errors', async () => {
-    jest.spyOn(health, 'fetchHealth').mockRejectedValue(new Error('boom'));
-    render(<App />);
-    expect(await screen.findByText(/proxy-service: unreachable/i)).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    expect(screen.getByText(/scope selected: home/i)).toBeTruthy();
   });
 });

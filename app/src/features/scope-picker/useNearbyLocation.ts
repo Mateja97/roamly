@@ -1,0 +1,54 @@
+import { useCallback, useState } from 'react';
+import * as Location from 'expo-location';
+import type { Coordinates } from './types';
+
+export type NearbyLocationState =
+  | { status: 'idle' }
+  | { status: 'requesting-permission' }
+  | { status: 'locating' }
+  | { status: 'denied' }
+  | { status: 'unavailable' };
+
+type UseNearbyLocation = {
+  state: NearbyLocationState;
+  /** Runs the permission + GPS-fix flow; resolves with coordinates on success, null otherwise. */
+  requestLocation: () => Promise<Coordinates | null>;
+};
+
+// Encapsulates the Nearby card's async flow (permission check → request →
+// GPS fix) so ScopePickerScreen only needs to render off `state`.
+export function useNearbyLocation(): UseNearbyLocation {
+  const [state, setState] = useState<NearbyLocationState>({ status: 'idle' });
+
+  const requestLocation = useCallback(async (): Promise<Coordinates | null> => {
+    // Check current status first: if already denied, no OS prompt will
+    // appear — jump straight to the denied message, no in-flight flash
+    // (per design-spec's re-entry rule).
+    const current = await Location.getForegroundPermissionsAsync();
+    if (current.status === Location.PermissionStatus.DENIED) {
+      setState({ status: 'denied' });
+      return null;
+    }
+
+    if (current.status !== Location.PermissionStatus.GRANTED) {
+      setState({ status: 'requesting-permission' });
+      const requested = await Location.requestForegroundPermissionsAsync();
+      if (requested.status !== Location.PermissionStatus.GRANTED) {
+        setState({ status: 'denied' });
+        return null;
+      }
+    }
+
+    setState({ status: 'locating' });
+    try {
+      const position = await Location.getCurrentPositionAsync({});
+      setState({ status: 'idle' });
+      return { latitude: position.coords.latitude, longitude: position.coords.longitude };
+    } catch {
+      setState({ status: 'unavailable' });
+      return null;
+    }
+  }, []);
+
+  return { state, requestLocation };
+}
