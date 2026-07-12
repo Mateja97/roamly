@@ -15,6 +15,33 @@ services:
       timeout: 5s
       retries: 10
 
+  activities-db:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      POSTGRES_USER: activities
+      POSTGRES_PASSWORD: activities
+      POSTGRES_DB: activities
+    volumes:
+      - activities-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activities"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  activities-service:
+    build:
+      context: ./backend
+      dockerfile: activities-service/Dockerfile
+    environment:
+      DATABASE_URL: "postgres://activities:activities@activities-db:5432/activities?sslmode=disable"
+      GRPC_ADDR: ":9090"
+    ports:
+      - "9090:9090"
+    depends_on:
+      activities-db:
+        condition: service_healthy
+
   proxy-service:
     build:
       context: ./backend
@@ -46,3 +73,4 @@ services:
 
 volumes:
   postgres-data:
+  activities-db-data:
