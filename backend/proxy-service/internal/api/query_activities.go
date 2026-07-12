@@ -74,13 +74,13 @@ type queryActivitiesResponseDTO struct {
 func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	var reqDTO queryActivitiesRequestDTO
 	if err := json.NewDecoder(r.Body).Decode(&reqDTO); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed JSON body")
+		writeError(w, http.StatusBadRequest, "malformed JSON body", h.logger)
 		return
 	}
 
 	scope, ok := toProtoScope(reqDTO.Scope)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown scope: "+reqDTO.Scope)
+		writeError(w, http.StatusBadRequest, "unknown scope: "+reqDTO.Scope, h.logger)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 	for _, c := range reqDTO.Categories {
 		cat, ok := toProtoCategory(c)
 		if !ok {
-			writeError(w, http.StatusBadRequest, "unknown category: "+c)
+			writeError(w, http.StatusBadRequest, "unknown category: "+c, h.logger)
 			return
 		}
 		categories = append(categories, cat)
@@ -96,7 +96,7 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 
 	priceTier, ok := toProtoPriceTier(reqDTO.PriceTier)
 	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown price_tier: "+reqDTO.PriceTier)
+		writeError(w, http.StatusBadRequest, "unknown price_tier: "+reqDTO.PriceTier, h.logger)
 		return
 	}
 
@@ -114,11 +114,11 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 	resp, err := h.client.QueryActivities(r.Context(), grpcReq)
 	if err != nil {
 		if status.Code(err) == codes.InvalidArgument {
-			writeError(w, http.StatusBadRequest, status.Convert(err).Message())
+			writeError(w, http.StatusBadRequest, status.Convert(err).Message(), h.logger)
 			return
 		}
 		h.logger.Error("query activities failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
+		writeError(w, http.StatusInternalServerError, "internal error", h.logger)
 		return
 	}
 
@@ -127,9 +127,9 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 	// matches" case; only a non-2xx status means "something is wrong".
 	activities := make([]activityDTO, len(resp.GetActivities()))
 	for i, a := range resp.GetActivities() {
-		activities[i] = toActivityDTO(a)
+		activities[i] = toActivityDTO(a, h.logger)
 	}
-	writeJSON(w, http.StatusOK, queryActivitiesResponseDTO{Activities: activities})
+	writeJSON(w, http.StatusOK, queryActivitiesResponseDTO{Activities: activities}, h.logger)
 }
 
 func toProtoLocation(l *locationDTO) *activitiesv1.Location {
@@ -188,15 +188,15 @@ func toProtoPriceTier(p string) (activitiesv1.PriceTier, bool) {
 	}
 }
 
-func toActivityDTO(a *activitiesv1.Activity) activityDTO {
+func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 	return activityDTO{
 		ID:          a.GetId(),
 		Title:       a.GetTitle(),
 		Description: a.GetDescription(),
-		Category:    string(toDomainCategory(a.GetCategory())),
+		Category:    string(toDomainCategory(a.GetCategory(), logger)),
 		Location:    locationDTO{Lat: a.GetLocation().GetLat(), Lng: a.GetLocation().GetLng()},
 		Country:     a.GetCountry(),
-		PriceTier:   string(toDomainPriceTier(a.GetPriceTier())),
+		PriceTier:   string(toDomainPriceTier(a.GetPriceTier(), logger)),
 		Rating:      a.GetRating(),
 		ImageRefs:   a.GetImageRefs(),
 		Tags:        a.GetTags(),
@@ -204,7 +204,7 @@ func toActivityDTO(a *activitiesv1.Activity) activityDTO {
 	}
 }
 
-func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
+func toDomainCategory(c activitiesv1.Category, logger *slog.Logger) activitiessvc.Category {
 	switch c {
 	case activitiesv1.Category_CATEGORY_FOOD_AND_DRINK:
 		return activitiessvc.CategoryFoodAndDrink
@@ -219,12 +219,15 @@ func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
 	case activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS:
 		return activitiessvc.CategoryEntertainmentAndWellness
 	default:
+		logger.Warn("unrecognized category from activities-service", "category", c)
 		return ""
 	}
 }
 
-func toDomainPriceTier(p activitiesv1.PriceTier) activitiessvc.PriceTier {
+func toDomainPriceTier(p activitiesv1.PriceTier, logger *slog.Logger) activitiessvc.PriceTier {
 	switch p {
+	case activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED:
+		return activitiessvc.PriceTierUnspecified
 	case activitiesv1.PriceTier_PRICE_TIER_BUDGET:
 		return activitiessvc.PriceTierBudget
 	case activitiesv1.PriceTier_PRICE_TIER_MODERATE:
@@ -234,6 +237,7 @@ func toDomainPriceTier(p activitiesv1.PriceTier) activitiessvc.PriceTier {
 	case activitiesv1.PriceTier_PRICE_TIER_LUXURY:
 		return activitiessvc.PriceTierLuxury
 	default:
+		logger.Warn("unrecognized price tier from activities-service", "price_tier", p)
 		return activitiessvc.PriceTierUnspecified
 	}
 }
