@@ -109,6 +109,8 @@ func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
 
 func toDomainPriceTier(p activitiesv1.PriceTier) activitiessvc.PriceTier {
 	switch p {
+	case activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED:
+		return activitiessvc.PriceTierUnspecified
 	case activitiesv1.PriceTier_PRICE_TIER_BUDGET:
 		return activitiessvc.PriceTierBudget
 	case activitiesv1.PriceTier_PRICE_TIER_MODERATE:
@@ -118,7 +120,11 @@ func toDomainPriceTier(p activitiesv1.PriceTier) activitiessvc.PriceTier {
 	case activitiesv1.PriceTier_PRICE_TIER_LUXURY:
 		return activitiessvc.PriceTierLuxury
 	default:
-		return activitiessvc.PriceTierUnspecified
+		// ponytail: an out-of-range wire value must not collapse into the
+		// legitimate "unspecified/no filter" zero value, or service.validPriceTier
+		// would silently treat garbage input as no-op instead of rejecting it.
+		// Any non-empty string outside the known tiers fails validPriceTier.
+		return activitiessvc.PriceTier("invalid")
 	}
 }
 

@@ -99,6 +99,26 @@ func TestQueryActivities_InvalidInputMapsToInvalidArgument(t *testing.T) {
 	}
 }
 
+func TestToDomainPriceTier(t *testing.T) {
+	tests := []struct {
+		name string
+		in   activitiesv1.PriceTier
+		want activitiessvc.PriceTier
+	}{
+		{"unspecified stays unspecified (no filter)", activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED, activitiessvc.PriceTierUnspecified},
+		{"known value maps through", activitiesv1.PriceTier_PRICE_TIER_BUDGET, activitiessvc.PriceTierBudget},
+		{"out-of-range wire value must not collapse to unspecified", activitiesv1.PriceTier(99), activitiessvc.PriceTier("invalid")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toDomainPriceTier(tt.in)
+			if got != tt.want {
+				t.Errorf("toDomainPriceTier(%v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQueryActivities_UnexpectedErrorMapsToInternal(t *testing.T) {
 	fake := &fakeQueryService{err: errors.New("db exploded")}
 	client := dialServer(t, fake)
