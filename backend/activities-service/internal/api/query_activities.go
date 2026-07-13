@@ -130,10 +130,18 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		Location:    &activitiesv1.Location{Lat: a.Location.Lat, Lng: a.Location.Lng},
 		Country:     a.Country,
 		Rating:      a.Rating,
-		ImageRefs:   a.ImageRefs,
+		Photos:      toProtoPhotos(a.Photos),
 		Tags:        a.Tags,
 		DistanceKm:  a.DistanceKM,
 	}
+}
+
+func toProtoPhotos(photos []activitiessvc.Photo) []*activitiesv1.Photo {
+	out := make([]*activitiesv1.Photo, len(photos))
+	for i, p := range photos {
+		out[i] = &activitiesv1.Photo{Url: p.URL, Author: p.Author, AuthorLink: p.AuthorLink}
+	}
+	return out
 }
 
 func toProtoCategory(c activitiessvc.Category) activitiesv1.Category {

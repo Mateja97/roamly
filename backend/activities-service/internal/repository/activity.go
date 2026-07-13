@@ -78,7 +78,7 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 
 	query := fmt.Sprintf(
 		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
-			country, rating, image_refs, tags, %s AS distance_km
+			country, rating, photos, tags, %s AS distance_km
 		FROM activities
 		WHERE %s
 		%s`,
@@ -107,7 +107,7 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 			&a.ID, &a.Title, &a.Description, &a.Category,
 			&a.Location.Lat, &a.Location.Lng,
 			&a.Country, &a.Rating,
-			&a.ImageRefs, &a.Tags, &a.DistanceKM,
+			&a.Photos, &a.Tags, &a.DistanceKM,
 		); err != nil {
 			return nil, fmt.Errorf("scanning activity row: %w", err)
 		}

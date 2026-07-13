@@ -237,6 +237,72 @@ func (x *Location) GetLng() float64 {
 	return 0
 }
 
+// Photo is a single activity photo, sourced from Google Places and resolved
+// once at seed/build time (never a live per-request Places call). Author
+// attribution travels with the photo wherever it's shown, per Google's
+// mandatory attribution policy; author/author_link are empty for a photo
+// that hasn't been resolved yet (falls back to the missing-image state
+// client-side rather than a placeholder).
+type Photo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	Author        string                 `protobuf:"bytes,2,opt,name=author,proto3" json:"author,omitempty"`
+	AuthorLink    string                 `protobuf:"bytes,3,opt,name=author_link,json=authorLink,proto3" json:"author_link,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Photo) Reset() {
+	*x = Photo{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Photo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Photo) ProtoMessage() {}
+
+func (x *Photo) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Photo.ProtoReflect.Descriptor instead.
+func (*Photo) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Photo) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *Photo) GetAuthor() string {
+	if x != nil {
+		return x.Author
+	}
+	return ""
+}
+
+func (x *Photo) GetAuthorLink() string {
+	if x != nil {
+		return x.AuthorLink
+	}
+	return ""
+}
+
 type QueryActivitiesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Scope Scope                  `protobuf:"varint,1,opt,name=scope,proto3,enum=activities.v1.Scope" json:"scope,omitempty"`
@@ -264,7 +330,7 @@ type QueryActivitiesRequest struct {
 
 func (x *QueryActivitiesRequest) Reset() {
 	*x = QueryActivitiesRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[1]
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -276,7 +342,7 @@ func (x *QueryActivitiesRequest) String() string {
 func (*QueryActivitiesRequest) ProtoMessage() {}
 
 func (x *QueryActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[1]
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -289,7 +355,7 @@ func (x *QueryActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*QueryActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{1}
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *QueryActivitiesRequest) GetScope() Scope {
@@ -357,7 +423,7 @@ type Activity struct {
 	Location    *Location              `protobuf:"bytes,5,opt,name=location,proto3" json:"location,omitempty"`
 	Country     string                 `protobuf:"bytes,6,opt,name=country,proto3" json:"country,omitempty"`
 	Rating      float64                `protobuf:"fixed64,8,opt,name=rating,proto3" json:"rating,omitempty"`
-	ImageRefs   []string               `protobuf:"bytes,9,rep,name=image_refs,json=imageRefs,proto3" json:"image_refs,omitempty"`
+	Photos      []*Photo               `protobuf:"bytes,9,rep,name=photos,proto3" json:"photos,omitempty"`
 	Tags        []string               `protobuf:"bytes,10,rep,name=tags,proto3" json:"tags,omitempty"`
 	// Distance from the request's reference location, in kilometers.
 	// Only populated for SCOPE_HOME / SCOPE_NEARBY; 0 otherwise.
@@ -368,7 +434,7 @@ type Activity struct {
 
 func (x *Activity) Reset() {
 	*x = Activity{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[2]
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -380,7 +446,7 @@ func (x *Activity) String() string {
 func (*Activity) ProtoMessage() {}
 
 func (x *Activity) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[2]
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -393,7 +459,7 @@ func (x *Activity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Activity.ProtoReflect.Descriptor instead.
 func (*Activity) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Activity) GetId() string {
@@ -445,9 +511,9 @@ func (x *Activity) GetRating() float64 {
 	return 0
 }
 
-func (x *Activity) GetImageRefs() []string {
+func (x *Activity) GetPhotos() []*Photo {
 	if x != nil {
-		return x.ImageRefs
+		return x.Photos
 	}
 	return nil
 }
@@ -475,7 +541,7 @@ type QueryActivitiesResponse struct {
 
 func (x *QueryActivitiesResponse) Reset() {
 	*x = QueryActivitiesResponse{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[3]
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +553,7 @@ func (x *QueryActivitiesResponse) String() string {
 func (*QueryActivitiesResponse) ProtoMessage() {}
 
 func (x *QueryActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[3]
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +566,7 @@ func (x *QueryActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*QueryActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{3}
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *QueryActivitiesResponse) GetActivities() []*Activity {
@@ -517,7 +583,12 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"$proto/activities/v1/activities.proto\x12\ractivities.v1\".\n" +
 	"\bLocation\x12\x10\n" +
 	"\x03lat\x18\x01 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lng\x18\x02 \x01(\x01R\x03lng\"\x98\x03\n" +
+	"\x03lng\x18\x02 \x01(\x01R\x03lng\"R\n" +
+	"\x05Photo\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
+	"\x06author\x18\x02 \x01(\tR\x06author\x12\x1f\n" +
+	"\vauthor_link\x18\x03 \x01(\tR\n" +
+	"authorLink\"\x98\x03\n" +
 	"\x16QueryActivitiesRequest\x12*\n" +
 	"\x05scope\x18\x01 \x01(\x0e2\x14.activities.v1.ScopeR\x05scope\x12B\n" +
 	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x12<\n" +
@@ -529,7 +600,7 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\n" +
 	"min_rating\x18\a \x01(\x01R\tminRating\x12&\n" +
 	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12'\n" +
-	"\x04sort\x18\t \x01(\x0e2\x13.activities.v1.SortR\x04sortJ\x04\b\x06\x10\a\"\xc8\x02\n" +
+	"\x04sort\x18\t \x01(\x0e2\x13.activities.v1.SortR\x04sortJ\x04\b\x06\x10\a\"\xd7\x02\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -537,9 +608,8 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\bcategory\x18\x04 \x01(\x0e2\x17.activities.v1.CategoryR\bcategory\x123\n" +
 	"\blocation\x18\x05 \x01(\v2\x17.activities.v1.LocationR\blocation\x12\x18\n" +
 	"\acountry\x18\x06 \x01(\tR\acountry\x12\x16\n" +
-	"\x06rating\x18\b \x01(\x01R\x06rating\x12\x1d\n" +
-	"\n" +
-	"image_refs\x18\t \x03(\tR\timageRefs\x12\x12\n" +
+	"\x06rating\x18\b \x01(\x01R\x06rating\x12,\n" +
+	"\x06photos\x18\t \x03(\v2\x14.activities.v1.PhotoR\x06photos\x12\x12\n" +
 	"\x04tags\x18\n" +
 	" \x03(\tR\x04tags\x12\x1f\n" +
 	"\vdistance_km\x18\v \x01(\x01R\n" +
@@ -581,32 +651,34 @@ func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(Scope)(0),                      // 0: activities.v1.Scope
 	(Category)(0),                   // 1: activities.v1.Category
 	(Sort)(0),                       // 2: activities.v1.Sort
 	(*Location)(nil),                // 3: activities.v1.Location
-	(*QueryActivitiesRequest)(nil),  // 4: activities.v1.QueryActivitiesRequest
-	(*Activity)(nil),                // 5: activities.v1.Activity
-	(*QueryActivitiesResponse)(nil), // 6: activities.v1.QueryActivitiesResponse
+	(*Photo)(nil),                   // 4: activities.v1.Photo
+	(*QueryActivitiesRequest)(nil),  // 5: activities.v1.QueryActivitiesRequest
+	(*Activity)(nil),                // 6: activities.v1.Activity
+	(*QueryActivitiesResponse)(nil), // 7: activities.v1.QueryActivitiesResponse
 }
 var file_proto_activities_v1_activities_proto_depIdxs = []int32{
-	0, // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
-	3, // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
-	3, // 2: activities.v1.QueryActivitiesRequest.home_location:type_name -> activities.v1.Location
-	1, // 3: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
-	2, // 4: activities.v1.QueryActivitiesRequest.sort:type_name -> activities.v1.Sort
-	1, // 5: activities.v1.Activity.category:type_name -> activities.v1.Category
-	3, // 6: activities.v1.Activity.location:type_name -> activities.v1.Location
-	5, // 7: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
-	4, // 8: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	6, // 9: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	9, // [9:10] is the sub-list for method output_type
-	8, // [8:9] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
+	3,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
+	3,  // 2: activities.v1.QueryActivitiesRequest.home_location:type_name -> activities.v1.Location
+	1,  // 3: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
+	2,  // 4: activities.v1.QueryActivitiesRequest.sort:type_name -> activities.v1.Sort
+	1,  // 5: activities.v1.Activity.category:type_name -> activities.v1.Category
+	3,  // 6: activities.v1.Activity.location:type_name -> activities.v1.Location
+	4,  // 7: activities.v1.Activity.photos:type_name -> activities.v1.Photo
+	6,  // 8: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
+	5,  // 9: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	7,  // 10: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	10, // [10:11] is the sub-list for method output_type
+	9,  // [9:10] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }
@@ -620,7 +692,7 @@ func file_proto_activities_v1_activities_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
