@@ -6,11 +6,11 @@ import {
   Linking,
   Platform,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Globe, Home, Navigation } from 'lucide-react-native';
 import { ChoiceCard } from '../../components/ChoiceCard';
 import { Spinner } from '../../components/Spinner';

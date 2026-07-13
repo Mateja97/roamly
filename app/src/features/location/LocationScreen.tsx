@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, BackHandler, Easing, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, BackHandler, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, MapPin, Search, SearchX, X } from 'lucide-react-native';
 import type { Place, PlaceSuggestion } from '../../api/places';
 import { hasPlacesKey } from '../../api/places';

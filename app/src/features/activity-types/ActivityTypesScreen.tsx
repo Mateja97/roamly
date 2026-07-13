@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BackHandler, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { FilterChip } from '../../components/FilterChip';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';

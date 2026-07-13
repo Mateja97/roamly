@@ -5,12 +5,12 @@ import {
   BackHandler,
   findNodeHandle,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { SearchX, SlidersHorizontal } from 'lucide-react-native';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';

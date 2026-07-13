@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
 import type { Category } from './src/features/activity-list/types';
 import { ActivityTypesScreen } from './src/features/activity-types/ActivityTypesScreen';
@@ -20,7 +21,7 @@ type Screen =
   | { name: 'activity-types'; selection: ScopeSelection }
   | { name: 'activity-list'; selection: ScopeSelection; categories: Category[] };
 
-export default function App() {
+function AppContent() {
   const [stack, setStack] = useState<Screen[]>([{ name: 'scope-picker' }]);
   const screen = stack[stack.length - 1];
 
@@ -80,5 +81,13 @@ export default function App() {
           : push({ name: 'location', scope: selection.scope })
       }
     />
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
   );
 }
