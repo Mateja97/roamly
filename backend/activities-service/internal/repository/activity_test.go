@@ -44,9 +44,9 @@ func TestBuildQuery(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "outside_country scope filters by country, skips distance ordering, defaults to title order without an explicit sort",
+			name: "my_country scope filters by country, skips distance ordering, defaults to title order without an explicit sort",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 			},
 			wantSQL:    []string{"country <>", "ORDER BY title ASC"},
@@ -54,9 +54,9 @@ func TestBuildQuery(t *testing.T) {
 			notWantSQL: []string{"ST_DWithin", "rating DESC"},
 		},
 		{
-			name: "outside_country scope with sort=top_rated orders by rating descending, deterministic tie-break by title",
+			name: "my_country scope with sort=top_rated orders by rating descending, deterministic tie-break by title",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				Sort:        activitiessvc.SortTopRated,
 			},
@@ -84,7 +84,7 @@ func TestBuildQuery(t *testing.T) {
 		{
 			name: "category filter narrows with ANY",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				Categories:  []activitiessvc.Category{activitiessvc.CategorySports, activitiessvc.CategoryArtAndDesign},
 			},
@@ -93,7 +93,7 @@ func TestBuildQuery(t *testing.T) {
 		{
 			name: "price tier and min rating filters combine with AND",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				PriceTier:   activitiessvc.PriceTierBudget,
 				MinRating:   4.5,

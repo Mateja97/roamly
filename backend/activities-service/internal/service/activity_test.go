@@ -49,14 +49,14 @@ func TestActivities_Query_Validation(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "outside_country scope without home_country rejected",
-			req:     Request{Scope: activitiessvc.ScopeOutsideCountry},
+			name:    "my_country scope without home_country rejected",
+			req:     Request{Scope: activitiessvc.ScopeMyCountry},
 			wantErr: true,
 		},
 		{
-			name: "outside_country scope with max_distance_km rejected",
+			name: "my_country scope with max_distance_km rejected",
 			req: Request{
-				Scope:         activitiessvc.ScopeOutsideCountry,
+				Scope:         activitiessvc.ScopeMyCountry,
 				HomeCountry:   "Serbia",
 				MaxDistanceKM: 10,
 			},
@@ -65,7 +65,7 @@ func TestActivities_Query_Validation(t *testing.T) {
 		{
 			name: "unknown category rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				Categories:  []activitiessvc.Category{"not-a-category"},
 			},
@@ -74,7 +74,7 @@ func TestActivities_Query_Validation(t *testing.T) {
 		{
 			name: "unknown price tier rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				PriceTier:   "not-a-tier",
 			},
@@ -83,7 +83,7 @@ func TestActivities_Query_Validation(t *testing.T) {
 		{
 			name: "min_rating out of range rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				MinRating:   6,
 			},
@@ -98,9 +98,9 @@ func TestActivities_Query_Validation(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "valid outside_country request accepted",
+			name: "valid my_country request accepted",
 			req: Request{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 			},
 			wantErr: false,
@@ -108,7 +108,7 @@ func TestActivities_Query_Validation(t *testing.T) {
 		{
 			name: "unknown sort rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				Sort:        "bogus",
 			},
@@ -133,9 +133,9 @@ func TestActivities_Query_Validation(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "sort=top_rated for scope outside_country accepted",
+			name: "sort=top_rated for scope my_country accepted",
 			req: Request{
-				Scope:       activitiessvc.ScopeOutsideCountry,
+				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
 				Sort:        activitiessvc.SortTopRated,
 			},
@@ -168,7 +168,7 @@ func TestActivities_Query_ForwardsSortToRepository(t *testing.T) {
 	repo := &fakeRepo{}
 	svc := New(repo, 50)
 	_, err := svc.Query(context.Background(), Request{
-		Scope:       activitiessvc.ScopeOutsideCountry,
+		Scope:       activitiessvc.ScopeMyCountry,
 		HomeCountry: "Serbia",
 		Sort:        activitiessvc.SortTopRated,
 	})

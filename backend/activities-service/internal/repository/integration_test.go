@@ -92,9 +92,9 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
-	t.Run("outside_country scope excludes home_country", func(t *testing.T) {
+	t.Run("my_country scope excludes home_country", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
-			Scope: activitiessvc.ScopeOutsideCountry, HomeCountry: "Serbia",
+			Scope: activitiessvc.ScopeMyCountry, HomeCountry: "Serbia",
 		})
 		if err != nil {
 			t.Fatalf("Query() error: %v", err)
@@ -111,7 +111,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 	t.Run("category filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
-			Scope: activitiessvc.ScopeOutsideCountry, HomeCountry: "Serbia",
+			Scope: activitiessvc.ScopeMyCountry, HomeCountry: "Serbia",
 			Categories: []activitiessvc.Category{activitiessvc.CategorySports},
 		})
 		if err != nil {

@@ -7,9 +7,9 @@ package activitiessvc
 type Scope string
 
 const (
-	ScopeHome           Scope = "home"
-	ScopeNearby         Scope = "nearby"
-	ScopeOutsideCountry Scope = "outside_country"
+	ScopeHome      Scope = "home"
+	ScopeNearby    Scope = "nearby"
+	ScopeMyCountry Scope = "my_country"
 )
 
 type Category string
@@ -34,7 +34,7 @@ const (
 )
 
 // Sort requests a specific result ordering. SortTopRated is only valid for
-// ScopeOutsideCountry: the accepted "top activities" MVP is rating
+// ScopeMyCountry: the accepted "top activities" MVP is rating
 // descending, deterministic tie-break by title.
 type Sort string
 
