@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS activities (
     category    TEXT NOT NULL,
     location    GEOGRAPHY(POINT, 4326) NOT NULL,
     country     TEXT NOT NULL,
-    price_tier  TEXT NOT NULL,
     rating      DOUBLE PRECISION NOT NULL,
     image_refs  TEXT[] NOT NULL DEFAULT '{}',
     tags        TEXT[] NOT NULL DEFAULT '{}',

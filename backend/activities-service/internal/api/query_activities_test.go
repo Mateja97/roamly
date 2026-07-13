@@ -59,7 +59,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 		{
 			ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySports,
 			Location: activitiessvc.Point{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
-			PriceTier: activitiessvc.PriceTierPremium, Rating: 4.8,
+			Rating:    4.8,
 			ImageRefs: []string{"img1"}, Tags: []string{"sports"}, DistanceKM: 3.2,
 		},
 	}}
@@ -96,26 +96,6 @@ func TestQueryActivities_InvalidInputMapsToInvalidArgument(t *testing.T) {
 	}
 	if code := status.Code(err); code != codes.InvalidArgument {
 		t.Errorf("status code = %v, want InvalidArgument", code)
-	}
-}
-
-func TestToDomainPriceTier(t *testing.T) {
-	tests := []struct {
-		name string
-		in   activitiesv1.PriceTier
-		want activitiessvc.PriceTier
-	}{
-		{"unspecified stays unspecified (no filter)", activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED, activitiessvc.PriceTierUnspecified},
-		{"known value maps through", activitiesv1.PriceTier_PRICE_TIER_BUDGET, activitiessvc.PriceTierBudget},
-		{"out-of-range wire value must not collapse to unspecified", activitiesv1.PriceTier(99), activitiessvc.PriceTier("invalid")},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := toDomainPriceTier(tt.in)
-			if got != tt.want {
-				t.Errorf("toDomainPriceTier(%v) = %q, want %q", tt.in, got, tt.want)
-			}
-		})
 	}
 }
 

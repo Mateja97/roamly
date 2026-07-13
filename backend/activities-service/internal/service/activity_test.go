@@ -72,15 +72,6 @@ func TestActivities_Query_Validation(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "unknown price tier rejected",
-			req: Request{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				PriceTier:   "not-a-tier",
-			},
-			wantErr: true,
-		},
-		{
 			name: "min_rating out of range rejected",
 			req: Request{
 				Scope:       activitiessvc.ScopeMyCountry,

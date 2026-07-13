@@ -62,7 +62,6 @@ func toServiceRequest(req *activitiesv1.QueryActivitiesRequest) service.Request 
 		HomeLocation:    toDomainPoint(req.GetHomeLocation()),
 		HomeCountry:     req.GetHomeCountry(),
 		Categories:      categories,
-		PriceTier:       toDomainPriceTier(req.GetPriceTier()),
 		MinRating:       req.GetMinRating(),
 		MaxDistanceKM:   req.GetMaxDistanceKm(),
 		Sort:            toDomainSort(req.GetSort()),
@@ -108,27 +107,6 @@ func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
 	}
 }
 
-func toDomainPriceTier(p activitiesv1.PriceTier) activitiessvc.PriceTier {
-	switch p {
-	case activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED:
-		return activitiessvc.PriceTierUnspecified
-	case activitiesv1.PriceTier_PRICE_TIER_BUDGET:
-		return activitiessvc.PriceTierBudget
-	case activitiesv1.PriceTier_PRICE_TIER_MODERATE:
-		return activitiessvc.PriceTierModerate
-	case activitiesv1.PriceTier_PRICE_TIER_PREMIUM:
-		return activitiessvc.PriceTierPremium
-	case activitiesv1.PriceTier_PRICE_TIER_LUXURY:
-		return activitiessvc.PriceTierLuxury
-	default:
-		// ponytail: an out-of-range wire value must not collapse into the
-		// legitimate "unspecified/no filter" zero value, or service.validPriceTier
-		// would silently treat garbage input as no-op instead of rejecting it.
-		// Any non-empty string outside the known tiers fails validPriceTier.
-		return activitiessvc.PriceTier("invalid")
-	}
-}
-
 func toDomainSort(s activitiesv1.Sort) activitiessvc.Sort {
 	switch s {
 	case activitiesv1.Sort_SORT_UNSPECIFIED:
@@ -136,8 +114,7 @@ func toDomainSort(s activitiesv1.Sort) activitiessvc.Sort {
 	case activitiesv1.Sort_SORT_TOP_RATED:
 		return activitiessvc.SortTopRated
 	default:
-		// ponytail: same out-of-range-wire-value trap as toDomainPriceTier —
-		// don't collapse an unrecognized Sort into the legitimate
+		// ponytail: don't collapse an unrecognized Sort into the legitimate
 		// "unspecified" zero value, or service.validSort would silently
 		// no-op instead of rejecting it.
 		return activitiessvc.Sort("invalid")
@@ -152,7 +129,6 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		Category:    toProtoCategory(a.Category),
 		Location:    &activitiesv1.Location{Lat: a.Location.Lat, Lng: a.Location.Lng},
 		Country:     a.Country,
-		PriceTier:   toProtoPriceTier(a.PriceTier),
 		Rating:      a.Rating,
 		ImageRefs:   a.ImageRefs,
 		Tags:        a.Tags,
@@ -176,20 +152,5 @@ func toProtoCategory(c activitiessvc.Category) activitiesv1.Category {
 		return activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS
 	default:
 		return activitiesv1.Category_CATEGORY_UNSPECIFIED
-	}
-}
-
-func toProtoPriceTier(p activitiessvc.PriceTier) activitiesv1.PriceTier {
-	switch p {
-	case activitiessvc.PriceTierBudget:
-		return activitiesv1.PriceTier_PRICE_TIER_BUDGET
-	case activitiessvc.PriceTierModerate:
-		return activitiesv1.PriceTier_PRICE_TIER_MODERATE
-	case activitiessvc.PriceTierPremium:
-		return activitiesv1.PriceTier_PRICE_TIER_PREMIUM
-	case activitiessvc.PriceTierLuxury:
-		return activitiesv1.PriceTier_PRICE_TIER_LUXURY
-	default:
-		return activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED
 	}
 }

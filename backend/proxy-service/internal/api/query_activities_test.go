@@ -39,7 +39,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 		Activities: []*activitiesv1.Activity{{
 			Id: "1", Title: "Kayaking", Category: activitiesv1.Category_CATEGORY_SPORTS,
 			Location: &activitiesv1.Location{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
-			PriceTier: activitiesv1.PriceTier_PRICE_TIER_PREMIUM, Rating: 4.8,
+			Rating:    4.8,
 			ImageRefs: []string{"img1"}, Tags: []string{"sports"}, DistanceKm: 3.2,
 		}},
 	}}
@@ -54,7 +54,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(got.Activities) != 1 || got.Activities[0].Category != "sports" || got.Activities[0].PriceTier != "premium" {
+	if len(got.Activities) != 1 || got.Activities[0].Category != "sports" {
 		t.Errorf("unexpected response: %+v", got)
 	}
 	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_HOME {
@@ -101,7 +101,6 @@ func TestQueryActivitiesHandler_ValidationFailures(t *testing.T) {
 	}{
 		{"unknown scope", `{"scope":"galaxy"}`},
 		{"unknown category", `{"scope":"home","home_location":{"lat":1,"lng":1},"categories":["not_a_category"]}`},
-		{"unknown price_tier", `{"scope":"home","home_location":{"lat":1,"lng":1},"price_tier":"not_a_tier"}`},
 		{"unknown sort", `{"scope":"my_country","home_country":"Serbia","sort":"most_popular"}`},
 		{"malformed JSON body", `{not-json`},
 	}
@@ -116,6 +115,20 @@ func TestQueryActivitiesHandler_ValidationFailures(t *testing.T) {
 				t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 			}
 		})
+	}
+}
+
+// TestQueryActivitiesHandler_StrayRemovedFieldIsIgnored: a stale app build
+// that still sends a filter field the backend has since dropped must not
+// hard-fail the request — the unknown JSON key is silently ignored.
+func TestQueryActivitiesHandler_StrayRemovedFieldIsIgnored(t *testing.T) {
+	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
+	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doRequest(t, h, `{"scope":"home","home_location":{"lat":1,"lng":1},"price_tier":"budget"}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
