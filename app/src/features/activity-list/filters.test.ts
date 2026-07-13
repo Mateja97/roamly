@@ -10,11 +10,10 @@ describe('activeFilterCount', () => {
   it('counts each category plus each single-select group', () => {
     const filters: Filters = {
       categories: ['sports', 'food_and_drink'],
-      priceTier: 'moderate',
       minRating: 4.5,
       maxDistanceKm: 25,
     };
-    expect(activeFilterCount(filters)).toBe(5);
+    expect(activeFilterCount(filters)).toBe(4);
   });
 });
 
@@ -22,21 +21,19 @@ describe('filterChips', () => {
   it('produces one chip per category and one per single-select group', () => {
     const filters: Filters = {
       categories: ['sports'],
-      priceTier: 'moderate',
       minRating: 4.5,
       maxDistanceKm: 25,
     };
     const chips = filterChips(filters);
-    expect(chips.map((c) => c.label)).toEqual(['Sports', '$$', '4.5+', '≤ 25 km']);
+    expect(chips.map((c) => c.label)).toEqual(['Sports', '4.5+', '≤ 25 km']);
   });
 
   it('a chip.remove() clears only that one filter value', () => {
-    const filters: Filters = { categories: ['sports', 'art_and_design'], priceTier: 'budget', minRating: null, maxDistanceKm: null };
+    const filters: Filters = { categories: ['sports', 'art_and_design'], minRating: null, maxDistanceKm: null };
     const chips = filterChips(filters);
     const sportsChip = chips.find((c) => c.label === 'Sports')!;
     expect(sportsChip.remove()).toEqual({
       categories: ['art_and_design'],
-      priceTier: 'budget',
       minRating: null,
       maxDistanceKm: null,
     });
@@ -69,7 +66,6 @@ describe('buildActivitiesRequest', () => {
   it('includes only the set filter fields', () => {
     const filters: Filters = {
       categories: ['sports'],
-      priceTier: 'moderate',
       minRating: 4.5,
       maxDistanceKm: 25,
     };
@@ -78,7 +74,6 @@ describe('buildActivitiesRequest', () => {
       scope: 'home',
       home_location: HOME_LOCATION,
       categories: ['sports'],
-      price_tier: 'moderate',
       min_rating: 4.5,
       max_distance_km: 25,
     });

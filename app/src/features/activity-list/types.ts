@@ -16,9 +16,11 @@ export type DistanceOption = 10 | 25 | 50;
 
 // The sheet's applied selection. `null` means "unset" for the single-select
 // groups; an empty array means "unset" for the multi-select category group.
+// No price filter (T1 removed all price/cost signage from the UI) —
+// `PriceTier` still exists as the `Activity`/wire-contract field, just unused
+// here.
 export type Filters = {
   categories: Category[];
-  priceTier: PriceTier | null;
   minRating: RatingOption | null;
   maxDistanceKm: DistanceOption | null;
 };

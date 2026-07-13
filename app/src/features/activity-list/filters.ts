@@ -1,11 +1,10 @@
 import type { ActivitiesQueryRequest, Location } from '../../api/activities';
 import { HOME_COUNTRY, HOME_LOCATION } from './config';
-import type { Category, DistanceOption, Filters, PriceTier, RatingOption } from './types';
+import type { Category, DistanceOption, Filters, RatingOption } from './types';
 import type { ScopeSelection } from '../scope-picker/types';
 
 export const EMPTY_FILTERS: Filters = {
   categories: [],
-  priceTier: null,
   minRating: null,
   maxDistanceKm: null,
 };
@@ -24,18 +23,6 @@ export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce
   {} as Record<Category, string>
 );
 
-export const PRICE_TIER_OPTIONS: { value: PriceTier; label: string }[] = [
-  { value: 'budget', label: '$' },
-  { value: 'moderate', label: '$$' },
-  { value: 'premium', label: '$$$' },
-  { value: 'luxury', label: '$$$$' },
-];
-
-export const PRICE_TIER_LABELS: Record<PriceTier, string> = PRICE_TIER_OPTIONS.reduce(
-  (acc, { value, label }) => ({ ...acc, [value]: label }),
-  {} as Record<PriceTier, string>
-);
-
 export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: null, label: 'Any' },
   { value: 4.0, label: '4.0+' },
@@ -52,10 +39,7 @@ export const DISTANCE_OPTIONS: { value: DistanceOption | null; label: string }[]
 
 export function activeFilterCount(filters: Filters): number {
   return (
-    filters.categories.length +
-    (filters.priceTier ? 1 : 0) +
-    (filters.minRating !== null ? 1 : 0) +
-    (filters.maxDistanceKm !== null ? 1 : 0)
+    filters.categories.length + (filters.minRating !== null ? 1 : 0) + (filters.maxDistanceKm !== null ? 1 : 0)
   );
 }
 
@@ -70,13 +54,6 @@ export function filterChips(filters: Filters): FilterChipData[] {
     remove: () => ({ ...filters, categories: filters.categories.filter((c) => c !== category) }),
   }));
 
-  if (filters.priceTier) {
-    chips.push({
-      key: 'price-tier',
-      label: PRICE_TIER_LABELS[filters.priceTier],
-      remove: () => ({ ...filters, priceTier: null }),
-    });
-  }
   if (filters.minRating !== null) {
     chips.push({
       key: 'min-rating',
@@ -110,7 +87,6 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
   }
 
   if (filters.categories.length > 0) request.categories = filters.categories;
-  if (filters.priceTier) request.price_tier = filters.priceTier;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
   if (filters.maxDistanceKm !== null && selection.scope !== 'outside_country') {
     request.max_distance_km = filters.maxDistanceKm;

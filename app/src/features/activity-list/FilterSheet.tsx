@@ -7,7 +7,7 @@ import { FilterChip } from '../../components/FilterChip';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { CATEGORY_OPTIONS, DISTANCE_OPTIONS, EMPTY_FILTERS, PRICE_TIER_OPTIONS, RATING_OPTIONS } from './filters';
+import { CATEGORY_OPTIONS, DISTANCE_OPTIONS, EMPTY_FILTERS, RATING_OPTIONS } from './filters';
 import type { Filters } from './types';
 
 type FilterSheetProps = {
@@ -130,20 +130,6 @@ export function FilterSheet({ visible, initialFilters, onApply, onClose }: Filte
                         ? prev.categories.filter((c) => c !== option.value)
                         : [...prev.categories, option.value],
                     }))
-                  }
-                />
-              ))}
-            </FilterGroup>
-
-            <FilterGroup label="Price tier">
-              {PRICE_TIER_OPTIONS.map((option) => (
-                <FilterChip
-                  key={option.value}
-                  variant="select"
-                  label={option.label}
-                  selected={draft.priceTier === option.value}
-                  onPress={() =>
-                    setDraft((prev) => ({ ...prev, priceTier: prev.priceTier === option.value ? null : option.value }))
                   }
                 />
               ))}
