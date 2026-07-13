@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { ActivityListScreen } from './ActivityListScreen';
-import { HOME_LOCATION } from './config';
+import { HOME_COUNTRY, HOME_LOCATION } from './config';
 
 jest.mock('../../api/activities', () => ({ queryActivities: jest.fn() }));
 const mockedQuery = jest.mocked(queryActivities);
@@ -54,6 +54,24 @@ describe('ActivityListScreen', () => {
 
     expect(mockedQuery).toHaveBeenCalledWith({ scope: 'home', home_location: HOME_LOCATION });
     expect(screen.getByText('1 activity')).toBeTruthy();
+    expect(screen.queryByText('Top-rated activities')).toBeNull();
+  });
+
+  it('country scope sends the top_rated sort flag and shows the two-line ranking header immediately', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    render(<ActivityListScreen selection={{ scope: 'outside_country' }} onBack={jest.fn()} />);
+
+    // Static header copy renders at mount, before the fetch resolves.
+    expect(screen.getByText(HOME_COUNTRY)).toBeTruthy();
+    expect(screen.getByText('Top-rated activities')).toBeTruthy();
+
+    await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'outside_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
+    // Ranking is server-trusted — no re-sort UI, header copy is unchanged
+    // after results arrive (the card's own country meta text also reads
+    // "Serbia" here, hence getAllByText).
+    expect(screen.getAllByText(HOME_COUNTRY).length).toBeGreaterThan(0);
+    expect(screen.getByText('Top-rated activities')).toBeTruthy();
   });
 
   it('shows the empty state with no Clear-filters button when no filters are active', async () => {

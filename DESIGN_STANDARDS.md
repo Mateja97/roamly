@@ -260,6 +260,14 @@ Transparent on `--bg`, 1px `--border` bottom hairline, padding `--space-4`
 vertical / `--space-6` horizontal. Title `--font-size-lg` `--text` left;
 Ghost-button actions right. Single row at all widths.
 
+Optional supporting subtitle: a single caption line directly under the title,
+`--font-size-sm` `--text-muted` (6.2:1 on `--bg`), for one-line context about
+the list below (e.g. a ranking/sort caption). When present the header is a
+two-line title block on the left; the actions stay right-aligned and
+top-aligned. Truncate each line to one line with ellipsis (honor dynamic text
+scaling). No new token or color pairing — reuses the documented
+`--text-muted`-on-`--bg` combination.
+
 ### Stat display
 
 For the number that IS the screen. Label above: `--font-size-sm`

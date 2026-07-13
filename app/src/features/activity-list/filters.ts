@@ -107,6 +107,10 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
     request.home_location = HOME_LOCATION;
   } else if (selection.scope === 'outside_country') {
     request.home_country = HOME_COUNTRY;
+    // T5's rating-descending ranking — requested only for outside_country;
+    // the server rejects it for home/nearby, and results render server-order
+    // with no client re-sort (T6 out of scope).
+    request.sort = 'top_rated';
   }
 
   if (filters.categories.length > 0) request.categories = filters.categories;
