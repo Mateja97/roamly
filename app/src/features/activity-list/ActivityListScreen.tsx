@@ -19,9 +19,20 @@ import { FilterChip } from '../../components/FilterChip';
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { HOME_COUNTRY } from './config';
 import { FilterSheet } from './FilterSheet';
 import { EMPTY_FILTERS, SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, filterChips } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
+
+// Country (outside_country) scope header subtitle — static (doesn't wait on
+// the fetch) per design-spec.md's T6 section. The title itself reuses
+// `HOME_COUNTRY` directly (the same anchor the query sends; T4's
+// `selection.homeCountry` replaces this source later, not this task's
+// scope). ponytail: `HOME_COUNTRY` is a non-empty constant today, so the
+// spec's "no name resolvable" fallback (generic title + country folded into
+// the subtitle) is dead code until T4 makes the country name optional —
+// skipped rather than built for a case that can't happen yet.
+const COUNTRY_HEADER_SUBTITLE = 'Top-rated activities';
 
 type QueryState =
   | { status: 'loading' }
@@ -148,7 +159,16 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{SCOPE_TITLES[selection.scope]}</Text>
+        <View style={styles.headerTitleBlock}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {selection.scope === 'outside_country' ? HOME_COUNTRY : SCOPE_TITLES[selection.scope]}
+          </Text>
+          {selection.scope === 'outside_country' && (
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              {COUNTRY_HEADER_SUBTITLE}
+            </Text>
+          )}
+        </View>
         <Pressable
           ref={filtersButtonRef}
           onPress={() => setSheetVisible(true)}
@@ -268,18 +288,24 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: space[2],
     paddingVertical: space[4],
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: {
+  headerTitleBlock: {
     flex: 1,
+  },
+  headerTitle: {
     fontSize: fontSize.lg,
     color: colors.text,
     fontWeight: '500',
+  },
+  headerSubtitle: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
   },
   filtersButton: {
     flexDirection: 'row',

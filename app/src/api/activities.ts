@@ -28,6 +28,8 @@ export type ActivitiesQueryRequest = {
   price_tier?: PriceTier;
   min_rating?: number;
   max_distance_km?: number;
+  // T5's ranking flag — only meaningful (and only sent) for outside_country.
+  sort?: 'top_rated';
 };
 
 // APP_STANDARDS.md's Error handling rule: never throw an opaque error, always
