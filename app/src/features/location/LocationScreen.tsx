@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, BackHandler, Easing, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Check, MapPin, Search, SearchX, X } from 'lucide-react-native';
 import type { Place, PlaceSuggestion } from '../../api/places';
@@ -54,7 +54,15 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
   // opacity only, ≤150ms, per design-spec's Motion section; reduced-motion
   // snaps straight to visible (no animation). `noKey` never changes after
   // mount so `search.region.view` alone is the right dependency.
+  // ponytail: did-mount ref, not a library — this is a content swap between
+  // already-rendered states, not a transition on first paint (design-spec's
+  // Motion section), so the very first run (mount) must skip the fade.
+  const didMount = useRef(false);
   useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
     if (reduceMotion) {
       regionOpacity.setValue(1);
       return;

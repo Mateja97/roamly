@@ -1,4 +1,4 @@
-import { AccessibilityInfo, BackHandler } from 'react-native';
+import { Animated, AccessibilityInfo, BackHandler } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as placesApi from '../../api/places';
 import { LocationScreen } from './LocationScreen';
@@ -131,6 +131,33 @@ describe('LocationScreen', () => {
     render(<LocationScreen config={CITY_LOCATION_CONFIG} onConfirm={onConfirm} onBack={jest.fn()} />);
     fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
     expect(onConfirm).toHaveBeenCalledWith({ name: 'Belgrade', region: 'Serbia', coordinates: { lat: 44.8125, lng: 20.4612 } });
+  });
+
+  it('does not fade the results region on mount, only on a later view change (non-reduced-motion)', async () => {
+    jest.useFakeTimers();
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
+    // Skeleton/Spinner also drive Animated.timing (their own pulse/spin
+    // loops), so scope the spy to fade-starts (`setValue(0)` is unique to
+    // this effect's cross-fade — see LocationScreen.tsx / usePlaceSearch.ts,
+    // nothing else in this tree zeroes an Animated.Value).
+    const setValueSpy = jest.spyOn(Animated.Value.prototype, 'setValue');
+    const fadeStarts = () => setValueSpy.mock.calls.filter(([value]) => value === 0).length;
+    mockedSearch.mockResolvedValue({
+      status: 'success',
+      suggestions: [{ placeId: 'p1', primaryText: 'Paris', secondaryText: 'France' }],
+    });
+    render(<LocationScreen config={CITY_LOCATION_CONFIG} onConfirm={jest.fn()} onBack={jest.fn()} />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(fadeStarts()).toBe(0);
+
+    await typeAndDebounce('Par');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Paris, France' })).toBeTruthy());
+    // summary -> loading -> suggestions: two genuine view changes, two fades.
+    expect(fadeStarts()).toBe(2);
+    jest.useRealTimers();
   });
 
   it('calls onBack on Android hardware back press', () => {
