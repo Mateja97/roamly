@@ -124,3 +124,48 @@ export async function getPlaceCoordinates(suggestion: PlaceSuggestion): Promise<
     },
   };
 }
+
+export type CountryResult = { status: 'success'; country: string } | { status: 'error'; message: string };
+
+type GeocodeResponse = {
+  status: string;
+  results?: { address_components?: { long_name: string; types: string[] }[] }[];
+};
+
+const GEOCODE_BASE = 'https://maps.googleapis.com/maps/api/geocode';
+
+// Reverse-geocodes a GPS fix to a country name via Google's Geocoding API.
+// `result_type=country` narrows the response to the country-level result, so
+// the country address component can be read directly off the first result
+// instead of picking it out of a full street-address breakdown.
+export async function getCountryFromCoordinates(coordinates: { latitude: number; longitude: number }): Promise<CountryResult> {
+  const key = apiKey();
+  if (!key) return { status: 'error', message: UNCONFIGURED_MESSAGE };
+
+  const params = new URLSearchParams({
+    latlng: `${coordinates.latitude},${coordinates.longitude}`,
+    result_type: 'country',
+    key,
+  });
+
+  let res: Response;
+  try {
+    res = await fetch(`${GEOCODE_BASE}/json?${params}`);
+  } catch {
+    return { status: 'error', message: UNREACHABLE_MESSAGE };
+  }
+
+  let data: GeocodeResponse;
+  try {
+    data = (await res.json()) as GeocodeResponse;
+  } catch {
+    return { status: 'error', message: GENERIC_MESSAGE };
+  }
+
+  if (data.status !== 'OK') return { status: 'error', message: GENERIC_MESSAGE };
+
+  const countryComponent = data.results?.[0]?.address_components?.find((c) => c.types.includes('country'));
+  if (!countryComponent) return { status: 'error', message: GENERIC_MESSAGE };
+
+  return { status: 'success', country: countryComponent.long_name };
+}
