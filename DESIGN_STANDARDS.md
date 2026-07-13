@@ -294,8 +294,9 @@ don't build a generic wizard/stepper abstraction until a second step exists.
 The visual, image-led card for one browseable activity in a list (title,
 category, rating, image, description, tags, distance/location + a map
 thumbnail). The List row recipe is for compact text rows; this is richer.
-Non-interactive display card for MVP (no detail screen yet — see Deferred);
-still exposed as a single screen-reader group.
+The whole card is one tap control that opens the activity's detail screen —
+exposed as a single screen-reader button (not a plain group), with the same
+accessibility label described below acting as the button's name.
 
 Structure (image-top):
 - **Image** at the top, full card width, fixed 3:2 aspect ratio (space
@@ -363,9 +364,17 @@ Structure (image-top):
   from the label (its only information, the location, is already spoken via
   the location phrase); no price reference ever appears in the label.
 
-No new color tokens. `--space-4` between stacked cards. ponytail: static
-display card — no press/hover/focus-as-button until a detail route exists to
-navigate to.
+**Interactive states** (the card is a control, not decoration): rest is the
+`--surface` card described above; **pressed** swaps the body bg to
+`--surface-hover` (the whole card, one target — carries on touch, no hover
+reliance); **focused** (keyboard/AT) adds a 2px `--primary` focus border
+(replacing the 1px `--border`, keeping the gold `--card-highlight` top edge).
+The card already clears the 44×44 floor by a wide margin; stacked cards keep
+`--space-4` between them (well over the `--space-2` neighbor gap). Press
+feedback lands within ~100ms; no size/scale animation — only the bg color
+swaps. Fully keyboard-operable, never tap-only.
+
+No new color tokens. `--space-4` between stacked cards.
 
 ### Filter chip (selectable / removable)
 
@@ -524,7 +533,16 @@ the palette:
   convention (iOS: top-left back control / edge-swipe gesture; Android:
   the system back gesture/button) rather than inventing a custom back
   control — a router provides this for free once one is introduced (see
-  "Deferred" below).
+  "Deferred" below). **Interim on-screen back control**: until a router
+  lands, a screen reached by a hand-rolled push (e.g. the activity detail
+  screen) needs an explicit on-screen back affordance, since there is no
+  navigator gesture to defer to and Android's hardware back alone leaves iOS
+  with no back path. Spec it as a Ghost-style control at the top-left of the
+  screen header: a 16px `ChevronLeft` icon + "Back" label in `--text-muted`
+  (6.2:1 on `--bg`), 44×44 target, `aria-label`/`accessibilityLabel` "Back",
+  keyboard-operable, `--surface-hover` bg on press. It coexists with (does
+  not replace) the platform hardware/gesture back. Remove it in favor of the
+  router's native chrome once a router exists.
 - **Touch targets**: the existing 44×44px floor (see "Touch & interaction"
   above) already satisfies both iOS HIG's 44pt minimum and Android
   Material's 48dp recommendation — no separate mobile sizing rule needed.

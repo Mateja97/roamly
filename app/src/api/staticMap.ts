@@ -14,16 +14,18 @@ export function hasValidCoordinates(location: Location | undefined): location is
   return Boolean(location) && (location!.lat !== 0 || location!.lng !== 0);
 }
 
-// Google Static Maps API — one HTTP image per card, gold pin baked into the
-// image itself (decorative imagery, no token pairing applies). Caller must
-// check hasMapsKey()/hasValidCoordinates() first; this always builds a URL.
-export function staticMapUrl(location: Location, sizePx: number): string {
+// Google Static Maps API — one HTTP image per card/detail screen, gold pin
+// baked into the image itself (decorative imagery, no token pairing
+// applies). Caller must check hasMapsKey()/hasValidCoordinates() first; this
+// always builds a URL. `heightPx` defaults to `widthPx` (square, the card
+// thumbnail's shape); the detail screen's larger 3:2 map passes both.
+export function staticMapUrl(location: Location, widthPx: number, heightPx: number = widthPx): string {
   const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
   const center = `${location.lat},${location.lng}`;
   const params = new URLSearchParams({
     center,
     zoom: '15',
-    size: `${sizePx}x${sizePx}`,
+    size: `${widthPx}x${heightPx}`,
     markers: `color:0xCE9042|${center}`,
     key: key ?? '',
   });

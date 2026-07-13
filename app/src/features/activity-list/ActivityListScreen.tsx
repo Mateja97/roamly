@@ -19,6 +19,7 @@ import { FilterChip } from '../../components/FilterChip';
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { FilterSheet } from './FilterSheet';
 import { EMPTY_FILTERS, SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, filterChips } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
@@ -53,6 +54,12 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
   const [queryState, setQueryState] = useState<QueryState>({ status: 'loading' });
   const [sheetVisible, setSheetVisible] = useState(false);
+  // T1: a tapped card opens the detail screen as an overlay above this
+  // still-mounted list (not a push onto App.tsx's global stack, which
+  // unmounts the screen below it) — the "return to the list in its prior
+  // state" acceptance criterion (scroll position, applied filters, query
+  // results) only holds if the list never tears down.
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersButtonRef = useRef<ElementRef<typeof Pressable>>(null);
   const countRef = useRef<View>(null);
 
@@ -90,19 +97,27 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   // navigator yet (see App.tsx), so there's no navigator-provided gesture
   // to defer to either. Android's hardware back button is itself a native
   // platform affordance (RN's BackHandler), not a custom control, so it's
-  // wired here.
+  // wired here. T1: when the detail overlay is open, hardware back closes
+  // it first (mirrors the on-screen Back control) rather than leaving the
+  // whole list screen.
   // ponytail: iOS has no equivalent without a navigator (BackHandler is a
-  // no-op on iOS) — no back path exists there today. Accepted per
-  // DESIGN_STANDARDS.md's own "Navigation patterns... no router yet"
-  // deferral; add a router (and this becomes free on both platforms) once a
-  // third screen/back-stack need shows up. See engineering-notes.md.
+  // no-op on iOS) — no back path exists there today for leaving the list
+  // itself (the detail overlay's on-screen Back control covers iOS for
+  // itself). Accepted per DESIGN_STANDARDS.md's own "Navigation
+  // patterns... no router yet" deferral; add a router (and this becomes
+  // free on both platforms) once a third screen/back-stack need shows up.
+  // See engineering-notes.md.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      onBack();
+      if (selectedActivity) {
+        setSelectedActivity(null);
+      } else {
+        onBack();
+      }
       return true;
     });
     return () => sub.remove();
-  }, [onBack]);
+  }, [onBack, selectedActivity]);
 
   function focusCount() {
     const handle = countRef.current && findNodeHandle(countRef.current);
@@ -158,86 +173,107 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   const filtersFocus = useFocusable();
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <View style={styles.headerTitleBlock}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {selection.scope === 'my_country'
-              ? selection.homeCountry ?? SCOPE_TITLES.my_country
-              : SCOPE_TITLES[selection.scope]}
-          </Text>
-          {selection.scope === 'my_country' && (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              {COUNTRY_HEADER_SUBTITLE}
+    <View style={styles.container}>
+      <SafeAreaView
+        style={styles.screen}
+        accessibilityElementsHidden={selectedActivity !== null}
+        importantForAccessibility={selectedActivity !== null ? 'no-hide-descendants' : 'auto'}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerTitleBlock}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {selection.scope === 'my_country'
+                ? selection.homeCountry ?? SCOPE_TITLES.my_country
+                : SCOPE_TITLES[selection.scope]}
             </Text>
-          )}
+            {selection.scope === 'my_country' && (
+              <Text style={styles.headerSubtitle} numberOfLines={1}>
+                {COUNTRY_HEADER_SUBTITLE}
+              </Text>
+            )}
+          </View>
+          <Pressable
+            ref={filtersButtonRef}
+            onPress={() => setSheetVisible(true)}
+            onFocus={filtersFocus.onFocus}
+            onBlur={filtersFocus.onBlur}
+            accessibilityRole="button"
+            accessibilityLabel={filterCount > 0 ? `Filters, ${filterCount} active` : 'Filters'}
+            style={[styles.filtersButton, filtersFocus.focused && styles.filtersButtonFocused]}
+          >
+            <SlidersHorizontal size={16} color={colors.text} strokeWidth={1.75} />
+            <Text style={styles.filtersButtonLabel}>Filters</Text>
+            {filterCount > 0 && (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeLabel}>{filterCount}</Text>
+              </View>
+            )}
+          </Pressable>
         </View>
-        <Pressable
-          ref={filtersButtonRef}
-          onPress={() => setSheetVisible(true)}
-          onFocus={filtersFocus.onFocus}
-          onBlur={filtersFocus.onBlur}
-          accessibilityRole="button"
-          accessibilityLabel={filterCount > 0 ? `Filters, ${filterCount} active` : 'Filters'}
-          style={[styles.filtersButton, filtersFocus.focused && styles.filtersButtonFocused]}
-        >
-          <SlidersHorizontal size={16} color={colors.text} strokeWidth={1.75} />
-          <Text style={styles.filtersButtonLabel}>Filters</Text>
-          {filterCount > 0 && (
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeLabel}>{filterCount}</Text>
-            </View>
-          )}
-        </Pressable>
-      </View>
 
-      <View style={styles.resultRegion}>
-        <View ref={countRef} accessible accessibilityLiveRegion="polite">
-          {resultCount === null ? (
-            <Skeleton width={90} height={16} />
-          ) : (
-            <Text style={styles.resultCount}>
-              {resultCount} {resultCount === 1 ? 'activity' : 'activities'}
-            </Text>
+        <View style={styles.resultRegion}>
+          <View ref={countRef} accessible accessibilityLiveRegion="polite">
+            {resultCount === null ? (
+              <Skeleton width={90} height={16} />
+            ) : (
+              <Text style={styles.resultCount}>
+                {resultCount} {resultCount === 1 ? 'activity' : 'activities'}
+              </Text>
+            )}
+          </View>
+          {chips.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              {chips.map((chip) => (
+                <FilterChip key={chip.key} variant="remove" label={chip.label} onPress={() => handleFiltersChange(chip.remove())} />
+              ))}
+            </ScrollView>
           )}
         </View>
-        {chips.length > 0 && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-            {chips.map((chip) => (
-              <FilterChip key={chip.key} variant="remove" label={chip.label} onPress={() => handleFiltersChange(chip.remove())} />
+
+        <ScrollView contentContainerStyle={styles.list}>
+          {queryState.status === 'loading' &&
+            Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
+
+          {queryState.status === 'loaded' &&
+            queryState.activities.map((activity) => (
+              <ActivityCard
+                key={activity.id}
+                activity={activity}
+                showDistance={showDistance}
+                onPress={() => setSelectedActivity(activity)}
+              />
             ))}
-          </ScrollView>
-        )}
-      </View>
 
-      <ScrollView contentContainerStyle={styles.list}>
-        {queryState.status === 'loading' &&
-          Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
+          {queryState.status === 'empty' && (
+            <EmptyState hasFilters={filterCount > 0} onClearFilters={() => handleFiltersChange(EMPTY_FILTERS)} />
+          )}
 
-        {queryState.status === 'loaded' &&
-          queryState.activities.map((activity) => (
-            <ActivityCard key={activity.id} activity={activity} showDistance={showDistance} />
-          ))}
+          {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}
+        </ScrollView>
 
-        {queryState.status === 'empty' && (
-          <EmptyState hasFilters={filterCount > 0} onClearFilters={() => handleFiltersChange(EMPTY_FILTERS)} />
-        )}
+        {/* Keyed on open/closed so each open is a fresh mount — the sheet reads
+            `appliedFilters` as its initial draft once, rather than needing an
+            effect to resync it on every re-open (see FilterSheet). */}
+        <FilterSheet
+          key={sheetVisible ? 'open' : 'closed'}
+          visible={sheetVisible}
+          initialFilters={appliedFilters}
+          scope={selection.scope}
+          onApply={handleApply}
+          onClose={closeSheet}
+        />
+      </SafeAreaView>
 
-        {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}
-      </ScrollView>
-
-      {/* Keyed on open/closed so each open is a fresh mount — the sheet reads
-          `appliedFilters` as its initial draft once, rather than needing an
-          effect to resync it on every re-open (see FilterSheet). */}
-      <FilterSheet
-        key={sheetVisible ? 'open' : 'closed'}
-        visible={sheetVisible}
-        initialFilters={appliedFilters}
-        scope={selection.scope}
-        onApply={handleApply}
-        onClose={closeSheet}
-      />
-    </SafeAreaView>
+      {selectedActivity && (
+        <View style={styles.detailOverlay}>
+          <ActivityDetailScreen
+            activity={selectedActivity}
+            showDistance={showDistance}
+            onBack={() => setSelectedActivity(null)}
+          />
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -286,8 +322,19 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   screen: {
     flex: 1,
+    backgroundColor: colors.bg,
+  },
+  detailOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: colors.bg,
   },
   header: {

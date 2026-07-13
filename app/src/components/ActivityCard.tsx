@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
 import { CATEGORY_LABELS } from '../features/activity-list/filters';
+import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 import { MapThumbnail } from './MapThumbnail';
 import { Skeleton } from './Skeleton';
@@ -13,6 +14,7 @@ type ActivityCardProps = {
   activity: Activity;
   /** my_country's distance_km is always 0 (no distance concept there) — show the country instead. */
   showDistance: boolean;
+  onPress: () => void;
 };
 
 // DESIGN_STANDARDS.md's Activity card recipe: 3:2 image on top (reserved
@@ -20,9 +22,13 @@ type ActivityCardProps = {
 // rating on row 1, title, an optional description snippet, an optional tags
 // row, and a location row (map thumbnail + distance/location text). No
 // price/cost signage anywhere in the flow (T1); the price-tier field was
-// dropped from the client contract entirely (T2).
-export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
+// dropped from the client contract entirely (T2). The whole card is one tap
+// control (T1) — `onPress` opens the activity's detail screen; pressed/
+// focused states swap the card bg / add a focus border per the
+// interactive-states addendum in DESIGN_STANDARDS.md's card recipe.
+export function ActivityCard({ activity, showDistance, onPress }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
+  const focus = useFocusable();
   const imageUri = activity.image_refs[0];
 
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
@@ -37,7 +43,15 @@ export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
     .join(', ');
 
   return (
-    <View style={styles.card} accessible accessibilityRole="summary" accessibilityLabel={label}>
+    <Pressable
+      onPress={onPress}
+      onFocus={focus.onFocus}
+      onBlur={focus.onBlur}
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed, focus.focused && styles.cardFocused]}
+    >
       <View style={styles.imageBox}>
         {imageUri && imageState !== 'broken' ? (
           <Image
@@ -97,7 +111,7 @@ export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
           </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -133,6 +147,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.default,
     backgroundColor: colors.surface,
     overflow: 'hidden',
+    outlineStyle: 'solid',
+    outlineWidth: 0,
+  },
+  cardPressed: {
+    backgroundColor: colors.surfaceHover,
+  },
+  cardFocused: {
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
   imageBox: {
     width: '100%',
