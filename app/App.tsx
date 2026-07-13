@@ -8,7 +8,7 @@ import { ScopePickerScreen } from './src/features/scope-picker/ScopePickerScreen
 import type { ScopeSelection } from './src/features/scope-picker/types';
 
 // ponytail: a plain useState back-stack (array), not a router — this is a
-// linear flow (scope -> [location, home/outside_country only] -> types ->
+// linear flow (scope -> [location, home/my_country only] -> types ->
 // list) with no non-linear jumps. Each screen switch replaces the whole tree
 // (no shared layout/transition), so an array of screens gives forward (push)
 // and back (pop) without a navigation library. Add React Navigation only if
@@ -16,7 +16,7 @@ import type { ScopeSelection } from './src/features/scope-picker/types';
 // APP_STANDARDS.md).
 type Screen =
   | { name: 'scope-picker' }
-  | { name: 'location'; scope: 'home' | 'outside_country' }
+  | { name: 'location'; scope: 'home' | 'my_country' }
   | { name: 'activity-types'; selection: ScopeSelection }
   | { name: 'activity-list'; selection: ScopeSelection; categories: Category[] };
 
@@ -65,7 +65,7 @@ export default function App() {
             selection:
               scope === 'home'
                 ? { scope: 'home', homeLocation: place.coordinates }
-                : { scope: 'outside_country', homeCountry: place.name },
+                : { scope: 'my_country', homeCountry: place.name },
           })
         }
       />
@@ -74,11 +74,19 @@ export default function App() {
 
   return (
     <ScopePickerScreen
-      onScopeSelected={(selection) =>
-        selection.scope === 'nearby'
-          ? push({ name: 'activity-types', selection })
-          : push({ name: 'location', scope: selection.scope })
-      }
+      onScopeSelected={(selection) => {
+        // Nearby always has its coordinates by the time onScopeSelected
+        // fires (ScopePickerScreen only calls it once requestLocation
+        // resolves). my_country can fire either with a homeCountry already
+        // resolved (skip straight to activity-types, like Nearby) or
+        // without one (detection hasn't resolved yet, or failed) — that
+        // case still needs the manual Location confirm screen.
+        if (selection.scope === 'nearby' || (selection.scope === 'my_country' && selection.homeCountry)) {
+          push({ name: 'activity-types', selection });
+          return;
+        }
+        push({ name: 'location', scope: selection.scope });
+      }}
     />
   );
 }
