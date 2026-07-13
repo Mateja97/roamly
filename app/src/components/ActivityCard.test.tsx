@@ -9,7 +9,6 @@ const activity: Activity = {
   category: 'food_and_drink',
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
-  price_tier: 'moderate',
   rating: 4.6,
   image_refs: ['https://example.com/img.jpg'],
   tags: ['food'],

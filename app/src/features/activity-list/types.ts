@@ -8,15 +8,11 @@ export type Category =
   | 'sports'
   | 'entertainment_and_wellness';
 
-export type PriceTier = 'budget' | 'moderate' | 'premium' | 'luxury';
-
 export type RatingOption = 4.0 | 4.5 | 4.8;
 
 // The sheet's applied selection. `null` means "unset" for the single-select
 // groups; an empty array means "unset" for the multi-select category group.
-// No price filter (T1 removed all price/cost signage from the UI) —
-// `PriceTier` still exists as the `Activity`/wire-contract field, just unused
-// here. `maxDistanceKm` is a continuous 1-50 slider value (T3) rather than a
+// `maxDistanceKm` is a continuous 1-50 slider value (T3) rather than a
 // nullable bucket — 50 (the widest/ceiling) is its own "unset"/default, per
 // filters.ts's MAX_DISTANCE_KM.
 export type Filters = {
