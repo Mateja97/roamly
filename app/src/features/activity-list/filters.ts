@@ -1,11 +1,15 @@
 import type { ActivitiesQueryRequest, Location } from '../../api/activities';
-import type { Category, DistanceOption, Filters, RatingOption } from './types';
+import type { Category, Filters, RatingOption } from './types';
 import type { ScopeSelection } from '../scope-picker/types';
+
+// T3: continuous slider range, 1km up to today's fixed-chip ceiling.
+export const MIN_DISTANCE_KM = 1;
+export const MAX_DISTANCE_KM = 50;
 
 export const EMPTY_FILTERS: Filters = {
   categories: [],
   minRating: null,
-  maxDistanceKm: null,
+  maxDistanceKm: MAX_DISTANCE_KM,
 };
 
 export const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
@@ -29,16 +33,11 @@ export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: 4.8, label: '4.8+' },
 ];
 
-export const DISTANCE_OPTIONS: { value: DistanceOption | null; label: string }[] = [
-  { value: null, label: 'Any' },
-  { value: 10, label: '≤ 10 km' },
-  { value: 25, label: '≤ 25 km' },
-  { value: 50, label: '≤ 50 km' },
-];
-
 export function activeFilterCount(filters: Filters): number {
   return (
-    filters.categories.length + (filters.minRating !== null ? 1 : 0) + (filters.maxDistanceKm !== null ? 1 : 0)
+    filters.categories.length +
+    (filters.minRating !== null ? 1 : 0) +
+    (filters.maxDistanceKm < MAX_DISTANCE_KM ? 1 : 0)
   );
 }
 
@@ -60,11 +59,14 @@ export function filterChips(filters: Filters): FilterChipData[] {
       remove: () => ({ ...filters, minRating: null }),
     });
   }
-  if (filters.maxDistanceKm !== null) {
+  // Only a narrowing (< the widest/default) counts as an active, removable
+  // filter — mirrors the old "Any = no chip" semantics for the continuous
+  // control (see design-spec.md's T3 section).
+  if (filters.maxDistanceKm < MAX_DISTANCE_KM) {
     chips.push({
       key: 'max-distance',
       label: `≤ ${filters.maxDistanceKm} km`,
-      remove: () => ({ ...filters, maxDistanceKm: null }),
+      remove: () => ({ ...filters, maxDistanceKm: MAX_DISTANCE_KM }),
     });
   }
 
@@ -73,7 +75,9 @@ export function filterChips(filters: Filters): FilterChipData[] {
 
 // Builds the T2 proxy request body from the current scope/coordinates plus
 // the applied filters. `max_distance_km` only applies to home/nearby per T2's
-// contract (an error if sent with outside_country), so it's omitted there.
+// contract (an error if sent with outside_country), so it's omitted there —
+// including at the slider's default/ceiling value, which reproduces today's
+// widest breadth rather than actually narrowing anything.
 // `home_location`/`home_country` come from the place confirmed via T4's
 // Location screen (App.tsx populates them before reaching this screen) —
 // no hardcoded fallback here anymore.
@@ -94,7 +98,7 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
 
   if (filters.categories.length > 0) request.categories = filters.categories;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
-  if (filters.maxDistanceKm !== null && selection.scope !== 'outside_country') {
+  if (selection.scope !== 'outside_country') {
     request.max_distance_km = filters.maxDistanceKm;
   }
 

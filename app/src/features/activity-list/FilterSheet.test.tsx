@@ -18,22 +18,30 @@ async function flush() {
 }
 
 describe('FilterSheet', () => {
-  it('renders all three filter groups when visible', async () => {
-    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} onApply={jest.fn()} onClose={jest.fn()} />);
+  it('renders all three filter groups when visible, including the distance slider for nearby/home', async () => {
+    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} scope="home" onApply={jest.fn()} onClose={jest.fn()} />);
     await flush();
     expect(screen.getByText('Category')).toBeTruthy();
     expect(screen.queryByText('Price tier')).toBeNull();
     expect(screen.getByText('Minimum rating')).toBeTruthy();
     expect(screen.getByText('Max distance')).toBeTruthy();
+    expect(screen.getByText('Within 50 km')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '4.5+' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '≤ 25 km' })).toBeTruthy();
+  });
+
+  it('hides the Max distance group entirely for outside_country (proxy rejects max_distance_km there)', async () => {
+    render(
+      <FilterSheet visible initialFilters={EMPTY_FILTERS} scope="outside_country" onApply={jest.fn()} onClose={jest.fn()} />
+    );
+    await flush();
+    expect(screen.queryByText('Max distance')).toBeNull();
   });
 
   it('applies the current draft selection on Apply and closes on success', async () => {
     const onApply = jest.fn().mockResolvedValue({ status: 'success', activities: [] });
     const onClose = jest.fn();
-    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} onApply={onApply} onClose={onClose} />);
+    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} scope="home" onApply={onApply} onClose={onClose} />);
     await flush();
 
     fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
@@ -45,7 +53,7 @@ describe('FilterSheet', () => {
     expect(onApply).toHaveBeenCalledWith({
       categories: ['sports'],
       minRating: null,
-      maxDistanceKm: null,
+      maxDistanceKm: 50,
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -53,7 +61,7 @@ describe('FilterSheet', () => {
   it('keeps the sheet open and shows the error, preserving the selection, when Apply fails', async () => {
     const onApply = jest.fn().mockResolvedValue({ status: 500, message: 'internal error' });
     const onClose = jest.fn();
-    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} onApply={onApply} onClose={onClose} />);
+    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} scope="home" onApply={onApply} onClose={onClose} />);
     await flush();
 
     fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
@@ -68,18 +76,21 @@ describe('FilterSheet', () => {
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
   });
 
-  it('Clear all resets every group to unset', async () => {
+  it('Clear all resets every group to unset, including the distance slider back to its 50km ceiling', async () => {
     const initial: Filters = { categories: ['sports'], minRating: 4.5, maxDistanceKm: 25 };
-    render(<FilterSheet visible initialFilters={initial} onApply={jest.fn()} onClose={jest.fn()} />);
+    render(<FilterSheet visible initialFilters={initial} scope="home" onApply={jest.fn()} onClose={jest.fn()} />);
     await flush();
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
+    expect(screen.getByText('Within 25 km')).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: 'Clear all' }));
 
-    // Sports chip returns to unselected; the always-present "Any" options
-    // (rating/distance) legitimately stay selected as the default.
+    // Sports chip returns to unselected; the always-present "Any" rating
+    // option and the slider's 50km ceiling legitimately stay selected as
+    // the default.
     expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /sports, selected/i })).toBeNull();
+    expect(screen.getByText('Within 50 km')).toBeTruthy();
   });
 
   it('seeds the draft straight from initialFilters on mount', async () => {
@@ -88,7 +99,7 @@ describe('FilterSheet', () => {
     // an `initialFilters` prop change in place; a fresh mount already reads
     // the latest `initialFilters` as its starting draft.
     const withSports: Filters = { ...EMPTY_FILTERS, categories: ['sports'] };
-    render(<FilterSheet visible initialFilters={withSports} onApply={jest.fn()} onClose={jest.fn()} />);
+    render(<FilterSheet visible initialFilters={withSports} scope="home" onApply={jest.fn()} onClose={jest.fn()} />);
     await flush();
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
   });

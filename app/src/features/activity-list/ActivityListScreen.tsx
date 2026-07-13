@@ -232,6 +232,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
         key={sheetVisible ? 'open' : 'closed'}
         visible={sheetVisible}
         initialFilters={appliedFilters}
+        scope={selection.scope}
         onApply={handleApply}
         onClose={closeSheet}
       />

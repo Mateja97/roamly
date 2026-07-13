@@ -1,18 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ElementRef, ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { X } from 'lucide-react-native';
 import type { ActivitiesQueryResult } from '../../api/activities';
 import { FilterChip } from '../../components/FilterChip';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { CATEGORY_OPTIONS, DISTANCE_OPTIONS, EMPTY_FILTERS, RATING_OPTIONS } from './filters';
+import { CATEGORY_OPTIONS, EMPTY_FILTERS, MAX_DISTANCE_KM, MIN_DISTANCE_KM, RATING_OPTIONS } from './filters';
 import type { Filters } from './types';
+import type { Scope } from '../scope-picker/types';
 
 type FilterSheetProps = {
   visible: boolean;
   initialFilters: Filters;
+  // T3: the "Max distance" group only applies to nearby/home — the proxy
+  // rejects max_distance_km for outside_country, so the group is hidden
+  // there rather than sent-and-silently-ignored.
+  scope: Scope;
   onApply: (filters: Filters) => Promise<ActivitiesQueryResult>;
   onClose: () => void;
 };
@@ -22,7 +28,7 @@ type FilterSheetProps = {
 // draft selection + apply-in-flight/error lifecycle — Apply only commits to
 // the screen's applied filters (via onApply) on success; on failure the
 // sheet stays open with the user's selection intact (see ActivityListScreen).
-export function FilterSheet({ visible, initialFilters, onApply, onClose }: FilterSheetProps) {
+export function FilterSheet({ visible, initialFilters, scope, onApply, onClose }: FilterSheetProps) {
   const [draft, setDraft] = useState<Filters>(initialFilters);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,11 +147,12 @@ export function FilterSheet({ visible, initialFilters, onApply, onClose }: Filte
               )}
             </FilterGroup>
 
-            <FilterGroup label="Max distance">
-              {singleSelectChips(DISTANCE_OPTIONS, draft.maxDistanceKm, (maxDistanceKm) =>
-                setDraft((prev) => ({ ...prev, maxDistanceKm }))
-              )}
-            </FilterGroup>
+            {scope !== 'outside_country' && (
+              <DistanceSlider
+                value={draft.maxDistanceKm}
+                onChange={(maxDistanceKm) => setDraft((prev) => ({ ...prev, maxDistanceKm }))}
+              />
+            )}
           </ScrollView>
 
           {/* Sibling of the ScrollView, not inside it — design-spec.md calls
@@ -197,10 +204,8 @@ function FilterGroup({ label, children }: { label: string; children: ReactNode }
   );
 }
 
-// Rating and distance are both plain single-select-with-an-"Any"-option
-// groups (unlike price tier, which has no "Any" chip and toggles off
-// instead) — one renderer covers both rather than repeating the map/chip
-// JSX twice.
+// Rating is a plain single-select-with-an-"Any"-option group (unlike price
+// tier, which has no "Any" chip and toggles off instead).
 function singleSelectChips<T>(
   options: { value: T | null; label: string }[],
   selected: T | null,
@@ -209,6 +214,63 @@ function singleSelectChips<T>(
   return options.map((option) => (
     <FilterChip key={option.label} variant="select" label={option.label} selected={selected === option.value} onPress={() => onSelect(option.value)} />
   ));
+}
+
+// @react-native-community/slider's published typings don't expose a
+// `thumbStyle`/`thumbSize` override that actually reaches its web renderer —
+// 20 is that renderer's own fixed thumb size (`constants.THUMB_SIZE`), used
+// here only to position the decorative ring, not to resize the real thumb.
+const THUMB_SIZE = 20;
+const RING_SIZE = THUMB_SIZE + 8; // ~2px --surface gap on each side, per the recipe
+
+// DESIGN_STANDARDS.md's Slider (range) recipe: continuous 1-50km control
+// replacing the old fixed distance chips. Delegates drag/keyboard/a11y to
+// @react-native-community/slider (native thumb + track) and layers the
+// label row, end labels, and the decorative drag/focus ring on top — the
+// ring position is a percentage-of-track approximation (see trackWidth),
+// not a pixel-exact readout of the native thumb.
+function DistanceSlider({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const [dragging, setDragging] = useState(false);
+  const [trackWidth, setTrackWidth] = useState(0);
+  const focus = useFocusable();
+  const showRing = (dragging || focus.focused) && trackWidth > 0;
+  const fraction = (value - MIN_DISTANCE_KM) / (MAX_DISTANCE_KM - MIN_DISTANCE_KM);
+  const thumbCenter = THUMB_SIZE / 2 + fraction * (trackWidth - THUMB_SIZE);
+
+  return (
+    <View style={styles.group}>
+      <View style={styles.distanceLabelRow}>
+        <Text style={styles.groupLabel}>Max distance</Text>
+        <Text style={styles.distanceValue}>Within {value} km</Text>
+      </View>
+      <View onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}>
+        <Slider
+          style={styles.slider}
+          minimumValue={MIN_DISTANCE_KM}
+          maximumValue={MAX_DISTANCE_KM}
+          step={1}
+          value={value}
+          minimumTrackTintColor={colors.primary}
+          maximumTrackTintColor={colors.border}
+          thumbTintColor={colors.primary}
+          onValueChange={onChange}
+          onSlidingStart={() => setDragging(true)}
+          onSlidingComplete={() => setDragging(false)}
+          onFocus={focus.onFocus}
+          onBlur={focus.onBlur}
+          accessibilityLabel="Max distance"
+          accessibilityValue={{ text: `${value} kilometres` }}
+        />
+        {showRing && (
+          <View pointerEvents="none" style={[styles.sliderRing, { left: thumbCenter - RING_SIZE / 2 }]} />
+        )}
+      </View>
+      <View style={styles.distanceEndLabelsRow}>
+        <Text style={styles.distanceEndLabel}>{MIN_DISTANCE_KM} km</Text>
+        <Text style={styles.distanceEndLabel}>{MAX_DISTANCE_KM} km</Text>
+      </View>
+    </View>
+  );
 }
 
 const OFFSCREEN_Y = 600;
@@ -279,6 +341,41 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
+  },
+  distanceLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  distanceValue: {
+    fontSize: fontSize.md,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  slider: {
+    width: '100%',
+    height: 44,
+  },
+  // Drag/focus feedback ring — offset ~2px from the thumb (never flush; cream
+  // directly on the gold thumb is only 2.32:1, an accepted gap per
+  // design-spec.md, not something to "fix" by moving the ring onto the thumb).
+  sliderRing: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -RING_SIZE / 2,
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth: 2,
+    borderColor: colors.text,
+  },
+  distanceEndLabelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  distanceEndLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
   },
   chipsRow: {
     flexDirection: 'row',

@@ -31,14 +31,21 @@ describe('filterChips', () => {
   });
 
   it('a chip.remove() clears only that one filter value', () => {
-    const filters: Filters = { categories: ['sports', 'art_and_design'], minRating: null, maxDistanceKm: null };
+    const filters: Filters = { categories: ['sports', 'art_and_design'], minRating: null, maxDistanceKm: 25 };
     const chips = filterChips(filters);
     const sportsChip = chips.find((c) => c.label === 'Sports')!;
     expect(sportsChip.remove()).toEqual({
       categories: ['art_and_design'],
       minRating: null,
-      maxDistanceKm: null,
+      maxDistanceKm: 25,
     });
+  });
+
+  it('a max-distance chip.remove() resets the radius to the 50km ceiling', () => {
+    const filters: Filters = { ...EMPTY_FILTERS, maxDistanceKm: 10 };
+    const chips = filterChips(filters);
+    const distanceChip = chips.find((c) => c.key === 'max-distance')!;
+    expect(distanceChip.remove().maxDistanceKm).toBe(50);
   });
 
   it('is empty for the empty filter set', () => {
@@ -47,17 +54,17 @@ describe('filterChips', () => {
 });
 
 describe('buildActivitiesRequest', () => {
-  it('sends current_location for nearby', () => {
+  it('sends current_location for nearby, plus the slider default (50km ceiling)', () => {
     const req = buildActivitiesRequest(
       { scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } },
       EMPTY_FILTERS
     );
-    expect(req).toEqual({ scope: 'nearby', current_location: { lat: 1, lng: 2 } });
+    expect(req).toEqual({ scope: 'nearby', current_location: { lat: 1, lng: 2 }, max_distance_km: 50 });
   });
 
-  it('sends home_location for home', () => {
+  it('sends home_location for home, plus the slider default (50km ceiling)', () => {
     const req = buildActivitiesRequest({ scope: 'home', homeLocation: HOME_LOCATION }, EMPTY_FILTERS);
-    expect(req).toEqual({ scope: 'home', home_location: HOME_LOCATION });
+    expect(req).toEqual({ scope: 'home', home_location: HOME_LOCATION, max_distance_km: 50 });
   });
 
   it('sends home_country and the top_rated sort flag for outside_country', () => {
@@ -73,7 +80,7 @@ describe('buildActivitiesRequest', () => {
   });
 
   it('omits home_location/home_country when not yet resolved', () => {
-    expect(buildActivitiesRequest({ scope: 'home' }, EMPTY_FILTERS)).toEqual({ scope: 'home' });
+    expect(buildActivitiesRequest({ scope: 'home' }, EMPTY_FILTERS)).toEqual({ scope: 'home', max_distance_km: 50 });
     expect(buildActivitiesRequest({ scope: 'outside_country' }, EMPTY_FILTERS)).toEqual({ scope: 'outside_country' });
   });
 
