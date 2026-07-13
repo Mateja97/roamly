@@ -4,7 +4,10 @@ import { ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
 import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { colors, fontSize, radius, space } from '../theme/tokens';
+import { MapThumbnail } from './MapThumbnail';
 import { Skeleton } from './Skeleton';
+
+const MAX_TAGS = 3;
 
 type ActivityCardProps = {
   activity: Activity;
@@ -14,22 +17,27 @@ type ActivityCardProps = {
 
 // DESIGN_STANDARDS.md's Activity card recipe: 3:2 image on top (reserved
 // box, loading/broken states), then a --surface body with category badge +
-// rating on row 1, title, and a meta row of distance/location. No price/cost
-// signage anywhere in the flow (T1) — `Activity.price_tier` stays in the wire
-// contract but never renders.
+// rating on row 1, title, an optional description snippet, an optional tags
+// row, and a location row (map thumbnail + distance/location text). No
+// price/cost signage anywhere in the flow (T1) — `Activity.price_tier` stays
+// in the wire contract but never renders.
 export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const imageUri = activity.image_refs[0];
 
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
+  const tags = activity.tags.slice(0, MAX_TAGS);
+
+  const label = [
+    `${activity.title}, ${CATEGORY_LABELS[activity.category]}, rated ${activity.rating.toFixed(1)}, ${metaText}`,
+    activity.description || null,
+    tags.length > 0 ? `Tags: ${tags.join(', ')}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
-    <View
-      style={styles.card}
-      accessible
-      accessibilityRole="summary"
-      accessibilityLabel={`${activity.title}, ${CATEGORY_LABELS[activity.category]}, rated ${activity.rating.toFixed(1)}, ${metaText}`}
-    >
+    <View style={styles.card} accessible accessibilityRole="summary" accessibilityLabel={label}>
       <View style={styles.imageBox}>
         {imageUri && imageState !== 'broken' ? (
           <Image
@@ -63,9 +71,30 @@ export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
           {activity.title}
         </Text>
 
-        <View style={styles.metaRow}>
-          <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-          <Text style={styles.metaText}>{metaText}</Text>
+        {activity.description ? (
+          <Text style={styles.description} numberOfLines={2}>
+            {activity.description}
+          </Text>
+        ) : null}
+
+        {tags.length > 0 ? (
+          <View style={styles.tagsRow}>
+            {tags.map((tag) => (
+              <View key={tag} style={styles.tagPill}>
+                <Text style={styles.tagLabel} numberOfLines={1}>
+                  {tag}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        <View style={styles.locationRow}>
+          <MapThumbnail location={activity.location} />
+          <View style={styles.metaRow}>
+            <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
+            <Text style={styles.metaText}>{metaText}</Text>
+          </View>
         </View>
       </View>
     </View>
@@ -85,7 +114,11 @@ export function ActivityCardSkeleton() {
           <Skeleton width={40} height={16} />
         </View>
         <Skeleton width="80%" height={20} style={styles.skeletonLine} />
-        <Skeleton width="50%" height={16} style={styles.skeletonLine} />
+        <Skeleton width="100%" height={16} style={styles.skeletonLine} />
+        <Skeleton width="70%" height={16} style={styles.skeletonLine} />
+        <View style={[styles.locationRow, styles.skeletonLine]}>
+          <Skeleton width={72} height={72} />
+        </View>
       </View>
     </View>
   );
@@ -159,7 +192,35 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '500',
   },
+  description: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    gap: space[1],
+    overflow: 'hidden',
+  },
+  tagPill: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingVertical: space[1],
+    paddingHorizontal: space[2],
+  },
+  tagLabel: {
+    fontSize: fontSize.xs,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
   metaRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[1],

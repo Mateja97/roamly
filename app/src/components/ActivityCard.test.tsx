@@ -43,4 +43,29 @@ describe('ActivityCard', () => {
     render(<ActivityCardSkeleton />);
     expect(screen.queryByText('Skadarlija Food Walk')).toBeNull();
   });
+
+  it('renders the description snippet and up to 3 tags, both included in the a11y label', () => {
+    render(<ActivityCard activity={{ ...activity, tags: ['food', 'walking', 'local', 'extra'] }} showDistance />);
+    expect(screen.getByText('A tasty walk')).toBeTruthy();
+    expect(screen.getByText('food')).toBeTruthy();
+    expect(screen.getByText('walking')).toBeTruthy();
+    expect(screen.getByText('local')).toBeTruthy();
+    expect(screen.queryByText('extra')).toBeNull();
+    const card = screen.getByLabelText(/a tasty walk.*tags: food, walking, local/i);
+    expect(card).toBeTruthy();
+  });
+
+  it('omits the description line and its label clause when description is empty', () => {
+    render(<ActivityCard activity={{ ...activity, description: '' }} showDistance />);
+    expect(screen.queryByText('A tasty walk')).toBeNull();
+    const card = screen.getByLabelText(/skadarlija food walk/i);
+    expect(card.props.accessibilityLabel).not.toMatch(/tasty walk/i);
+  });
+
+  it('omits the tags row and its label clause when tags is empty', () => {
+    render(<ActivityCard activity={{ ...activity, tags: [] }} showDistance />);
+    expect(screen.queryByText('food')).toBeNull();
+    const card = screen.getByLabelText(/skadarlija food walk/i);
+    expect(card.props.accessibilityLabel).not.toMatch(/tags:/i);
+  });
 });
