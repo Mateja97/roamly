@@ -18,15 +18,14 @@ async function flush() {
 }
 
 describe('FilterSheet', () => {
-  it('renders all four filter groups when visible', async () => {
+  it('renders all three filter groups when visible', async () => {
     render(<FilterSheet visible initialFilters={EMPTY_FILTERS} onApply={jest.fn()} onClose={jest.fn()} />);
     await flush();
     expect(screen.getByText('Category')).toBeTruthy();
-    expect(screen.getByText('Price tier')).toBeTruthy();
+    expect(screen.queryByText('Price tier')).toBeNull();
     expect(screen.getByText('Minimum rating')).toBeTruthy();
     expect(screen.getByText('Max distance')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '$$' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '4.5+' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '≤ 25 km' })).toBeTruthy();
   });
@@ -38,7 +37,6 @@ describe('FilterSheet', () => {
     await flush();
 
     fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
-    fireEvent.press(screen.getByRole('button', { name: '$$' }));
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
@@ -46,7 +44,6 @@ describe('FilterSheet', () => {
 
     expect(onApply).toHaveBeenCalledWith({
       categories: ['sports'],
-      priceTier: 'moderate',
       minRating: null,
       maxDistanceKm: null,
     });
@@ -71,29 +68,18 @@ describe('FilterSheet', () => {
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
   });
 
-  it('a second tap on the selected price-tier chip deselects it (no explicit "Any" option there)', async () => {
-    render(<FilterSheet visible initialFilters={EMPTY_FILTERS} onApply={jest.fn()} onClose={jest.fn()} />);
-    await flush();
-    fireEvent.press(screen.getByRole('button', { name: '$$' }));
-    expect(screen.getByRole('button', { name: '$$, selected' })).toBeTruthy();
-    fireEvent.press(screen.getByRole('button', { name: '$$, selected' }));
-    expect(screen.getByRole('button', { name: '$$' })).toBeTruthy();
-  });
-
   it('Clear all resets every group to unset', async () => {
-    const initial: Filters = { categories: ['sports'], priceTier: 'moderate', minRating: 4.5, maxDistanceKm: 25 };
+    const initial: Filters = { categories: ['sports'], minRating: 4.5, maxDistanceKm: 25 };
     render(<FilterSheet visible initialFilters={initial} onApply={jest.fn()} onClose={jest.fn()} />);
     await flush();
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: 'Clear all' }));
 
-    // Sports/price-tier chips return to unselected; the always-present "Any"
-    // options (rating/distance) legitimately stay selected as the default.
+    // Sports chip returns to unselected; the always-present "Any" options
+    // (rating/distance) legitimately stay selected as the default.
     expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '$$' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /sports, selected/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /\$\$, selected/i })).toBeNull();
   });
 
   it('seeds the draft straight from initialFilters on mount', async () => {

@@ -284,7 +284,7 @@ don't build a generic wizard/stepper abstraction until a second step exists.
 ### Activity card
 
 The visual, image-led card for one browseable activity in a list (title,
-category, price tier, rating, image, distance/location). The List row recipe
+category, rating, image, distance/location). The List row recipe
 is for compact text rows; this is richer. Non-interactive display card for
 MVP (no detail screen yet — see Deferred); still exposed as a single
 screen-reader group.
@@ -307,8 +307,9 @@ Structure (image-top):
   - Title `--font-size-lg` `--text` (7.1:1), up to 2 lines then ellipsis
     (truncate, never clip — honor dynamic text scaling).
   - Meta row: 16px `MapPin` + distance/location `--font-size-sm` `--text-muted`
-    (5.3:1) · price tier `--font-size-sm` `--text-muted` (e.g. "$$"). All
-    `--text-muted` on `--surface`.
+    (5.3:1 on `--surface`). No price/cost element — the flow shows no price
+    signage anywhere (product decision; the `PriceTier` field stays in the wire
+    contract but never renders).
 
 No new color tokens. `--space-4` between stacked cards. ponytail: static
 display card — no press/hover/focus-as-button until a detail route exists to

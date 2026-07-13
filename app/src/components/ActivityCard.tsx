@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
-import { CATEGORY_LABELS, PRICE_TIER_LABELS } from '../features/activity-list/filters';
+import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 import { Skeleton } from './Skeleton';
 
@@ -14,7 +14,9 @@ type ActivityCardProps = {
 
 // DESIGN_STANDARDS.md's Activity card recipe: 3:2 image on top (reserved
 // box, loading/broken states), then a --surface body with category badge +
-// rating on row 1, title, and a meta row of distance/location + price tier.
+// rating on row 1, title, and a meta row of distance/location. No price/cost
+// signage anywhere in the flow (T1) — `Activity.price_tier` stays in the wire
+// contract but never renders.
 export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const imageUri = activity.image_refs[0];
@@ -26,7 +28,7 @@ export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
       style={styles.card}
       accessible
       accessibilityRole="summary"
-      accessibilityLabel={`${activity.title}, ${CATEGORY_LABELS[activity.category]}, rated ${activity.rating.toFixed(1)}, ${PRICE_TIER_LABELS[activity.price_tier]}, ${metaText}`}
+      accessibilityLabel={`${activity.title}, ${CATEGORY_LABELS[activity.category]}, rated ${activity.rating.toFixed(1)}, ${metaText}`}
     >
       <View style={styles.imageBox}>
         {imageUri && imageState !== 'broken' ? (
@@ -64,8 +66,6 @@ export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
         <View style={styles.metaRow}>
           <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
           <Text style={styles.metaText}>{metaText}</Text>
-          <Text style={styles.metaText}>·</Text>
-          <Text style={styles.metaText}>{PRICE_TIER_LABELS[activity.price_tier]}</Text>
         </View>
       </View>
     </View>

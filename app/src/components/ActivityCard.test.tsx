@@ -17,13 +17,14 @@ const activity: Activity = {
 };
 
 describe('ActivityCard', () => {
-  it('renders title, category, rating, price tier, and distance as one accessible group', () => {
+  it('renders title, category, rating, and distance as one accessible group, with no price signage', () => {
     render(<ActivityCard activity={activity} showDistance />);
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
     expect(screen.getByText('Food & Drink')).toBeTruthy();
     expect(screen.getByText('4.6')).toBeTruthy();
-    expect(screen.getByText('$$')).toBeTruthy();
-    expect(screen.getByLabelText(/skadarlija food walk.*food & drink.*rated 4.6.*\$\$.*0.4 km away/i)).toBeTruthy();
+    expect(screen.queryByText('$$')).toBeNull();
+    const card = screen.getByLabelText(/skadarlija food walk.*food & drink.*rated 4.6.*0.4 km away/i);
+    expect(card.props.accessibilityLabel).not.toMatch(/\$/);
   });
 
   it('shows the country instead of distance when showDistance is false (outside_country)', () => {
