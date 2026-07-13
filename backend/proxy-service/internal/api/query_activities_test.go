@@ -39,8 +39,12 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 		Activities: []*activitiesv1.Activity{{
 			Id: "1", Title: "Kayaking", Category: activitiesv1.Category_CATEGORY_SPORTS,
 			Location: &activitiesv1.Location{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
-			Rating:    4.8,
-			ImageRefs: []string{"img1"}, Tags: []string{"sports"}, DistanceKm: 3.2,
+			Rating: 4.8,
+			Photos: []*activitiesv1.Photo{
+				{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane"},
+				{Url: "img2"}, // unresolved: no author, attribution must be omitted
+			},
+			Tags: []string{"sports"}, DistanceKm: 3.2,
 		}},
 	}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
@@ -56,6 +60,13 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	}
 	if len(got.Activities) != 1 || got.Activities[0].Category != "sports" {
 		t.Errorf("unexpected response: %+v", got)
+	}
+	photos := got.Activities[0].ImageRefs
+	if len(photos) != 2 || photos[0].URI != "img1" || photos[0].Attribution == nil || photos[0].Attribution.Author != "Jane Doe" {
+		t.Errorf("unexpected resolved photo: %+v", photos)
+	}
+	if photos[1].URI != "img2" || photos[1].Attribution != nil {
+		t.Errorf("unresolved photo must omit attribution: %+v", photos[1])
 	}
 	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_HOME {
 		t.Errorf("gRPC request scope = %v, want SCOPE_HOME", fake.got.GetScope())

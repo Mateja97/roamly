@@ -59,8 +59,9 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 		{
 			ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySports,
 			Location: activitiessvc.Point{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
-			Rating:    4.8,
-			ImageRefs: []string{"img1"}, Tags: []string{"sports"}, DistanceKM: 3.2,
+			Rating: 4.8,
+			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com"}},
+			Tags:   []string{"sports"}, DistanceKM: 3.2,
 		},
 	}}
 	client := dialServer(t, fake)
@@ -78,6 +79,9 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	got := resp.GetActivities()[0]
 	if got.GetId() != "1" || got.GetCategory() != activitiesv1.Category_CATEGORY_SPORTS {
 		t.Errorf("unexpected activity translation: %+v", got)
+	}
+	if len(got.GetPhotos()) != 1 || got.GetPhotos()[0].GetUrl() != "img1" || got.GetPhotos()[0].GetAuthor() != "Jane Doe" {
+		t.Errorf("unexpected photo translation: %+v", got.GetPhotos())
 	}
 	if fake.got.Scope != activitiessvc.ScopeHome {
 		t.Errorf("service received scope = %v, want home", fake.got.Scope)

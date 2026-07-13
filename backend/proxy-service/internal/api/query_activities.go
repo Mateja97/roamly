@@ -59,6 +59,22 @@ type queryActivitiesRequestDTO struct {
 	Sort string `json:"sort,omitempty"`
 }
 
+// attributionDTO is Google's mandatory author attribution for a Places
+// photo (name + optional profile link). Omitted from the wire entirely
+// (via photoDTO's omitempty) when the photo hasn't been resolved yet.
+type attributionDTO struct {
+	Author string `json:"author"`
+	Link   string `json:"link,omitempty"`
+}
+
+// photoDTO is one activity photo. Attribution is nil (and therefore
+// omitted) for an unresolved photo — the app's existing normalizer treats
+// that identically to today's plain-string wire format.
+type photoDTO struct {
+	URI         string          `json:"uri"`
+	Attribution *attributionDTO `json:"attribution,omitempty"`
+}
+
 // activityDTO carries every field the app's activity card needs to render.
 type activityDTO struct {
 	ID          string      `json:"id"`
@@ -68,7 +84,7 @@ type activityDTO struct {
 	Location    locationDTO `json:"location"`
 	Country     string      `json:"country"`
 	Rating      float64     `json:"rating"`
-	ImageRefs   []string    `json:"image_refs"`
+	ImageRefs   []photoDTO  `json:"image_refs"`
 	Tags        []string    `json:"tags"`
 	DistanceKM  float64     `json:"distance_km"`
 }
@@ -197,10 +213,22 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		Location:    locationDTO{Lat: a.GetLocation().GetLat(), Lng: a.GetLocation().GetLng()},
 		Country:     a.GetCountry(),
 		Rating:      a.GetRating(),
-		ImageRefs:   a.GetImageRefs(),
+		ImageRefs:   toPhotoDTOs(a.GetPhotos()),
 		Tags:        a.GetTags(),
 		DistanceKM:  a.GetDistanceKm(),
 	}
+}
+
+func toPhotoDTOs(photos []*activitiesv1.Photo) []photoDTO {
+	out := make([]photoDTO, len(photos))
+	for i, p := range photos {
+		dto := photoDTO{URI: p.GetUrl()}
+		if p.GetAuthor() != "" {
+			dto.Attribution = &attributionDTO{Author: p.GetAuthor(), Link: p.GetAuthorLink()}
+		}
+		out[i] = dto
+	}
+	return out
 }
 
 func toDomainCategory(c activitiesv1.Category, logger *slog.Logger) activitiessvc.Category {

@@ -39,6 +39,17 @@ type Point struct {
 	Lng float64
 }
 
+// Photo is a single activity photo, sourced from Google Places and
+// resolved once at seed/build time (never a live per-request Places
+// call). Author/AuthorLink are empty for a photo that hasn't been
+// resolved yet — the client falls back to its missing-image state rather
+// than a placeholder. JSON tags match the `photos` JSONB column shape.
+type Photo struct {
+	URL        string `json:"url"`
+	Author     string `json:"author,omitempty"`
+	AuthorLink string `json:"author_link,omitempty"`
+}
+
 // Activity is the activities table row, plus a server-computed DistanceKM
 // that is only meaningful for the SCOPE_HOME / SCOPE_NEARBY scopes.
 type Activity struct {
@@ -49,7 +60,7 @@ type Activity struct {
 	Location    Point
 	Country     string
 	Rating      float64
-	ImageRefs   []string
+	Photos      []Photo
 	Tags        []string
 	DistanceKM  float64
 }
