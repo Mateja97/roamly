@@ -10,7 +10,7 @@ const activity: Activity = {
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
-  image_refs: ['https://example.com/img.jpg'],
+  image_refs: [{ uri: 'https://example.com/img.jpg' }],
   tags: ['food', 'walking', 'local', 'evening'],
   distance_km: 0.4,
 };
@@ -86,5 +86,24 @@ describe('ActivityDetailScreen', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     render(<ActivityDetailScreen activity={{ ...activity, tags: [] }} showDistance onBack={jest.fn()} />);
     expect(screen.queryByText('food')).toBeNull();
+  });
+
+  it('renders no attribution caption when the hero photo carries none (no-op)', () => {
+    render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+    expect(screen.queryByText(/photo by/i)).toBeNull();
+  });
+
+  it('shows the hero attribution as a link opening the author profile when present', () => {
+    const withLink = {
+      ...activity,
+      image_refs: [
+        {
+          uri: 'https://example.com/img.jpg',
+          attribution: { author: 'Jane Doe', link: 'https://maps.google.com/maps/contrib/1' },
+        },
+      ],
+    };
+    render(<ActivityDetailScreen activity={withLink} showDistance onBack={jest.fn()} />);
+    expect(screen.getByRole('link', { name: 'Photo by Jane Doe' })).toBeTruthy();
   });
 });

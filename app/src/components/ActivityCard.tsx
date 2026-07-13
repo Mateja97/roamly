@@ -6,6 +6,7 @@ import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 import { MapThumbnail } from './MapThumbnail';
+import { PhotoAttributionCaption } from './PhotoAttributionCaption';
 import { Skeleton } from './Skeleton';
 
 const MAX_TAGS = 3;
@@ -29,7 +30,8 @@ type ActivityCardProps = {
 export function ActivityCard({ activity, showDistance, onPress }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const focus = useFocusable();
-  const imageUri = activity.image_refs[0];
+  const photo = activity.image_refs[0];
+  const imageUri = photo?.uri;
 
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
   const tags = activity.tags.slice(0, MAX_TAGS);
@@ -69,6 +71,8 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
         )}
         {imageUri && imageState === 'loading' && <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />}
       </View>
+
+      <PhotoAttributionCaption attribution={photo?.attribution} horizontalInset={space[4]} />
 
       <View style={styles.body}>
         <View style={styles.row}>

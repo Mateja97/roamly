@@ -14,7 +14,28 @@ describe('queryActivities', () => {
   it('resolves success with the activities array on 200', async () => {
     mockFetchOnce(200, { activities: [{ id: '1' }] });
     const result = await queryActivities({ scope: 'home' });
-    expect(result).toEqual({ status: 'success', activities: [{ id: '1' }] });
+    expect(result).toEqual({ status: 'success', activities: [{ id: '1', image_refs: [] }] });
+  });
+
+  it('normalizes today\'s plain-string image_refs into { uri } photo objects', async () => {
+    mockFetchOnce(200, { activities: [{ id: '1', image_refs: ['https://example.com/img.jpg'] }] });
+    const result = await queryActivities({ scope: 'home' });
+    expect(result).toEqual({
+      status: 'success',
+      activities: [{ id: '1', image_refs: [{ uri: 'https://example.com/img.jpg' }] }],
+    });
+  });
+
+  it('passes through an already-object image_refs entry (T3 wire format) unchanged', async () => {
+    const attribution = { author: 'Jane Doe', link: 'https://maps.google.com/maps/contrib/1' };
+    mockFetchOnce(200, {
+      activities: [{ id: '1', image_refs: [{ uri: 'https://example.com/img.jpg', attribution }] }],
+    });
+    const result = await queryActivities({ scope: 'home' });
+    expect(result).toEqual({
+      status: 'success',
+      activities: [{ id: '1', image_refs: [{ uri: 'https://example.com/img.jpg', attribution }] }],
+    });
   });
 
   it('resolves a 400 with the server message', async () => {
