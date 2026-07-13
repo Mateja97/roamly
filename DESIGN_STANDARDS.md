@@ -376,6 +376,49 @@ swaps. Fully keyboard-operable, never tap-only.
 
 No new color tokens. `--space-4` between stacked cards.
 
+### Photo attribution (Google-sourced imagery)
+
+Credits a photo that carries Google author attribution (Places photos).
+Renders **only** when that photo's optional attribution is present; when it
+is absent the element renders nothing — zero height, no background, no
+distinction treatment. A non-attributed photo (e.g. today's placeholder
+imagery) looks exactly as it did before this recipe existed.
+
+- **Placement**: a single caption line flush directly **below** the photo it
+  credits — never overlaid on the image. Contrast over arbitrary photography
+  can't be guaranteed, and an overlay risks obscuring the very photo Google's
+  policy forbids obscuring. The caption belongs to that one photo and travels
+  with it wherever the photo appears (card image, detail hero, and each photo
+  of any future gallery — per-photo, not per-screen).
+- **Content**: "Photo by {author}", `--font-size-xs`, `--space-2` vertical /
+  `--space-4` horizontal padding matched to the photo's horizontal insets.
+  - *No link*: author name in `--text-muted`, no underline, non-interactive.
+  - *With link*: the author name is an **underlined** link — `--text` label,
+    underlined so the link affordance never depends on the gold-on-surface
+    pairing that fails normal-text contrast (`--primary` on `--surface` is
+    only 3.1:1). The "Photo by" prefix stays `--text-muted`. The link is a
+    44×44 tap target (the strip takes `min-height: 44px` when it holds a
+    link), ≥`--space-2` from neighbors, keyboard-operable, with a 2px
+    `--primary` focus outline. Opens the author's Google profile.
+  - The attribution text is never truncated, recolored, or restyled away from
+    the author's given name (Google policy: not hidden/obscured/altered); it
+    wraps to a second line rather than ellipsing.
+- **Visual distinction of the Google photo**: the caption strip carries a 1px
+  `--border` top hairline separating it (and the photo above) from the
+  content below, plus its `--space-2`/`--space-4` whitespace inset. This strip
+  is the sanctioned "Google-sourced" marker (border + whitespace treatment);
+  no extra frame is drawn around the photo itself.
+- **No layout jump**: the strip is part of the photo block and its
+  presence/absence is decided at data-load time, not toggled after paint, so
+  nothing shifts. When attribution is absent the block collapses fully — no
+  reserved empty strip; attribution is either present from first render or
+  never.
+
+Pre-computed pairings: `--text-muted` author on `--surface` 5.3:1 ✓ / on
+`--bg` 6.2:1 ✓ · `--text` link on `--surface` 7.1:1 ✓ / on `--bg` 8.5:1 ✓ ·
+`--primary` focus outline on `--surface` 3.1:1 / on `--bg` 3.65:1 (UI element,
+clears 3:1). No new color tokens.
+
 ### Filter chip (selectable / removable)
 
 The interactive sibling of the (non-interactive) Badge/pill, for two jobs: a

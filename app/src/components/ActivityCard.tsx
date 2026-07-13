@@ -6,6 +6,7 @@ import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 import { MapThumbnail } from './MapThumbnail';
+import { PhotoAttributionCaption } from './PhotoAttributionCaption';
 import { Skeleton } from './Skeleton';
 
 const MAX_TAGS = 3;
@@ -29,7 +30,8 @@ type ActivityCardProps = {
 export function ActivityCard({ activity, showDistance, onPress }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const focus = useFocusable();
-  const imageUri = activity.image_refs[0];
+  const photo = activity.image_refs[0];
+  const imageUri = photo?.uri;
 
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
   const tags = activity.tags.slice(0, MAX_TAGS);
@@ -43,13 +45,17 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
     .join(', ');
 
   return (
+    // accessible={false} on the outer Pressable: it must NOT collapse everything below
+    // (including PhotoAttributionCaption's own link) into one accessibility node. The
+    // card-wide `label` instead lives on the body View below — a touch on any accessible
+    // descendant still lands inside the outer Pressable's bounds and fires onPress — so
+    // the attribution link (its own accessible Pressable, a sibling of body) stays
+    // independently reachable instead of being swallowed into the card's group.
     <Pressable
       onPress={onPress}
       onFocus={focus.onFocus}
       onBlur={focus.onBlur}
-      accessible
-      accessibilityRole="button"
-      accessibilityLabel={label}
+      accessible={false}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed, focus.focused && styles.cardFocused]}
     >
       <View style={styles.imageBox}>
@@ -70,7 +76,9 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
         {imageUri && imageState === 'loading' && <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />}
       </View>
 
-      <View style={styles.body}>
+      <PhotoAttributionCaption attribution={photo?.attribution} horizontalInset={space[4]} />
+
+      <View style={styles.body} accessible accessibilityRole="button" accessibilityLabel={label}>
         <View style={styles.row}>
           <View style={styles.badge}>
             <Text style={styles.badgeLabel}>{CATEGORY_LABELS[activity.category]}</Text>

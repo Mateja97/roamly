@@ -10,7 +10,7 @@ const activity: Activity = {
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
-  image_refs: ['https://example.com/img.jpg'],
+  image_refs: [{ uri: 'https://example.com/img.jpg' }],
   tags: ['food'],
   distance_km: 0.4,
 };
@@ -81,5 +81,35 @@ describe('ActivityCard', () => {
     expect(screen.queryByText('food')).toBeNull();
     const card = screen.getByLabelText(/skadarlija food walk/i);
     expect(card.props.accessibilityLabel).not.toMatch(/tags:/i);
+  });
+
+  it('renders no attribution caption when the photo carries none (no-op)', () => {
+    render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
+    expect(screen.queryByText(/photo by/i)).toBeNull();
+  });
+
+  it('shows the author name as plain text when attribution has no link', () => {
+    const withAttribution = {
+      ...activity,
+      image_refs: [{ uri: 'https://example.com/img.jpg', attribution: { author: 'Jane Doe' } }],
+    };
+    render(<ActivityCard activity={withAttribution} showDistance onPress={jest.fn()} />);
+    expect(screen.getByText(/photo by/i)).toBeTruthy();
+    expect(screen.getByText('Jane Doe')).toBeTruthy();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('shows the author name as a link opening the attribution link when present', () => {
+    const withLink = {
+      ...activity,
+      image_refs: [
+        {
+          uri: 'https://example.com/img.jpg',
+          attribution: { author: 'Jane Doe', link: 'https://maps.google.com/maps/contrib/1' },
+        },
+      ],
+    };
+    render(<ActivityCard activity={withLink} showDistance onPress={jest.fn()} />);
+    expect(screen.getByRole('link', { name: 'Photo by Jane Doe' })).toBeTruthy();
   });
 });

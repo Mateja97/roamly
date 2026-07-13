@@ -5,6 +5,13 @@ const PROXY_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://localhost:8080';
 
 export type Location = { lat: number; lng: number };
 
+// T2: Google requires a photo's author attribution to travel with that
+// photo wherever it's shown. Optional — absent for every photo until T3
+// wires real Google Places photos through the backend.
+export type PhotoAttribution = { author: string; link?: string };
+
+export type ActivityPhoto = { uri: string; attribution?: PhotoAttribution };
+
 export type Activity = {
   id: string;
   title: string;
@@ -13,10 +20,23 @@ export type Activity = {
   location: Location;
   country: string;
   rating: number;
-  image_refs: string[];
+  image_refs: ActivityPhoto[];
   tags: string[];
   distance_km: number;
 };
+
+// The wire format today (pre-T3) is still a plain string[] of URLs; T3 will
+// move the backend to send { uri, attribution } objects. Accepting either
+// per-entry shape here means this client type change ships safely before
+// T3 lands, and needs no follow-up change once it does.
+type RawActivity = Omit<Activity, 'image_refs'> & { image_refs: (string | ActivityPhoto)[] };
+
+function toActivity(raw: RawActivity): Activity {
+  return {
+    ...raw,
+    image_refs: (raw.image_refs ?? []).map((ref) => (typeof ref === 'string' ? { uri: ref } : ref)),
+  };
+}
 
 export type ActivitiesQueryRequest = {
   scope: Scope;
@@ -55,8 +75,8 @@ export async function queryActivities(body: ActivitiesQueryRequest): Promise<Act
 
   if (res.ok) {
     try {
-      const data = (await res.json()) as { activities: Activity[] };
-      return { status: 'success', activities: data.activities };
+      const data = (await res.json()) as { activities: RawActivity[] };
+      return { status: 'success', activities: data.activities.map(toActivity) };
     } catch {
       // Malformed 200 body — same discriminated-error shape as every other
       // failure path, so callers never have to special-case a thrown reject.

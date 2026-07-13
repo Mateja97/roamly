@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ImageOff, MapPin, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity } from '../../api/activities';
 import { hasMapsKey, hasValidCoordinates, staticMapUrl } from '../../api/staticMap';
+import { PhotoAttributionCaption } from '../../components/PhotoAttributionCaption';
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
@@ -28,7 +29,8 @@ export function ActivityDetailScreen({ activity, showDistance, onBack }: Activit
   const backFocus = useFocusable();
   const [heroState, setHeroState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const [mapState, setMapState] = useState<'loading' | 'loaded' | 'broken'>('loading');
-  const heroUri = activity.image_refs[0];
+  const heroPhoto = activity.image_refs[0];
+  const heroUri = heroPhoto?.uri;
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
 
   return (
@@ -65,6 +67,8 @@ export function ActivityDetailScreen({ activity, showDistance, onBack }: Activit
           )}
           {heroUri && heroState === 'loading' && <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />}
         </View>
+
+        <PhotoAttributionCaption attribution={heroPhoto?.attribution} horizontalInset={space[6]} />
 
         <View style={styles.titleBlock}>
           <View style={styles.row}>

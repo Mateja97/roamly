@@ -28,7 +28,7 @@ const activity: Activity = {
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
-  image_refs: ['https://example.com/img.jpg'],
+  image_refs: [{ uri: 'https://example.com/img.jpg' }],
   tags: ['food'],
   distance_km: 0.4,
 };
