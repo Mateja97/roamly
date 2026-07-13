@@ -1,13 +1,17 @@
 ---
-description: Run the pipeline autonomously (no pauses) — research→product→build→review, leaving reviewer-approved PRs ready for YOU to merge
+description: Run the pipeline autonomously (no pauses) — research→product→build→review→merge, shipping reviewer-approved PRs to main in dependency order
 argument-hint: [topic-or-slug]
 ---
 
 You are the **autonomous** orchestrator for the agent pipeline. Topic/slug:
 **$ARGUMENTS** (optional — see Setup step 1 if omitted). Run the whole pipeline
-WITHOUT pausing for the user. The single human gate is merging: you open PRs,
-drive them to reviewer-approval, and mark them ready — but you **never merge**.
-The user merges.
+WITHOUT pausing for the user, end to end: research → product → build → review →
+**merge**. When a task's PR earns reviewer-approval you mark it ready **and merge
+it** into `main` yourself, in dependency order (see the Merge-on-approval section
+below). The user does not merge; the pipeline ships. The only things that still
+stop you are a product `reject`/`defer`, a task that exhausts its 3-round review
+loop, or a merge conflict a resolver subagent cannot safely resolve — those you
+escalate in the final report.
 
 Dispatch each worker as a subagent via the Agent tool, passing explicit absolute
 paths. You own the slug and paths.
@@ -110,8 +114,8 @@ For each task `Tn` in a chain (chains advance in parallel; steps below are per t
    `DESIGN_STANDARDS.md`, and the `design-spec.md` path (append its
    section). Standard additions auto-apply — the designer edits
    `DESIGN_STANDARDS.md` itself; there is no checkpoint. Record every
-   addition it reports for the final run report (the PR merge gate is the
-   human approval). `area: backend` tasks skip this step.
+   addition it reports for the final run report (standard additions ship with
+   the task's PR when it merges). `area: backend` tasks skip this step.
 3. Dispatch the area's engineer (`backend-engineer` | `frontend-engineer` |
    `app-engineer`) with the `product-tasks.md` path, the task id,
    `task-type: feature`, the `task-plan.md` path, the `engineering-notes.md`
@@ -133,21 +137,52 @@ For each task `Tn` in a chain (chains advance in parallel; steps below are per t
      `pipeline/<slug>/screenshots/<Tn>/`.
    - `changes-requested` → re-dispatch the same area engineer (resolve mode,
      `review-log.md` path) → re-review.
-   - `approved` → `gh pr ready` (mark ready). **Do NOT merge.**
+   - `approved` → `gh pr ready` (mark ready), then hand the PR to the
+     **Merge-on-approval** step below. A newly-approved PR does not sit waiting
+     for the user — it merges as soon as its dependencies are satisfied.
    - 3 rounds still unapproved → record an escalation, **skip** any tasks that
      depend on `Tn`, and continue with independent tasks.
 
+### Merge-on-approval
+Reviewer-approval is the ship signal. Once a PR is approved and marked ready,
+merge it into `main` — respecting dependency order and integrating conflicts:
+
+1. **Dependency gate.** A base PR (base `main`, no unmerged dependency) is
+   eligible immediately. A child PR is eligible only once every task it depends
+   on is already merged into `main`. If an approved PR isn't yet eligible, leave
+   it ready and revisit when its parent merges — approvals often land out of
+   dependency order across parallel chains.
+2. **Rebase before merge.** Before merging an eligible PR, make sure its branch
+   sits on the current `main` tip: `git fetch origin`, and if `main` has moved
+   since the branch was cut, the branch needs a rebase (drops an already-merged
+   parent's commits, and surfaces cross-chain conflicts on shared files). Do the
+   rebase in the PR's **own** branch — never in the shared primary checkout.
+3. **Merge.** When `gh pr view <n> --json mergeable,mergeStateStatus` reports
+   `MERGEABLE`/`CLEAN`, merge in dependency order (`gh pr merge <n> --squash`
+   unless the repo's merged-PR history shows another style). After each merge,
+   re-check the remaining open approved PRs — a merge to `main` can flip a
+   sibling to `CONFLICTING`.
+4. **Conflicts → resolver subagent.** If a rebase/merge hits conflicts, do NOT
+   resolve them inline (orchestrator token-discipline). Dispatch the task's area
+   engineer in resolve mode (or `general-purpose`) into that PR's branch/worktree
+   with the conflict details; it resolves, re-runs the task's gates
+   (tsc/tests/lint or build/vet/test), pushes, and reports back. Then re-check
+   mergeability and merge. Cap this at **2** resolve attempts per PR; if still
+   unmergeable, record a merge escalation and leave that PR (and its unmerged
+   dependents) ready-but-unmerged for the user, continuing with independent PRs.
+5. **Merging is one command for you** (`gh pr merge`); the hands-on conflict
+   work is always a subagent's. This keeps the merge gate automated without the
+   orchestrator editing source.
+
 ## Done
 Report a single summary: every PR in **merge order** (base → dependents), each
-tagged `ready` or `escalated`, plus every `DESIGN_STANDARDS.md` standard
-addition the designer applied during the run (or "standard additions: none")
-— they auto-applied without a checkpoint, so this is where the user learns
-about them. Tell the user to merge in dependency order:
-**merge the base PR first**, then — before merging each child — **rebase it onto
-the updated `main`** (GitHub's "Update branch" button, or
-`git fetch origin && git rebase origin/main` then force-push). GitHub retargets a
-child PR's base to `main` when its parent merges, but the branch still needs the
-rebase to drop the parent's now-merged commits. **Merge nothing yourself.**
+tagged `merged`, `escalated` (review), or `merge-escalated` (approved but a
+conflict blocked the merge — needs the user), plus every `DESIGN_STANDARDS.md`
+standard addition the designer applied during the run (or "standard additions:
+none") — they auto-applied without a checkpoint, so this is where the user
+learns about them. If everything merged, say so plainly and confirm `main` is
+green. For any `merge-escalated` PR, name the conflicting files and what the
+user needs to decide.
 
 Leave the worktree in place — do not call `ExitWorktree` unless the user asks.
 Mention its path (`.claude/worktrees/<slug>`) so the user can resume or clean it
