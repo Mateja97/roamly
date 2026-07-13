@@ -69,6 +69,10 @@ services:
       context: ./app
       args:
         EXPO_PUBLIC_PROXY_URL: http://localhost:8080
+        # T4/T7's Google Maps Platform key (Places + Maps Static APIs) — read
+        # from the shell env, empty by default so the build never requires a
+        # live billed key; the app degrades to its no-key fallback instead.
+        EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY:-}
     ports:
       - "4174:4174"
     depends_on:
