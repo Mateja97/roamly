@@ -1,4 +1,4 @@
-import type { Category, PriceTier } from '../features/activity-list/types';
+import type { Category } from '../features/activity-list/types';
 import type { Scope } from '../features/scope-picker/types';
 
 const PROXY_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://localhost:8080';
@@ -12,7 +12,6 @@ export type Activity = {
   category: Category;
   location: Location;
   country: string;
-  price_tier: PriceTier;
   rating: number;
   image_refs: string[];
   tags: string[];
@@ -25,7 +24,6 @@ export type ActivitiesQueryRequest = {
   home_location?: Location;
   home_country?: string;
   categories?: Category[];
-  price_tier?: PriceTier;
   min_rating?: number;
   max_distance_km?: number;
   // T5's ranking flag — only meaningful (and only sent) for my_country.

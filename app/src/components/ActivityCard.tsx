@@ -19,8 +19,8 @@ type ActivityCardProps = {
 // box, loading/broken states), then a --surface body with category badge +
 // rating on row 1, title, an optional description snippet, an optional tags
 // row, and a location row (map thumbnail + distance/location text). No
-// price/cost signage anywhere in the flow (T1) — `Activity.price_tier` stays
-// in the wire contract but never renders.
+// price/cost signage anywhere in the flow (T1); the price-tier field was
+// dropped from the client contract entirely (T2).
 export function ActivityCard({ activity, showDistance }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const imageUri = activity.image_refs[0];
