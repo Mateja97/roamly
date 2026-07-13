@@ -34,23 +34,31 @@ describe('ScopePickerScreen', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = ORIGINAL_GOOGLE_MAPS_API_KEY;
   });
 
-  it('renders the three scope choices', () => {
+  it('renders the three scope choices', async () => {
     render(<ScopePickerScreen onScopeSelected={jest.fn()} />);
+    // Let useMyCountryLocation's mount-effect settle (default mock: denied)
+    // before the test body finishes, so its setState doesn't fire outside act().
+    await act(async () => {});
     expect(screen.getByRole('button', { name: /^home\./i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^nearby\./i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^my country\./i })).toBeTruthy();
   });
 
-  it('navigates immediately with scope "home" on Home tap — no location context', () => {
+  it('navigates immediately with scope "home" on Home tap — no location context', async () => {
     const onScopeSelected = jest.fn();
     render(<ScopePickerScreen onScopeSelected={onScopeSelected} />);
+    await act(async () => {});
     fireEvent.press(screen.getByRole('button', { name: /^home\./i }));
     expect(onScopeSelected).toHaveBeenCalledWith({ scope: 'home' });
   });
 
-  it('navigates with scope "my_country" and no homeCountry on tap while detection has not resolved', () => {
+  it('navigates with scope "my_country" and no homeCountry on tap while detection is denied', async () => {
     const onScopeSelected = jest.fn();
     render(<ScopePickerScreen onScopeSelected={onScopeSelected} />);
+    // beforeEach defaults getForegroundPermissionsAsync to 'denied' — wait for
+    // useMyCountryLocation to actually reach that terminal state before tapping,
+    // rather than relying on the tap racing ahead of the mount-effect.
+    await act(async () => {});
     fireEvent.press(screen.getByRole('button', { name: /^my country\./i }));
     expect(onScopeSelected).toHaveBeenCalledWith({ scope: 'my_country' });
   });
