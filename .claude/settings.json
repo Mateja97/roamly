@@ -12,11 +12,9 @@
       "Bash(node:*)",
       "Bash(docker compose:*)",
       "Bash(git *)",
-      "Bash(gh pr create:*)",
-      "Bash(gh pr ready:*)",
-      "Bash(gh pr view:*)",
-      "Bash(gh pr diff:*)",
-      "Bash(gh pr list:*)"
+      "Bash(gh *)",
+      "Bash(cd /Users/mateja/Documents/Projects/roamly)",
+      "Bash(cd /Users/mateja/Documents/Projects/roamly/*)"
     ],
     "defaultMode": "auto"
   }
