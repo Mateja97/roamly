@@ -45,13 +45,17 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
     .join(', ');
 
   return (
+    // accessible={false} on the outer Pressable: it must NOT collapse everything below
+    // (including PhotoAttributionCaption's own link) into one accessibility node. The
+    // card-wide `label` instead lives on the body View below — a touch on any accessible
+    // descendant still lands inside the outer Pressable's bounds and fires onPress — so
+    // the attribution link (its own accessible Pressable, a sibling of body) stays
+    // independently reachable instead of being swallowed into the card's group.
     <Pressable
       onPress={onPress}
       onFocus={focus.onFocus}
       onBlur={focus.onBlur}
-      accessible
-      accessibilityRole="button"
-      accessibilityLabel={label}
+      accessible={false}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed, focus.focused && styles.cardFocused]}
     >
       <View style={styles.imageBox}>
@@ -74,7 +78,7 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
 
       <PhotoAttributionCaption attribution={photo?.attribution} horizontalInset={space[4]} />
 
-      <View style={styles.body}>
+      <View style={styles.body} accessible accessibilityRole="button" accessibilityLabel={label}>
         <View style={styles.row}>
           <View style={styles.badge}>
             <Text style={styles.badgeLabel}>{CATEGORY_LABELS[activity.category]}</Text>

@@ -30,7 +30,11 @@ export function PhotoAttributionCaption({ attribution, horizontalInset }: PhotoA
 
   return (
     <Pressable
-      onPress={() => Linking.openURL(link)}
+      onPress={() => {
+        Linking.openURL(link).catch(() => {
+          // ponytail: design spec waives error UI for a dead attribution link — silence the rejection.
+        });
+      }}
       onFocus={focus.onFocus}
       onBlur={focus.onBlur}
       accessibilityRole="link"
@@ -58,8 +62,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stripFocused: {
+    // Overrides strip's borderTop* explicitly too — RN's border-side resolution
+    // prefers the more specific borderTopWidth/borderTopColor over borderWidth/
+    // borderColor regardless of style-array order, so all 4 sides must be named here.
     borderWidth: 2,
     borderColor: colors.primary,
+    borderTopWidth: 2,
+    borderTopColor: colors.primary,
   },
   prefix: {
     fontSize: fontSize.xs,
