@@ -1,6 +1,8 @@
-import { HOME_COUNTRY, HOME_LOCATION } from './config';
 import { EMPTY_FILTERS, activeFilterCount, buildActivitiesRequest, filterChips } from './filters';
 import type { Filters } from './types';
+
+const HOME_LOCATION = { lat: 44.8125, lng: 20.4612 };
+const HOME_COUNTRY = 'Serbia';
 
 describe('activeFilterCount', () => {
   it('is 0 for the empty filter set', () => {
@@ -54,20 +56,25 @@ describe('buildActivitiesRequest', () => {
   });
 
   it('sends home_location for home', () => {
-    const req = buildActivitiesRequest({ scope: 'home' }, EMPTY_FILTERS);
+    const req = buildActivitiesRequest({ scope: 'home', homeLocation: HOME_LOCATION }, EMPTY_FILTERS);
     expect(req).toEqual({ scope: 'home', home_location: HOME_LOCATION });
   });
 
   it('sends home_country and the top_rated sort flag for outside_country', () => {
-    const req = buildActivitiesRequest({ scope: 'outside_country' }, EMPTY_FILTERS);
+    const req = buildActivitiesRequest({ scope: 'outside_country', homeCountry: HOME_COUNTRY }, EMPTY_FILTERS);
     expect(req).toEqual({ scope: 'outside_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
   });
 
   it('does not send the sort flag for home or nearby', () => {
-    expect(buildActivitiesRequest({ scope: 'home' }, EMPTY_FILTERS).sort).toBeUndefined();
+    expect(buildActivitiesRequest({ scope: 'home', homeLocation: HOME_LOCATION }, EMPTY_FILTERS).sort).toBeUndefined();
     expect(
       buildActivitiesRequest({ scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } }, EMPTY_FILTERS).sort
     ).toBeUndefined();
+  });
+
+  it('omits home_location/home_country when not yet resolved', () => {
+    expect(buildActivitiesRequest({ scope: 'home' }, EMPTY_FILTERS)).toEqual({ scope: 'home' });
+    expect(buildActivitiesRequest({ scope: 'outside_country' }, EMPTY_FILTERS)).toEqual({ scope: 'outside_country' });
   });
 
   it('includes only the set filter fields', () => {
@@ -76,7 +83,7 @@ describe('buildActivitiesRequest', () => {
       minRating: 4.5,
       maxDistanceKm: 25,
     };
-    const req = buildActivitiesRequest({ scope: 'home' }, filters);
+    const req = buildActivitiesRequest({ scope: 'home', homeLocation: HOME_LOCATION }, filters);
     expect(req).toEqual({
       scope: 'home',
       home_location: HOME_LOCATION,

@@ -2,17 +2,21 @@ import { useState } from 'react';
 import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
 import type { Category } from './src/features/activity-list/types';
 import { ActivityTypesScreen } from './src/features/activity-types/ActivityTypesScreen';
+import { CITY_LOCATION_CONFIG, COUNTRY_LOCATION_CONFIG } from './src/features/location/config';
+import { LocationScreen } from './src/features/location/LocationScreen';
 import { ScopePickerScreen } from './src/features/scope-picker/ScopePickerScreen';
 import type { ScopeSelection } from './src/features/scope-picker/types';
 
 // ponytail: a plain useState back-stack (array), not a router — this is a
-// linear 3-step flow (scope -> types -> list) with no non-linear jumps. Each
-// screen switch replaces the whole tree (no shared layout/transition), so an
-// array of screens gives forward (push) and back (pop) without a navigation
-// library. Add React Navigation only if a non-linear jump or a shared
-// chrome/transition need shows up (see APP_STANDARDS.md).
+// linear flow (scope -> [location, home/outside_country only] -> types ->
+// list) with no non-linear jumps. Each screen switch replaces the whole tree
+// (no shared layout/transition), so an array of screens gives forward (push)
+// and back (pop) without a navigation library. Add React Navigation only if
+// a non-linear jump or a shared chrome/transition need shows up (see
+// APP_STANDARDS.md).
 type Screen =
   | { name: 'scope-picker' }
+  | { name: 'location'; scope: 'home' | 'outside_country' }
   | { name: 'activity-types'; selection: ScopeSelection }
   | { name: 'activity-list'; selection: ScopeSelection; categories: Category[] };
 
@@ -24,10 +28,10 @@ export default function App() {
     setStack((prev) => [...prev, next]);
   }
 
-  // Both the types screen and the list screen wire this to Android's
+  // The location, types, and list screens all wire this to Android's
   // hardware back button (a real native affordance, not a custom control) —
   // there is no stack navigator installed to provide the native back
-  // gesture/transition itself. See ActivityTypesScreen.tsx/
+  // gesture/transition itself. See LocationScreen.tsx/ActivityTypesScreen.tsx/
   // ActivityListScreen.tsx and engineering-notes.md.
   function pop() {
     setStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
@@ -48,5 +52,33 @@ export default function App() {
     );
   }
 
-  return <ScopePickerScreen onScopeSelected={(selection) => push({ name: 'activity-types', selection })} />;
+  if (screen.name === 'location') {
+    const scope = screen.scope;
+    const config = scope === 'home' ? CITY_LOCATION_CONFIG : COUNTRY_LOCATION_CONFIG;
+    return (
+      <LocationScreen
+        config={config}
+        onBack={pop}
+        onConfirm={(place) =>
+          push({
+            name: 'activity-types',
+            selection:
+              scope === 'home'
+                ? { scope: 'home', homeLocation: place.coordinates }
+                : { scope: 'outside_country', homeCountry: place.name },
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <ScopePickerScreen
+      onScopeSelected={(selection) =>
+        selection.scope === 'nearby'
+          ? push({ name: 'activity-types', selection })
+          : push({ name: 'location', scope: selection.scope })
+      }
+    />
+  );
 }

@@ -19,19 +19,19 @@ import { FilterChip } from '../../components/FilterChip';
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { HOME_COUNTRY } from './config';
 import { FilterSheet } from './FilterSheet';
 import { EMPTY_FILTERS, SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, filterChips } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
 
 // Country (outside_country) scope header subtitle — static (doesn't wait on
-// the fetch) per design-spec.md's T6 section. The title itself reuses
-// `HOME_COUNTRY` directly (the same anchor the query sends; T4's
-// `selection.homeCountry` replaces this source later, not this task's
-// scope). ponytail: `HOME_COUNTRY` is a non-empty constant today, so the
-// spec's "no name resolvable" fallback (generic title + country folded into
-// the subtitle) is dead code until T4 makes the country name optional —
-// skipped rather than built for a case that can't happen yet.
+// the fetch) per design-spec.md's T6 section. The title reads
+// `selection.homeCountry`, the place T4's Location screen confirmed before
+// this screen ever mounts (App.tsx always routes outside_country through it
+// first). ponytail: the spec's "no name resolvable" fallback (generic title,
+// country folded into the subtitle) is skipped — the Location screen always
+// resolves a name (search result or its own default place), so `homeCountry`
+// is never empty in practice; the `?? SCOPE_TITLES.outside_country` fallback
+// below exists only to satisfy the optional type, not a reachable UI state.
 const COUNTRY_HEADER_SUBTITLE = 'Top-rated activities';
 
 type QueryState =
@@ -161,7 +161,9 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
       <View style={styles.header}>
         <View style={styles.headerTitleBlock}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {selection.scope === 'outside_country' ? HOME_COUNTRY : SCOPE_TITLES[selection.scope]}
+            {selection.scope === 'outside_country'
+              ? selection.homeCountry ?? SCOPE_TITLES.outside_country
+              : SCOPE_TITLES[selection.scope]}
           </Text>
           {selection.scope === 'outside_country' && (
             <Text style={styles.headerSubtitle} numberOfLines={1}>

@@ -1,5 +1,4 @@
 import type { ActivitiesQueryRequest, Location } from '../../api/activities';
-import { HOME_COUNTRY, HOME_LOCATION } from './config';
 import type { Category, DistanceOption, Filters, RatingOption } from './types';
 import type { ScopeSelection } from '../scope-picker/types';
 
@@ -75,15 +74,18 @@ export function filterChips(filters: Filters): FilterChipData[] {
 // Builds the T2 proxy request body from the current scope/coordinates plus
 // the applied filters. `max_distance_km` only applies to home/nearby per T2's
 // contract (an error if sent with outside_country), so it's omitted there.
+// `home_location`/`home_country` come from the place confirmed via T4's
+// Location screen (App.tsx populates them before reaching this screen) —
+// no hardcoded fallback here anymore.
 export function buildActivitiesRequest(selection: ScopeSelection, filters: Filters): ActivitiesQueryRequest {
   const request: ActivitiesQueryRequest = { scope: selection.scope };
 
   if (selection.scope === 'nearby' && selection.coordinates) {
     request.current_location = toLocation(selection.coordinates);
-  } else if (selection.scope === 'home') {
-    request.home_location = HOME_LOCATION;
-  } else if (selection.scope === 'outside_country') {
-    request.home_country = HOME_COUNTRY;
+  } else if (selection.scope === 'home' && selection.homeLocation) {
+    request.home_location = selection.homeLocation;
+  } else if (selection.scope === 'outside_country' && selection.homeCountry) {
+    request.home_country = selection.homeCountry;
     // T5's rating-descending ranking — requested only for outside_country;
     // the server rejects it for home/nearby, and results render server-order
     // with no client re-sort (T6 out of scope).
