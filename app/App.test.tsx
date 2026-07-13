@@ -66,6 +66,7 @@ describe('App', () => {
         scope: 'home',
         home_location: { lat: 44.8125, lng: 20.4612 },
         categories: ['sports'],
+        max_distance_km: 50,
       })
     );
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
