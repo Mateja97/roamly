@@ -13,6 +13,14 @@ async function flush() {
 jest.mock('./src/api/activities', () => ({ queryActivities: jest.fn() }));
 const mockedQuery = jest.mocked(queryActivities);
 
+function pressBackHandler(addBackListener: jest.SpyInstance) {
+  const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
+  const handler = registration![1] as () => boolean;
+  act(() => {
+    handler();
+  });
+}
+
 describe('App', () => {
   beforeEach(() => {
     mockedQuery.mockResolvedValue({ status: 'success', activities: [] });
@@ -31,27 +39,52 @@ describe('App', () => {
     expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
   });
 
-  it('hands off the selected scope after choosing Home, landing on the activity list', async () => {
+  it('hands off the selected scope after choosing Home, landing on the types picker', async () => {
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
-    expect(screen.getByText('Home')).toBeTruthy();
-    await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
+    expect(screen.getByText('What are you into?')).toBeTruthy();
   });
 
-  it('Android hardware back on the activity list returns to the scope picker (no custom back control)', async () => {
+  it('confirming the types picker carries the selection to the list, pre-filtered', async () => {
+    render(<App />);
+    await flush();
+    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
+    });
+
+    expect(screen.getByText('Home')).toBeTruthy();
+    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith(expect.objectContaining({ categories: ['sports'] })));
+    expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
+  });
+
+  it('Android hardware back on the types picker returns to the scope picker', async () => {
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    expect(screen.getByText('What are you into?')).toBeTruthy();
+
+    pressBackHandler(addBackListener);
+    expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
+    addBackListener.mockRestore();
+  });
+
+  it('Android hardware back on the activity list returns to the types picker (not the scope picker)', async () => {
+    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
+    render(<App />);
+    await flush();
+    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
+    });
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
-    const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
-    const handler = registration![1] as () => boolean;
-    act(() => {
-      handler();
-    });
-    expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
+    pressBackHandler(addBackListener);
+    expect(screen.getByText('What are you into?')).toBeTruthy();
     addBackListener.mockRestore();
   });
 });

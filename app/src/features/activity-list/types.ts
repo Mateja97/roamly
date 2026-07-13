@@ -27,5 +27,9 @@ export type Filters = {
 
 export type ActivityListScreenProps = {
   selection: ScopeSelection;
+  // T2: the activity-types picker carries its selection forward as the
+  // list's initial applied filter — arrives pre-filtered rather than
+  // fetching all-types first and re-filtering client-side.
+  initialCategories?: Category[];
   onBack: () => void;
 };

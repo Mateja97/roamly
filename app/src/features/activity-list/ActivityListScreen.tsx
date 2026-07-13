@@ -31,8 +31,14 @@ type QueryState =
 
 const SKELETON_CARD_COUNT = 5;
 
-export function ActivityListScreen({ selection, onBack }: ActivityListScreenProps) {
-  const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
+export function ActivityListScreen({ selection, initialCategories = [], onBack }: ActivityListScreenProps) {
+  // T2: the types-picker screen carries its selection in as the initial
+  // applied filter, so the first query arrives pre-filtered. Frozen via
+  // useState's lazy initializer (runs once, on mount) rather than reading
+  // the `initialCategories` prop directly in the effect below — a parent
+  // re-render passing a fresh empty-array default won't retrigger it.
+  const [initialFilters] = useState<Filters>(() => ({ ...EMPTY_FILTERS, categories: initialCategories }));
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
   const [queryState, setQueryState] = useState<QueryState>({ status: 'loading' });
   const [sheetVisible, setSheetVisible] = useState(false);
   const filtersButtonRef = useRef<ElementRef<typeof Pressable>>(null);
@@ -59,13 +65,13 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // no state to set synchronously here — just kick off the fetch.
   useEffect(() => {
     let cancelled = false;
-    runQuery(EMPTY_FILTERS).then((result) => {
+    runQuery(initialFilters).then((result) => {
       if (!cancelled) applyResult(result);
     });
     return () => {
       cancelled = true;
     };
-  }, [runQuery]);
+  }, [runQuery, initialFilters]);
 
   // design-spec.md requires the platform-native back control/gesture, not a
   // custom on-screen button — but T3/T4 deliberately have no stack
