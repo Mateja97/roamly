@@ -17,7 +17,7 @@ const activity: Activity = {
 
 describe('ActivityCard', () => {
   it('renders title, category, rating, and distance as one accessible group, with no price signage', () => {
-    render(<ActivityCard activity={activity} showDistance />);
+    render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
     expect(screen.getByText('Food & Drink')).toBeTruthy();
     expect(screen.getByText('4.6')).toBeTruthy();
@@ -26,13 +26,22 @@ describe('ActivityCard', () => {
     expect(card.props.accessibilityLabel).not.toMatch(/\$/);
   });
 
+  it('is a tappable button that opens the detail screen on press', () => {
+    const onPress = jest.fn();
+    render(<ActivityCard activity={activity} showDistance onPress={onPress} />);
+    const card = screen.getByLabelText(/skadarlija food walk/i);
+    expect(card.props.accessibilityRole).toBe('button');
+    fireEvent.press(card);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
   it('shows the country instead of distance when showDistance is false (my_country)', () => {
-    render(<ActivityCard activity={activity} showDistance={false} />);
+    render(<ActivityCard activity={activity} showDistance={false} onPress={jest.fn()} />);
     expect(screen.getByText('Serbia')).toBeTruthy();
   });
 
   it('shows the broken-image fallback when the image fails to load', () => {
-    render(<ActivityCard activity={activity} showDistance />);
+    render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
     const image = screen.getByTestId('activity-card-image');
     fireEvent(image, 'error');
     expect(screen.queryByTestId('activity-card-image')).toBeNull();
@@ -44,7 +53,13 @@ describe('ActivityCard', () => {
   });
 
   it('renders the description snippet and up to 3 tags, both included in the a11y label', () => {
-    render(<ActivityCard activity={{ ...activity, tags: ['food', 'walking', 'local', 'extra'] }} showDistance />);
+    render(
+      <ActivityCard
+        activity={{ ...activity, tags: ['food', 'walking', 'local', 'extra'] }}
+        showDistance
+        onPress={jest.fn()}
+      />
+    );
     expect(screen.getByText('A tasty walk')).toBeTruthy();
     expect(screen.getByText('food')).toBeTruthy();
     expect(screen.getByText('walking')).toBeTruthy();
@@ -55,14 +70,14 @@ describe('ActivityCard', () => {
   });
 
   it('omits the description line and its label clause when description is empty', () => {
-    render(<ActivityCard activity={{ ...activity, description: '' }} showDistance />);
+    render(<ActivityCard activity={{ ...activity, description: '' }} showDistance onPress={jest.fn()} />);
     expect(screen.queryByText('A tasty walk')).toBeNull();
     const card = screen.getByLabelText(/skadarlija food walk/i);
     expect(card.props.accessibilityLabel).not.toMatch(/tasty walk/i);
   });
 
   it('omits the tags row and its label clause when tags is empty', () => {
-    render(<ActivityCard activity={{ ...activity, tags: [] }} showDistance />);
+    render(<ActivityCard activity={{ ...activity, tags: [] }} showDistance onPress={jest.fn()} />);
     expect(screen.queryByText('food')).toBeNull();
     const card = screen.getByLabelText(/skadarlija food walk/i);
     expect(card.props.accessibilityLabel).not.toMatch(/tags:/i);

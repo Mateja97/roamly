@@ -177,6 +177,46 @@ describe('ActivityListScreen', () => {
     expect(screen.queryByRole('button', { name: 'Remove Sports filter' })).toBeNull();
   });
 
+  it('tapping a card opens the detail screen, and the on-screen Back control returns to the list', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: /skadarlija food walk/i }));
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+    expect(screen.getByText('A tasty walk')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    // The list is still mounted underneath, unaffected — same card is there.
+    expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
+  });
+
+  it('Android hardware back closes an open detail screen instead of leaving the list (onBack not called)', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
+    const onBack = jest.fn();
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={onBack} />);
+    await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+    fireEvent.press(screen.getByRole('button', { name: /skadarlija food walk/i }));
+    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
+
+    // The BackHandler effect re-subscribes whenever `selectedActivity`
+    // changes, so the listener that closes the detail overlay is the most
+    // recent registration, not the mount-time one.
+    const registrations = addBackListener.mock.calls.filter(([eventName]) => eventName === 'hardwareBackPress');
+    const handler = registrations[registrations.length - 1][1] as () => boolean;
+    act(() => {
+      expect(handler()).toBe(true);
+    });
+
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    expect(onBack).not.toHaveBeenCalled();
+
+    addBackListener.mockRestore();
+  });
+
   it('re-opening the sheet after applying reflects the now-applied filters, not the stale draft', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);

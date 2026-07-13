@@ -22,12 +22,18 @@ describe('staticMap', () => {
     expect(hasValidCoordinates({ lat: 44.8, lng: 20.5 })).toBe(true);
   });
 
-  it('builds a static map URL with the gold marker and given size', () => {
+  it('builds a static map URL with the gold marker and a square size when only width is given', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     const url = staticMapUrl({ lat: 44.8153, lng: 20.4646 }, 72);
     expect(url).toContain('https://maps.googleapis.com/maps/api/staticmap?');
     expect(url).toContain('size=72x72');
     expect(url).toContain('color%3A0xCE9042');
     expect(url).toContain('key=test-key');
+  });
+
+  it('builds a non-square size when width and height are both given', () => {
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    const url = staticMapUrl({ lat: 44.8153, lng: 20.4646 }, 600, 400);
+    expect(url).toContain('size=600x400');
   });
 });
