@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, BackHandler, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, BackHandler, Easing, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Check, MapPin, Search, SearchX, X } from 'lucide-react-native';
 import type { Place, PlaceSuggestion } from '../../api/places';
 import { hasPlacesKey } from '../../api/places';
@@ -27,9 +27,11 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
   const search = usePlaceSearch(config);
   const [confirming, setConfirming] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const inputFocus = useFocusable();
   const clearFocus = useFocusable();
   const retryFocus = useFocusable();
   const confirmFocus = useFocusable();
+  const [regionOpacity] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -47,6 +49,24 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
 
   const selectedPlace = noKey ? config.defaultPlace : search.selected;
   const busy = search.region.view === 'loading';
+
+  // Cross-fade the results region (summary/skeleton/list/empty/error) on
+  // opacity only, ≤150ms, per design-spec's Motion section; reduced-motion
+  // snaps straight to visible (no animation). `noKey` never changes after
+  // mount so `search.region.view` alone is the right dependency.
+  useEffect(() => {
+    if (reduceMotion) {
+      regionOpacity.setValue(1);
+      return;
+    }
+    regionOpacity.setValue(0);
+    Animated.timing(regionOpacity, {
+      toValue: 1,
+      duration: 150,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start();
+  }, [search.region.view, reduceMotion, regionOpacity]);
 
   function handleConfirm() {
     setConfirming(true);
@@ -72,11 +92,13 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
         ) : (
           <View>
             <Text style={styles.inputLabel}>{config.inputLabel}</Text>
-            <View style={styles.inputRow}>
+            <View style={[styles.inputRow, inputFocus.focused && styles.inputRowFocused]}>
               <Search size={16} color={colors.text} strokeWidth={1.75} />
               <TextInput
                 value={search.query}
                 onChangeText={search.setQuery}
+                onFocus={inputFocus.onFocus}
+                onBlur={inputFocus.onBlur}
                 placeholder={config.placeholder}
                 placeholderTextColor={colors.textDisabled}
                 style={styles.input}
@@ -102,10 +124,19 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
           </View>
         )}
 
-        <View style={styles.resultsRegion} accessible accessibilityLiveRegion="polite">
+        <Animated.View
+          style={[styles.resultsRegion, { opacity: regionOpacity }]}
+          accessible
+          accessibilityLiveRegion="polite"
+        >
           {noKey ? (
             <SummaryCard place={config.defaultPlace} readOnly />
           ) : search.region.view === 'suggestions' ? (
+            // ponytail: rows are directly tappable, focusable, and announce
+            // their full accessible name (SuggestionRow below) — real
+            // arrow-key/Escape combobox semantics are a desktop-keyboard
+            // idiom this touch-first screen skips; add if a hardware
+            // keyboard becomes a first-class input for this app.
             <View style={styles.rows}>
               {search.region.items.map((item) => (
                 <SuggestionRow key={item.placeId} item={item} onPress={() => search.pick(item)} />
@@ -140,7 +171,7 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
           ) : (
             <SummaryCard place={search.selected} />
           )}
-        </View>
+        </Animated.View>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -233,6 +264,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.default,
     paddingHorizontal: space[3],
+  },
+  inputRowFocused: {
+    borderColor: colors.primary,
   },
   input: {
     flex: 1,
