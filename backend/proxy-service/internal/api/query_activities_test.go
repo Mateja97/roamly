@@ -62,6 +62,20 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	}
 }
 
+func TestQueryActivitiesHandler_ForwardsSort(t *testing.T) {
+	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
+	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doRequest(t, h, `{"scope":"outside_country","home_country":"Serbia","sort":"top_rated"}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if fake.got.GetSort() != activitiesv1.Sort_SORT_TOP_RATED {
+		t.Errorf("gRPC request sort = %v, want SORT_TOP_RATED", fake.got.GetSort())
+	}
+}
+
 func TestQueryActivitiesHandler_EmptyResultIsNotAnError(t *testing.T) {
 	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
@@ -88,6 +102,7 @@ func TestQueryActivitiesHandler_ValidationFailures(t *testing.T) {
 		{"unknown scope", `{"scope":"galaxy"}`},
 		{"unknown category", `{"scope":"home","home_location":{"lat":1,"lng":1},"categories":["not_a_category"]}`},
 		{"unknown price_tier", `{"scope":"home","home_location":{"lat":1,"lng":1},"price_tier":"not_a_tier"}`},
+		{"unknown sort", `{"scope":"outside_country","home_country":"Serbia","sort":"most_popular"}`},
 		{"malformed JSON body", `{not-json`},
 	}
 	for _, tt := range tests {

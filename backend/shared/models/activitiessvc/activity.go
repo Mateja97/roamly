@@ -33,6 +33,16 @@ const (
 	PriceTierLuxury      PriceTier = "luxury"
 )
 
+// Sort requests a specific result ordering. SortTopRated is only valid for
+// ScopeOutsideCountry: the accepted "top activities" MVP is rating
+// descending, deterministic tie-break by title.
+type Sort string
+
+const (
+	SortUnspecified Sort = ""
+	SortTopRated    Sort = "top_rated"
+)
+
 // Point is a WGS84 coordinate pair.
 type Point struct {
 	Lat float64
@@ -68,4 +78,5 @@ type QueryFilter struct {
 	PriceTier     PriceTier  // PriceTierUnspecified = no filter
 	MinRating     float64    // 0 = no filter
 	MaxDistanceKM float64    // 0 = no filter; HOME/NEARBY scopes only
+	Sort          Sort       // SortUnspecified = no explicit ordering requested
 }

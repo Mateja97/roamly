@@ -119,6 +119,26 @@ func TestToDomainPriceTier(t *testing.T) {
 	}
 }
 
+func TestToDomainSort(t *testing.T) {
+	tests := []struct {
+		name string
+		in   activitiesv1.Sort
+		want activitiessvc.Sort
+	}{
+		{"unspecified stays unspecified (no explicit ordering)", activitiesv1.Sort_SORT_UNSPECIFIED, activitiessvc.SortUnspecified},
+		{"known value maps through", activitiesv1.Sort_SORT_TOP_RATED, activitiessvc.SortTopRated},
+		{"out-of-range wire value must not collapse to unspecified", activitiesv1.Sort(99), activitiessvc.Sort("invalid")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toDomainSort(tt.in)
+			if got != tt.want {
+				t.Errorf("toDomainSort(%v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQueryActivities_UnexpectedErrorMapsToInternal(t *testing.T) {
 	fake := &fakeQueryService{err: errors.New("db exploded")}
 	client := dialServer(t, fake)

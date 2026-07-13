@@ -44,14 +44,35 @@ func TestBuildQuery(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "outside_country scope filters by country and skips distance ordering",
+			name: "outside_country scope filters by country, skips distance ordering, defaults to title order without an explicit sort",
 			filter: activitiessvc.QueryFilter{
 				Scope:       activitiessvc.ScopeOutsideCountry,
 				HomeCountry: "Serbia",
 			},
-			wantSQL:    []string{"country <>", "ORDER BY rating DESC"},
+			wantSQL:    []string{"country <>", "ORDER BY title ASC"},
 			wantArgs:   []any{"Serbia"},
-			notWantSQL: []string{"ST_DWithin"},
+			notWantSQL: []string{"ST_DWithin", "rating DESC"},
+		},
+		{
+			name: "outside_country scope with sort=top_rated orders by rating descending, deterministic tie-break by title",
+			filter: activitiessvc.QueryFilter{
+				Scope:       activitiessvc.ScopeOutsideCountry,
+				HomeCountry: "Serbia",
+				Sort:        activitiessvc.SortTopRated,
+			},
+			wantSQL:  []string{"country <>", "ORDER BY rating DESC, title ASC"},
+			wantArgs: []any{"Serbia"},
+		},
+		{
+			name: "home scope ignores sort=top_rated and still orders by distance",
+			filter: activitiessvc.QueryFilter{
+				Scope:         activitiessvc.ScopeHome,
+				HomeLocation:  &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				MaxDistanceKM: 50,
+				Sort:          activitiessvc.SortTopRated,
+			},
+			wantSQL:    []string{"ORDER BY distance_km ASC"},
+			notWantSQL: []string{"rating DESC"},
 		},
 		{
 			name: "unknown scope is an error",

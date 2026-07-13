@@ -105,6 +105,42 @@ func TestActivities_Query_Validation(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "unknown sort rejected",
+			req: Request{
+				Scope:       activitiessvc.ScopeOutsideCountry,
+				HomeCountry: "Serbia",
+				Sort:        "bogus",
+			},
+			wantErr: true,
+		},
+		{
+			name: "sort=top_rated for scope home rejected",
+			req: Request{
+				Scope:        activitiessvc.ScopeHome,
+				HomeLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				Sort:         activitiessvc.SortTopRated,
+			},
+			wantErr: true,
+		},
+		{
+			name: "sort=top_rated for scope nearby rejected",
+			req: Request{
+				Scope:           activitiessvc.ScopeNearby,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				Sort:            activitiessvc.SortTopRated,
+			},
+			wantErr: true,
+		},
+		{
+			name: "sort=top_rated for scope outside_country accepted",
+			req: Request{
+				Scope:       activitiessvc.ScopeOutsideCountry,
+				HomeCountry: "Serbia",
+				Sort:        activitiessvc.SortTopRated,
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -125,6 +161,22 @@ func TestActivities_Query_Validation(t *testing.T) {
 				t.Fatalf("Query() unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestActivities_Query_ForwardsSortToRepository(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := New(repo, 50)
+	_, err := svc.Query(context.Background(), Request{
+		Scope:       activitiessvc.ScopeOutsideCountry,
+		HomeCountry: "Serbia",
+		Sort:        activitiessvc.SortTopRated,
+	})
+	if err != nil {
+		t.Fatalf("Query() unexpected error: %v", err)
+	}
+	if repo.got.Sort != activitiessvc.SortTopRated {
+		t.Errorf("repo filter Sort = %q, want %q", repo.got.Sort, activitiessvc.SortTopRated)
 	}
 }
 

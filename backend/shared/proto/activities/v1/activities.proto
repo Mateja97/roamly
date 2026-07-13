@@ -39,6 +39,13 @@ enum PriceTier {
   PRICE_TIER_LUXURY = 4;
 }
 
+enum Sort {
+  SORT_UNSPECIFIED = 0;
+  // Highest rating first, deterministic tie-break by title. The accepted
+  // "top activities" MVP ranking; only valid for SCOPE_OUTSIDE_COUNTRY.
+  SORT_TOP_RATED = 1;
+}
+
 message Location {
   double lat = 1;
   double lng = 2;
@@ -62,6 +69,12 @@ message QueryActivitiesRequest {
   // Further narrows the scope radius (SCOPE_HOME / SCOPE_NEARBY only).
   // 0 = no filter. Setting it for SCOPE_OUTSIDE_COUNTRY is a validation error.
   double max_distance_km = 8;
+
+  // Requests a specific result ordering. SORT_UNSPECIFIED = no explicit
+  // ordering requested. SORT_TOP_RATED is only valid for
+  // SCOPE_OUTSIDE_COUNTRY; setting it for SCOPE_HOME/SCOPE_NEARBY is a
+  // validation error.
+  Sort sort = 9;
 }
 
 message Activity {
