@@ -65,6 +65,7 @@ func toServiceRequest(req *activitiesv1.QueryActivitiesRequest) service.Request 
 		PriceTier:       toDomainPriceTier(req.GetPriceTier()),
 		MinRating:       req.GetMinRating(),
 		MaxDistanceKM:   req.GetMaxDistanceKm(),
+		Sort:            toDomainSort(req.GetSort()),
 	}
 }
 
@@ -125,6 +126,21 @@ func toDomainPriceTier(p activitiesv1.PriceTier) activitiessvc.PriceTier {
 		// would silently treat garbage input as no-op instead of rejecting it.
 		// Any non-empty string outside the known tiers fails validPriceTier.
 		return activitiessvc.PriceTier("invalid")
+	}
+}
+
+func toDomainSort(s activitiesv1.Sort) activitiessvc.Sort {
+	switch s {
+	case activitiesv1.Sort_SORT_UNSPECIFIED:
+		return activitiessvc.SortUnspecified
+	case activitiesv1.Sort_SORT_TOP_RATED:
+		return activitiessvc.SortTopRated
+	default:
+		// ponytail: same out-of-range-wire-value trap as toDomainPriceTier —
+		// don't collapse an unrecognized Sort into the legitimate
+		// "unspecified" zero value, or service.validSort would silently
+		// no-op instead of rejecting it.
+		return activitiessvc.Sort("invalid")
 	}
 }
 

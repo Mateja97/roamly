@@ -28,6 +28,7 @@ type Request struct {
 	PriceTier       activitiessvc.PriceTier
 	MinRating       float64
 	MaxDistanceKM   float64
+	Sort            activitiessvc.Sort
 }
 
 type Activities struct {
@@ -65,6 +66,7 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 		Categories:  req.Categories,
 		PriceTier:   req.PriceTier,
 		MinRating:   req.MinRating,
+		Sort:        req.Sort,
 	}
 
 	switch req.Scope {
@@ -104,6 +106,12 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 	}
 	if req.MaxDistanceKM < 0 {
 		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: max_distance_km must not be negative", sharederrors.ErrInvalidInput)
+	}
+	if req.Sort != activitiessvc.SortUnspecified && !validSort(req.Sort) {
+		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown sort %q", sharederrors.ErrInvalidInput, req.Sort)
+	}
+	if req.Sort == activitiessvc.SortTopRated && req.Scope != activitiessvc.ScopeOutsideCountry {
+		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: sort=top_rated is only supported for scope outside_country", sharederrors.ErrInvalidInput)
 	}
 
 	return filter, nil
@@ -152,4 +160,8 @@ func validPriceTier(p activitiessvc.PriceTier) bool {
 		return true
 	}
 	return false
+}
+
+func validSort(s activitiessvc.Sort) bool {
+	return s == activitiessvc.SortTopRated
 }

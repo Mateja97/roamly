@@ -192,6 +192,54 @@ func (PriceTier) EnumDescriptor() ([]byte, []int) {
 	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
 }
 
+type Sort int32
+
+const (
+	Sort_SORT_UNSPECIFIED Sort = 0
+	// Highest rating first, deterministic tie-break by title. The accepted
+	// "top activities" MVP ranking; only valid for SCOPE_OUTSIDE_COUNTRY.
+	Sort_SORT_TOP_RATED Sort = 1
+)
+
+// Enum value maps for Sort.
+var (
+	Sort_name = map[int32]string{
+		0: "SORT_UNSPECIFIED",
+		1: "SORT_TOP_RATED",
+	}
+	Sort_value = map[string]int32{
+		"SORT_UNSPECIFIED": 0,
+		"SORT_TOP_RATED":   1,
+	}
+)
+
+func (x Sort) Enum() *Sort {
+	p := new(Sort)
+	*p = x
+	return p
+}
+
+func (x Sort) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Sort) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_activities_v1_activities_proto_enumTypes[3].Descriptor()
+}
+
+func (Sort) Type() protoreflect.EnumType {
+	return &file_proto_activities_v1_activities_proto_enumTypes[3]
+}
+
+func (x Sort) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Sort.Descriptor instead.
+func (Sort) EnumDescriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{3}
+}
+
 type Location struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Lat           float64                `protobuf:"fixed64,1,opt,name=lat,proto3" json:"lat,omitempty"`
@@ -261,6 +309,11 @@ type QueryActivitiesRequest struct {
 	// Further narrows the scope radius (SCOPE_HOME / SCOPE_NEARBY only).
 	// 0 = no filter. Setting it for SCOPE_OUTSIDE_COUNTRY is a validation error.
 	MaxDistanceKm float64 `protobuf:"fixed64,8,opt,name=max_distance_km,json=maxDistanceKm,proto3" json:"max_distance_km,omitempty"`
+	// Requests a specific result ordering. SORT_UNSPECIFIED = no explicit
+	// ordering requested. SORT_TOP_RATED is only valid for
+	// SCOPE_OUTSIDE_COUNTRY; setting it for SCOPE_HOME/SCOPE_NEARBY is a
+	// validation error.
+	Sort          Sort `protobuf:"varint,9,opt,name=sort,proto3,enum=activities.v1.Sort" json:"sort,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -349,6 +402,13 @@ func (x *QueryActivitiesRequest) GetMaxDistanceKm() float64 {
 		return x.MaxDistanceKm
 	}
 	return 0
+}
+
+func (x *QueryActivitiesRequest) GetSort() Sort {
+	if x != nil {
+		return x.Sort
+	}
+	return Sort_SORT_UNSPECIFIED
 }
 
 type Activity struct {
@@ -528,7 +588,7 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"$proto/activities/v1/activities.proto\x12\ractivities.v1\".\n" +
 	"\bLocation\x12\x10\n" +
 	"\x03lat\x18\x01 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lng\x18\x02 \x01(\x01R\x03lng\"\xa2\x03\n" +
+	"\x03lng\x18\x02 \x01(\x01R\x03lng\"\xcb\x03\n" +
 	"\x16QueryActivitiesRequest\x12*\n" +
 	"\x05scope\x18\x01 \x01(\x0e2\x14.activities.v1.ScopeR\x05scope\x12B\n" +
 	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x12<\n" +
@@ -541,7 +601,8 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"price_tier\x18\x06 \x01(\x0e2\x18.activities.v1.PriceTierR\tpriceTier\x12\x1d\n" +
 	"\n" +
 	"min_rating\x18\a \x01(\x01R\tminRating\x12&\n" +
-	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\"\xfb\x02\n" +
+	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12'\n" +
+	"\x04sort\x18\t \x01(\x0e2\x13.activities.v1.SortR\x04sort\"\xfb\x02\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -581,7 +642,10 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x11PRICE_TIER_BUDGET\x10\x01\x12\x17\n" +
 	"\x13PRICE_TIER_MODERATE\x10\x02\x12\x16\n" +
 	"\x12PRICE_TIER_PREMIUM\x10\x03\x12\x15\n" +
-	"\x11PRICE_TIER_LUXURY\x10\x042u\n" +
+	"\x11PRICE_TIER_LUXURY\x10\x04*0\n" +
+	"\x04Sort\x12\x14\n" +
+	"\x10SORT_UNSPECIFIED\x10\x00\x12\x12\n" +
+	"\x0eSORT_TOP_RATED\x10\x012u\n" +
 	"\x11ActivitiesService\x12`\n" +
 	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
 
@@ -597,34 +661,36 @@ func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
 	return file_proto_activities_v1_activities_proto_rawDescData
 }
 
-var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
 var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(Scope)(0),                      // 0: activities.v1.Scope
 	(Category)(0),                   // 1: activities.v1.Category
 	(PriceTier)(0),                  // 2: activities.v1.PriceTier
-	(*Location)(nil),                // 3: activities.v1.Location
-	(*QueryActivitiesRequest)(nil),  // 4: activities.v1.QueryActivitiesRequest
-	(*Activity)(nil),                // 5: activities.v1.Activity
-	(*QueryActivitiesResponse)(nil), // 6: activities.v1.QueryActivitiesResponse
+	(Sort)(0),                       // 3: activities.v1.Sort
+	(*Location)(nil),                // 4: activities.v1.Location
+	(*QueryActivitiesRequest)(nil),  // 5: activities.v1.QueryActivitiesRequest
+	(*Activity)(nil),                // 6: activities.v1.Activity
+	(*QueryActivitiesResponse)(nil), // 7: activities.v1.QueryActivitiesResponse
 }
 var file_proto_activities_v1_activities_proto_depIdxs = []int32{
 	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
-	3,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
-	3,  // 2: activities.v1.QueryActivitiesRequest.home_location:type_name -> activities.v1.Location
+	4,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
+	4,  // 2: activities.v1.QueryActivitiesRequest.home_location:type_name -> activities.v1.Location
 	1,  // 3: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
 	2,  // 4: activities.v1.QueryActivitiesRequest.price_tier:type_name -> activities.v1.PriceTier
-	1,  // 5: activities.v1.Activity.category:type_name -> activities.v1.Category
-	3,  // 6: activities.v1.Activity.location:type_name -> activities.v1.Location
-	2,  // 7: activities.v1.Activity.price_tier:type_name -> activities.v1.PriceTier
-	5,  // 8: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
-	4,  // 9: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	6,  // 10: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	10, // [10:11] is the sub-list for method output_type
-	9,  // [9:10] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	3,  // 5: activities.v1.QueryActivitiesRequest.sort:type_name -> activities.v1.Sort
+	1,  // 6: activities.v1.Activity.category:type_name -> activities.v1.Category
+	4,  // 7: activities.v1.Activity.location:type_name -> activities.v1.Location
+	2,  // 8: activities.v1.Activity.price_tier:type_name -> activities.v1.PriceTier
+	6,  // 9: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
+	5,  // 10: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	7,  // 11: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	11, // [11:12] is the sub-list for method output_type
+	10, // [10:11] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }
@@ -637,7 +703,7 @@ func file_proto_activities_v1_activities_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      4,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,

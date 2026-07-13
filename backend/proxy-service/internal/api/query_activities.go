@@ -50,6 +50,10 @@ type queryActivitiesRequestDTO struct {
 	PriceTier       string       `json:"price_tier,omitempty"`
 	MinRating       float64      `json:"min_rating,omitempty"`
 	MaxDistanceKM   float64      `json:"max_distance_km,omitempty"`
+	// Sort requests a specific result ordering, e.g. "top_rated" for the
+	// country (outside_country) scope's rating-descending MVP ranking.
+	// Empty = no explicit ordering requested.
+	Sort string `json:"sort,omitempty"`
 }
 
 // activityDTO carries every field the app's activity card needs to render.
@@ -100,6 +104,12 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	sort, ok := toProtoSort(reqDTO.Sort)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unknown sort: "+reqDTO.Sort, h.logger)
+		return
+	}
+
 	grpcReq := &activitiesv1.QueryActivitiesRequest{
 		Scope:           scope,
 		CurrentLocation: toProtoLocation(reqDTO.CurrentLocation),
@@ -109,6 +119,7 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		PriceTier:       priceTier,
 		MinRating:       reqDTO.MinRating,
 		MaxDistanceKm:   reqDTO.MaxDistanceKM,
+		Sort:            sort,
 	}
 
 	resp, err := h.client.QueryActivities(r.Context(), grpcReq)
@@ -185,6 +196,17 @@ func toProtoPriceTier(p string) (activitiesv1.PriceTier, bool) {
 		return activitiesv1.PriceTier_PRICE_TIER_LUXURY, true
 	default:
 		return activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED, false
+	}
+}
+
+func toProtoSort(s string) (activitiesv1.Sort, bool) {
+	switch activitiessvc.Sort(s) {
+	case activitiessvc.SortUnspecified:
+		return activitiesv1.Sort_SORT_UNSPECIFIED, true
+	case activitiessvc.SortTopRated:
+		return activitiesv1.Sort_SORT_TOP_RATED, true
+	default:
+		return activitiesv1.Sort_SORT_UNSPECIFIED, false
 	}
 }
 

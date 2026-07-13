@@ -33,7 +33,7 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 	}
 
 	distanceExpr := "0"
-	orderBy := "ORDER BY rating DESC, title ASC"
+	var orderBy string
 
 	switch filter.Scope {
 	case activitiessvc.ScopeHome, activitiessvc.ScopeNearby:
@@ -53,6 +53,14 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		orderBy = "ORDER BY distance_km ASC"
 	case activitiessvc.ScopeOutsideCountry:
 		where = append(where, fmt.Sprintf("country <> %s", arg(filter.HomeCountry)))
+		if filter.Sort == activitiessvc.SortTopRated {
+			// The rating-sort MVP: highest rating first, deterministic
+			// tie-break by title so equal-rated activities still return in
+			// a stable order across requests/pages.
+			orderBy = "ORDER BY rating DESC, title ASC"
+		} else {
+			orderBy = "ORDER BY title ASC" // still deterministic without an explicit sort request
+		}
 	default:
 		return "", nil, fmt.Errorf("unknown scope %q", filter.Scope)
 	}
