@@ -284,10 +284,10 @@ don't build a generic wizard/stepper abstraction until a second step exists.
 ### Activity card
 
 The visual, image-led card for one browseable activity in a list (title,
-category, rating, image, distance/location). The List row recipe
-is for compact text rows; this is richer. Non-interactive display card for
-MVP (no detail screen yet — see Deferred); still exposed as a single
-screen-reader group.
+category, rating, image, description, tags, distance/location + a map
+thumbnail). The List row recipe is for compact text rows; this is richer.
+Non-interactive display card for MVP (no detail screen yet — see Deferred);
+still exposed as a single screen-reader group.
 
 Structure (image-top):
 - **Image** at the top, full card width, fixed 3:2 aspect ratio (space
@@ -300,16 +300,60 @@ Structure (image-top):
     (FRONTEND_STANDARDS / APP_STANDARDS); this recipe fixes only the reserved
     box and its loading/broken look.
 - **Body**, `--space-4` padding, on `--surface` with the gold `--card-highlight`
-  top edge and 1px `--border`:
+  top edge and 1px `--border`, `--space-2` between stacked elements:
   - Row 1: category **Badge/pill** (neutral variant) left; **rating** right —
     16px `--primary` star icon (gold on `--surface` = 3.1:1, a UI icon, clears
     3:1) + value `--font-size-sm` `--text` (7.1:1) with `tabular-nums`.
   - Title `--font-size-lg` `--text` (7.1:1), up to 2 lines then ellipsis
     (truncate, never clip — honor dynamic text scaling).
-  - Meta row: 16px `MapPin` + distance/location `--font-size-sm` `--text-muted`
-    (5.3:1 on `--surface`). No price/cost element — the flow shows no price
-    signage anywhere (product decision; the `PriceTier` field stays in the wire
-    contract but never renders).
+  - **Description snippet**: `--font-size-sm` `--text-muted` (5.3:1), up to 2
+    lines then ellipsis, from `Activity.description`. Omitted entirely when
+    the activity has no description — a shorter card than its neighbour is
+    not a layout jump (jump = an element shifting on a state change, which
+    doesn't happen here).
+  - **Tags row**: a single non-wrapping row of up to 3 tags from
+    `Activity.tags`, each a neutral **Badge/pill** (`--font-size-xs`,
+    uppercase, `--text-muted` label, 1px `--border`, `--radius-full`).
+    Overflow tags beyond 3 are simply dropped (no "+N" chip — decorative
+    scannable keywords, not a control). Omitted entirely when `tags` is empty.
+  - **Location row**: a leading fixed-size **Map thumbnail** (below), then
+    16px `MapPin` + distance/location `--font-size-sm` `--text-muted` (5.3:1
+    on `--surface`) to its right, vertically centered. No price/cost
+    element — the flow shows no price signage anywhere (product decision;
+    the `PriceTier` field stays in the wire contract but never renders).
+- **Map thumbnail** (in the location row): a static map image pinned to
+  `Activity.location` (lat/lng) with a gold `--primary` (#CE9042) marker
+  centered. Fixed **72×72** square, `--radius`, box reserved so every card in
+  a list keeps a uniform location-row height. The marker is baked into the
+  third-party map image — decorative imagery, no WCAG text/background pairing
+  applies (same as the hero photo). Placed to the left of the location text
+  (not full-width) to avoid stacking two full-width visuals and to keep the
+  map to one small HTTP request per card; a full interactive map is out of
+  scope for this card.
+  - Loading: `--surface-hover` block at the reserved 72×72 square with the
+    Skeleton opacity pulse.
+  - Loaded: the static map image with the gold pin.
+  - Broken (image request fails) or coordinates missing/invalid (lat/lng
+    absent or 0,0): `--surface-hover` block with a centered 20px
+    `--text-muted` `MapPinOff` icon — never a broken-image glyph, never
+    collapse the box, so one anomalous card doesn't shorten its location row
+    out of line with the rest of the list.
+  - Key absent (env var unset, app-wide): the map thumbnail is omitted for
+    **every** card and the location row falls back to just `MapPin` + text.
+    A missing key is an app-wide/config condition, so a placeholder square on
+    every card would be a wall of identical "unavailable" boxes — worse than
+    not showing a map at all. Per-card coords-missing, by contrast, is a rare
+    data gap and keeps its placeholder square.
+- **ActivityCardSkeleton**: matches the richer loaded card — image/badge/
+  rating/title skeleton blocks, plus two `--surface-hover` skeleton lines for
+  the description (~100% and ~70% width) and a 72×72 skeleton square in the
+  location row, so real cards arrive with zero jump.
+- **Accessibility label**: title, category, "rated {rating}", the
+  distance/location phrase, then the description, then the tags (e.g. "Tags:
+  {tag}, {tag}, {tag}") — description and tags omitted from the label when
+  absent, mirroring the visual. The map thumbnail is decorative and excluded
+  from the label (its only information, the location, is already spoken via
+  the location phrase); no price reference ever appears in the label.
 
 No new color tokens. `--space-4` between stacked cards. ponytail: static
 display card — no press/hover/focus-as-button until a detail route exists to
