@@ -55,7 +55,7 @@ func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Ac
 
 func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 	switch req.Scope {
-	case activitiessvc.ScopeHome, activitiessvc.ScopeNearby, activitiessvc.ScopeOutsideCountry:
+	case activitiessvc.ScopeHome, activitiessvc.ScopeNearby, activitiessvc.ScopeMyCountry:
 	default:
 		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown scope %q", sharederrors.ErrInvalidInput, req.Scope)
 	}
@@ -84,12 +84,12 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 		filter.CurrentLocation = req.CurrentLocation
 		filter.MaxDistanceKM = effectiveRadius(a.defaultRadiusKM, req.MaxDistanceKM)
 
-	case activitiessvc.ScopeOutsideCountry:
+	case activitiessvc.ScopeMyCountry:
 		if req.HomeCountry == "" {
-			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: home_country is required for scope outside_country", sharederrors.ErrInvalidInput)
+			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: home_country is required for scope my_country", sharederrors.ErrInvalidInput)
 		}
 		if req.MaxDistanceKM != 0 {
-			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: max_distance_km is not supported for scope outside_country", sharederrors.ErrInvalidInput)
+			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: max_distance_km is not supported for scope my_country", sharederrors.ErrInvalidInput)
 		}
 	}
 
@@ -110,8 +110,8 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 	if req.Sort != activitiessvc.SortUnspecified && !validSort(req.Sort) {
 		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown sort %q", sharederrors.ErrInvalidInput, req.Sort)
 	}
-	if req.Sort == activitiessvc.SortTopRated && req.Scope != activitiessvc.ScopeOutsideCountry {
-		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: sort=top_rated is only supported for scope outside_country", sharederrors.ErrInvalidInput)
+	if req.Sort == activitiessvc.SortTopRated && req.Scope != activitiessvc.ScopeMyCountry {
+		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: sort=top_rated is only supported for scope my_country", sharederrors.ErrInvalidInput)
 	}
 
 	return filter, nil

@@ -17,6 +17,7 @@ import { Spinner } from '../../components/Spinner';
 import { Wordmark } from '../../components/Wordmark';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { useNearbyLocation } from './useNearbyLocation';
+import { useMyCountryLocation } from './useMyCountryLocation';
 import type { ScopeSelection } from './types';
 
 type ScopePickerScreenProps = {
@@ -25,6 +26,22 @@ type ScopePickerScreenProps = {
 
 export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
   const { state, requestLocation } = useNearbyLocation();
+  const myCountry = useMyCountryLocation();
+  const myCountryBusy =
+    myCountry.status === 'requesting-permission' ||
+    myCountry.status === 'locating' ||
+    myCountry.status === 'resolving';
+  const myCountryTitle = myCountry.status === 'resolved' ? myCountry.country : 'My country';
+  const myCountryHint = myCountryBusy ? 'Detecting your country…' : 'Explore activities in your country';
+
+  function handleMyCountryPress() {
+    if (myCountry.status === 'resolved') {
+      onScopeSelected({ scope: 'my_country', homeCountry: myCountry.country });
+    } else {
+      onScopeSelected({ scope: 'my_country' });
+    }
+  }
+
   const messageRef = useRef<View>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
 
@@ -90,9 +107,15 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
           />
           <ChoiceCard
             icon={Globe}
-            title="Outside country"
-            hint="Explore activities abroad"
-            onPress={() => onScopeSelected({ scope: 'outside_country' })}
+            title={myCountryTitle}
+            hint={myCountryHint}
+            // ponytail: no `busy` prop here on purpose (unlike Nearby) —
+            // detection runs automatically on mount, not triggered by this
+            // tap, so the card must stay tappable throughout: tapping while
+            // unresolved (or after a detection failure) falls back to the
+            // manual Location screen instead of waiting.
+            onPress={handleMyCountryPress}
+            accessoryRight={myCountryBusy && !reduceMotion ? <Spinner /> : undefined}
           />
         </View>
 
@@ -101,7 +124,7 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
             <ErrorMessage
               ref={messageRef}
               onLayout={focusMessage}
-              text="Location access is off, so we can't find activities near you. Turn it on in Settings, or pick Home or Outside country instead."
+              text="Location access is off, so we can't find activities near you. Turn it on in Settings, or pick Home or My country instead."
               actionLabel="Open settings"
               onAction={() => Linking.openSettings()}
             />
@@ -110,7 +133,7 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
             <ErrorMessage
               ref={messageRef}
               onLayout={focusMessage}
-              text="We couldn't get your current location. Try again, or pick Home or Outside country instead."
+              text="We couldn't get your current location. Try again, or pick Home or My country instead."
               actionLabel="Try again"
               onAction={handleNearbyPress}
             />

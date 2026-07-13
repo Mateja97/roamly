@@ -12,6 +12,11 @@ jest.mock('expo-location', () => ({
 
 const mockedLocation = jest.mocked(Location);
 
+// getCountryFromCoordinates (app/src/api/places.ts) short-circuits to an
+// error before calling fetch when this is unset — see
+// useMyCountryLocation.test.tsx for the same pattern.
+const ORIGINAL_GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+
 describe('ScopePickerScreen', () => {
   beforeEach(() => {
     // afterEach's resetAllMocks wipes the RN jest preset's default
@@ -19,28 +24,68 @@ describe('ScopePickerScreen', () => {
     // ScopePickerScreen's reduce-motion check doesn't call `.then` on undefined.
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
     jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
+    // My country card: default every test to "denied" (no OS prompt, no
+    // fetch) unless a test overrides it — matches how Nearby's tests already
+    // scope mockedLocation calls per-test.
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
   });
-  afterEach(() => jest.resetAllMocks());
+  afterEach(() => {
+    jest.resetAllMocks();
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = ORIGINAL_GOOGLE_MAPS_API_KEY;
+  });
 
-  it('renders the three scope choices', () => {
+  it('renders the three scope choices', async () => {
     render(<ScopePickerScreen onScopeSelected={jest.fn()} />);
+    // Let useMyCountryLocation's mount-effect settle (default mock: denied)
+    // before the test body finishes, so its setState doesn't fire outside act().
+    await act(async () => {});
     expect(screen.getByRole('button', { name: /^home\./i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^nearby\./i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^outside country\./i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^my country\./i })).toBeTruthy();
   });
 
-  it('navigates immediately with scope "home" on Home tap — no location context', () => {
+  it('navigates immediately with scope "home" on Home tap — no location context', async () => {
     const onScopeSelected = jest.fn();
     render(<ScopePickerScreen onScopeSelected={onScopeSelected} />);
+    await act(async () => {});
     fireEvent.press(screen.getByRole('button', { name: /^home\./i }));
     expect(onScopeSelected).toHaveBeenCalledWith({ scope: 'home' });
   });
 
-  it('navigates immediately with scope "outside_country" on Outside country tap', () => {
+  it('navigates with scope "my_country" and no homeCountry on tap while detection is denied', async () => {
     const onScopeSelected = jest.fn();
     render(<ScopePickerScreen onScopeSelected={onScopeSelected} />);
-    fireEvent.press(screen.getByRole('button', { name: /^outside country\./i }));
-    expect(onScopeSelected).toHaveBeenCalledWith({ scope: 'outside_country' });
+    // beforeEach defaults getForegroundPermissionsAsync to 'denied' — wait for
+    // useMyCountryLocation to actually reach that terminal state before tapping,
+    // rather than relying on the tap racing ahead of the mount-effect.
+    await act(async () => {});
+    fireEvent.press(screen.getByRole('button', { name: /^my country\./i }));
+    expect(onScopeSelected).toHaveBeenCalledWith({ scope: 'my_country' });
+  });
+
+  it('navigates with scope "my_country" and the detected homeCountry once detection resolves', async () => {
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+    mockedLocation.getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 44.8125, longitude: 20.4612 },
+    } as never);
+    global.fetch = jest.fn().mockResolvedValue({
+      json: () =>
+        Promise.resolve({
+          status: 'OK',
+          results: [{ address_components: [{ long_name: 'Serbia', types: ['country', 'political'] }] }],
+        }),
+    } as never);
+
+    const onScopeSelected = jest.fn();
+    render(<ScopePickerScreen onScopeSelected={onScopeSelected} />);
+
+    await screen.findByRole('button', { name: /^serbia\./i });
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: /^serbia\./i }));
+    });
+
+    expect(onScopeSelected).toHaveBeenCalledWith({ scope: 'my_country', homeCountry: 'Serbia' });
   });
 
   it('navigates with coordinates once Nearby resolves a GPS fix', async () => {
@@ -61,7 +106,7 @@ describe('ScopePickerScreen', () => {
     });
   });
 
-  it('shows the permission-denied message with an Open settings action, and leaves Home/Outside country enabled', async () => {
+  it('shows the permission-denied message with an Open settings action, and leaves Home/My country enabled', async () => {
     mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
     const onScopeSelected = jest.fn();
     render(<ScopePickerScreen onScopeSelected={onScopeSelected} />);

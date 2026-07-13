@@ -16,7 +16,7 @@ type FilterSheetProps = {
   visible: boolean;
   initialFilters: Filters;
   // T3: the "Max distance" group only applies to nearby/home — the proxy
-  // rejects max_distance_km for outside_country, so the group is hidden
+  // rejects max_distance_km for my_country, so the group is hidden
   // there rather than sent-and-silently-ignored.
   scope: Scope;
   onApply: (filters: Filters) => Promise<ActivitiesQueryResult>;
@@ -147,7 +147,7 @@ export function FilterSheet({ visible, initialFilters, scope, onApply, onClose }
               )}
             </FilterGroup>
 
-            {scope !== 'outside_country' && (
+            {scope !== 'my_country' && (
               <DistanceSlider
                 value={draft.maxDistanceKm}
                 onChange={(maxDistanceKm) => setDraft((prev) => ({ ...prev, maxDistanceKm }))}

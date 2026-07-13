@@ -66,7 +66,7 @@ func TestQueryActivitiesHandler_ForwardsSort(t *testing.T) {
 	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"outside_country","home_country":"Serbia","sort":"top_rated"}`)
+	rec := doRequest(t, h, `{"scope":"my_country","home_country":"Serbia","sort":"top_rated"}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -102,7 +102,7 @@ func TestQueryActivitiesHandler_ValidationFailures(t *testing.T) {
 		{"unknown scope", `{"scope":"galaxy"}`},
 		{"unknown category", `{"scope":"home","home_location":{"lat":1,"lng":1},"categories":["not_a_category"]}`},
 		{"unknown price_tier", `{"scope":"home","home_location":{"lat":1,"lng":1},"price_tier":"not_a_tier"}`},
-		{"unknown sort", `{"scope":"outside_country","home_country":"Serbia","sort":"most_popular"}`},
+		{"unknown sort", `{"scope":"my_country","home_country":"Serbia","sort":"most_popular"}`},
 		{"malformed JSON body", `{not-json`},
 	}
 	for _, tt := range tests {
@@ -134,7 +134,7 @@ func TestQueryActivitiesHandler_GRPCInternalMapsTo500(t *testing.T) {
 	fake := &fakeActivitiesClient{err: status.Error(codes.Internal, "internal error")}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"outside_country","home_country":"Serbia"}`)
+	rec := doRequest(t, h, `{"scope":"my_country","home_country":"Serbia"}`)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)

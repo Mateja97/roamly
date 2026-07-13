@@ -51,7 +51,7 @@ type queryActivitiesRequestDTO struct {
 	MinRating       float64      `json:"min_rating,omitempty"`
 	MaxDistanceKM   float64      `json:"max_distance_km,omitempty"`
 	// Sort requests a specific result ordering, e.g. "top_rated" for the
-	// country (outside_country) scope's rating-descending MVP ranking.
+	// country (my_country) scope's rating-descending MVP ranking.
 	// Empty = no explicit ordering requested.
 	Sort string `json:"sort,omitempty"`
 }
@@ -156,7 +156,7 @@ func toProtoScope(s string) (activitiesv1.Scope, bool) {
 		return activitiesv1.Scope_SCOPE_HOME, true
 	case activitiessvc.ScopeNearby:
 		return activitiesv1.Scope_SCOPE_NEARBY, true
-	case activitiessvc.ScopeOutsideCountry:
+	case activitiessvc.ScopeMyCountry:
 		return activitiesv1.Scope_SCOPE_OUTSIDE_COUNTRY, true
 	default:
 		return activitiesv1.Scope_SCOPE_UNSPECIFIED, false

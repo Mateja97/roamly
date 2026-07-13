@@ -1,5 +1,6 @@
 import { AccessibilityInfo, BackHandler } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import * as Location from 'expo-location';
 import App from './App';
 import { queryActivities } from './src/api/activities';
 
@@ -12,6 +13,18 @@ async function flush() {
 
 jest.mock('./src/api/activities', () => ({ queryActivities: jest.fn() }));
 const mockedQuery = jest.mocked(queryActivities);
+
+// useMyCountryLocation (mounted by ScopePickerScreen) calls this on mount —
+// see ScopePickerScreen.test.tsx for the same mock. These tests only
+// exercise the Home/Nearby flow, so "denied" keeps the mount effect
+// terminal and cheap.
+jest.mock('expo-location', () => ({
+  PermissionStatus: { GRANTED: 'granted', DENIED: 'denied', UNDETERMINED: 'undetermined' },
+  getForegroundPermissionsAsync: jest.fn(),
+  requestForegroundPermissionsAsync: jest.fn(),
+  getCurrentPositionAsync: jest.fn(),
+}));
+const mockedLocation = jest.mocked(Location);
 
 function pressBackHandler(addBackListener: jest.SpyInstance) {
   const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
@@ -30,6 +43,9 @@ describe('App', () => {
     // calls — irrelevant to what these tests verify.
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
     jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
+    // My country card: default every test to "denied" (no OS prompt, no
+    // fetch) — these tests don't exercise My Country.
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
   });
   afterEach(() => jest.resetAllMocks());
 
@@ -81,6 +97,10 @@ describe('App', () => {
     expect(screen.getByText('What are you into?')).toBeTruthy();
 
     pressBackHandler(addBackListener);
+    // Popping back remounts LocationScreen, which kicks off its own mount
+    // effect — flush it before the test ends so its setState doesn't fire
+    // outside act().
+    await flush();
     expect(screen.getByText('Confirm your city')).toBeTruthy();
     addBackListener.mockRestore();
   });
@@ -93,6 +113,10 @@ describe('App', () => {
     expect(screen.getByText('Confirm your city')).toBeTruthy();
 
     pressBackHandler(addBackListener);
+    // Popping back remounts ScopePickerScreen, which re-triggers
+    // useMyCountryLocation's mount effect — flush it before the test ends
+    // so its setState doesn't fire outside act().
+    await flush();
     expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
     addBackListener.mockRestore();
   });

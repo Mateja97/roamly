@@ -1,4 +1,4 @@
-import { getPlaceCoordinates, hasPlacesKey, searchPlaces } from './places';
+import { getCountryFromCoordinates, getPlaceCoordinates, hasPlacesKey, searchPlaces } from './places';
 
 const ORIGINAL_ENV = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 
@@ -105,6 +105,66 @@ describe('places api', () => {
       mockFetchOnce({ status: 'OK', result: { name: 'Paris' } });
       const result = await getPlaceCoordinates(suggestion);
       expect(result.status).toBe('error');
+    });
+  });
+
+  describe('getCountryFromCoordinates', () => {
+    const COORDS = { latitude: 44.8125, longitude: 20.4612 };
+
+    it('resolves an error without calling fetch when no key is configured', async () => {
+      setKey(undefined);
+      global.fetch = jest.fn();
+      const result = await getCountryFromCoordinates(COORDS);
+      expect(result).toEqual({ status: 'error', message: 'Place search is not configured.' });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('resolves an error when the network request fails', async () => {
+      setKey('test-key');
+      global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
+      const result = await getCountryFromCoordinates(COORDS);
+      expect(result).toEqual({
+        status: 'error',
+        message: 'Could not reach place search. Check your connection and try again.',
+      });
+    });
+
+    it('resolves an error when the response status is not OK', async () => {
+      setKey('test-key');
+      mockFetchOnce({ status: 'ZERO_RESULTS' });
+      const result = await getCountryFromCoordinates(COORDS);
+      expect(result).toEqual({ status: 'error', message: 'Something went wrong. Please try again.' });
+    });
+
+    it('resolves an error when no result has a country address component', async () => {
+      setKey('test-key');
+      mockFetchOnce({
+        status: 'OK',
+        results: [{ address_components: [{ long_name: 'Belgrade', types: ['locality'] }] }],
+      });
+      const result = await getCountryFromCoordinates(COORDS);
+      expect(result).toEqual({ status: 'error', message: 'Something went wrong. Please try again.' });
+    });
+
+    it('resolves the country name from the country address component', async () => {
+      setKey('test-key');
+      mockFetchOnce({
+        status: 'OK',
+        results: [
+          {
+            address_components: [
+              { long_name: 'Serbia', types: ['country', 'political'] },
+            ],
+          },
+        ],
+      });
+      const result = await getCountryFromCoordinates(COORDS);
+      expect(result).toEqual({ status: 'success', country: 'Serbia' });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('https://maps.googleapis.com/maps/api/geocode/json?')
+      );
+      expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('result_type=country'));
+      expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('latlng=44.8125%2C20.4612'));
     });
   });
 });

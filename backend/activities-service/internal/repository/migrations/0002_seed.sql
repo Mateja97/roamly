@@ -1,6 +1,6 @@
 -- Seed catalog. Cluster A sits around Belgrade, Serbia (usable as the
 -- home_location/current_location test anchor for the home/nearby scopes).
--- Cluster B sits in other countries (usable for outside_country with
+-- Cluster B sits in other countries (usable for my_country with
 -- home_country = 'Serbia'). See engineering-notes.md for the documented
 -- test coordinates.
 

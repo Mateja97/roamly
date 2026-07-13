@@ -30,9 +30,9 @@ describe('FilterSheet', () => {
     expect(screen.getByRole('button', { name: '4.5+' })).toBeTruthy();
   });
 
-  it('hides the Max distance group entirely for outside_country (proxy rejects max_distance_km there)', async () => {
+  it('hides the Max distance group entirely for my_country (proxy rejects max_distance_km there)', async () => {
     render(
-      <FilterSheet visible initialFilters={EMPTY_FILTERS} scope="outside_country" onApply={jest.fn()} onClose={jest.fn()} />
+      <FilterSheet visible initialFilters={EMPTY_FILTERS} scope="my_country" onApply={jest.fn()} onClose={jest.fn()} />
     );
     await flush();
     expect(screen.queryByText('Max distance')).toBeNull();

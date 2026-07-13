@@ -83,7 +83,7 @@ func toDomainScope(s activitiesv1.Scope) activitiessvc.Scope {
 	case activitiesv1.Scope_SCOPE_NEARBY:
 		return activitiessvc.ScopeNearby
 	case activitiesv1.Scope_SCOPE_OUTSIDE_COUNTRY:
-		return activitiessvc.ScopeOutsideCountry
+		return activitiessvc.ScopeMyCountry
 	default:
 		return "" // service layer rejects this as an unknown scope
 	}

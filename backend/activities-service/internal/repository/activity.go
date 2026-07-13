@@ -51,7 +51,7 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		where = append(where, fmt.Sprintf("ST_DWithin(location, %s, %s)", point, radiusArg))
 		distanceExpr = fmt.Sprintf("ST_Distance(location, %s) / 1000.0", point)
 		orderBy = "ORDER BY distance_km ASC"
-	case activitiessvc.ScopeOutsideCountry:
+	case activitiessvc.ScopeMyCountry:
 		where = append(where, fmt.Sprintf("country <> %s", arg(filter.HomeCountry)))
 		if filter.Sort == activitiessvc.SortTopRated {
 			// The rating-sort MVP: highest rating first, deterministic

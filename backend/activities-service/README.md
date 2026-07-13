@@ -1,7 +1,7 @@
 # activities-service
 
 Owns the activity catalog and answers scoped, filtered queries against it
-(`home` / `nearby` / `outside_country`). Stateless about users: callers
+(`home` / `nearby` / `my_country`). Stateless about users: callers
 supply location context (current/home coordinates, home country) on every
 request. Backed by Postgres + PostGIS.
 

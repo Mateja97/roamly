@@ -23,14 +23,15 @@ import { FilterSheet } from './FilterSheet';
 import { EMPTY_FILTERS, SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, filterChips } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
 
-// Country (outside_country) scope header subtitle — static (doesn't wait on
+// Country (my_country) scope header subtitle — static (doesn't wait on
 // the fetch) per design-spec.md's T6 section. The title reads
-// `selection.homeCountry`, the place T4's Location screen confirmed before
-// this screen ever mounts (App.tsx always routes outside_country through it
-// first). ponytail: the spec's "no name resolvable" fallback (generic title,
-// country folded into the subtitle) is skipped — the Location screen always
-// resolves a name (search result or its own default place), so `homeCountry`
-// is never empty in practice; the `?? SCOPE_TITLES.outside_country` fallback
+// `selection.homeCountry`, either GPS-detected on the scope picker or
+// confirmed via T4's Location screen fallback before this screen ever mounts
+// (App.tsx routes my_country to activity-types directly once resolved, or
+// through the Location screen otherwise — see App.tsx). ponytail: the spec's
+// "no name resolvable" fallback (generic title, country folded into the
+// subtitle) is skipped — both paths always resolve a name, so `homeCountry`
+// is never empty in practice; the `?? SCOPE_TITLES.my_country` fallback
 // below exists only to satisfy the optional type, not a reachable UI state.
 const COUNTRY_HEADER_SUBTITLE = 'Top-rated activities';
 
@@ -153,7 +154,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   const chips = filterChips(appliedFilters);
   const filterCount = activeFilterCount(appliedFilters);
   const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
-  const showDistance = selection.scope !== 'outside_country';
+  const showDistance = selection.scope !== 'my_country';
   const filtersFocus = useFocusable();
 
   return (
@@ -161,11 +162,11 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
       <View style={styles.header}>
         <View style={styles.headerTitleBlock}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {selection.scope === 'outside_country'
-              ? selection.homeCountry ?? SCOPE_TITLES.outside_country
+            {selection.scope === 'my_country'
+              ? selection.homeCountry ?? SCOPE_TITLES.my_country
               : SCOPE_TITLES[selection.scope]}
           </Text>
-          {selection.scope === 'outside_country' && (
+          {selection.scope === 'my_country' && (
             <Text style={styles.headerSubtitle} numberOfLines={1}>
               {COUNTRY_HEADER_SUBTITLE}
             </Text>
