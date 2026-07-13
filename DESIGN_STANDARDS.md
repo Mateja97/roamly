@@ -388,6 +388,49 @@ feedback carries on touch (no hover reliance).
 
 No new color tokens.
 
+### Slider (range)
+
+A continuous single-value control (e.g. the activity Filter sheet's "Max
+distance") — used instead of fixed chip buckets when the value genuinely
+spans a range rather than a handful of discrete options.
+
+- **Layout:** a group label row — the group name left (`--font-size-sm`
+  `--text-muted`, uppercase, `letter-spacing 0.05em`), the current value right
+  as text (`--font-size-md` `--text`, 7.1:1, `tabular-nums` so digits don't
+  shift the row while dragging — the value is never color-only). Track spans
+  the full content width below the label, 4px tall, `--radius-full`: active
+  portion `--primary` gold (3.1:1 on `--surface`), inactive remainder
+  `--border`. Min/max end labels under the track ends, `--font-size-xs`
+  `--text-muted` (5.3:1). A 24px `--primary` gold thumb centered on the track,
+  ≥44×44 hit area (extended vertically past the visible disc), ≥`--space-2`
+  clear of the group above/below.
+- **Default:** the widest/least-restrictive end of the range, so a filter's
+  first-load value never narrows results the user hasn't asked to narrow —
+  "pinned at max, drag to tighten" reads naturally as a maximum control.
+- **States:**
+  - *Default:* gold thumb + gold active fill; readout shows the current value.
+  - *Dragging:* thumb and fill track the drag 1:1; the value readout updates
+    live (`tabular-nums`, no layout shift) — the primary feedback. A 2px
+    `--text` (cream) ring, offset ~2px from the thumb (never flush — cream
+    directly on the gold thumb is only 2.32:1, an accepted gap, not something
+    to fix by removing the offset) marks the active thumb; it reads against
+    `--surface` at 7.1:1. The thumb itself is never darkened to
+    `--primary-active` (2.38:1 on `--surface` — fails the 3:1 UI bar).
+  - *Focused (keyboard):* same offset cream ring; arrow keys step by one
+    unit, Home/End jump to the range ends; exposed as an adjustable control
+    announcing the value in its unit. Never drag-only.
+  - *Disabled:* track `--border`, fill + thumb `--text-disabled`, inert.
+  - *Hidden:* omit the whole group rather than showing it disabled when the
+    control genuinely doesn't apply in a given context (e.g. a scope where
+    the backend rejects the field) — a value visibly there-but-inert reads as
+    a bug, not a rule.
+- **Touch & motion:** thumb hit area ≥44×44 with ≥`--space-2` clearance; drag
+  is direct manipulation; the focus/drag ring fades on `opacity` ≤150ms,
+  `prefers-reduced-motion` → instant, no size animation on track or thumb.
+
+No new color tokens — composes entirely from `--surface`, `--primary`,
+`--border`, `--text`, `--text-muted`.
+
 ### Bottom sheet
 
 A modal panel that slides up from the bottom edge for a focused, in-context

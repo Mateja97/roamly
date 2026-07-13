@@ -54,7 +54,7 @@ describe('ActivityListScreen', () => {
 
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
-    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'home', home_location: HOME_LOCATION });
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'home', home_location: HOME_LOCATION, max_distance_km: 50 });
     expect(screen.getByText('1 activity')).toBeTruthy();
     expect(screen.queryByText('Top-rated activities')).toBeNull();
   });
@@ -144,7 +144,12 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
     });
 
-    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'home', home_location: HOME_LOCATION, categories: ['sports'] });
+    expect(mockedQuery).toHaveBeenLastCalledWith({
+      scope: 'home',
+      home_location: HOME_LOCATION,
+      categories: ['sports'],
+      max_distance_km: 50,
+    });
     expect(screen.getByText('1 activity')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
   });
@@ -168,7 +173,7 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Remove Sports filter' }));
     });
 
-    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'home', home_location: HOME_LOCATION });
+    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'home', home_location: HOME_LOCATION, max_distance_km: 50 });
     expect(screen.getByText('2 activities')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Remove Sports filter' })).toBeNull();
   });
