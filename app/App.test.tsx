@@ -39,17 +39,21 @@ describe('App', () => {
     expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
   });
 
-  it('hands off the selected scope after choosing Home, landing on the types picker', async () => {
+  it('hands off the selected scope after choosing Home, through the Location screen, landing on the types picker', async () => {
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    expect(screen.getByText('Confirm your city')).toBeTruthy();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
     expect(screen.getByText('What are you into?')).toBeTruthy();
   });
 
-  it('confirming the types picker carries the selection to the list, pre-filtered', async () => {
+  it('confirming the types picker carries the location + category selection to the list, pre-filtered', async () => {
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
     fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
 
     await act(async () => {
@@ -57,27 +61,47 @@ describe('App', () => {
     });
 
     expect(screen.getByText('Home')).toBeTruthy();
-    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith(expect.objectContaining({ categories: ['sports'] })));
+    await waitFor(() =>
+      expect(mockedQuery).toHaveBeenCalledWith({
+        scope: 'home',
+        home_location: { lat: 44.8125, lng: 20.4612 },
+        categories: ['sports'],
+      })
+    );
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
   });
 
-  it('Android hardware back on the types picker returns to the scope picker', async () => {
+  it('Android hardware back on the types picker returns to the Location screen (not the scope picker)', async () => {
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
     expect(screen.getByText('What are you into?')).toBeTruthy();
+
+    pressBackHandler(addBackListener);
+    expect(screen.getByText('Confirm your city')).toBeTruthy();
+    addBackListener.mockRestore();
+  });
+
+  it('Android hardware back on the Location screen returns to the scope picker', async () => {
+    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
+    render(<App />);
+    await flush();
+    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    expect(screen.getByText('Confirm your city')).toBeTruthy();
 
     pressBackHandler(addBackListener);
     expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
     addBackListener.mockRestore();
   });
 
-  it('Android hardware back on the activity list returns to the types picker (not the scope picker)', async () => {
+  it('Android hardware back on the activity list returns to the types picker (not the Location or scope picker)', async () => {
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
     fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
+    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
     });

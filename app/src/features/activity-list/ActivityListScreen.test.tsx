@@ -3,10 +3,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import { queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { ActivityListScreen } from './ActivityListScreen';
-import { HOME_COUNTRY, HOME_LOCATION } from './config';
 
 jest.mock('../../api/activities', () => ({ queryActivities: jest.fn() }));
 const mockedQuery = jest.mocked(queryActivities);
+
+const HOME_LOCATION = { lat: 44.8125, lng: 20.4612 };
+const HOME_COUNTRY = 'Serbia';
 
 beforeEach(() => {
   // afterEach's resetAllMocks wipes the RN jest preset's default
@@ -48,7 +50,7 @@ describe('ActivityListScreen', () => {
 
   it('fetches on mount using the scope + home location, and renders loaded cards', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
@@ -59,7 +61,7 @@ describe('ActivityListScreen', () => {
 
   it('country scope sends the top_rated sort flag and shows the two-line ranking header immediately', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'outside_country' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'outside_country', homeCountry: HOME_COUNTRY }} onBack={jest.fn()} />);
 
     // Static header copy renders at mount, before the fetch resolves.
     expect(screen.getByText(HOME_COUNTRY)).toBeTruthy();
@@ -76,7 +78,7 @@ describe('ActivityListScreen', () => {
 
   it('shows the empty state with no Clear-filters button when no filters are active', async () => {
     mockedQuery.mockResolvedValue(successResult([]));
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
     expect(screen.getByText('Nothing here right now.')).toBeTruthy();
@@ -85,7 +87,7 @@ describe('ActivityListScreen', () => {
 
   it('shows the error state with a Try again action that re-queries', async () => {
     mockedQuery.mockResolvedValueOnce({ status: 500, message: 'internal error' });
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('internal error')).toBeTruthy());
 
@@ -101,7 +103,7 @@ describe('ActivityListScreen', () => {
     mockedQuery.mockResolvedValue(successResult([]));
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     const onBack = jest.fn();
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={onBack} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={onBack} />);
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
@@ -120,7 +122,7 @@ describe('ActivityListScreen', () => {
 
   it('opens the Filter sheet from the header Filters button', async () => {
     mockedQuery.mockResolvedValue(successResult([]));
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
@@ -130,7 +132,7 @@ describe('ActivityListScreen', () => {
 
   it('applying a filter in the sheet re-queries and shows the chip + updated count', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity, { ...activity, id: '2' }]));
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('2 activities')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
@@ -149,7 +151,7 @@ describe('ActivityListScreen', () => {
 
   it('removing an active-filter chip clears just that filter and re-queries', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('1 activity')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
@@ -173,7 +175,7 @@ describe('ActivityListScreen', () => {
 
   it('re-opening the sheet after applying reflects the now-applied filters, not the stale draft', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home' }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('1 activity')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
