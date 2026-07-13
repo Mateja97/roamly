@@ -37,17 +37,20 @@ type locationDTO struct {
 	Lng float64 `json:"lng"`
 }
 
-// queryActivitiesRequestDTO is the HTTP request body. scope/categories/
-// price_tier reuse the exact lowercase snake_case strings
+// queryActivitiesRequestDTO is the HTTP request body. scope/categories
+// reuse the exact lowercase snake_case strings
 // backend/shared/models/activitiessvc defines, so this JSON contract and
 // activities-service's own domain vocabulary never drift apart.
+//
+// ponytail: a stray key from a now-removed filter field in the request body
+// is silently ignored by encoding/json (no struct field to decode it into) —
+// a stale app build sending the dropped field must not hard-fail.
 type queryActivitiesRequestDTO struct {
 	Scope           string       `json:"scope"`
 	CurrentLocation *locationDTO `json:"current_location,omitempty"`
 	HomeLocation    *locationDTO `json:"home_location,omitempty"`
 	HomeCountry     string       `json:"home_country,omitempty"`
 	Categories      []string     `json:"categories,omitempty"`
-	PriceTier       string       `json:"price_tier,omitempty"`
 	MinRating       float64      `json:"min_rating,omitempty"`
 	MaxDistanceKM   float64      `json:"max_distance_km,omitempty"`
 	// Sort requests a specific result ordering, e.g. "top_rated" for the
@@ -64,7 +67,6 @@ type activityDTO struct {
 	Category    string      `json:"category"`
 	Location    locationDTO `json:"location"`
 	Country     string      `json:"country"`
-	PriceTier   string      `json:"price_tier"`
 	Rating      float64     `json:"rating"`
 	ImageRefs   []string    `json:"image_refs"`
 	Tags        []string    `json:"tags"`
@@ -98,12 +100,6 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		categories = append(categories, cat)
 	}
 
-	priceTier, ok := toProtoPriceTier(reqDTO.PriceTier)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown price_tier: "+reqDTO.PriceTier, h.logger)
-		return
-	}
-
 	sort, ok := toProtoSort(reqDTO.Sort)
 	if !ok {
 		writeError(w, http.StatusBadRequest, "unknown sort: "+reqDTO.Sort, h.logger)
@@ -116,7 +112,6 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		HomeLocation:    toProtoLocation(reqDTO.HomeLocation),
 		HomeCountry:     reqDTO.HomeCountry,
 		Categories:      categories,
-		PriceTier:       priceTier,
 		MinRating:       reqDTO.MinRating,
 		MaxDistanceKm:   reqDTO.MaxDistanceKM,
 		Sort:            sort,
@@ -182,23 +177,6 @@ func toProtoCategory(c string) (activitiesv1.Category, bool) {
 	}
 }
 
-func toProtoPriceTier(p string) (activitiesv1.PriceTier, bool) {
-	switch activitiessvc.PriceTier(p) {
-	case activitiessvc.PriceTierUnspecified:
-		return activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED, true
-	case activitiessvc.PriceTierBudget:
-		return activitiesv1.PriceTier_PRICE_TIER_BUDGET, true
-	case activitiessvc.PriceTierModerate:
-		return activitiesv1.PriceTier_PRICE_TIER_MODERATE, true
-	case activitiessvc.PriceTierPremium:
-		return activitiesv1.PriceTier_PRICE_TIER_PREMIUM, true
-	case activitiessvc.PriceTierLuxury:
-		return activitiesv1.PriceTier_PRICE_TIER_LUXURY, true
-	default:
-		return activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED, false
-	}
-}
-
 func toProtoSort(s string) (activitiesv1.Sort, bool) {
 	switch activitiessvc.Sort(s) {
 	case activitiessvc.SortUnspecified:
@@ -218,7 +196,6 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		Category:    string(toDomainCategory(a.GetCategory(), logger)),
 		Location:    locationDTO{Lat: a.GetLocation().GetLat(), Lng: a.GetLocation().GetLng()},
 		Country:     a.GetCountry(),
-		PriceTier:   string(toDomainPriceTier(a.GetPriceTier(), logger)),
 		Rating:      a.GetRating(),
 		ImageRefs:   a.GetImageRefs(),
 		Tags:        a.GetTags(),
@@ -243,23 +220,5 @@ func toDomainCategory(c activitiesv1.Category, logger *slog.Logger) activitiessv
 	default:
 		logger.Warn("unrecognized category from activities-service", "category", c)
 		return ""
-	}
-}
-
-func toDomainPriceTier(p activitiesv1.PriceTier, logger *slog.Logger) activitiessvc.PriceTier {
-	switch p {
-	case activitiesv1.PriceTier_PRICE_TIER_UNSPECIFIED:
-		return activitiessvc.PriceTierUnspecified
-	case activitiesv1.PriceTier_PRICE_TIER_BUDGET:
-		return activitiessvc.PriceTierBudget
-	case activitiesv1.PriceTier_PRICE_TIER_MODERATE:
-		return activitiessvc.PriceTierModerate
-	case activitiesv1.PriceTier_PRICE_TIER_PREMIUM:
-		return activitiessvc.PriceTierPremium
-	case activitiesv1.PriceTier_PRICE_TIER_LUXURY:
-		return activitiessvc.PriceTierLuxury
-	default:
-		logger.Warn("unrecognized price tier from activities-service", "price_tier", p)
-		return activitiessvc.PriceTierUnspecified
 	}
 }

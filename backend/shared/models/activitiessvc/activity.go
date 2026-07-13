@@ -23,16 +23,6 @@ const (
 	CategoryEntertainmentAndWellness Category = "entertainment_and_wellness"
 )
 
-type PriceTier string
-
-const (
-	PriceTierUnspecified PriceTier = ""
-	PriceTierBudget      PriceTier = "budget"
-	PriceTierModerate    PriceTier = "moderate"
-	PriceTierPremium     PriceTier = "premium"
-	PriceTierLuxury      PriceTier = "luxury"
-)
-
 // Sort requests a specific result ordering. SortTopRated is only valid for
 // ScopeMyCountry: the accepted "top activities" MVP is rating
 // descending, deterministic tie-break by title.
@@ -58,7 +48,6 @@ type Activity struct {
 	Category    Category
 	Location    Point
 	Country     string
-	PriceTier   PriceTier
 	Rating      float64
 	ImageRefs   []string
 	Tags        []string
@@ -75,7 +64,6 @@ type QueryFilter struct {
 	HomeCountry     string
 
 	Categories    []Category // empty = no category filter
-	PriceTier     PriceTier  // PriceTierUnspecified = no filter
 	MinRating     float64    // 0 = no filter
 	MaxDistanceKM float64    // 0 = no filter; HOME/NEARBY scopes only
 	Sort          Sort       // SortUnspecified = no explicit ordering requested

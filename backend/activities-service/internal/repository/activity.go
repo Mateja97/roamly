@@ -72,16 +72,13 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		}
 		where = append(where, fmt.Sprintf("category = ANY(%s)", arg(cats)))
 	}
-	if filter.PriceTier != activitiessvc.PriceTierUnspecified {
-		where = append(where, fmt.Sprintf("price_tier = %s", arg(string(filter.PriceTier))))
-	}
 	if filter.MinRating > 0 {
 		where = append(where, fmt.Sprintf("rating >= %s", arg(filter.MinRating)))
 	}
 
 	query := fmt.Sprintf(
 		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
-			country, price_tier, rating, image_refs, tags, %s AS distance_km
+			country, rating, image_refs, tags, %s AS distance_km
 		FROM activities
 		WHERE %s
 		%s`,
@@ -109,7 +106,7 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 		if err := rows.Scan(
 			&a.ID, &a.Title, &a.Description, &a.Category,
 			&a.Location.Lat, &a.Location.Lng,
-			&a.Country, &a.PriceTier, &a.Rating,
+			&a.Country, &a.Rating,
 			&a.ImageRefs, &a.Tags, &a.DistanceKM,
 		); err != nil {
 			return nil, fmt.Errorf("scanning activity row: %w", err)

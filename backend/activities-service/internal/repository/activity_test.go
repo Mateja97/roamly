@@ -91,15 +91,14 @@ func TestBuildQuery(t *testing.T) {
 			wantSQL: []string{"category = ANY"},
 		},
 		{
-			name: "price tier and min rating filters combine with AND",
+			name: "country and min rating filters combine with AND",
 			filter: activitiessvc.QueryFilter{
 				Scope:       activitiessvc.ScopeMyCountry,
 				HomeCountry: "Serbia",
-				PriceTier:   activitiessvc.PriceTierBudget,
 				MinRating:   4.5,
 			},
-			wantSQL:  []string{"price_tier =", "rating >=", " AND "},
-			wantArgs: []any{"Serbia", "budget", 4.5},
+			wantSQL:  []string{"country <>", "rating >=", " AND "},
+			wantArgs: []any{"Serbia", 4.5},
 		},
 	}
 

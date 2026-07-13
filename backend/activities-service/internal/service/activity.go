@@ -25,7 +25,6 @@ type Request struct {
 	HomeLocation    *activitiessvc.Point
 	HomeCountry     string
 	Categories      []activitiessvc.Category
-	PriceTier       activitiessvc.PriceTier
 	MinRating       float64
 	MaxDistanceKM   float64
 	Sort            activitiessvc.Sort
@@ -64,7 +63,6 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 		Scope:       req.Scope,
 		HomeCountry: req.HomeCountry,
 		Categories:  req.Categories,
-		PriceTier:   req.PriceTier,
 		MinRating:   req.MinRating,
 		Sort:        req.Sort,
 	}
@@ -97,9 +95,6 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 		if !validCategory(c) {
 			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, c)
 		}
-	}
-	if req.PriceTier != activitiessvc.PriceTierUnspecified && !validPriceTier(req.PriceTier) {
-		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown price tier %q", sharederrors.ErrInvalidInput, req.PriceTier)
 	}
 	if req.MinRating < 0 || req.MinRating > 5 {
 		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: min_rating must be between 0 and 5", sharederrors.ErrInvalidInput)
@@ -148,15 +143,6 @@ func validCategory(c activitiessvc.Category) bool {
 		activitiessvc.CategoryArtAndDesign,
 		activitiessvc.CategorySports,
 		activitiessvc.CategoryEntertainmentAndWellness:
-		return true
-	}
-	return false
-}
-
-func validPriceTier(p activitiessvc.PriceTier) bool {
-	switch p {
-	case activitiessvc.PriceTierBudget, activitiessvc.PriceTierModerate,
-		activitiessvc.PriceTierPremium, activitiessvc.PriceTierLuxury:
 		return true
 	}
 	return false
