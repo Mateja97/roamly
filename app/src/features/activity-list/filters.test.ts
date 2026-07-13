@@ -67,9 +67,9 @@ describe('buildActivitiesRequest', () => {
     expect(req).toEqual({ scope: 'home', home_location: HOME_LOCATION, max_distance_km: 50 });
   });
 
-  it('sends home_country and the top_rated sort flag for outside_country', () => {
-    const req = buildActivitiesRequest({ scope: 'outside_country', homeCountry: HOME_COUNTRY }, EMPTY_FILTERS);
-    expect(req).toEqual({ scope: 'outside_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
+  it('sends home_country and the top_rated sort flag for my_country', () => {
+    const req = buildActivitiesRequest({ scope: 'my_country', homeCountry: HOME_COUNTRY }, EMPTY_FILTERS);
+    expect(req).toEqual({ scope: 'my_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
   });
 
   it('does not send the sort flag for home or nearby', () => {
@@ -81,7 +81,7 @@ describe('buildActivitiesRequest', () => {
 
   it('omits home_location/home_country when not yet resolved', () => {
     expect(buildActivitiesRequest({ scope: 'home' }, EMPTY_FILTERS)).toEqual({ scope: 'home', max_distance_km: 50 });
-    expect(buildActivitiesRequest({ scope: 'outside_country' }, EMPTY_FILTERS)).toEqual({ scope: 'outside_country' });
+    expect(buildActivitiesRequest({ scope: 'my_country' }, EMPTY_FILTERS)).toEqual({ scope: 'my_country' });
   });
 
   it('includes only the set filter fields', () => {
@@ -100,9 +100,9 @@ describe('buildActivitiesRequest', () => {
     });
   });
 
-  it('omits max_distance_km for outside_country even if set (T2 rejects it there)', () => {
+  it('omits max_distance_km for my_country even if set (T2 rejects it there)', () => {
     const filters: Filters = { ...EMPTY_FILTERS, maxDistanceKm: 25 };
-    const req = buildActivitiesRequest({ scope: 'outside_country' }, filters);
+    const req = buildActivitiesRequest({ scope: 'my_country' }, filters);
     expect(req.max_distance_km).toBeUndefined();
   });
 });

@@ -61,14 +61,14 @@ describe('ActivityListScreen', () => {
 
   it('country scope sends the top_rated sort flag and shows the two-line ranking header immediately', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'outside_country', homeCountry: HOME_COUNTRY }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'my_country', homeCountry: HOME_COUNTRY }} onBack={jest.fn()} />);
 
     // Static header copy renders at mount, before the fetch resolves.
     expect(screen.getByText(HOME_COUNTRY)).toBeTruthy();
     expect(screen.getByText('Top-rated activities')).toBeTruthy();
 
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
-    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'outside_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'my_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
     // Ranking is server-trusted — no re-sort UI, header copy is unchanged
     // after results arrive (the card's own country meta text also reads
     // "Serbia" here, hence getAllByText).

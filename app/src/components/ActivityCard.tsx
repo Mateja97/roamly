@@ -11,7 +11,7 @@ const MAX_TAGS = 3;
 
 type ActivityCardProps = {
   activity: Activity;
-  /** outside_country's distance_km is always 0 (no distance concept there) — show the country instead. */
+  /** my_country's distance_km is always 0 (no distance concept there) — show the country instead. */
   showDistance: boolean;
 };
 

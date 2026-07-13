@@ -28,7 +28,7 @@ export type ActivitiesQueryRequest = {
   price_tier?: PriceTier;
   min_rating?: number;
   max_distance_km?: number;
-  // T5's ranking flag — only meaningful (and only sent) for outside_country.
+  // T5's ranking flag — only meaningful (and only sent) for my_country.
   sort?: 'top_rated';
 };
 

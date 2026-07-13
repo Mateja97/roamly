@@ -27,7 +27,7 @@ describe('ActivityCard', () => {
     expect(card.props.accessibilityLabel).not.toMatch(/\$/);
   });
 
-  it('shows the country instead of distance when showDistance is false (outside_country)', () => {
+  it('shows the country instead of distance when showDistance is false (my_country)', () => {
     render(<ActivityCard activity={activity} showDistance={false} />);
     expect(screen.getByText('Serbia')).toBeTruthy();
   });

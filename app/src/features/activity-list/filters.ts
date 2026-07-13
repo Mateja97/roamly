@@ -75,7 +75,7 @@ export function filterChips(filters: Filters): FilterChipData[] {
 
 // Builds the T2 proxy request body from the current scope/coordinates plus
 // the applied filters. `max_distance_km` only applies to home/nearby per T2's
-// contract (an error if sent with outside_country), so it's omitted there —
+// contract (an error if sent with my_country), so it's omitted there —
 // including at the slider's default/ceiling value, which reproduces today's
 // widest breadth rather than actually narrowing anything.
 // `home_location`/`home_country` come from the place confirmed via T4's
@@ -88,9 +88,9 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
     request.current_location = toLocation(selection.coordinates);
   } else if (selection.scope === 'home' && selection.homeLocation) {
     request.home_location = selection.homeLocation;
-  } else if (selection.scope === 'outside_country' && selection.homeCountry) {
+  } else if (selection.scope === 'my_country' && selection.homeCountry) {
     request.home_country = selection.homeCountry;
-    // T5's rating-descending ranking — requested only for outside_country;
+    // T5's rating-descending ranking — requested only for my_country;
     // the server rejects it for home/nearby, and results render server-order
     // with no client re-sort (T6 out of scope).
     request.sort = 'top_rated';
@@ -98,7 +98,7 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
 
   if (filters.categories.length > 0) request.categories = filters.categories;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
-  if (selection.scope !== 'outside_country') {
+  if (selection.scope !== 'my_country') {
     request.max_distance_km = filters.maxDistanceKm;
   }
 
@@ -112,5 +112,5 @@ function toLocation(coordinates: { latitude: number; longitude: number }): Locat
 export const SCOPE_TITLES: Record<ScopeSelection['scope'], string> = {
   home: 'Home',
   nearby: 'Nearby',
-  outside_country: 'Outside country',
+  my_country: 'My country',
 };
