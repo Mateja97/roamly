@@ -68,7 +68,8 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
             source={{ uri: imageUri }}
             style={styles.image}
             contentFit="cover"
-            cachePolicy="disk"
+            cachePolicy="memory-disk"
+            accessibilityIgnoresInvertColors
             onLoad={() => setImageState('loaded')}
             onError={() => setImageState('broken')}
           />

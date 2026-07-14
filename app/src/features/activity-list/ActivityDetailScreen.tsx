@@ -58,7 +58,8 @@ export function ActivityDetailScreen({ activity, showDistance, onBack }: Activit
               source={{ uri: heroUri }}
               style={styles.image}
               contentFit="cover"
-              cachePolicy="disk"
+              cachePolicy="memory-disk"
+              accessibilityIgnoresInvertColors
               onLoad={() => setHeroState('loaded')}
               onError={() => setHeroState('broken')}
             />
@@ -111,7 +112,8 @@ export function ActivityDetailScreen({ activity, showDistance, onBack }: Activit
                     source={{ uri: staticMapUrl(activity.location, DETAIL_MAP_WIDTH, DETAIL_MAP_HEIGHT) }}
                     style={styles.image}
                     contentFit="cover"
-                    cachePolicy="disk"
+                    cachePolicy="memory-disk"
+                    accessibilityIgnoresInvertColors
                     onLoad={() => setMapState('loaded')}
                     onError={() => setMapState('broken')}
                   />
