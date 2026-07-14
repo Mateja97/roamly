@@ -2,10 +2,6 @@ import type { ActivitiesQueryRequest, Location } from '../../api/activities';
 import type { Category, Filters, RatingOption } from './types';
 import type { Scope, ScopeSelection } from '../scope-picker/types';
 
-// Nearby's continuous slider range — unchanged by T2.
-export const MIN_DISTANCE_KM = 1;
-export const MAX_DISTANCE_KM = 50;
-
 // Anywhere's wider, design-tuned range (product-tasks.md: "behavior is
 // fixed, not the exact numbers"). The slider's true top position is one
 // step past MAX_DISTANCE_KM_ANYWHERE — a dedicated "No limit" stop, not
@@ -17,15 +13,18 @@ export const ANYWHERE_DISTANCE_STEP_KM = 100;
 // the numeric ceiling that maps to Filters.maxDistanceKm = null ("no limit").
 export const ANYWHERE_NO_LIMIT_SLIDER_VALUE = MAX_DISTANCE_KM_ANYWHERE + ANYWHERE_DISTANCE_STEP_KM;
 
-// `maxDistanceKm: null` means "no limit" — only reachable for `anywhere`
-// (Nearby's slider has no such stop, always a 1-50 number). Widest/default
-// per scope, so a filter's first load never narrows results the user
-// hasn't asked to narrow (Slider recipe's "pinned at max" rule).
-export function defaultFilters(scope: Scope): Filters {
+// `maxDistanceKm: null` means "no limit"/"not adjustable". Nearby's range is
+// server-fixed (see NearbySearchSetupScreen's buildRequest) and has no
+// slider or chip at all, so it's always null, same as anywhere's "no limit"
+// default — a filter's first load never narrows results the user hasn't
+// asked to narrow (Slider recipe's "pinned at max" rule).
+// `scope` param kept for call-site clarity (defaultFilters('nearby') vs
+// ('anywhere')) even though both scopes share this default value now.
+export function defaultFilters(_scope: Scope): Filters {
   return {
     categories: [],
     minRating: null,
-    maxDistanceKm: scope === 'nearby' ? MAX_DISTANCE_KM : null,
+    maxDistanceKm: null,
   };
 }
 
@@ -61,11 +60,17 @@ function widestDistanceKm(scope: Scope): number | null {
   return defaultFilters(scope).maxDistanceKm;
 }
 
+// Nearby has no adjustable distance control at all — never count/surface it
+// as an active filter for that scope, regardless of the stored value.
+function isDistanceActive(filters: Filters, scope: Scope): boolean {
+  return scope === 'anywhere' && filters.maxDistanceKm !== widestDistanceKm(scope);
+}
+
 export function activeFilterCount(filters: Filters, scope: Scope): number {
   return (
     filters.categories.length +
     (filters.minRating !== null ? 1 : 0) +
-    (filters.maxDistanceKm !== widestDistanceKm(scope) ? 1 : 0)
+    (isDistanceActive(filters, scope) ? 1 : 0)
   );
 }
 
@@ -87,9 +92,10 @@ export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
       remove: () => ({ ...filters, minRating: null }),
     });
   }
-  // Only a narrowing (away from the scope's widest/default) counts as an
+  // Only a narrowing (away from the scope's widest/default), and only for
+  // anywhere (nearby has no adjustable distance at all), counts as an
   // active, removable filter.
-  if (filters.maxDistanceKm !== widestDistanceKm(scope)) {
+  if (isDistanceActive(filters, scope)) {
     chips.push({
       key: 'max-distance',
       label: `≤ ${filters.maxDistanceKm} km`,
@@ -103,10 +109,13 @@ export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
 // Builds the proxy request body from the current scope/coordinates plus the
 // applied filters. `current_location` travels for either scope whenever a
 // device-location anchor was resolved (always for nearby; only when
-// granted, for anywhere). `max_distance_km` is sent for nearby unconditionally
-// (its slider always has a numeric value), and for anywhere only when the
-// user narrowed below the "no limit" top stop AND an anchor exists — sending
-// it without an anchor is a contract violation T1 rejects.
+// granted, for anywhere). `max_distance_km` is never sent for nearby — the
+// server always enforces its own fixed 10km radius and ignores the field
+// (see activities-service's activity.go), so sending it only implies a
+// control that doesn't exist, per NearbySearchSetupScreen's buildRequest.
+// For anywhere it's sent only when the user narrowed below the "no limit"
+// top stop AND an anchor exists — sending it without an anchor is a
+// contract violation T1 rejects.
 export function buildActivitiesRequest(selection: ScopeSelection, filters: Filters): ActivitiesQueryRequest {
   const request: ActivitiesQueryRequest = { scope: selection.scope };
 
@@ -117,9 +126,7 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
   if (filters.categories.length > 0) request.categories = filters.categories;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
 
-  if (selection.scope === 'nearby') {
-    request.max_distance_km = filters.maxDistanceKm ?? MAX_DISTANCE_KM;
-  } else if (selection.coordinates && filters.maxDistanceKm !== null) {
+  if (selection.scope === 'anywhere' && selection.coordinates && filters.maxDistanceKm !== null) {
     request.max_distance_km = filters.maxDistanceKm;
   }
 

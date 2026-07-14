@@ -53,7 +53,7 @@ describe('ActivityListScreen', () => {
 
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
-    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'nearby', current_location: LOCATION, max_distance_km: 50 });
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'nearby', current_location: LOCATION });
     expect(screen.getByText('1 activity')).toBeTruthy();
     expect(screen.getByText('Nearby')).toBeTruthy();
   });
@@ -151,7 +151,6 @@ describe('ActivityListScreen', () => {
       scope: 'nearby',
       current_location: LOCATION,
       categories: ['sports'],
-      max_distance_km: 50,
     });
     expect(screen.getByText('1 activity')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
@@ -176,7 +175,7 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Remove Sports filter' }));
     });
 
-    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION, max_distance_km: 50 });
+    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION });
     expect(screen.getByText('2 activities')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Remove Sports filter' })).toBeNull();
   });

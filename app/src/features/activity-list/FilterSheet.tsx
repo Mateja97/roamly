@@ -13,8 +13,6 @@ import {
   ANYWHERE_DISTANCE_STEP_KM,
   ANYWHERE_NO_LIMIT_SLIDER_VALUE,
   CATEGORY_OPTIONS,
-  MAX_DISTANCE_KM,
-  MIN_DISTANCE_KM,
   MIN_DISTANCE_KM_ANYWHERE,
   RATING_OPTIONS,
   defaultFilters,
@@ -159,9 +157,10 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
               )}
             </FilterGroup>
 
-            {(scope === 'nearby' || hasLocationAnchor) && (
+            {/* Nearby's range is server-fixed (see NearbySearchSetupScreen) —
+                no slider, no adjustable control, for that scope at all. */}
+            {scope === 'anywhere' && hasLocationAnchor && (
               <DistanceSlider
-                scope={scope}
                 value={draft.maxDistanceKm}
                 onChange={(maxDistanceKm) => setDraft((prev) => ({ ...prev, maxDistanceKm }))}
               />
@@ -243,25 +242,23 @@ const RING_SIZE = THUMB_SIZE + 8; // ~2px --surface gap on each side, per the re
 // ring position is a percentage-of-track approximation (see trackWidth),
 // not a pixel-exact readout of the native thumb.
 //
-// Scope-aware: Nearby keeps the unchanged 1-50km range. Anywhere's range is
-// wider (100-2000km) with one extra top stop past the numeric ceiling that
-// means "no limit" — modeled as a slider-only sentinel value
-// (ANYWHERE_NO_LIMIT_SLIDER_VALUE) that maps to Filters.maxDistanceKm = null.
+// Anywhere-only (nearby's range is server-fixed and never renders this —
+// see the FilterSheet gating above). Range is 100-2000km with one extra top
+// stop past the numeric ceiling that means "no limit" — modeled as a
+// slider-only sentinel value (ANYWHERE_NO_LIMIT_SLIDER_VALUE) that maps to
+// Filters.maxDistanceKm = null.
 function DistanceSlider({
-  scope,
   value,
   onChange,
 }: {
-  scope: Scope;
   value: number | null;
   onChange: (value: number | null) => void;
 }) {
-  const isAnywhere = scope === 'anywhere';
-  const min = isAnywhere ? MIN_DISTANCE_KM_ANYWHERE : MIN_DISTANCE_KM;
-  const max = isAnywhere ? ANYWHERE_NO_LIMIT_SLIDER_VALUE : MAX_DISTANCE_KM;
-  const step = isAnywhere ? ANYWHERE_DISTANCE_STEP_KM : 1;
-  const sliderValue = value ?? (isAnywhere ? ANYWHERE_NO_LIMIT_SLIDER_VALUE : MAX_DISTANCE_KM);
-  const isNoLimit = isAnywhere && sliderValue >= ANYWHERE_NO_LIMIT_SLIDER_VALUE;
+  const min = MIN_DISTANCE_KM_ANYWHERE;
+  const max = ANYWHERE_NO_LIMIT_SLIDER_VALUE;
+  const step = ANYWHERE_DISTANCE_STEP_KM;
+  const sliderValue = value ?? ANYWHERE_NO_LIMIT_SLIDER_VALUE;
+  const isNoLimit = sliderValue >= ANYWHERE_NO_LIMIT_SLIDER_VALUE;
 
   const [dragging, setDragging] = useState(false);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -271,7 +268,7 @@ function DistanceSlider({
   const thumbCenter = THUMB_SIZE / 2 + fraction * (trackWidth - THUMB_SIZE);
 
   function handleValueChange(next: number) {
-    onChange(isAnywhere && next >= ANYWHERE_NO_LIMIT_SLIDER_VALUE ? null : next);
+    onChange(next >= ANYWHERE_NO_LIMIT_SLIDER_VALUE ? null : next);
   }
 
   return (
@@ -304,7 +301,7 @@ function DistanceSlider({
       </View>
       <View style={styles.distanceEndLabelsRow}>
         <Text style={styles.distanceEndLabel}>{min} km</Text>
-        <Text style={styles.distanceEndLabel}>{isAnywhere ? 'No limit' : `${MAX_DISTANCE_KM} km`}</Text>
+        <Text style={styles.distanceEndLabel}>No limit</Text>
       </View>
     </View>
   );
