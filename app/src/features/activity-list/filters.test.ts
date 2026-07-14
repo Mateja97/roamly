@@ -10,8 +10,8 @@ import {
 import type { Filters } from './types';
 
 describe('defaultFilters', () => {
-  it("nearby's default is the 50km ceiling", () => {
-    expect(defaultFilters('nearby')).toEqual({ categories: [], minRating: null, maxDistanceKm: 50 });
+  it('nearby\'s default has no distance value — its range is server-fixed, not user-adjustable', () => {
+    expect(defaultFilters('nearby')).toEqual({ categories: [], minRating: null, maxDistanceKm: null });
   });
 
   it('anywhere\'s default is "no limit" (null)', () => {
@@ -28,13 +28,13 @@ describe('activeFilterCount', () => {
     expect(activeFilterCount(defaultFilters('anywhere'), 'anywhere')).toBe(0);
   });
 
-  it('counts each category plus each single-select group (nearby)', () => {
+  it('counts each category plus each single-select group (nearby), distance never counted', () => {
     const filters: Filters = {
       categories: ['sports', 'food_and_drink'],
       minRating: 4.5,
-      maxDistanceKm: 25,
+      maxDistanceKm: null,
     };
-    expect(activeFilterCount(filters, 'nearby')).toBe(4);
+    expect(activeFilterCount(filters, 'nearby')).toBe(3);
   });
 
   it('counts a narrowed anywhere distance as an active filter', () => {
@@ -44,32 +44,31 @@ describe('activeFilterCount', () => {
 });
 
 describe('filterChips', () => {
-  it('produces one chip per category and one per single-select group', () => {
+  it('produces one chip per category and one per single-select group, no distance chip for nearby', () => {
     const filters: Filters = {
       categories: ['sports'],
       minRating: 4.5,
-      maxDistanceKm: 25,
+      maxDistanceKm: null,
     };
     const chips = filterChips(filters, 'nearby');
-    expect(chips.map((c) => c.label)).toEqual(['Sports', '4.5+', '≤ 25 km']);
+    expect(chips.map((c) => c.label)).toEqual(['Sports', '4.5+']);
   });
 
   it('a chip.remove() clears only that one filter value', () => {
-    const filters: Filters = { categories: ['sports', 'art_and_design'], minRating: null, maxDistanceKm: 25 };
+    const filters: Filters = { categories: ['sports', 'art_and_design'], minRating: null, maxDistanceKm: null };
     const chips = filterChips(filters, 'nearby');
     const sportsChip = chips.find((c) => c.label === 'Sports')!;
     expect(sportsChip.remove()).toEqual({
       categories: ['art_and_design'],
       minRating: null,
-      maxDistanceKm: 25,
+      maxDistanceKm: null,
     });
   });
 
-  it('a max-distance chip.remove() resets nearby to the 50km ceiling', () => {
+  it('never surfaces a distance chip for nearby, even with an (otherwise unreachable) non-null value', () => {
     const filters: Filters = { ...EMPTY_FILTERS, maxDistanceKm: 10 };
     const chips = filterChips(filters, 'nearby');
-    const distanceChip = chips.find((c) => c.key === 'max-distance')!;
-    expect(distanceChip.remove().maxDistanceKm).toBe(50);
+    expect(chips.find((c) => c.key === 'max-distance')).toBeUndefined();
   });
 
   it('a max-distance chip.remove() resets anywhere back to "no limit"', () => {
@@ -89,12 +88,21 @@ describe('filterChips', () => {
 });
 
 describe('buildActivitiesRequest', () => {
-  it('sends current_location for nearby, plus the slider default (50km ceiling)', () => {
+  it('never includes max_distance_km for nearby — the server always enforces its own fixed radius', () => {
     const req = buildActivitiesRequest(
       { scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } },
       EMPTY_FILTERS
     );
-    expect(req).toEqual({ scope: 'nearby', current_location: { lat: 1, lng: 2 }, max_distance_km: 50 });
+    expect(req).toEqual({ scope: 'nearby', current_location: { lat: 1, lng: 2 } });
+    expect(req.max_distance_km).toBeUndefined();
+  });
+
+  it('never includes max_distance_km for nearby even if somehow narrowed', () => {
+    const req = buildActivitiesRequest(
+      { scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } },
+      { categories: [], minRating: null, maxDistanceKm: 25 }
+    );
+    expect(req.max_distance_km).toBeUndefined();
   });
 
   it('sends current_location for anywhere when a device-location anchor was resolved', () => {
@@ -126,11 +134,11 @@ describe('buildActivitiesRequest', () => {
     expect(req.max_distance_km).toBeUndefined();
   });
 
-  it('includes only the set filter fields', () => {
+  it('includes only the set filter fields (nearby never gets max_distance_km)', () => {
     const filters: Filters = {
       categories: ['sports'],
       minRating: 4.5,
-      maxDistanceKm: 25,
+      maxDistanceKm: null,
     };
     const req = buildActivitiesRequest({ scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } }, filters);
     expect(req).toEqual({
@@ -138,7 +146,6 @@ describe('buildActivitiesRequest', () => {
       current_location: { lat: 1, lng: 2 },
       categories: ['sports'],
       min_rating: 4.5,
-      max_distance_km: 25,
     });
   });
 });

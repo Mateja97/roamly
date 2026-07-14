@@ -18,7 +18,7 @@ async function flush() {
 }
 
 describe('FilterSheet', () => {
-  it('renders all three filter groups when visible, including the distance slider for nearby', async () => {
+  it('renders category and rating groups for nearby, with no Max distance control (server-fixed range)', async () => {
     render(
       <FilterSheet
         visible
@@ -32,8 +32,7 @@ describe('FilterSheet', () => {
     await flush();
     expect(screen.getByText('Category')).toBeTruthy();
     expect(screen.getByText('Minimum rating')).toBeTruthy();
-    expect(screen.getByText('Max distance')).toBeTruthy();
-    expect(screen.getByText('Within 50 km')).toBeTruthy();
+    expect(screen.queryByText('Max distance')).toBeNull();
     expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '4.5+' })).toBeTruthy();
   });
@@ -95,7 +94,7 @@ describe('FilterSheet', () => {
     expect(onApply).toHaveBeenCalledWith({
       categories: ['sports'],
       minRating: null,
-      maxDistanceKm: 50,
+      maxDistanceKm: null,
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
@@ -127,8 +126,8 @@ describe('FilterSheet', () => {
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
   });
 
-  it('Clear all resets every group to unset, including the distance slider back to its 50km ceiling', async () => {
-    const initial: Filters = { categories: ['sports'], minRating: 4.5, maxDistanceKm: 25 };
+  it('Clear all resets every group to unset for nearby (no distance control to reset)', async () => {
+    const initial: Filters = { categories: ['sports'], minRating: 4.5, maxDistanceKm: null };
     render(
       <FilterSheet
         visible
@@ -141,16 +140,14 @@ describe('FilterSheet', () => {
     );
     await flush();
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
-    expect(screen.getByText('Within 25 km')).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: 'Clear all' }));
 
     // Sports chip returns to unselected; the always-present "Any" rating
-    // option and the slider's 50km ceiling legitimately stay selected as
-    // the default.
+    // option legitimately stays selected as the default.
     expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /sports, selected/i })).toBeNull();
-    expect(screen.getByText('Within 50 km')).toBeTruthy();
+    expect(screen.queryByText('Max distance')).toBeNull();
   });
 
   it('Clear all resets anywhere\'s distance slider back to "No limit"', async () => {
