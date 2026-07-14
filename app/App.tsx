@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { Activity } from './src/api/activities';
 import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
 import type { Category } from './src/features/activity-list/types';
-import { ActivityTypesScreen } from './src/features/activity-types/ActivityTypesScreen';
+import { AnywhereSearchScreen } from './src/features/search-setup/AnywhereSearchScreen';
 import { NearbySearchSetupScreen } from './src/features/search-setup/NearbySearchSetupScreen';
 import { ScopePickerScreen } from './src/features/scope-picker/ScopePickerScreen';
 import type { ScopeSelection } from './src/features/scope-picker/types';
@@ -16,7 +17,8 @@ import type { ScopeSelection } from './src/features/scope-picker/types';
 type Screen =
   | { name: 'scope-picker' }
   | { name: 'activity-types'; selection: ScopeSelection }
-  | { name: 'activity-list'; selection: ScopeSelection; categories: Category[] };
+  | { name: 'anywhere-search'; selection: ScopeSelection }
+  | { name: 'activity-list'; selection: ScopeSelection; categories: Category[]; activities?: Activity[] };
 
 function AppContent() {
   const [stack, setStack] = useState<Screen[]>([{ name: 'scope-picker' }]);
@@ -37,25 +39,40 @@ function AppContent() {
 
   if (screen.name === 'activity-list') {
     return (
-      <ActivityListScreen selection={screen.selection} initialCategories={screen.categories} onBack={pop} />
+      <ActivityListScreen
+        selection={screen.selection}
+        initialCategories={screen.categories}
+        initialActivities={screen.activities}
+        onBack={pop}
+      />
     );
   }
 
+  if (screen.name === 'anywhere-search') {
+    return (
+      <AnywhereSearchScreen
+        selection={screen.selection}
+        onBack={pop}
+        onSearchComplete={(activities, categories) =>
+          push({ name: 'activity-list', selection: screen.selection, categories, activities })
+        }
+      />
+    );
+  }
+
+  // Only 'nearby' reaches 'activity-types' — 'anywhere' pushes straight to
+  // its own 'anywhere-search' screen above.
   if (screen.name === 'activity-types') {
     const onConfirm = (categories: Category[]) =>
       push({ name: 'activity-list', selection: screen.selection, categories });
-    // T6: Nearby gets its own fixed-10km search-setup screen; Anywhere keeps
-    // the generic types picker until T5 gives it the city-picker version.
-    return screen.selection.scope === 'nearby' ? (
-      <NearbySearchSetupScreen selection={screen.selection} onConfirm={onConfirm} onBack={pop} />
-    ) : (
-      <ActivityTypesScreen onConfirm={onConfirm} onBack={pop} />
-    );
+    return <NearbySearchSetupScreen selection={screen.selection} onConfirm={onConfirm} onBack={pop} />;
   }
 
   return (
     <ScopePickerScreen
-      onScopeSelected={(selection) => push({ name: 'activity-types', selection })}
+      onScopeSelected={(selection) =>
+        push(selection.scope === 'anywhere' ? { name: 'anywhere-search', selection } : { name: 'activity-types', selection })
+      }
     />
   );
 }

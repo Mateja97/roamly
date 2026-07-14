@@ -1,3 +1,4 @@
+import type { Activity } from '../../api/activities';
 import type { ScopeSelection } from '../scope-picker/types';
 
 export type Category =
@@ -28,5 +29,9 @@ export type ActivityListScreenProps = {
   // list's initial applied filter — arrives pre-filtered rather than
   // fetching all-types first and re-filtering client-side.
   initialCategories?: Category[];
+  // T5: the Anywhere search-setup screen already ran the (cities-aware)
+  // query itself — when present, this screen shows those results directly
+  // instead of re-querying with an equivalent request on mount.
+  initialActivities?: Activity[];
   onBack: () => void;
 };

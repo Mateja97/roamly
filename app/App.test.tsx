@@ -112,20 +112,28 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
   });
 
-  it('Anywhere with location denied still reaches the types picker with no anchor (no dead end)', async () => {
+  it('Anywhere with location denied still reaches the search-setup screen with no anchor (no dead end)', async () => {
     mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
+    mockedQuery.mockResolvedValue({
+      status: 'success',
+      activities: [{ id: '1', title: 'Tour', description: '', category: 'sports', location: { lat: 0, lng: 0 }, country: 'Spain', rating: 4.5, image_refs: [], tags: [], distance_km: 1 }],
+    });
     render(<App />);
     await flush();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Explore activities anywhere' }));
     });
-    expect(screen.getByText('What are you into?')).toBeTruthy();
+    expect(screen.getByText('Refine your search')).toBeTruthy();
+
+    // The live-count query (debounced) resolves before the CTA reflects a
+    // real count and stops being disabled.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show 1 activity' })).toBeTruthy());
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Show 1 activity' }));
     });
     expect(screen.getByText('Anywhere')).toBeTruthy();
-    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere' }));
+    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere', max_distance_km: 500 }));
   });
 
   it('Android hardware back on the Nearby search-setup screen returns to the scope picker', async () => {

@@ -46,6 +46,9 @@ export type ActivitiesQueryRequest = {
   categories?: Category[];
   min_rating?: number;
   max_distance_km?: number;
+  // T5/T3: `anywhere` only — one-or-more city centroids to anchor distance on
+  // instead of current_location (union of any-city radius).
+  cities?: Location[];
 };
 
 // APP_STANDARDS.md's Error handling rule: never throw an opaque error, always

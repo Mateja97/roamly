@@ -33,7 +33,7 @@ type QueryState =
 
 const SKELETON_CARD_COUNT = 5;
 
-export function ActivityListScreen({ selection, initialCategories = [], onBack }: ActivityListScreenProps) {
+export function ActivityListScreen({ selection, initialCategories = [], initialActivities, onBack }: ActivityListScreenProps) {
   // T2: the types-picker screen carries its selection in as the initial
   // applied filter, so the first query arrives pre-filtered. Frozen via
   // useState's lazy initializer (runs once, on mount) rather than reading
@@ -41,7 +41,17 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   // re-render passing a fresh empty-array default won't retrigger it.
   const [initialFilters] = useState<Filters>(() => ({ ...defaultFilters(selection.scope), categories: initialCategories }));
   const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
-  const [queryState, setQueryState] = useState<QueryState>({ status: 'loading' });
+  // T5: `initialActivities` (frozen at mount, same lazy-initializer pattern
+  // as `initialFilters` above) means the caller already ran an equivalent
+  // query — skip the redundant initial fetch below and seed state directly.
+  const [skipInitialFetch] = useState(() => initialActivities !== undefined);
+  const [queryState, setQueryState] = useState<QueryState>(() =>
+    initialActivities !== undefined
+      ? initialActivities.length === 0
+        ? { status: 'empty' }
+        : { status: 'loaded', activities: initialActivities }
+      : { status: 'loading' }
+  );
   const [sheetVisible, setSheetVisible] = useState(false);
   // T1: a tapped card opens the detail screen as an overlay above this
   // still-mounted list (not a push onto App.tsx's global stack, which
@@ -72,6 +82,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   // `queryState`'s own default is already `{status: 'loading'}`, so there's
   // no state to set synchronously here — just kick off the fetch.
   useEffect(() => {
+    if (skipInitialFetch) return;
     let cancelled = false;
     runQuery(initialFilters).then((result) => {
       if (!cancelled) applyResult(result);
@@ -79,7 +90,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
     return () => {
       cancelled = true;
     };
-  }, [runQuery, initialFilters]);
+  }, [runQuery, initialFilters, skipInitialFetch]);
 
   // design-spec.md requires the platform-native back control/gesture, not a
   // custom on-screen button — but T3/T4 deliberately have no stack
