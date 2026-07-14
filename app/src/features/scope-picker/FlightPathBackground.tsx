@@ -3,7 +3,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 
 // Decorative "flight paths" background motif from the Welcome screen design
-// import (Roamly Welcome (2c).dc.html) — five dotted gold curves + endpoint
+// import (Roamly Welcome (2c).dc.html) — seven dotted gold curves + endpoint
 // markers, viewBox/paths copied verbatim from the reference. Purely
 // decorative: absolute, behind everything, hidden from accessibility tools.
 export function FlightPathBackground() {
@@ -39,6 +39,30 @@ export function FlightPathBackground() {
       />
       <Circle cx={40} cy={230} r={4} fill={colors.primary} stroke="none" opacity={0.26} />
       <Circle cx={380} cy={200} r={4.5} fill="none" stroke={colors.primary} strokeWidth={2.5} strokeOpacity={0.26} />
+
+      <Path
+        d="M-20 300 C 120 255, 260 350, 430 285"
+        stroke={colors.primary}
+        strokeWidth={2.5}
+        strokeDasharray="2 12"
+        strokeLinecap="round"
+        strokeOpacity={0.34}
+        fill="none"
+      />
+      <Circle cx={-20} cy={300} r={5} fill={colors.primary} stroke="none" opacity={0.34} />
+      <Circle cx={430} cy={285} r={5.5} fill="none" stroke={colors.primary} strokeWidth={3} strokeOpacity={0.34} />
+
+      <Path
+        d="M40 365 C 160 325, 250 405, 380 340"
+        stroke={colors.primary}
+        strokeWidth={2}
+        strokeDasharray="2 12"
+        strokeLinecap="round"
+        strokeOpacity={0.22}
+        fill="none"
+      />
+      <Circle cx={40} cy={365} r={4} fill={colors.primary} stroke="none" opacity={0.22} />
+      <Circle cx={380} cy={340} r={4.5} fill="none" stroke={colors.primary} strokeWidth={2.5} strokeOpacity={0.22} />
 
       <Path
         d="M-30 620 C 120 690, 280 560, 420 650"
