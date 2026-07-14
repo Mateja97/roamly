@@ -159,6 +159,34 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
+		wantCounts := map[string]int{
+			"Belgrade":  7,
+			"Rome":      1,
+			"Paris":     1,
+			"Tokyo":     1,
+			"New York":  1,
+			"Barcelona": 1,
+		}
+		for city, want := range wantCounts {
+			var got int
+			if err := db.QueryRow(ctx, "SELECT count(*) FROM activities WHERE city = $1", city).Scan(&got); err != nil {
+				t.Fatalf("querying city %q: %v", city, err)
+			}
+			if got != want {
+				t.Errorf("city %q: got %d activities, want %d", city, got, want)
+			}
+		}
+
+		var uncategorized int
+		if err := db.QueryRow(ctx, "SELECT count(*) FROM activities WHERE city IS NULL").Scan(&uncategorized); err != nil {
+			t.Fatalf("querying uncategorized: %v", err)
+		}
+		if uncategorized != 0 {
+			t.Errorf("got %d seed activities with no city, want 0 (all seeded rows are backfilled)", uncategorized)
+		}
+	})
+
 	t.Run("min_rating filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
 			Scope: activitiessvc.ScopeNearby, CurrentLocation: belgrade, MaxDistanceKM: 50,
