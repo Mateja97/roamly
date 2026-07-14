@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -29,11 +28,6 @@ func main() {
 		os.Exit(1)
 	}
 	grpcAddr := sharedconfig.OrDefault("GRPC_ADDR", ":9090")
-	defaultRadiusKM, err := strconv.ParseFloat(sharedconfig.OrDefault("DEFAULT_RADIUS_KM", "50"), 64)
-	if err != nil {
-		logger.Error("startup failed", "error", "DEFAULT_RADIUS_KM must be a number")
-		os.Exit(1)
-	}
 
 	ctx := context.Background()
 	db, err := shareddb.Connect(ctx, dsn)
@@ -49,7 +43,7 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo, defaultRadiusKM)
+	svc := service.New(repo)
 	grpcServer := api.NewGRPCServer(svc, logger)
 
 	lis, err := net.Listen("tcp", grpcAddr)

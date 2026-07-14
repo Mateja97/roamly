@@ -141,6 +141,65 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("nearby scope enforces the 10km boundary", func(t *testing.T) {
+		// 1 degree latitude ~= 111.19 km; place one activity just inside a
+		// 10km radius and one just outside, then query with that fixed
+		// radius (T2's service.NearbyRadiusKM value, inlined to keep this
+		// package's tests independent of the service package).
+		const nearbyRadiusKM = 10.0
+		const kmPerDegreeLat = 111.19
+		insideLat := belgrade.Lat + (9.0 / kmPerDegreeLat)
+		outsideLat := belgrade.Lat + (11.0 / kmPerDegreeLat)
+
+		var insideID, outsideID string
+		err := db.QueryRow(ctx,
+			`INSERT INTO activities (title, description, category, location, country, rating)
+			VALUES ('Boundary Inside Test', 'test fixture', 'nature_and_outdoors',
+				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Serbia', 4.0)
+			RETURNING id`,
+			belgrade.Lng, insideLat,
+		).Scan(&insideID)
+		if err != nil {
+			t.Fatalf("inserting inside fixture: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, insideID) })
+
+		err = db.QueryRow(ctx,
+			`INSERT INTO activities (title, description, category, location, country, rating)
+			VALUES ('Boundary Outside Test', 'test fixture', 'nature_and_outdoors',
+				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Serbia', 4.0)
+			RETURNING id`,
+			belgrade.Lng, outsideLat,
+		).Scan(&outsideID)
+		if err != nil {
+			t.Fatalf("inserting outside fixture: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, outsideID) })
+
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope: activitiessvc.ScopeNearby, CurrentLocation: belgrade, MaxDistanceKM: nearbyRadiusKM,
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+
+		var sawInside, sawOutside bool
+		for _, a := range got {
+			if a.ID == insideID {
+				sawInside = true
+			}
+			if a.ID == outsideID {
+				sawOutside = true
+			}
+		}
+		if !sawInside {
+			t.Error("activity ~9km away should be returned within the 10km radius")
+		}
+		if sawOutside {
+			t.Error("activity ~11km away should not be returned within the 10km radius")
+		}
+	})
+
 	t.Run("category filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
 			Scope:      activitiessvc.ScopeAnywhere,

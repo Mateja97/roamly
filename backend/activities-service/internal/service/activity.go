@@ -17,9 +17,8 @@ type repository interface {
 }
 
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
-// caller's raw filter value (0 = not set), not yet resolved against the
-// service's default scope radius (ScopeNearby only — ScopeAnywhere passes
-// it through uncapped).
+// caller's raw filter value (0 = not set). ScopeNearby ignores it entirely
+// (fixed NearbyRadiusKM); ScopeAnywhere passes it through uncapped.
 type Request struct {
 	Scope           activitiessvc.Scope
 	CurrentLocation *activitiessvc.Point
@@ -28,13 +27,16 @@ type Request struct {
 	MaxDistanceKM   float64
 }
 
+// NearbyRadiusKM is the fixed, non-adjustable radius for ScopeNearby
+// (T2): any client-supplied MaxDistanceKM is ignored for this scope.
+const NearbyRadiusKM = 10
+
 type Activities struct {
-	repo            repository
-	defaultRadiusKM float64
+	repo repository
 }
 
-func New(repo repository, defaultRadiusKM float64) *Activities {
-	return &Activities{repo: repo, defaultRadiusKM: defaultRadiusKM}
+func New(repo repository) *Activities {
+	return &Activities{repo: repo}
 }
 
 func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Activity, error) {
@@ -73,7 +75,7 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location %s", sharederrors.ErrInvalidInput, err)
 		}
 		filter.CurrentLocation = req.CurrentLocation
-		filter.MaxDistanceKM = effectiveRadius(a.defaultRadiusKM, req.MaxDistanceKM)
+		filter.MaxDistanceKM = NearbyRadiusKM // fixed range, req.MaxDistanceKM ignored
 
 	case activitiessvc.ScopeAnywhere:
 		// current_location is optional: device location denied/unavailable
@@ -88,9 +90,9 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 			if req.CurrentLocation == nil {
 				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location is required when max_distance_km is set for scope anywhere", sharederrors.ErrInvalidInput)
 			}
-			// Unlike ScopeNearby, not run through effectiveRadius: anywhere
-			// has no default radius to cap against, so any positive value
-			// passes straight through as the requested distance.
+			// Unlike ScopeNearby's fixed NearbyRadiusKM, anywhere has no
+			// default radius to cap against, so any positive value passes
+			// straight through as the requested distance.
 			filter.MaxDistanceKM = req.MaxDistanceKM
 		}
 	}
@@ -118,16 +120,6 @@ func validatePoint(p *activitiessvc.Point) error {
 		return fmt.Errorf("lng %v out of range [-180,180]", p.Lng)
 	}
 	return nil
-}
-
-// effectiveRadius narrows the service's default scope radius by an optional
-// caller-supplied max_distance_km filter; both bounds apply against the same
-// reference location, so ANDing them collapses to the smaller one.
-func effectiveRadius(defaultRadiusKM, requestedMaxKM float64) float64 {
-	if requestedMaxKM > 0 && requestedMaxKM < defaultRadiusKM {
-		return requestedMaxKM
-	}
-	return defaultRadiusKM
 }
 
 func validCategory(c activitiessvc.Category) bool {
