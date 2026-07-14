@@ -32,6 +32,12 @@ describe('ScopePickerScreen', () => {
     jest.resetAllMocks();
   });
 
+  it('renders the destination overline and "Where to?" headline', () => {
+    render(<ScopePickerScreen onScopeSelected={jest.fn()} />);
+    expect(screen.getByText('Destination')).toBeTruthy();
+    expect(screen.getByText('Where to?')).toBeTruthy();
+  });
+
   it('renders exactly the two scope tickets', () => {
     render(<ScopePickerScreen onScopeSelected={jest.fn()} />);
     expect(screen.getByRole('button', { name: 'Explore activities nearby' })).toBeTruthy();

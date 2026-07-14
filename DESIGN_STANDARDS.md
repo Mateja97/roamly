@@ -128,8 +128,9 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
 - System font stack — no added dependency:
   `-apple-system, "Segoe UI", Inter, Roboto, sans-serif`.
 - **Display accent** (`--font-display`): **Marcellus** (Google Font, regular
-  400), used ONLY for the opening prompt "Where do you want to go?" on the
-  Welcome screen — a single display line, never body copy or labels. On
+  400), used ONLY for the Welcome screen's destination-field headline
+  ("Where to?" — see the Destination header recipe) — a single display line,
+  never body copy or labels. On
   `area: app` this is a new dependency (`expo-font` + `@expo-google-fonts/marcellus`);
   gate first paint on the font load so the prompt never flashes in the system
   stack, then falls back to the system stack only if loading fails. On
@@ -278,6 +279,36 @@ two-line title block on the left; the actions stay right-aligned and
 top-aligned. Truncate each line to one line with ellipsis (honor dynamic text
 scaling). No new token or color pairing — reuses the documented
 `--text-muted`-on-`--bg` combination.
+
+### Destination header (overline + display headline)
+
+The Welcome screen's opening header, styled as a boarding-pass "destination
+field": a small uppercase overline eyebrow over a large serif question with a
+dashed accent underline. Distinct from the micro-labels of Stat display /
+Slider (those sit on `--surface` inside a control and use `0.05em`); this is a
+centered hero eyebrow above a `--font-display` headline on `--bg`, with wider
+tracking.
+
+- **Overline** (eyebrow): `--font-size-sm` (14px, honours the body-text
+  floor; rounds the reference's 13px up), weight 600, uppercase, wide
+  `letter-spacing: 0.22em`, `--text-muted` on `--bg` (6.2:1 ✓, normal text).
+  Centered. `--space-3` (12px) below it to the headline.
+- **Headline**: `--font-display` (Marcellus), `--font-size-2xl` (36px, one
+  line), line-height 1.1, `--text` cream on `--bg` (8.5:1 ✓, large text).
+  Centered. Font-load-gated like all Marcellus use (hold first paint until
+  the font resolves; no fallback flash).
+- **Dashed underline**: a gold accent rule directly beneath the headline,
+  drawn as an **SVG stroke with `stroke-dasharray`** (the dashed-line device
+  already used by the flight-path background and the logo route) — not a
+  single-side dashed CSS/border, which renders inconsistently across web and
+  native. Color `--card-highlight` (gold at 0.5 alpha); decorative, no
+  contrast requirement (same class as the card top-edge highlight). Sits
+  `--space-2` (8px) under the headline baseline, inset to roughly the
+  headline's text width. Static — no animation.
+
+Non-interactive, decorative header block; no focus/hover/press states.
+Composes from `--text-muted`, `--text`, `--card-highlight`, `--bg`,
+`--font-display`, `--font-size-sm`/`--font-size-2xl`. No new color tokens.
 
 ### Stat display
 
