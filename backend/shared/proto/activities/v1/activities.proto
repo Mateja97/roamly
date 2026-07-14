@@ -9,6 +9,9 @@ option go_package = "backend/shared/proto/activities/v1;activitiesv1";
 // location context a scope needs on every request.
 service ActivitiesService {
   rpc QueryActivities(QueryActivitiesRequest) returns (QueryActivitiesResponse);
+  // SuggestCities powers the Anywhere city typeahead: a prefix match over
+  // the catalog's own cities (T1's city column), not a live geocoding call.
+  rpc SuggestCities(SuggestCitiesRequest) returns (SuggestCitiesResponse);
 }
 
 enum Scope {
@@ -102,4 +105,22 @@ message Activity {
 
 message QueryActivitiesResponse {
   repeated Activity activities = 1;
+}
+
+message SuggestCitiesRequest {
+  // Free-text prefix, e.g. "Bar". Empty or non-matching yields an empty
+  // suggestions list, never an error.
+  string query = 1;
+}
+
+message CitySuggestion {
+  string city = 1;
+  string country = 2;
+  // Centroid of the city's activities, usable directly as a "cities" entry
+  // in a follow-up QueryActivitiesRequest.
+  Location centroid = 3;
+}
+
+message SuggestCitiesResponse {
+  repeated CitySuggestion suggestions = 1;
 }

@@ -35,3 +35,7 @@ func (c *Client) Close() error {
 func (c *Client) QueryActivities(ctx context.Context, req *activitiesv1.QueryActivitiesRequest) (*activitiesv1.QueryActivitiesResponse, error) {
 	return c.rpc.QueryActivities(ctx, req)
 }
+
+func (c *Client) SuggestCities(ctx context.Context, req *activitiesv1.SuggestCitiesRequest) (*activitiesv1.SuggestCitiesResponse, error) {
+	return c.rpc.SuggestCities(ctx, req)
+}

@@ -277,6 +277,29 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("SuggestCities prefix match returns city, country and centroid (T4)", func(t *testing.T) {
+		got, err := repo.SuggestCities(ctx, "Bar")
+		if err != nil {
+			t.Fatalf("SuggestCities() error: %v", err)
+		}
+		if len(got) != 1 || got[0].City != "Barcelona" || got[0].Country != "Spain" {
+			t.Fatalf("got %+v, want exactly one Barcelona/Spain suggestion", got)
+		}
+		if got[0].Centroid.Lat == 0 || got[0].Centroid.Lng == 0 {
+			t.Errorf("got zero-value centroid %+v, want the activity's coordinates", got[0].Centroid)
+		}
+	})
+
+	t.Run("SuggestCities non-matching prefix returns an empty list, not an error", func(t *testing.T) {
+		got, err := repo.SuggestCities(ctx, "Zzznope")
+		if err != nil {
+			t.Fatalf("SuggestCities() error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("got %d suggestions, want 0", len(got))
+		}
+	})
+
 	t.Run("min_rating filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
 			Scope: activitiessvc.ScopeNearby, CurrentLocation: belgrade, MaxDistanceKM: 50,

@@ -55,6 +55,14 @@ type Activity struct {
 	DistanceKM  float64
 }
 
+// CitySuggestion is one typeahead result: a catalog city (T1) plus the
+// centroid of its activities, directly usable as a QueryFilter.Cities entry.
+type CitySuggestion struct {
+	City     string
+	Country  string
+	Centroid Point
+}
+
 // QueryFilter is the validated, scope-resolved query the service layer
 // passes to the repository. CurrentLocation is nil when not supplied
 // (ScopeAnywhere only — ScopeNearby always requires it). Cities is

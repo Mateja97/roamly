@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
@@ -14,6 +15,7 @@ import (
 
 type repository interface {
 	Query(ctx context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error)
+	SuggestCities(ctx context.Context, prefix string) ([]activitiessvc.CitySuggestion, error)
 }
 
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
@@ -54,6 +56,22 @@ func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Ac
 		return nil, fmt.Errorf("querying activities: %w", err)
 	}
 	return activities, nil
+}
+
+// SuggestCities returns catalog city matches for a typeahead query. An
+// empty (after trimming) query returns an empty, non-nil list rather than
+// hitting the database — a blank prefix matches everything, which is never
+// a useful suggestion set for a typeahead.
+func (a *Activities) SuggestCities(ctx context.Context, query string) ([]activitiessvc.CitySuggestion, error) {
+	trimmed := strings.TrimSpace(query)
+	if trimmed == "" {
+		return []activitiessvc.CitySuggestion{}, nil
+	}
+	suggestions, err := a.repo.SuggestCities(ctx, trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("suggesting cities: %w", err)
+	}
+	return suggestions, nil
 }
 
 func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {

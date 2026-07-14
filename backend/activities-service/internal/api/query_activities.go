@@ -20,6 +20,7 @@ import (
 
 type queryService interface {
 	Query(ctx context.Context, req service.Request) ([]activitiessvc.Activity, error)
+	SuggestCities(ctx context.Context, query string) ([]activitiessvc.CitySuggestion, error)
 }
 
 type Server struct {
