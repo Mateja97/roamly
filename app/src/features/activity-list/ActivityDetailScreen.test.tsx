@@ -36,7 +36,7 @@ describe('ActivityDetailScreen', () => {
     expect(screen.getByText('0.4 km away')).toBeTruthy();
   });
 
-  it('shows the country instead of distance when showDistance is false (my_country)', () => {
+  it('shows the country instead of distance when showDistance is false (no location anchor)', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     render(<ActivityDetailScreen activity={activity} showDistance={false} onBack={jest.fn()} />);
     expect(screen.getByText('Serbia')).toBeTruthy();

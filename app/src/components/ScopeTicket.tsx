@@ -89,7 +89,7 @@ export function ScopeTicket({
       </View>
 
       <View style={styles.goButtonWrap} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-        <View style={[styles.goCircle, selected ? styles.goCircleSelected : styles.goCircleUnselected]}>
+        <View testID="scope-ticket-go-circle" style={[styles.goCircle, selected ? styles.goCircleSelected : styles.goCircleUnselected]}>
           {busy && !reduceMotion ? (
             <Spinner />
           ) : (

@@ -28,7 +28,7 @@ export const colors = {
   // Mobile-specific "Depth devices deferred" exception) — don't reach for
   // them on other app surfaces without the same justification.
   surfaceGradient: ['#93313A', '#8A2C35'] as const,
-  glow: 'rgba(206,144,66,0.15)',
+  glow: 'rgba(206,144,66,0.16)',
 } as const;
 
 export const fontSize = {

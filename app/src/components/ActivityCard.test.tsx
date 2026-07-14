@@ -35,7 +35,7 @@ describe('ActivityCard', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the country instead of distance when showDistance is false (my_country)', () => {
+  it('shows the country instead of distance when showDistance is false (no location anchor)', () => {
     render(<ActivityCard activity={activity} showDistance={false} onPress={jest.fn()} />);
     expect(screen.getByText('Serbia')).toBeTruthy();
   });
