@@ -33,6 +33,24 @@ models multiply their quota cost.
    `design-spec.md`, `task-plan.md`, `engineering-notes.md`, `review-log.md`
    under `pipeline/<slug>/`.
 
+## Design-handoff fast path (check before Research)
+If the topic includes a design import — a claude.ai/design URL, a `.dc.html`
+file reference, or the design project contains a `design_handoff_*` folder —
+this run implements an already-decided design. When importing, `list_files`
+the design project FIRST and prefer a `design_handoff_*/` folder over
+root-level mockups (handoff folders are the finalized deliverable; root-level
+files may be superseded drafts — tell the user which source you used). If the
+handoff ships a high-fidelity README (fidelity level, exact tokens, component
+states, interaction behavior): skip Research and Product below — run one
+`Explore` pass over the affected code, write `product-tasks.md` yourself
+(`decision: proceed`, `area:` labels, dependencies, acceptance criteria
+distilled from the README + the user's requirements), **CHECKPOINT** it with
+the user, and pass the README + `.dc.html` paths to engineers AS the
+design-spec (skip the `designer` step for screens the handoff covers; the
+engineer folds required `DESIGN_STANDARDS.md` updates into its branch, listed
+in acceptance criteria). A bare mockup without a README still goes through
+the full flow below.
+
 ## 1. Research
 Dispatch the `researcher` agent with the topic and the `research.md` path.
 **CHECKPOINT:** show the user the research and wait for confirmation before

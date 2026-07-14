@@ -77,14 +77,23 @@ gate is "probably fine":
    Run the `caveman-review` skill over the surviving findings so the record
    is one compressed line per finding (location, problem, fix) instead of
    prose.
-6. Commit with trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
-7. Rebase onto the latest base, THEN open the PR — this is what hands the
+6. **Pre-PR checklist** — each item below has cost a full review round when
+   skipped; run them now, not after the reviewer finds them:
+   - **New behavior ⇒ dedicated tests.** Any new exported function, handler,
+     or validation branch gets table-driven tests covering its cases before
+     the PR opens — including the negative/rejection paths.
+   - **Rename/removal sweep.** If the task renamed or removed a domain term
+     (a scope, a field, an enum value), `grep -rn` the old term across all
+     of `backend/` and shared docs — source, tests, comments, test names.
+     Stale wording is a review finding; the grep is free.
+7. Commit with trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+8. Rebase onto the latest base, THEN open the PR — this is what hands the
    task to the reviewer agent: `git fetch origin && git rebase
    origin/<base>` (base = `main`, or the base branch the orchestrator gave
    you). Resolve any conflicts minimally and re-run steps 3–4 after
    rebasing. Then `gh pr create --draft --base <base>`, body linking the
    task and its acceptance criteria.
-8. Append your section to `engineering-notes.md` via the `caveman` skill:
+9. Append your section to `engineering-notes.md` via the `caveman` skill:
    `## <taskid>` — area:backend, what you built, each acceptance criterion
    checked off with evidence, and the PR link.
 
@@ -114,7 +123,7 @@ covered elsewhere), say so explicitly in your `engineering-notes.md` entry
 with the reasoning — don't silently drop it and don't leave it for the
 orchestrator to clean up later. Re-run the same gate order as a fresh
 build — test (step 3), lint (step 4), ponytail review + caveman-review
-compression (step 5) — a resolve pass can introduce new bugs or new
+compression (step 5), the Pre-PR checklist (step 6) — a resolve pass can introduce new bugs or new
 simplifications just as easily as the first pass. Rebase onto the latest
 base (`git fetch origin && git rebase origin/<base>`), push, and mark each
 comment addressed with the fixing commit SHA or your explicit reasoning. Do

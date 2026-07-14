@@ -100,10 +100,29 @@ gate is "probably fine":
    hold, then re-run step 3 for any logic change. Run the `caveman-review`
    skill over the surviving findings so the record is one compressed line
    per finding (location, problem, fix) instead of prose.
-6. **Visual check** — the spec was written blind; you are the first pair of
-   eyes on the rendered UI:
-   - Bring the stack up: `docker compose up -d --build`, wait for healthy,
-     confirm the `app` web-preview service answers on port `4174`.
+6. **Pre-PR checklist** — each item below has cost a full review round when
+   skipped; run them now, not after the reviewer finds them:
+   - **New component ⇒ dedicated tests.** Any new component/hook/module gets
+     its own test file covering every state its `design-spec.md` section
+     lists (selected/unselected, busy, focus, reduced-motion, error — all of
+     them), before the PR opens. "The screen test renders it" does not count.
+   - **Rename/removal sweep.** If the task renamed or removed a domain term
+     (a scope, a field, a feature), `grep -rn` the old term across the whole
+     area — source, tests, comments, test names, copy. Stale wording is a
+     review finding; the grep is free.
+   - **Token exactness.** Diff every color/spacing/opacity value you wrote
+     against the exact value in `design-spec.md`/`DESIGN_STANDARDS.md` —
+     read both numbers side by side. A 0.15-vs-0.16 slip costs a review
+     cycle.
+7. **Visual check** — the spec was written blind; you are the first pair of
+   eyes on the rendered UI. This gate is a **single capture pass**, not a
+   loop — screenshots are evidence for the reviewer, not a dev tool:
+   - Bring the stack up: check `docker compose ps` first and reuse a healthy
+     running stack; otherwise `docker compose up -d --build` (compose only
+     rebuilds changed services), wait for healthy, confirm the `app`
+     web-preview service answers on port `4174`. If the port is held by a
+     sibling checkout's stack, reuse that stack if it serves your branch's
+     code; only fall back to a standalone container run when it doesn't.
    - Capture every screen/state your task's `design-spec.md` section lists,
      at `375×812` only (phone-sized — there is no desktop breakpoint for a
      mobile app) into the screenshots directory as `<screen>-<state>.png`.
@@ -128,16 +147,16 @@ gate is "probably fine":
      screenshots directory (`pipeline/` is gitignored; screenshots are the
      one pipeline artifact that must ship in the PR) — and link the key
      ones in the PR body.
-7. Commit with trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
-8. Rebase onto the latest base, THEN open the PR — this is what hands the
+8. Commit with trailer: `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+9. Rebase onto the latest base, THEN open the PR — this is what hands the
    task to the reviewer agent: `git fetch origin && git rebase
    origin/<base>` (base = `main`, or the base branch the orchestrator gave
    you). Resolve any conflicts minimally and re-run steps 3–4 after
    rebasing. Then `gh pr create --draft --base <base>`, body linking the
    task and its acceptance criteria.
-9. Append your section to `engineering-notes.md` via the `caveman` skill:
-   `## <taskid>` — area:app, what you built, each acceptance criterion
-   checked off with evidence, and the PR link.
+10. Append your section to `engineering-notes.md` via the `caveman` skill:
+    `## <taskid>` — area:app, what you built, each acceptance criterion
+    checked off with evidence, and the PR link.
 
 ## Deployment — one stack, one command
 The whole platform must come up with a single `docker compose up` from the repo
@@ -172,8 +191,13 @@ covered elsewhere), say so explicitly in your `engineering-notes.md` entry
 with the reasoning — don't silently drop it and don't leave it for the
 orchestrator to clean up later. Re-run the same gate order as a fresh
 build — test (step 3), lint (step 4), ponytail review + caveman-review
-compression (step 5), and re-capture the Visual check screenshots (step 6) for any screen the
-resolve pass touched — a resolve pass can introduce new bugs or new
+compression (step 5), the Pre-PR checklist (step 6), and — **only if the
+resolve pass changed rendering** (component/style/layout code, not
+test-only, comment, or non-visual fixes) — re-capture the Visual check
+screenshots (step 7) for the screens actually affected; when nothing visual
+changed, write "no visual change, screenshots stand" in
+`engineering-notes.md` instead of re-running the capture stack. A resolve
+pass can introduce new bugs or new
 simplifications just as easily as the first pass. Rebase onto the latest
 base (`git fetch origin && git rebase origin/<base>`), push, and mark each
 comment addressed with the fixing commit SHA or your explicit reasoning. Do
