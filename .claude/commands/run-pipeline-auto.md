@@ -77,10 +77,49 @@ Everything below — Setup, Research, Product, Build — runs inside this worktr
    `decision: proceed`, SKIP steps 1–2 (of Research/Product below) and go
    straight to Build.
 
-## 1. Research (no pause)
+## Design-handoff fast path (check before Research)
+If the topic includes a design import — a claude.ai/design URL, a `.dc.html`
+file reference, or the design project turns out to contain a
+`design_handoff_*` folder — this run is implementation of an
+already-decided design, not a from-scratch initiative. Research and Product
+exist to decide *whether and what* to build; a handoff has already decided
+both. Running them anyway is the single biggest waste on this run shape
+(~200k tokens / ~20 min measured).
+
+1. **Import the newest authoritative source.** `list_files` on the design
+   project FIRST and prefer a `design_handoff_*/` folder over root-level
+   mockups — handoff folders are the finalized deliverable; root-level
+   `.dc.html` files are working drafts that may be superseded. If the user's
+   link points at a root-level file but a handoff folder exists for the same
+   screen, import the handoff version and tell the user which source you
+   used. Save the `.dc.html` + its README into
+   `pipeline/<slug>/design-import/`.
+2. **Classify the handoff.** A handoff is *high-fidelity* when it ships a
+   README (or equivalent) specifying: fidelity level, exact tokens/values,
+   component states, and interaction/state-management behavior. If yes:
+   - **Skip `researcher` and `product` entirely.** Run one `Explore` pass
+     over the code the design touches (current screens/flows/wire contracts),
+     then write `product-tasks.md` yourself: `decision: proceed`, tasks with
+     `area:` labels, dependencies, and acceptance criteria distilled from the
+     handoff README + the user's stated requirements + the Explore findings.
+     Keep it as rigorous as the product agent's format — the savings come
+     from skipping re-research and go/no-go debate, not from vaguer tasks.
+   - **Skip the `designer` step** for tasks the handoff README already
+     covers: pass the README + `.dc.html` paths to the engineer AS the
+     design-spec (design-spec.md can be a short pointer file). The engineer
+     folds any required `DESIGN_STANDARDS.md` updates (new recipes/tokens the
+     handoff introduces, stale-wording cleanup) into its task branch — list
+     these explicitly in the task's acceptance criteria. Dispatch `designer`
+     only via the normal `NEEDS_DESIGN` escalation, or for screens the
+     handoff doesn't cover.
+3. If the handoff is NOT high-fidelity (a bare mockup, no README/states),
+   fall through to the normal Research → Product → designer flow below —
+   a loose mock still needs product decisions and a real design-spec.
+
+## 1. Research (no pause — skipped on the design-handoff fast path)
 Dispatch `researcher` → `research.md`. Continue immediately.
 
-## 2. Product (no pause)
+## 2. Product (no pause — skipped on the design-handoff fast path)
 Dispatch `product` → `product-tasks.md`.
 - `reject` / `defer` → **STOP**, report the rationale.
 - `proceed` → continue to Build immediately.
