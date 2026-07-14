@@ -36,30 +36,18 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 	var orderBy string
 
 	switch filter.Scope {
-	case activitiessvc.ScopeHome, activitiessvc.ScopeNearby:
-		loc := filter.HomeLocation
-		if filter.Scope == activitiessvc.ScopeNearby {
-			loc = filter.CurrentLocation
-		}
-		if loc == nil {
+	case activitiessvc.ScopeNearby:
+		if filter.CurrentLocation == nil {
 			return "", nil, fmt.Errorf("scope %s requires a reference location", filter.Scope)
 		}
-		lngArg := arg(loc.Lng)
-		latArg := arg(loc.Lat)
-		point := fmt.Sprintf("ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography", lngArg, latArg)
-		radiusArg := arg(filter.MaxDistanceKM * 1000) // meters
-		where = append(where, fmt.Sprintf("ST_DWithin(location, %s, %s)", point, radiusArg))
-		distanceExpr = fmt.Sprintf("ST_Distance(location, %s) / 1000.0", point)
+		distanceExpr = pointDistanceFilter(&where, arg, filter.CurrentLocation, filter.MaxDistanceKM)
 		orderBy = "ORDER BY distance_km ASC"
-	case activitiessvc.ScopeMyCountry:
-		where = append(where, fmt.Sprintf("country <> %s", arg(filter.HomeCountry)))
-		if filter.Sort == activitiessvc.SortTopRated {
-			// The rating-sort MVP: highest rating first, deterministic
-			// tie-break by title so equal-rated activities still return in
-			// a stable order across requests/pages.
-			orderBy = "ORDER BY rating DESC, title ASC"
+	case activitiessvc.ScopeAnywhere:
+		if filter.CurrentLocation != nil {
+			distanceExpr = pointDistanceFilter(&where, arg, filter.CurrentLocation, filter.MaxDistanceKM)
+			orderBy = "ORDER BY distance_km ASC"
 		} else {
-			orderBy = "ORDER BY title ASC" // still deterministic without an explicit sort request
+			orderBy = "ORDER BY title ASC" // no reference point: still deterministic
 		}
 	default:
 		return "", nil, fmt.Errorf("unknown scope %q", filter.Scope)
@@ -76,15 +64,37 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		where = append(where, fmt.Sprintf("rating >= %s", arg(filter.MinRating)))
 	}
 
+	whereClause := "TRUE" // ponytail: ScopeAnywhere with no reference point and no
+	// other filters has no WHERE condition at all; TRUE is the standard
+	// always-true placeholder rather than a special-cased query template.
+	if len(where) > 0 {
+		whereClause = strings.Join(where, " AND ")
+	}
+
 	query := fmt.Sprintf(
 		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 			country, rating, photos, tags, %s AS distance_km
 		FROM activities
 		WHERE %s
 		%s`,
-		distanceExpr, strings.Join(where, " AND "), orderBy,
+		distanceExpr, whereClause, orderBy,
 	)
 	return query, args, nil
+}
+
+// pointDistanceFilter anchors the query at loc: it appends an ST_DWithin
+// radius clause to where when maxKM is a positive limit (0 = no cap, e.g.
+// "truly anywhere"), and always returns the ST_Distance expression used for
+// the distance_km output column and closest-first ordering.
+func pointDistanceFilter(where *[]string, arg func(any) string, loc *activitiessvc.Point, maxKM float64) string {
+	lngArg := arg(loc.Lng)
+	latArg := arg(loc.Lat)
+	point := fmt.Sprintf("ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography", lngArg, latArg)
+	if maxKM > 0 {
+		radiusArg := arg(maxKM * 1000) // meters
+		*where = append(*where, fmt.Sprintf("ST_DWithin(location, %s, %s)", point, radiusArg))
+	}
+	return fmt.Sprintf("ST_Distance(location, %s) / 1000.0", point)
 }
 
 // Query runs the scoped, filtered activity search.

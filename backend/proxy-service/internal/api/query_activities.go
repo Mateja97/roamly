@@ -46,17 +46,18 @@ type locationDTO struct {
 // is silently ignored by encoding/json (no struct field to decode it into) —
 // a stale app build sending the dropped field must not hard-fail.
 type queryActivitiesRequestDTO struct {
-	Scope           string       `json:"scope"`
+	Scope string `json:"scope"`
+	// Required for scope "nearby". Optional for "anywhere": omitted (e.g.
+	// device location denied) still returns broad, distance-unfiltered
+	// results.
 	CurrentLocation *locationDTO `json:"current_location,omitempty"`
-	HomeLocation    *locationDTO `json:"home_location,omitempty"`
-	HomeCountry     string       `json:"home_country,omitempty"`
 	Categories      []string     `json:"categories,omitempty"`
 	MinRating       float64      `json:"min_rating,omitempty"`
-	MaxDistanceKM   float64      `json:"max_distance_km,omitempty"`
-	// Sort requests a specific result ordering, e.g. "top_rated" for the
-	// country (my_country) scope's rating-descending MVP ranking.
-	// Empty = no explicit ordering requested.
-	Sort string `json:"sort,omitempty"`
+	// Narrows results to within this distance of current_location. 0 = no
+	// cap ("anywhere" at the top of the distance slider). Requires
+	// current_location to be set; scope "anywhere" accepts any positive
+	// value (not capped to "nearby"'s configured radius).
+	MaxDistanceKM float64 `json:"max_distance_km,omitempty"`
 }
 
 // attributionDTO is Google's mandatory author attribution for a Places
@@ -116,21 +117,12 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		categories = append(categories, cat)
 	}
 
-	sort, ok := toProtoSort(reqDTO.Sort)
-	if !ok {
-		writeError(w, http.StatusBadRequest, "unknown sort: "+reqDTO.Sort, h.logger)
-		return
-	}
-
 	grpcReq := &activitiesv1.QueryActivitiesRequest{
 		Scope:           scope,
 		CurrentLocation: toProtoLocation(reqDTO.CurrentLocation),
-		HomeLocation:    toProtoLocation(reqDTO.HomeLocation),
-		HomeCountry:     reqDTO.HomeCountry,
 		Categories:      categories,
 		MinRating:       reqDTO.MinRating,
 		MaxDistanceKm:   reqDTO.MaxDistanceKM,
-		Sort:            sort,
 	}
 
 	resp, err := h.client.QueryActivities(r.Context(), grpcReq)
@@ -163,12 +155,10 @@ func toProtoLocation(l *locationDTO) *activitiesv1.Location {
 
 func toProtoScope(s string) (activitiesv1.Scope, bool) {
 	switch activitiessvc.Scope(s) {
-	case activitiessvc.ScopeHome:
-		return activitiesv1.Scope_SCOPE_HOME, true
 	case activitiessvc.ScopeNearby:
 		return activitiesv1.Scope_SCOPE_NEARBY, true
-	case activitiessvc.ScopeMyCountry:
-		return activitiesv1.Scope_SCOPE_OUTSIDE_COUNTRY, true
+	case activitiessvc.ScopeAnywhere:
+		return activitiesv1.Scope_SCOPE_ANYWHERE, true
 	default:
 		return activitiesv1.Scope_SCOPE_UNSPECIFIED, false
 	}
@@ -190,17 +180,6 @@ func toProtoCategory(c string) (activitiesv1.Category, bool) {
 		return activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS, true
 	default:
 		return activitiesv1.Category_CATEGORY_UNSPECIFIED, false
-	}
-}
-
-func toProtoSort(s string) (activitiesv1.Sort, bool) {
-	switch activitiessvc.Sort(s) {
-	case activitiessvc.SortUnspecified:
-		return activitiesv1.Sort_SORT_UNSPECIFIED, true
-	case activitiessvc.SortTopRated:
-		return activitiesv1.Sort_SORT_TOP_RATED, true
-	default:
-		return activitiesv1.Sort_SORT_UNSPECIFIED, false
 	}
 }
 

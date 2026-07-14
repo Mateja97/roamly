@@ -17,62 +17,47 @@ func TestBuildQuery(t *testing.T) {
 		notWantSQL []string
 	}{
 		{
-			name: "home scope uses ST_DWithin against home location and orders by distance",
-			filter: activitiessvc.QueryFilter{
-				Scope:         activitiessvc.ScopeHome,
-				HomeLocation:  &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
-				MaxDistanceKM: 50,
-			},
-			wantSQL:  []string{"ST_DWithin(location", "ORDER BY distance_km ASC"},
-			wantArgs: []any{20.4, 44.8, 50.0 * 1000},
-		},
-		{
-			name: "nearby scope uses current location",
+			name: "nearby scope uses ST_DWithin against current location and orders by distance",
 			filter: activitiessvc.QueryFilter{
 				Scope:           activitiessvc.ScopeNearby,
 				CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 2},
 				MaxDistanceKM:   10,
 			},
-			wantSQL:  []string{"ST_DWithin(location"},
+			wantSQL:  []string{"ST_DWithin(location", "ORDER BY distance_km ASC"},
 			wantArgs: []any{2.0, 1.0, 10.0 * 1000},
 		},
 		{
-			name: "home scope missing location is an error",
+			name: "nearby scope missing location is an error",
 			filter: activitiessvc.QueryFilter{
-				Scope: activitiessvc.ScopeHome,
+				Scope: activitiessvc.ScopeNearby,
 			},
 			wantErr: true,
 		},
 		{
-			name: "my_country scope filters by country, skips distance ordering, defaults to title order without an explicit sort",
+			name: "anywhere scope with location and max_distance_km narrows with ST_DWithin",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
+				Scope:           activitiessvc.ScopeAnywhere,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				MaxDistanceKM:   200,
 			},
-			wantSQL:    []string{"country <>", "ORDER BY title ASC"},
-			wantArgs:   []any{"Serbia"},
-			notWantSQL: []string{"ST_DWithin", "rating DESC"},
+			wantSQL:  []string{"ST_DWithin(location", "ORDER BY distance_km ASC"},
+			wantArgs: []any{20.4, 44.8, 200.0 * 1000},
 		},
 		{
-			name: "my_country scope with sort=top_rated orders by rating descending, deterministic tie-break by title",
+			name: "anywhere scope with location but no max_distance_km has no distance cap",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				Sort:        activitiessvc.SortTopRated,
-			},
-			wantSQL:  []string{"country <>", "ORDER BY rating DESC, title ASC"},
-			wantArgs: []any{"Serbia"},
-		},
-		{
-			name: "home scope ignores sort=top_rated and still orders by distance",
-			filter: activitiessvc.QueryFilter{
-				Scope:         activitiessvc.ScopeHome,
-				HomeLocation:  &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
-				MaxDistanceKM: 50,
-				Sort:          activitiessvc.SortTopRated,
+				Scope:           activitiessvc.ScopeAnywhere,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
 			},
 			wantSQL:    []string{"ORDER BY distance_km ASC"},
-			notWantSQL: []string{"rating DESC"},
+			notWantSQL: []string{"ST_DWithin"},
+			wantArgs:   []any{20.4, 44.8},
+		},
+		{
+			name:       "anywhere scope with no location and no filters falls back to TRUE and title order",
+			filter:     activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere},
+			wantSQL:    []string{"WHERE TRUE", "ORDER BY title ASC"},
+			notWantSQL: []string{"ST_DWithin"},
 		},
 		{
 			name: "unknown scope is an error",
@@ -84,21 +69,19 @@ func TestBuildQuery(t *testing.T) {
 		{
 			name: "category filter narrows with ANY",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				Categories:  []activitiessvc.Category{activitiessvc.CategorySports, activitiessvc.CategoryArtAndDesign},
+				Scope:      activitiessvc.ScopeAnywhere,
+				Categories: []activitiessvc.Category{activitiessvc.CategorySports, activitiessvc.CategoryArtAndDesign},
 			},
 			wantSQL: []string{"category = ANY"},
 		},
 		{
-			name: "country and min rating filters combine with AND",
+			name: "min rating filter combines with AND alongside another filter",
 			filter: activitiessvc.QueryFilter{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				MinRating:   4.5,
+				Scope:      activitiessvc.ScopeAnywhere,
+				Categories: []activitiessvc.Category{activitiessvc.CategorySports},
+				MinRating:  4.5,
 			},
-			wantSQL:  []string{"country <>", "rating >=", " AND "},
-			wantArgs: []any{"Serbia", 4.5},
+			wantSQL: []string{"category = ANY", "rating >=", " AND "},
 		},
 	}
 

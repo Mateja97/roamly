@@ -67,8 +67,8 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	client := dialServer(t, fake)
 
 	resp, err := client.QueryActivities(context.Background(), &activitiesv1.QueryActivitiesRequest{
-		Scope:        activitiesv1.Scope_SCOPE_HOME,
-		HomeLocation: &activitiesv1.Location{Lat: 44.8, Lng: 20.4},
+		Scope:           activitiesv1.Scope_SCOPE_NEARBY,
+		CurrentLocation: &activitiesv1.Location{Lat: 44.8, Lng: 20.4},
 	})
 	if err != nil {
 		t.Fatalf("QueryActivities() unexpected error: %v", err)
@@ -83,8 +83,8 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	if len(got.GetPhotos()) != 1 || got.GetPhotos()[0].GetUrl() != "img1" || got.GetPhotos()[0].GetAuthor() != "Jane Doe" {
 		t.Errorf("unexpected photo translation: %+v", got.GetPhotos())
 	}
-	if fake.got.Scope != activitiessvc.ScopeHome {
-		t.Errorf("service received scope = %v, want home", fake.got.Scope)
+	if fake.got.Scope != activitiessvc.ScopeNearby {
+		t.Errorf("service received scope = %v, want nearby", fake.got.Scope)
 	}
 }
 
@@ -93,7 +93,7 @@ func TestQueryActivities_InvalidInputMapsToInvalidArgument(t *testing.T) {
 	client := dialServer(t, fake)
 
 	_, err := client.QueryActivities(context.Background(), &activitiesv1.QueryActivitiesRequest{
-		Scope: activitiesv1.Scope_SCOPE_HOME,
+		Scope: activitiesv1.Scope_SCOPE_NEARBY,
 	})
 	if err == nil {
 		t.Fatal("QueryActivities() error = nil, want InvalidArgument")
@@ -103,21 +103,21 @@ func TestQueryActivities_InvalidInputMapsToInvalidArgument(t *testing.T) {
 	}
 }
 
-func TestToDomainSort(t *testing.T) {
+func TestToDomainScope(t *testing.T) {
 	tests := []struct {
 		name string
-		in   activitiesv1.Sort
-		want activitiessvc.Sort
+		in   activitiesv1.Scope
+		want activitiessvc.Scope
 	}{
-		{"unspecified stays unspecified (no explicit ordering)", activitiesv1.Sort_SORT_UNSPECIFIED, activitiessvc.SortUnspecified},
-		{"known value maps through", activitiesv1.Sort_SORT_TOP_RATED, activitiessvc.SortTopRated},
-		{"out-of-range wire value must not collapse to unspecified", activitiesv1.Sort(99), activitiessvc.Sort("invalid")},
+		{"nearby maps through", activitiesv1.Scope_SCOPE_NEARBY, activitiessvc.ScopeNearby},
+		{"anywhere maps through", activitiesv1.Scope_SCOPE_ANYWHERE, activitiessvc.ScopeAnywhere},
+		{"out-of-range wire value maps to empty (service rejects)", activitiesv1.Scope(99), activitiessvc.Scope("")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toDomainSort(tt.in)
+			got := toDomainScope(tt.in)
 			if got != tt.want {
-				t.Errorf("toDomainSort(%v) = %q, want %q", tt.in, got, tt.want)
+				t.Errorf("toDomainScope(%v) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -128,7 +128,7 @@ func TestQueryActivities_UnexpectedErrorMapsToInternal(t *testing.T) {
 	client := dialServer(t, fake)
 
 	_, err := client.QueryActivities(context.Background(), &activitiesv1.QueryActivitiesRequest{
-		Scope: activitiesv1.Scope_SCOPE_OUTSIDE_COUNTRY, HomeCountry: "Serbia",
+		Scope: activitiesv1.Scope_SCOPE_ANYWHERE,
 	})
 	if err == nil {
 		t.Fatal("QueryActivities() error = nil, want Internal")

@@ -1,8 +1,7 @@
 -- Seed catalog. Cluster A sits around Belgrade, Serbia (usable as the
--- home_location/current_location test anchor for the home/nearby scopes).
--- Cluster B sits in other countries (usable for my_country with
--- home_country = 'Serbia'). See engineering-notes.md for the documented
--- test coordinates.
+-- current_location test anchor for the nearby/anywhere scopes). Cluster B
+-- sits in other countries (usable for anywhere with no/wide distance cap).
+-- See engineering-notes.md for the documented test coordinates.
 --
 -- image_refs starts empty here (T3): no picsum.photos placeholders ship.
 -- 0004_photos.sql adds the real `photos` JSONB column (URL + Google author

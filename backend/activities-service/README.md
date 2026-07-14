@@ -1,9 +1,8 @@
 # activities-service
 
 Owns the activity catalog and answers scoped, filtered queries against it
-(`home` / `nearby` / `my_country`). Stateless about users: callers
-supply location context (current/home coordinates, home country) on every
-request. Backed by Postgres + PostGIS.
+(`nearby` / `anywhere`). Stateless about users: callers supply location
+context (current coordinates) on every request. Backed by Postgres + PostGIS.
 
 **Status:** MVP — single `QueryActivities` gRPC method, seeded read-only
 catalog. No write/CRUD API (see product-tasks.md "Out of scope").
@@ -22,8 +21,8 @@ Environment variables, read once at startup in `main.go`:
 - `DATABASE_URL` — Postgres DSN (required), e.g.
   `postgres://user:pass@host:5432/activities?sslmode=disable`.
 - `GRPC_ADDR` — gRPC listen address, defaults to `:9090`.
-- `DEFAULT_RADIUS_KM` — default radius in km for `home`/`nearby` scopes,
-  defaults to `50`.
+- `DEFAULT_RADIUS_KM` — default radius in km for the `nearby` scope (also the
+  cap `nearby` narrows within; `anywhere` is uncapped), defaults to `50`.
 - `LOG_LEVEL` — slog level, defaults to `info`.
 
 ## Data
