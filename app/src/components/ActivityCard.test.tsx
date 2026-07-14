@@ -43,7 +43,7 @@ describe('ActivityCard', () => {
   it('shows the broken-image fallback when the image fails to load', () => {
     render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
     const image = screen.getByTestId('activity-card-image');
-    fireEvent(image, 'error');
+    fireEvent(image, 'error', { nativeEvent: { error: 'load failed' } });
     expect(screen.queryByTestId('activity-card-image')).toBeNull();
   });
 

@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
 import { CATEGORY_LABELS } from '../features/activity-list/filters';
@@ -66,9 +67,11 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
             testID="activity-card-image"
             source={{ uri: imageUri }}
             style={styles.image}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            accessibilityIgnoresInvertColors
             onLoad={() => setImageState('loaded')}
             onError={() => setImageState('broken')}
-            accessibilityIgnoresInvertColors
           />
         ) : (
           <View style={styles.imageFallback}>
