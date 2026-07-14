@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ElementRef, ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Easing, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import { X } from 'lucide-react-native';
 import type { ActivitiesQueryResult } from '../../api/activities';
@@ -45,6 +46,7 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
   const closeRef = useRef<ElementRef<typeof Pressable>>(null);
   const [translateY] = useState(() => new Animated.Value(OFFSCREEN_Y));
   const [scrimOpacity] = useState(() => new Animated.Value(0));
+  const insets = useSafeAreaInsets();
 
   // `draft`/`error` are seeded straight from props above (via useState's
   // initializer) rather than reset by an effect — the caller remounts this
@@ -176,7 +178,7 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
             </View>
           )}
 
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: space[6] + insets.bottom }]}>
             <Pressable
               onPress={handleApply}
               onFocus={applyFocus.onFocus}
@@ -433,13 +435,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[2],
-    // ponytail: fixed extra bottom padding approximates home-indicator
-    // clearance — react-native-safe-area-context isn't a dependency yet, and
-    // RN's own SafeAreaView insets from the device's physical edges (wrong
-    // for a bottom-anchored panel that doesn't reach the top). Add real
-    // inset-aware padding if a second bottom sheet needs the same thing.
+    // Bottom padding (space[6] + insets.bottom) is set inline above, per
+    // DESIGN_STANDARDS.md's Bottom action-bar / footer inset formula. The
+    // sheet has no safe-area container of its own (see the component-level
+    // comment), so the footer supplies the bottom inset directly.
     paddingVertical: space[4],
-    paddingBottom: space[6],
   },
   applyButton: {
     flex: 1,

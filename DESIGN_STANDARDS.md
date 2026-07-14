@@ -642,6 +642,17 @@ the palette:
 - **Safe areas**: every top-level screen renders inside a safe-area
   container (RN's `SafeAreaView` or equivalent) — never let content sit
   under a device notch, status bar, or home indicator.
+- **Bottom action-bar / footer inset formula**: a footer or bottom sheet
+  anchored to the screen's bottom edge sets its bottom padding to
+  `--space-6` (its intrinsic breathing gap) **plus** the live bottom
+  safe-area inset (`insets.bottom`) — the footer *owns* the bottom inset,
+  so the safe-area container it sits in must not also pad the bottom (drop
+  the bottom edge from that container) or the inset double-counts. On a
+  device with no bottom inset the result is a flat `--space-6`; on a
+  home-indicator device the footer's content clears the indicator with the
+  same `--space-6` gap above it. Every bottom-anchored footer uses this
+  identical formula so they stay consistent with each other. Uses no new
+  token — reuses `--space-6` and the runtime inset.
 - **Navigation chrome**: back navigation follows each platform's native
   convention (iOS: top-left back control / edge-swipe gesture; Android:
   the system back gesture/button) rather than inventing a custom back
