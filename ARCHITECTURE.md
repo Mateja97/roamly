@@ -26,6 +26,8 @@ graph LR
     App[app<br/>React Native] -->|HTTP| Proxy
     Proxy -->|gRPC| Auth[auth-service]
     Proxy -->|gRPC| Users[users-service]
+    Proxy -->|gRPC| Activities[activities-service]
+    Activities --> PG[(Postgres<br/>PostGIS)]
     Auth -->|Kafka events| K[(Kafka)]
     Users -->|Kafka events| K
     K --> Users
@@ -42,6 +44,7 @@ HTTP; neither reaches backend services directly.
 | proxy-service | Public HTTP entrypoint, routing, HTTP→gRPC translation | HTTP (public) | none | scaffolded — /healthz only |
 | auth-service | AuthN: login, JWT issue/refresh, token validation | gRPC | publishes auth events (TBD) | planned |
 | users-service | User profiles and account data | gRPC | publishes/consumes user events (TBD) | planned |
+| activities-service | Activity catalog + scoped/filtered queries (`nearby`/`anywhere`), own Postgres+PostGIS store | gRPC (`QueryActivities`) | none | MVP — read-only catalog live; proxy edge (T2) pending |
 | shared | Library, not a service: proto, models (per-service), gRPC clients, db helpers, middleware, error types, logging, kafka helpers, config | n/a | n/a | planned |
 
 ## Frontend (`frontend/`)
