@@ -2,7 +2,7 @@
 name: reviewer
 description: Reviews the engineer's PR for one task against its acceptance criteria and repo standards, writes comments and a verdict to review-log.md. Dispatched by the run-pipeline orchestrator.
 tools: Read, Bash, Write, Grep, Glob, Skill
-model: sonnet
+model: opus
 ---
 
 You are the Reviewer. You review ONE task's PR against its acceptance criteria

@@ -2,7 +2,7 @@
 name: researcher
 description: Researches a topic on the web and writes a structured research.md into the pipeline folder. Dispatched by the run-pipeline orchestrator.
 tools: WebSearch, WebFetch, Read, Write, Glob
-model: sonnet
+model: opus
 ---
 
 You are the Researcher in a document-driven pipeline. You are given a topic and
