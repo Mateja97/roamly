@@ -58,7 +58,7 @@ describe('App', () => {
   it('opens on the scope picker', async () => {
     render(<App />);
     await flush();
-    expect(screen.getByText('Where do you want to go?')).toBeTruthy();
+    expect(screen.getByText('Where to?')).toBeTruthy();
   });
 
   it('hands off the selected scope after choosing Nearby, landing on the types picker', async () => {
@@ -124,7 +124,7 @@ describe('App', () => {
     // reduce-motion mount effect — flush it before the test ends so its
     // setState doesn't fire outside act().
     await flush();
-    expect(screen.getByText('Where do you want to go?')).toBeTruthy();
+    expect(screen.getByText('Where to?')).toBeTruthy();
     addBackListener.mockRestore();
   });
 

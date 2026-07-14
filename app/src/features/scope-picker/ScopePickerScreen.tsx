@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Ref } from 'react';
 import { AccessibilityInfo, findNodeHandle, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Line } from 'react-native-svg';
 import { Globe, MapPin } from 'lucide-react-native';
 import { useFonts, Marcellus_400Regular } from '@expo-google-fonts/marcellus';
 import { ScopeTicket } from '../../components/ScopeTicket';
@@ -38,6 +40,13 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
 
   const messageRef = useRef<View>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
+  // Dashed underline tracks the headline's actual rendered width (matches
+  // the mock's inline-block underline) rather than a hardcoded pixel value,
+  // so it still fits if the headline wraps/grows under dynamic text scaling.
+  const [headlineWidth, setHeadlineWidth] = useState(0);
+  function onHeadlineLayout(event: LayoutChangeEvent) {
+    setHeadlineWidth(event.nativeEvent.layout.width);
+  }
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -94,9 +103,29 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
         </View>
 
         <View style={styles.centerBlock}>
-          <Text style={[styles.prompt, fontsLoaded && { fontFamily: fontFamily.display }]}>
-            Where do you want to go?
-          </Text>
+          <View style={styles.destinationField}>
+            <Text style={styles.overline}>Destination</Text>
+            <Text
+              style={[styles.headline, fontsLoaded && { fontFamily: fontFamily.display }]}
+              onLayout={onHeadlineLayout}
+            >
+              Where to?
+            </Text>
+            {headlineWidth > 0 && (
+              <Svg width={headlineWidth} height={4} style={styles.underline}>
+                <Line
+                  x1={0}
+                  y1={2}
+                  x2={headlineWidth}
+                  y2={2}
+                  stroke={colors.cardHighlight}
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  strokeLinecap="round"
+                />
+              </Svg>
+            )}
+          </View>
 
           <View style={styles.tickets}>
             <ScopeTicket
@@ -210,10 +239,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: space[6],
   },
-  prompt: {
-    fontSize: fontSize.xl - 2, // 26px
+  destinationField: {
+    alignItems: 'center',
+  },
+  overline: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+    letterSpacing: 3, // ~0.22em at 14px
+  },
+  headline: {
+    marginTop: space[3],
+    fontSize: fontSize.xxl,
+    lineHeight: fontSize.xxl * 1.1,
     color: colors.text,
     textAlign: 'center',
+  },
+  underline: {
+    marginTop: space[2],
   },
   tickets: {
     gap: space[4],
