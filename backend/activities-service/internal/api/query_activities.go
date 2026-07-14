@@ -59,12 +59,9 @@ func toServiceRequest(req *activitiesv1.QueryActivitiesRequest) service.Request 
 	return service.Request{
 		Scope:           toDomainScope(req.GetScope()),
 		CurrentLocation: toDomainPoint(req.GetCurrentLocation()),
-		HomeLocation:    toDomainPoint(req.GetHomeLocation()),
-		HomeCountry:     req.GetHomeCountry(),
 		Categories:      categories,
 		MinRating:       req.GetMinRating(),
 		MaxDistanceKM:   req.GetMaxDistanceKm(),
-		Sort:            toDomainSort(req.GetSort()),
 	}
 }
 
@@ -77,12 +74,10 @@ func toDomainPoint(l *activitiesv1.Location) *activitiessvc.Point {
 
 func toDomainScope(s activitiesv1.Scope) activitiessvc.Scope {
 	switch s {
-	case activitiesv1.Scope_SCOPE_HOME:
-		return activitiessvc.ScopeHome
 	case activitiesv1.Scope_SCOPE_NEARBY:
 		return activitiessvc.ScopeNearby
-	case activitiesv1.Scope_SCOPE_OUTSIDE_COUNTRY:
-		return activitiessvc.ScopeMyCountry
+	case activitiesv1.Scope_SCOPE_ANYWHERE:
+		return activitiessvc.ScopeAnywhere
 	default:
 		return "" // service layer rejects this as an unknown scope
 	}
@@ -104,20 +99,6 @@ func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
 		return activitiessvc.CategoryEntertainmentAndWellness
 	default:
 		return "" // service layer rejects this as an unknown category
-	}
-}
-
-func toDomainSort(s activitiesv1.Sort) activitiessvc.Sort {
-	switch s {
-	case activitiesv1.Sort_SORT_UNSPECIFIED:
-		return activitiessvc.SortUnspecified
-	case activitiesv1.Sort_SORT_TOP_RATED:
-		return activitiessvc.SortTopRated
-	default:
-		// ponytail: don't collapse an unrecognized Sort into the legitimate
-		// "unspecified" zero value, or service.validSort would silently
-		// no-op instead of rejecting it.
-		return activitiessvc.Sort("invalid")
 	}
 }
 

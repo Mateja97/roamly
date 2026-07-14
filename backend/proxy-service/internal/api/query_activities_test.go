@@ -49,7 +49,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"home","home_location":{"lat":44.8,"lng":20.4}}`)
+	rec := doRequest(t, h, `{"scope":"nearby","current_location":{"lat":44.8,"lng":20.4}}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -68,22 +68,39 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	if photos[1].URI != "img2" || photos[1].Attribution != nil {
 		t.Errorf("unresolved photo must omit attribution: %+v", photos[1])
 	}
-	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_HOME {
-		t.Errorf("gRPC request scope = %v, want SCOPE_HOME", fake.got.GetScope())
+	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_NEARBY {
+		t.Errorf("gRPC request scope = %v, want SCOPE_NEARBY", fake.got.GetScope())
 	}
 }
 
-func TestQueryActivitiesHandler_ForwardsSort(t *testing.T) {
+func TestQueryActivitiesHandler_ForwardsAnywhereDistanceFilter(t *testing.T) {
 	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"my_country","home_country":"Serbia","sort":"top_rated"}`)
+	rec := doRequest(t, h, `{"scope":"anywhere","current_location":{"lat":44.8,"lng":20.4},"max_distance_km":300}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if fake.got.GetSort() != activitiesv1.Sort_SORT_TOP_RATED {
-		t.Errorf("gRPC request sort = %v, want SORT_TOP_RATED", fake.got.GetSort())
+	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_ANYWHERE {
+		t.Errorf("gRPC request scope = %v, want SCOPE_ANYWHERE", fake.got.GetScope())
+	}
+	if fake.got.GetMaxDistanceKm() != 300 {
+		t.Errorf("gRPC request max_distance_km = %v, want 300", fake.got.GetMaxDistanceKm())
+	}
+}
+
+func TestQueryActivitiesHandler_AnywhereWithoutLocationOrDistanceFilter(t *testing.T) {
+	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
+	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doRequest(t, h, `{"scope":"anywhere"}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if fake.got.GetCurrentLocation() != nil {
+		t.Errorf("gRPC request current_location = %v, want nil", fake.got.GetCurrentLocation())
 	}
 }
 
@@ -111,8 +128,8 @@ func TestQueryActivitiesHandler_ValidationFailures(t *testing.T) {
 		body string
 	}{
 		{"unknown scope", `{"scope":"galaxy"}`},
-		{"unknown category", `{"scope":"home","home_location":{"lat":1,"lng":1},"categories":["not_a_category"]}`},
-		{"unknown sort", `{"scope":"my_country","home_country":"Serbia","sort":"most_popular"}`},
+		{"retired home scope", `{"scope":"home","current_location":{"lat":1,"lng":1}}`},
+		{"unknown category", `{"scope":"nearby","current_location":{"lat":1,"lng":1},"categories":["not_a_category"]}`},
 		{"malformed JSON body", `{not-json`},
 	}
 	for _, tt := range tests {
@@ -136,7 +153,7 @@ func TestQueryActivitiesHandler_StrayRemovedFieldIsIgnored(t *testing.T) {
 	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"home","home_location":{"lat":1,"lng":1},"price_tier":"budget"}`)
+	rec := doRequest(t, h, `{"scope":"nearby","current_location":{"lat":1,"lng":1},"price_tier":"budget"}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -144,10 +161,10 @@ func TestQueryActivitiesHandler_StrayRemovedFieldIsIgnored(t *testing.T) {
 }
 
 func TestQueryActivitiesHandler_GRPCInvalidArgumentMapsTo400(t *testing.T) {
-	fake := &fakeActivitiesClient{err: status.Error(codes.InvalidArgument, "missing home_location for scope home")}
+	fake := &fakeActivitiesClient{err: status.Error(codes.InvalidArgument, "missing current_location for scope nearby")}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"home"}`)
+	rec := doRequest(t, h, `{"scope":"nearby"}`)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
@@ -158,7 +175,7 @@ func TestQueryActivitiesHandler_GRPCInternalMapsTo500(t *testing.T) {
 	fake := &fakeActivitiesClient{err: status.Error(codes.Internal, "internal error")}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doRequest(t, h, `{"scope":"my_country","home_country":"Serbia"}`)
+	rec := doRequest(t, h, `{"scope":"anywhere"}`)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)

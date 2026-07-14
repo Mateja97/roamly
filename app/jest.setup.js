@@ -1,3 +1,4 @@
+/* global jest */
 // react-native-safe-area-context needs a real on-screen layout pass to
 // measure insets, which the Jest environment never performs — mock it with
 // fixed zero insets so SafeAreaProvider/SafeAreaView render their children

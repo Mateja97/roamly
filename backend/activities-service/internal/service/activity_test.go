@@ -31,106 +31,82 @@ func TestActivities_Query_Validation(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "home scope without home_location rejected",
-			req:     Request{Scope: activitiessvc.ScopeHome},
-			wantErr: true,
-		},
-		{
-			name: "home scope with malformed lat rejected",
-			req: Request{
-				Scope:        activitiessvc.ScopeHome,
-				HomeLocation: &activitiessvc.Point{Lat: 999, Lng: 20},
-			},
-			wantErr: true,
-		},
-		{
 			name:    "nearby scope without current_location rejected",
 			req:     Request{Scope: activitiessvc.ScopeNearby},
 			wantErr: true,
 		},
 		{
-			name:    "my_country scope without home_country rejected",
-			req:     Request{Scope: activitiessvc.ScopeMyCountry},
-			wantErr: true,
-		},
-		{
-			name: "my_country scope with max_distance_km rejected",
+			name: "nearby scope with malformed lat rejected",
 			req: Request{
-				Scope:         activitiessvc.ScopeMyCountry,
-				HomeCountry:   "Serbia",
-				MaxDistanceKM: 10,
+				Scope:           activitiessvc.ScopeNearby,
+				CurrentLocation: &activitiessvc.Point{Lat: 999, Lng: 20},
 			},
 			wantErr: true,
 		},
 		{
 			name: "unknown category rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				Categories:  []activitiessvc.Category{"not-a-category"},
+				Scope:           activitiessvc.ScopeNearby,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				Categories:      []activitiessvc.Category{"not-a-category"},
 			},
 			wantErr: true,
 		},
 		{
 			name: "min_rating out of range rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				MinRating:   6,
+				Scope:           activitiessvc.ScopeNearby,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				MinRating:       6,
 			},
 			wantErr: true,
 		},
 		{
-			name: "valid home scope request accepted",
+			name: "negative max_distance_km rejected",
 			req: Request{
-				Scope:        activitiessvc.ScopeHome,
-				HomeLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid my_country request accepted",
-			req: Request{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-			},
-			wantErr: false,
-		},
-		{
-			name: "unknown sort rejected",
-			req: Request{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				Sort:        "bogus",
+				Scope:           activitiessvc.ScopeAnywhere,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				MaxDistanceKM:   -1,
 			},
 			wantErr: true,
 		},
 		{
-			name: "sort=top_rated for scope home rejected",
-			req: Request{
-				Scope:        activitiessvc.ScopeHome,
-				HomeLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
-				Sort:         activitiessvc.SortTopRated,
-			},
-			wantErr: true,
-		},
-		{
-			name: "sort=top_rated for scope nearby rejected",
+			name: "valid nearby scope request accepted",
 			req: Request{
 				Scope:           activitiessvc.ScopeNearby,
 				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
-				Sort:            activitiessvc.SortTopRated,
+			},
+			wantErr: false,
+		},
+		{
+			name:    "anywhere scope with no location and no distance filter accepted",
+			req:     Request{Scope: activitiessvc.ScopeAnywhere},
+			wantErr: false,
+		},
+		{
+			name: "anywhere scope with location and max_distance_km accepted",
+			req: Request{
+				Scope:           activitiessvc.ScopeAnywhere,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				MaxDistanceKM:   200,
+			},
+			wantErr: false,
+		},
+		{
+			name: "anywhere scope with max_distance_km but no location rejected",
+			req: Request{
+				Scope:         activitiessvc.ScopeAnywhere,
+				MaxDistanceKM: 200,
 			},
 			wantErr: true,
 		},
 		{
-			name: "sort=top_rated for scope my_country accepted",
+			name: "anywhere scope with malformed location rejected",
 			req: Request{
-				Scope:       activitiessvc.ScopeMyCountry,
-				HomeCountry: "Serbia",
-				Sort:        activitiessvc.SortTopRated,
+				Scope:           activitiessvc.ScopeAnywhere,
+				CurrentLocation: &activitiessvc.Point{Lat: 999, Lng: 20},
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 
@@ -155,22 +131,6 @@ func TestActivities_Query_Validation(t *testing.T) {
 	}
 }
 
-func TestActivities_Query_ForwardsSortToRepository(t *testing.T) {
-	repo := &fakeRepo{}
-	svc := New(repo, 50)
-	_, err := svc.Query(context.Background(), Request{
-		Scope:       activitiessvc.ScopeMyCountry,
-		HomeCountry: "Serbia",
-		Sort:        activitiessvc.SortTopRated,
-	})
-	if err != nil {
-		t.Fatalf("Query() unexpected error: %v", err)
-	}
-	if repo.got.Sort != activitiessvc.SortTopRated {
-		t.Errorf("repo filter Sort = %q, want %q", repo.got.Sort, activitiessvc.SortTopRated)
-	}
-}
-
 func TestActivities_Query_ResolvesEffectiveRadius(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -188,9 +148,9 @@ func TestActivities_Query_ResolvesEffectiveRadius(t *testing.T) {
 			repo := &fakeRepo{}
 			svc := New(repo, tt.defaultRadius)
 			_, err := svc.Query(context.Background(), Request{
-				Scope:         activitiessvc.ScopeHome,
-				HomeLocation:  &activitiessvc.Point{Lat: 1, Lng: 1},
-				MaxDistanceKM: tt.requestedMaxKM,
+				Scope:           activitiessvc.ScopeNearby,
+				CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
+				MaxDistanceKM:   tt.requestedMaxKM,
 			})
 			if err != nil {
 				t.Fatalf("Query() unexpected error: %v", err)
@@ -199,5 +159,36 @@ func TestActivities_Query_ResolvesEffectiveRadius(t *testing.T) {
 				t.Errorf("effective radius = %v, want %v", repo.got.MaxDistanceKM, tt.want)
 			}
 		})
+	}
+}
+
+func TestActivities_Query_AnywhereNotCappedByDefaultRadius(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := New(repo, 50) // default radius (nearby's) is 50km
+	_, err := svc.Query(context.Background(), Request{
+		Scope:           activitiessvc.ScopeAnywhere,
+		CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
+		MaxDistanceKM:   500,
+	})
+	if err != nil {
+		t.Fatalf("Query() unexpected error: %v", err)
+	}
+	if repo.got.MaxDistanceKM != 500 {
+		t.Errorf("anywhere max_distance_km = %v, want 500 (uncapped)", repo.got.MaxDistanceKM)
+	}
+}
+
+func TestActivities_Query_AnywhereNoDistanceCapWhenOmitted(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := New(repo, 50)
+	_, err := svc.Query(context.Background(), Request{
+		Scope:           activitiessvc.ScopeAnywhere,
+		CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
+	})
+	if err != nil {
+		t.Fatalf("Query() unexpected error: %v", err)
+	}
+	if repo.got.MaxDistanceKM != 0 {
+		t.Errorf("anywhere max_distance_km = %v, want 0 (no cap)", repo.got.MaxDistanceKM)
 	}
 }

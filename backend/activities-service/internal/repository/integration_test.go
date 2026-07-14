@@ -70,11 +70,13 @@ func TestActivities_Query_Integration(t *testing.T) {
 	repo := New(db)
 	ctx := context.Background()
 
+	// Cluster A (Serbia, 7 activities) sits around Belgrade; cluster B (5
+	// activities) sits abroad. See migrations/0002_seed.sql.
 	belgrade := &activitiessvc.Point{Lat: 44.8125, Lng: 20.4612}
 
-	t.Run("home scope returns only the Serbia cluster, closest first", func(t *testing.T) {
+	t.Run("nearby scope returns only the Serbia cluster, closest first", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
-			Scope: activitiessvc.ScopeHome, HomeLocation: belgrade, MaxDistanceKM: 50,
+			Scope: activitiessvc.ScopeNearby, CurrentLocation: belgrade, MaxDistanceKM: 50,
 		})
 		if err != nil {
 			t.Fatalf("Query() error: %v", err)
@@ -92,9 +94,9 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
-	t.Run("my_country scope excludes home_country", func(t *testing.T) {
+	t.Run("anywhere scope with a tight radius narrows to the Serbia cluster", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
-			Scope: activitiessvc.ScopeMyCountry, HomeCountry: "Serbia",
+			Scope: activitiessvc.ScopeAnywhere, CurrentLocation: belgrade, MaxDistanceKM: 50,
 		})
 		if err != nil {
 			t.Fatalf("Query() error: %v", err)
@@ -103,15 +105,45 @@ func TestActivities_Query_Integration(t *testing.T) {
 			t.Fatalf("got %d activities, want at least 5", len(got))
 		}
 		for _, a := range got {
-			if a.Country == "Serbia" {
-				t.Errorf("activity %q is in home_country, should be excluded", a.Title)
+			if a.Country != "Serbia" {
+				t.Errorf("activity %q has country %q, want Serbia (out of the anchored radius)", a.Title, a.Country)
 			}
+		}
+	})
+
+	t.Run("anywhere scope with no max_distance_km returns broadly, uncapped", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope: activitiessvc.ScopeAnywhere, CurrentLocation: belgrade,
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		var sawAbroad bool
+		for _, a := range got {
+			if a.Country != "Serbia" {
+				sawAbroad = true
+			}
+		}
+		if !sawAbroad {
+			t.Error("expected activities outside Serbia when max_distance_km is unset (truly anywhere)")
+		}
+	})
+
+	t.Run("anywhere scope with no reference point returns broadly", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope: activitiessvc.ScopeAnywhere,
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		if len(got) < 12 {
+			t.Fatalf("got %d activities, want at least 12 (no filter applied)", len(got))
 		}
 	})
 
 	t.Run("category filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
-			Scope: activitiessvc.ScopeMyCountry, HomeCountry: "Serbia",
+			Scope:      activitiessvc.ScopeAnywhere,
 			Categories: []activitiessvc.Category{activitiessvc.CategorySports},
 		})
 		if err != nil {
@@ -123,13 +155,13 @@ func TestActivities_Query_Integration(t *testing.T) {
 			}
 		}
 		if len(got) == 0 {
-			t.Fatal("expected at least one sports activity outside Serbia")
+			t.Fatal("expected at least one sports activity")
 		}
 	})
 
 	t.Run("min_rating filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
-			Scope: activitiessvc.ScopeHome, HomeLocation: belgrade, MaxDistanceKM: 50,
+			Scope: activitiessvc.ScopeNearby, CurrentLocation: belgrade, MaxDistanceKM: 50,
 			MinRating: 4.7,
 		})
 		if err != nil {

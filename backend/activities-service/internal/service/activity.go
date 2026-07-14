@@ -18,16 +18,14 @@ type repository interface {
 
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
 // caller's raw filter value (0 = not set), not yet resolved against the
-// service's default scope radius.
+// service's default scope radius (ScopeNearby only — ScopeAnywhere passes
+// it through uncapped).
 type Request struct {
 	Scope           activitiessvc.Scope
 	CurrentLocation *activitiessvc.Point
-	HomeLocation    *activitiessvc.Point
-	HomeCountry     string
 	Categories      []activitiessvc.Category
 	MinRating       float64
 	MaxDistanceKM   float64
-	Sort            activitiessvc.Sort
 }
 
 type Activities struct {
@@ -54,27 +52,22 @@ func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Ac
 
 func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 	switch req.Scope {
-	case activitiessvc.ScopeHome, activitiessvc.ScopeNearby, activitiessvc.ScopeMyCountry:
+	case activitiessvc.ScopeNearby, activitiessvc.ScopeAnywhere:
 	default:
 		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown scope %q", sharederrors.ErrInvalidInput, req.Scope)
 	}
 
+	if req.MaxDistanceKM < 0 {
+		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: max_distance_km must not be negative", sharederrors.ErrInvalidInput)
+	}
+
 	filter := activitiessvc.QueryFilter{
-		Scope:       req.Scope,
-		HomeCountry: req.HomeCountry,
-		Categories:  req.Categories,
-		MinRating:   req.MinRating,
-		Sort:        req.Sort,
+		Scope:      req.Scope,
+		Categories: req.Categories,
+		MinRating:  req.MinRating,
 	}
 
 	switch req.Scope {
-	case activitiessvc.ScopeHome:
-		if err := validatePoint(req.HomeLocation); err != nil {
-			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: home_location %s", sharederrors.ErrInvalidInput, err)
-		}
-		filter.HomeLocation = req.HomeLocation
-		filter.MaxDistanceKM = effectiveRadius(a.defaultRadiusKM, req.MaxDistanceKM)
-
 	case activitiessvc.ScopeNearby:
 		if err := validatePoint(req.CurrentLocation); err != nil {
 			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location %s", sharederrors.ErrInvalidInput, err)
@@ -82,12 +75,23 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 		filter.CurrentLocation = req.CurrentLocation
 		filter.MaxDistanceKM = effectiveRadius(a.defaultRadiusKM, req.MaxDistanceKM)
 
-	case activitiessvc.ScopeMyCountry:
-		if req.HomeCountry == "" {
-			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: home_country is required for scope my_country", sharederrors.ErrInvalidInput)
+	case activitiessvc.ScopeAnywhere:
+		// current_location is optional: device location denied/unavailable
+		// still yields broad, distance-unfiltered results (T2 contract).
+		if req.CurrentLocation != nil {
+			if err := validatePoint(req.CurrentLocation); err != nil {
+				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location %s", sharederrors.ErrInvalidInput, err)
+			}
+			filter.CurrentLocation = req.CurrentLocation
 		}
-		if req.MaxDistanceKM != 0 {
-			return activitiessvc.QueryFilter{}, fmt.Errorf("%w: max_distance_km is not supported for scope my_country", sharederrors.ErrInvalidInput)
+		if req.MaxDistanceKM > 0 {
+			if req.CurrentLocation == nil {
+				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location is required when max_distance_km is set for scope anywhere", sharederrors.ErrInvalidInput)
+			}
+			// Unlike ScopeNearby, not run through effectiveRadius: anywhere
+			// has no default radius to cap against, so any positive value
+			// passes straight through as the requested distance.
+			filter.MaxDistanceKM = req.MaxDistanceKM
 		}
 	}
 
@@ -98,15 +102,6 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 	}
 	if req.MinRating < 0 || req.MinRating > 5 {
 		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: min_rating must be between 0 and 5", sharederrors.ErrInvalidInput)
-	}
-	if req.MaxDistanceKM < 0 {
-		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: max_distance_km must not be negative", sharederrors.ErrInvalidInput)
-	}
-	if req.Sort != activitiessvc.SortUnspecified && !validSort(req.Sort) {
-		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: unknown sort %q", sharederrors.ErrInvalidInput, req.Sort)
-	}
-	if req.Sort == activitiessvc.SortTopRated && req.Scope != activitiessvc.ScopeMyCountry {
-		return activitiessvc.QueryFilter{}, fmt.Errorf("%w: sort=top_rated is only supported for scope my_country", sharederrors.ErrInvalidInput)
 	}
 
 	return filter, nil
@@ -146,8 +141,4 @@ func validCategory(c activitiessvc.Category) bool {
 		return true
 	}
 	return false
-}
-
-func validSort(s activitiessvc.Sort) bool {
-	return s == activitiessvc.SortTopRated
 }
