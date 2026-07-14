@@ -3,6 +3,7 @@ import type { ElementRef } from 'react';
 import {
   AccessibilityInfo,
   BackHandler,
+  FlatList,
   findNodeHandle,
   Pressable,
   ScrollView,
@@ -163,6 +164,17 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   const hasLocationAnchor = Boolean(selection.coordinates);
   const filtersFocus = useFocusable();
 
+  // T1: stable renderItem + keyExtractor so FlatList's cell renderer can skip
+  // re-invoking a row (and thus re-rendering its memoized ActivityCard) when
+  // unrelated screen state changes (filter sheet open, other rows selected).
+  const renderItem = useCallback(
+    ({ item }: { item: Activity }) => (
+      <ActivityCard activity={item} showDistance={hasLocationAnchor} onPress={() => setSelectedActivity(item)} />
+    ),
+    [hasLocationAnchor]
+  );
+  const keyExtractor = useCallback((item: Activity) => item.id, []);
+
   return (
     <View style={styles.container}>
       <SafeAreaView
@@ -214,26 +226,32 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
           )}
         </View>
 
-        <ScrollView contentContainerStyle={styles.list}>
-          {queryState.status === 'loading' &&
-            Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
+        {queryState.status === 'loaded' ? (
+          // T1: only the loaded-results case needs virtualization — an
+          // image-heavy list can grow large. Loading/empty/error render a
+          // handful of fixed elements, so a plain ScrollView below is plenty.
+          <FlatList
+            data={queryState.activities}
+            keyExtractor={keyExtractor}
+            renderItem={renderItem}
+            contentContainerStyle={styles.list}
+            removeClippedSubviews
+          />
+        ) : (
+          <ScrollView contentContainerStyle={styles.list}>
+            {queryState.status === 'loading' &&
+              Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
 
-          {queryState.status === 'loaded' &&
-            queryState.activities.map((activity) => (
-              <ActivityCard
-                key={activity.id}
-                activity={activity}
-                showDistance={hasLocationAnchor}
-                onPress={() => setSelectedActivity(activity)}
+            {queryState.status === 'empty' && (
+              <EmptyState
+                hasFilters={filterCount > 0}
+                onClearFilters={() => handleFiltersChange(defaultFilters(selection.scope))}
               />
-            ))}
+            )}
 
-          {queryState.status === 'empty' && (
-            <EmptyState hasFilters={filterCount > 0} onClearFilters={() => handleFiltersChange(defaultFilters(selection.scope))} />
-          )}
-
-          {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}
-        </ScrollView>
+            {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}
+          </ScrollView>
+        )}
 
         {/* Keyed on open/closed so each open is a fresh mount — the sheet reads
             `appliedFilters` as its initial draft once, rather than needing an
