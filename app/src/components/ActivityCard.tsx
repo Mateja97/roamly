@@ -5,7 +5,6 @@ import type { Activity } from '../api/activities';
 import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
-import { MapThumbnail } from './MapThumbnail';
 import { PhotoAttributionCaption } from './PhotoAttributionCaption';
 import { Skeleton } from './Skeleton';
 
@@ -21,7 +20,7 @@ type ActivityCardProps = {
 // DESIGN_STANDARDS.md's Activity card recipe: 3:2 image on top (reserved
 // box, loading/broken states), then a --surface body with category badge +
 // rating on row 1, title, an optional description snippet, an optional tags
-// row, and a location row (map thumbnail + distance/location text). No
+// row, and a location row (distance/location text). No
 // price/cost signage anywhere in the flow (T1); the price-tier field was
 // dropped from the client contract entirely (T2). The whole card is one tap
 // control (T1) — `onPress` opens the activity's detail screen; pressed/
@@ -111,12 +110,9 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
           </View>
         ) : null}
 
-        <View style={styles.locationRow}>
-          <MapThumbnail location={activity.location} />
-          <View style={styles.metaRow}>
-            <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-            <Text style={styles.metaText}>{metaText}</Text>
-          </View>
+        <View style={styles.metaRow}>
+          <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
+          <Text style={styles.metaText}>{metaText}</Text>
         </View>
       </View>
     </Pressable>
@@ -138,9 +134,7 @@ export function ActivityCardSkeleton() {
         <Skeleton width="80%" height={20} style={styles.skeletonLine} />
         <Skeleton width="100%" height={16} style={styles.skeletonLine} />
         <Skeleton width="70%" height={16} style={styles.skeletonLine} />
-        <View style={[styles.locationRow, styles.skeletonLine]}>
-          <Skeleton width={72} height={72} />
-        </View>
+        <Skeleton width="60%" height={16} style={styles.skeletonLine} />
       </View>
     </View>
   );
@@ -245,13 +239,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: colors.textMuted,
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-  },
   metaRow: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[1],
