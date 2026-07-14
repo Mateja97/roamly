@@ -10,13 +10,18 @@ import (
 )
 
 type fakeRepo struct {
-	got activitiessvc.QueryFilter
-	out []activitiessvc.Activity
+	got            activitiessvc.QueryFilter
+	out            []activitiessvc.Activity
+	citySuggestOut []activitiessvc.CitySuggestion
 }
 
 func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
 	f.got = filter
 	return f.out, nil
+}
+
+func (f *fakeRepo) SuggestCities(_ context.Context, _ string) ([]activitiessvc.CitySuggestion, error) {
+	return f.citySuggestOut, nil
 }
 
 func TestActivities_Query_Validation(t *testing.T) {
@@ -226,5 +231,46 @@ func TestActivities_Query_AnywhereNoDistanceCapWhenOmitted(t *testing.T) {
 	}
 	if repo.got.MaxDistanceKM != 0 {
 		t.Errorf("anywhere max_distance_km = %v, want 0 (no cap)", repo.got.MaxDistanceKM)
+	}
+}
+
+func TestActivities_SuggestCities(t *testing.T) {
+	tests := []struct {
+		name    string
+		query   string
+		repoOut []activitiessvc.CitySuggestion
+		wantLen int
+	}{
+		{
+			name:    "blank query short-circuits without hitting the repo",
+			query:   "   ",
+			repoOut: []activitiessvc.CitySuggestion{{City: "Barcelona"}},
+			wantLen: 0,
+		},
+		{
+			name:    "matching prefix passes repo results through",
+			query:   "Bar",
+			repoOut: []activitiessvc.CitySuggestion{{City: "Barcelona", Country: "Spain", Centroid: activitiessvc.Point{Lat: 41.4, Lng: 2.17}}},
+			wantLen: 1,
+		},
+		{
+			name:    "non-matching prefix returns empty, not an error",
+			query:   "Zzznope",
+			repoOut: nil,
+			wantLen: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{citySuggestOut: tt.repoOut}
+			svc := New(repo)
+			got, err := svc.SuggestCities(context.Background(), tt.query)
+			if err != nil {
+				t.Fatalf("SuggestCities() unexpected error: %v", err)
+			}
+			if len(got) != tt.wantLen {
+				t.Errorf("got %d suggestions, want %d", len(got), tt.wantLen)
+			}
+		})
 	}
 }

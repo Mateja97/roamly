@@ -515,6 +515,158 @@ func (x *QueryActivitiesResponse) GetActivities() []*Activity {
 	return nil
 }
 
+type SuggestCitiesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Free-text prefix, e.g. "Bar". Empty or non-matching yields an empty
+	// suggestions list, never an error.
+	Query         string `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuggestCitiesRequest) Reset() {
+	*x = SuggestCitiesRequest{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuggestCitiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuggestCitiesRequest) ProtoMessage() {}
+
+func (x *SuggestCitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuggestCitiesRequest.ProtoReflect.Descriptor instead.
+func (*SuggestCitiesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SuggestCitiesRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+type CitySuggestion struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	City    string                 `protobuf:"bytes,1,opt,name=city,proto3" json:"city,omitempty"`
+	Country string                 `protobuf:"bytes,2,opt,name=country,proto3" json:"country,omitempty"`
+	// Centroid of the city's activities, usable directly as a "cities" entry
+	// in a follow-up QueryActivitiesRequest.
+	Centroid      *Location `protobuf:"bytes,3,opt,name=centroid,proto3" json:"centroid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CitySuggestion) Reset() {
+	*x = CitySuggestion{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CitySuggestion) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CitySuggestion) ProtoMessage() {}
+
+func (x *CitySuggestion) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CitySuggestion.ProtoReflect.Descriptor instead.
+func (*CitySuggestion) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *CitySuggestion) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *CitySuggestion) GetCountry() string {
+	if x != nil {
+		return x.Country
+	}
+	return ""
+}
+
+func (x *CitySuggestion) GetCentroid() *Location {
+	if x != nil {
+		return x.Centroid
+	}
+	return nil
+}
+
+type SuggestCitiesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Suggestions   []*CitySuggestion      `protobuf:"bytes,1,rep,name=suggestions,proto3" json:"suggestions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SuggestCitiesResponse) Reset() {
+	*x = SuggestCitiesResponse{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SuggestCitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SuggestCitiesResponse) ProtoMessage() {}
+
+func (x *SuggestCitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SuggestCitiesResponse.ProtoReflect.Descriptor instead.
+func (*SuggestCitiesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SuggestCitiesResponse) GetSuggestions() []*CitySuggestion {
+	if x != nil {
+		return x.Suggestions
+	}
+	return nil
+}
+
 var File_proto_activities_v1_activities_proto protoreflect.FileDescriptor
 
 const file_proto_activities_v1_activities_proto_rawDesc = "" +
@@ -556,7 +708,15 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x17QueryActivitiesResponse\x127\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x17.activities.v1.ActivityR\n" +
-	"activities*s\n" +
+	"activities\",\n" +
+	"\x14SuggestCitiesRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\"s\n" +
+	"\x0eCitySuggestion\x12\x12\n" +
+	"\x04city\x18\x01 \x01(\tR\x04city\x12\x18\n" +
+	"\acountry\x18\x02 \x01(\tR\acountry\x123\n" +
+	"\bcentroid\x18\x03 \x01(\v2\x17.activities.v1.LocationR\bcentroid\"X\n" +
+	"\x15SuggestCitiesResponse\x12?\n" +
+	"\vsuggestions\x18\x01 \x03(\v2\x1d.activities.v1.CitySuggestionR\vsuggestions*s\n" +
 	"\x05Scope\x12\x15\n" +
 	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fSCOPE_NEARBY\x10\x02\x12\x12\n" +
@@ -569,9 +729,10 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x1cCATEGORY_NATURE_AND_OUTDOORS\x10\x03\x12\x1b\n" +
 	"\x17CATEGORY_ART_AND_DESIGN\x10\x04\x12\x13\n" +
 	"\x0fCATEGORY_SPORTS\x10\x05\x12'\n" +
-	"#CATEGORY_ENTERTAINMENT_AND_WELLNESS\x10\x062u\n" +
+	"#CATEGORY_ENTERTAINMENT_AND_WELLNESS\x10\x062\xd1\x01\n" +
 	"\x11ActivitiesService\x12`\n" +
-	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
+	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponse\x12Z\n" +
+	"\rSuggestCities\x12#.activities.v1.SuggestCitiesRequest\x1a$.activities.v1.SuggestCitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
 
 var (
 	file_proto_activities_v1_activities_proto_rawDescOnce sync.Once
@@ -586,7 +747,7 @@ func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(Scope)(0),                      // 0: activities.v1.Scope
 	(Category)(0),                   // 1: activities.v1.Category
@@ -595,23 +756,30 @@ var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(*QueryActivitiesRequest)(nil),  // 4: activities.v1.QueryActivitiesRequest
 	(*Activity)(nil),                // 5: activities.v1.Activity
 	(*QueryActivitiesResponse)(nil), // 6: activities.v1.QueryActivitiesResponse
+	(*SuggestCitiesRequest)(nil),    // 7: activities.v1.SuggestCitiesRequest
+	(*CitySuggestion)(nil),          // 8: activities.v1.CitySuggestion
+	(*SuggestCitiesResponse)(nil),   // 9: activities.v1.SuggestCitiesResponse
 }
 var file_proto_activities_v1_activities_proto_depIdxs = []int32{
-	0, // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
-	2, // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
-	1, // 2: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
-	2, // 3: activities.v1.QueryActivitiesRequest.cities:type_name -> activities.v1.Location
-	1, // 4: activities.v1.Activity.category:type_name -> activities.v1.Category
-	2, // 5: activities.v1.Activity.location:type_name -> activities.v1.Location
-	3, // 6: activities.v1.Activity.photos:type_name -> activities.v1.Photo
-	5, // 7: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
-	4, // 8: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	6, // 9: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	9, // [9:10] is the sub-list for method output_type
-	8, // [8:9] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
+	2,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
+	1,  // 2: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
+	2,  // 3: activities.v1.QueryActivitiesRequest.cities:type_name -> activities.v1.Location
+	1,  // 4: activities.v1.Activity.category:type_name -> activities.v1.Category
+	2,  // 5: activities.v1.Activity.location:type_name -> activities.v1.Location
+	3,  // 6: activities.v1.Activity.photos:type_name -> activities.v1.Photo
+	5,  // 7: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
+	2,  // 8: activities.v1.CitySuggestion.centroid:type_name -> activities.v1.Location
+	8,  // 9: activities.v1.SuggestCitiesResponse.suggestions:type_name -> activities.v1.CitySuggestion
+	4,  // 10: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	7,  // 11: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
+	6,  // 12: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	9,  // 13: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }
@@ -625,7 +793,7 @@ func file_proto_activities_v1_activities_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   5,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

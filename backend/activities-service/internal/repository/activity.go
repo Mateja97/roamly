@@ -127,6 +127,41 @@ func citiesDistanceFilter(where *[]string, arg func(any) string, cities []activi
 	return fmt.Sprintf("LEAST(%s)", strings.Join(distances, ", "))
 }
 
+// SuggestCities returns catalog cities whose name starts with prefix
+// (case-insensitive), each with the centroid of its activities. prefix is
+// assumed non-empty (the service layer short-circuits an empty query); %
+// and _ are escaped so they match literally rather than as SQL LIKE
+// wildcards.
+func (r *Activities) SuggestCities(ctx context.Context, prefix string) ([]activitiessvc.CitySuggestion, error) {
+	escaped := likeEscaper.Replace(prefix)
+	rows, err := r.db.Query(ctx, `
+		SELECT city, country, AVG(ST_Y(location::geometry)), AVG(ST_X(location::geometry))
+		FROM activities
+		WHERE city ILIKE $1 || '%' ESCAPE '\'
+		GROUP BY city, country
+		ORDER BY city ASC
+		LIMIT 10`, escaped)
+	if err != nil {
+		return nil, fmt.Errorf("querying city suggestions: %w", err)
+	}
+	defer rows.Close()
+
+	var out []activitiessvc.CitySuggestion
+	for rows.Next() {
+		var s activitiessvc.CitySuggestion
+		if err := rows.Scan(&s.City, &s.Country, &s.Centroid.Lat, &s.Centroid.Lng); err != nil {
+			return nil, fmt.Errorf("scanning city suggestion row: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating city suggestion rows: %w", err)
+	}
+	return out, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // Query runs the scoped, filtered activity search.
 func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
 	query, args, err := buildQuery(filter)

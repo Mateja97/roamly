@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ActivitiesService_QueryActivities_FullMethodName = "/activities.v1.ActivitiesService/QueryActivities"
+	ActivitiesService_SuggestCities_FullMethodName   = "/activities.v1.ActivitiesService/SuggestCities"
 )
 
 // ActivitiesServiceClient is the client API for ActivitiesService service.
@@ -31,6 +32,9 @@ const (
 // location context a scope needs on every request.
 type ActivitiesServiceClient interface {
 	QueryActivities(ctx context.Context, in *QueryActivitiesRequest, opts ...grpc.CallOption) (*QueryActivitiesResponse, error)
+	// SuggestCities powers the Anywhere city typeahead: a prefix match over
+	// the catalog's own cities (T1's city column), not a live geocoding call.
+	SuggestCities(ctx context.Context, in *SuggestCitiesRequest, opts ...grpc.CallOption) (*SuggestCitiesResponse, error)
 }
 
 type activitiesServiceClient struct {
@@ -51,6 +55,16 @@ func (c *activitiesServiceClient) QueryActivities(ctx context.Context, in *Query
 	return out, nil
 }
 
+func (c *activitiesServiceClient) SuggestCities(ctx context.Context, in *SuggestCitiesRequest, opts ...grpc.CallOption) (*SuggestCitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SuggestCitiesResponse)
+	err := c.cc.Invoke(ctx, ActivitiesService_SuggestCities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ActivitiesServiceServer is the server API for ActivitiesService service.
 // All implementations must embed UnimplementedActivitiesServiceServer
 // for forward compatibility.
@@ -60,6 +74,9 @@ func (c *activitiesServiceClient) QueryActivities(ctx context.Context, in *Query
 // location context a scope needs on every request.
 type ActivitiesServiceServer interface {
 	QueryActivities(context.Context, *QueryActivitiesRequest) (*QueryActivitiesResponse, error)
+	// SuggestCities powers the Anywhere city typeahead: a prefix match over
+	// the catalog's own cities (T1's city column), not a live geocoding call.
+	SuggestCities(context.Context, *SuggestCitiesRequest) (*SuggestCitiesResponse, error)
 	mustEmbedUnimplementedActivitiesServiceServer()
 }
 
@@ -72,6 +89,9 @@ type UnimplementedActivitiesServiceServer struct{}
 
 func (UnimplementedActivitiesServiceServer) QueryActivities(context.Context, *QueryActivitiesRequest) (*QueryActivitiesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryActivities not implemented")
+}
+func (UnimplementedActivitiesServiceServer) SuggestCities(context.Context, *SuggestCitiesRequest) (*SuggestCitiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SuggestCities not implemented")
 }
 func (UnimplementedActivitiesServiceServer) mustEmbedUnimplementedActivitiesServiceServer() {}
 func (UnimplementedActivitiesServiceServer) testEmbeddedByValue()                           {}
@@ -112,6 +132,24 @@ func _ActivitiesService_QueryActivities_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ActivitiesService_SuggestCities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SuggestCitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).SuggestCities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_SuggestCities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).SuggestCities(ctx, req.(*SuggestCitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ActivitiesService_ServiceDesc is the grpc.ServiceDesc for ActivitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -122,6 +160,10 @@ var ActivitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryActivities",
 			Handler:    _ActivitiesService_QueryActivities_Handler,
+		},
+		{
+			MethodName: "SuggestCities",
+			Handler:    _ActivitiesService_SuggestCities_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

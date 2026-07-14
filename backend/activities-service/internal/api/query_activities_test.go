@@ -25,11 +25,20 @@ type fakeQueryService struct {
 	out []activitiessvc.Activity
 	err error
 	got service.Request
+
+	citySuggestOut  []activitiessvc.CitySuggestion
+	citySuggestErr  error
+	gotCitySuggestQ string
 }
 
 func (f *fakeQueryService) Query(_ context.Context, req service.Request) ([]activitiessvc.Activity, error) {
 	f.got = req
 	return f.out, f.err
+}
+
+func (f *fakeQueryService) SuggestCities(_ context.Context, query string) ([]activitiessvc.CitySuggestion, error) {
+	f.gotCitySuggestQ = query
+	return f.citySuggestOut, f.citySuggestErr
 }
 
 func dialServer(t *testing.T, svc queryService) activitiesv1.ActivitiesServiceClient {
