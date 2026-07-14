@@ -60,6 +60,36 @@ func TestBuildQuery(t *testing.T) {
 			notWantSQL: []string{"ST_DWithin"},
 		},
 		{
+			name: "anywhere scope with cities unions ST_DWithin across each city and orders by distance",
+			filter: activitiessvc.QueryFilter{
+				Scope:         activitiessvc.ScopeAnywhere,
+				Cities:        []activitiessvc.Point{{Lat: 41.9, Lng: 12.5}, {Lat: 48.85, Lng: 2.35}},
+				MaxDistanceKM: 50,
+			},
+			wantSQL:  []string{"ST_DWithin(location", " OR ", "LEAST(", "ORDER BY distance_km ASC"},
+			wantArgs: []any{12.5, 41.9, 50.0 * 1000, 2.35, 48.85, 50.0 * 1000},
+		},
+		{
+			name: "anywhere scope with cities but no max_distance_km has no distance cap",
+			filter: activitiessvc.QueryFilter{
+				Scope:  activitiessvc.ScopeAnywhere,
+				Cities: []activitiessvc.Point{{Lat: 41.9, Lng: 12.5}},
+			},
+			wantSQL:    []string{"LEAST(", "ORDER BY distance_km ASC"},
+			notWantSQL: []string{"ST_DWithin"},
+		},
+		{
+			name: "anywhere scope with cities and current_location ignores current_location for filtering",
+			filter: activitiessvc.QueryFilter{
+				Scope:           activitiessvc.ScopeAnywhere,
+				CurrentLocation: &activitiessvc.Point{Lat: 44.8, Lng: 20.4},
+				Cities:          []activitiessvc.Point{{Lat: 41.9, Lng: 12.5}},
+				MaxDistanceKM:   50,
+			},
+			wantSQL:  []string{"ST_DWithin(location", "LEAST("},
+			wantArgs: []any{12.5, 41.9, 50.0 * 1000}, // only the city's coords/radius, not current_location
+		},
+		{
 			name: "unknown scope is an error",
 			filter: activitiessvc.QueryFilter{
 				Scope: activitiessvc.Scope("bogus"),

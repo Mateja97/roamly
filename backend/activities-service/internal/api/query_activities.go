@@ -56,9 +56,14 @@ func toServiceRequest(req *activitiesv1.QueryActivitiesRequest) service.Request 
 	for _, c := range req.GetCategories() {
 		categories = append(categories, toDomainCategory(c))
 	}
+	cities := make([]activitiessvc.Point, 0, len(req.GetCities()))
+	for _, c := range req.GetCities() {
+		cities = append(cities, activitiessvc.Point{Lat: c.GetLat(), Lng: c.GetLng()})
+	}
 	return service.Request{
 		Scope:           toDomainScope(req.GetScope()),
 		CurrentLocation: toDomainPoint(req.GetCurrentLocation()),
+		Cities:          cities,
 		Categories:      categories,
 		MinRating:       req.GetMinRating(),
 		MaxDistanceKM:   req.GetMaxDistanceKm(),

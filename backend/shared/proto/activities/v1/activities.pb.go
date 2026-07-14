@@ -263,12 +263,19 @@ type QueryActivitiesRequest struct {
 	// all in-scope activities.
 	Categories []Category `protobuf:"varint,5,rep,packed,name=categories,proto3,enum=activities.v1.Category" json:"categories,omitempty"` // OR within this field.
 	MinRating  float64    `protobuf:"fixed64,7,opt,name=min_rating,json=minRating,proto3" json:"min_rating,omitempty"`                    // 0 = no filter.
-	// Narrows results to within this radius of current_location.
-	// 0 = no filter (SCOPE_NEARBY still applies its configured default radius;
-	// SCOPE_ANYWHERE returns unfiltered by distance, i.e. "truly anywhere").
-	// Requires current_location to be set; SCOPE_ANYWHERE accepts any
-	// positive value (not capped to SCOPE_NEARBY's configured radius).
+	// Narrows results to within this radius of current_location, or (for
+	// SCOPE_ANYWHERE) of the nearest entry in cities. 0 = no filter
+	// (SCOPE_NEARBY still applies its configured default radius; SCOPE_ANYWHERE
+	// returns unfiltered by distance, i.e. "truly anywhere"). Requires
+	// current_location or a non-empty cities to be set; SCOPE_ANYWHERE accepts
+	// any positive value (not capped to SCOPE_NEARBY's configured radius).
 	MaxDistanceKm float64 `protobuf:"fixed64,8,opt,name=max_distance_km,json=maxDistanceKm,proto3" json:"max_distance_km,omitempty"`
+	// SCOPE_ANYWHERE only: zero or more city centroids (resolved client-side,
+	// e.g. from a typeahead) to anchor the search on instead of
+	// current_location. When set, results are the union of activities within
+	// max_distance_km of ANY listed city, and current_location is ignored for
+	// filtering purposes.
+	Cities        []*Location `protobuf:"bytes,10,rep,name=cities,proto3" json:"cities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -336,6 +343,13 @@ func (x *QueryActivitiesRequest) GetMaxDistanceKm() float64 {
 		return x.MaxDistanceKm
 	}
 	return 0
+}
+
+func (x *QueryActivitiesRequest) GetCities() []*Location {
+	if x != nil {
+		return x.Cities
+	}
+	return nil
 }
 
 type Activity struct {
@@ -513,7 +527,7 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x1f\n" +
 	"\vauthor_link\x18\x03 \x01(\tR\n" +
-	"authorLink\"\xc3\x02\n" +
+	"authorLink\"\xf4\x02\n" +
 	"\x16QueryActivitiesRequest\x12*\n" +
 	"\x05scope\x18\x01 \x01(\x0e2\x14.activities.v1.ScopeR\x05scope\x12B\n" +
 	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x127\n" +
@@ -522,7 +536,9 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"categories\x12\x1d\n" +
 	"\n" +
 	"min_rating\x18\a \x01(\x01R\tminRating\x12&\n" +
-	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKmJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12/\n" +
+	"\x06cities\x18\n" +
+	" \x03(\v2\x17.activities.v1.LocationR\x06citiesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
 	"R\rhome_locationR\fhome_countryR\x04sort\"\xd7\x02\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
@@ -584,17 +600,18 @@ var file_proto_activities_v1_activities_proto_depIdxs = []int32{
 	0, // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
 	2, // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
 	1, // 2: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
-	1, // 3: activities.v1.Activity.category:type_name -> activities.v1.Category
-	2, // 4: activities.v1.Activity.location:type_name -> activities.v1.Location
-	3, // 5: activities.v1.Activity.photos:type_name -> activities.v1.Photo
-	5, // 6: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
-	4, // 7: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	6, // 8: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	8, // [8:9] is the sub-list for method output_type
-	7, // [7:8] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	2, // 3: activities.v1.QueryActivitiesRequest.cities:type_name -> activities.v1.Location
+	1, // 4: activities.v1.Activity.category:type_name -> activities.v1.Category
+	2, // 5: activities.v1.Activity.location:type_name -> activities.v1.Location
+	3, // 6: activities.v1.Activity.photos:type_name -> activities.v1.Photo
+	5, // 7: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
+	4, // 8: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	6, // 9: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	9, // [9:10] is the sub-list for method output_type
+	8, // [8:9] is the sub-list for method input_type
+	8, // [8:8] is the sub-list for extension type_name
+	8, // [8:8] is the sub-list for extension extendee
+	0, // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }

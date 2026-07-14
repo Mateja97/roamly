@@ -90,6 +90,21 @@ func TestQueryActivitiesHandler_ForwardsAnywhereDistanceFilter(t *testing.T) {
 	}
 }
 
+func TestQueryActivitiesHandler_ForwardsAnywhereCities(t *testing.T) {
+	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
+	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doRequest(t, h, `{"scope":"anywhere","cities":[{"lat":41.9,"lng":12.5},{"lat":48.85,"lng":2.35}],"max_distance_km":50}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	gotCities := fake.got.GetCities()
+	if len(gotCities) != 2 || gotCities[0].GetLat() != 41.9 || gotCities[1].GetLng() != 2.35 {
+		t.Errorf("gRPC request cities = %v, want [{41.9,12.5},{48.85,2.35}]", gotCities)
+	}
+}
+
 func TestQueryActivitiesHandler_AnywhereWithoutLocationOrDistanceFilter(t *testing.T) {
 	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))

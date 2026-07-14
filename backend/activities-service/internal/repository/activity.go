@@ -43,10 +43,16 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		distanceExpr = pointDistanceFilter(&where, arg, filter.CurrentLocation, filter.MaxDistanceKM)
 		orderBy = "ORDER BY distance_km ASC"
 	case activitiessvc.ScopeAnywhere:
-		if filter.CurrentLocation != nil {
+		switch {
+		case len(filter.Cities) > 0:
+			// Cities take priority over current_location: a city-anchored
+			// search is independent of the user's own location.
+			distanceExpr = citiesDistanceFilter(&where, arg, filter.Cities, filter.MaxDistanceKM)
+			orderBy = "ORDER BY distance_km ASC"
+		case filter.CurrentLocation != nil:
 			distanceExpr = pointDistanceFilter(&where, arg, filter.CurrentLocation, filter.MaxDistanceKM)
 			orderBy = "ORDER BY distance_km ASC"
-		} else {
+		default:
 			orderBy = "ORDER BY title ASC" // no reference point: still deterministic
 		}
 	default:
@@ -95,6 +101,30 @@ func pointDistanceFilter(where *[]string, arg func(any) string, loc *activitiess
 		*where = append(*where, fmt.Sprintf("ST_DWithin(location, %s, %s)", point, radiusArg))
 	}
 	return fmt.Sprintf("ST_Distance(location, %s) / 1000.0", point)
+}
+
+// citiesDistanceFilter anchors the query on the union of cities: it appends
+// an OR'd ST_DWithin clause per city when maxKM is a positive limit, and
+// always returns a LEAST() expression over each city's ST_Distance for the
+// distance_km output column (the minimum distance to any selected city) and
+// closest-first ordering.
+func citiesDistanceFilter(where *[]string, arg func(any) string, cities []activitiessvc.Point, maxKM float64) string {
+	distances := make([]string, len(cities))
+	radii := make([]string, len(cities))
+	for i, c := range cities {
+		lngArg := arg(c.Lng)
+		latArg := arg(c.Lat)
+		point := fmt.Sprintf("ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography", lngArg, latArg)
+		distances[i] = fmt.Sprintf("ST_Distance(location, %s) / 1000.0", point)
+		if maxKM > 0 {
+			radiusArg := arg(maxKM * 1000) // meters
+			radii[i] = fmt.Sprintf("ST_DWithin(location, %s, %s)", point, radiusArg)
+		}
+	}
+	if maxKM > 0 {
+		*where = append(*where, "("+strings.Join(radii, " OR ")+")")
+	}
+	return fmt.Sprintf("LEAST(%s)", strings.Join(distances, ", "))
 }
 
 // Query runs the scoped, filtered activity search.

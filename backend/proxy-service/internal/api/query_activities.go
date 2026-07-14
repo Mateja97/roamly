@@ -53,11 +53,17 @@ type queryActivitiesRequestDTO struct {
 	CurrentLocation *locationDTO `json:"current_location,omitempty"`
 	Categories      []string     `json:"categories,omitempty"`
 	MinRating       float64      `json:"min_rating,omitempty"`
-	// Narrows results to within this distance of current_location. 0 = no
-	// cap ("anywhere" at the top of the distance slider). Requires
-	// current_location to be set; scope "anywhere" accepts any positive
-	// value (not capped to "nearby"'s configured radius).
+	// Narrows results to within this distance of current_location, or (for
+	// scope "anywhere") of the nearest entry in cities. 0 = no cap
+	// ("anywhere" at the top of the distance slider). Requires
+	// current_location or a non-empty cities to be set; scope "anywhere"
+	// accepts any positive value (not capped to "nearby"'s configured
+	// radius).
 	MaxDistanceKM float64 `json:"max_distance_km,omitempty"`
+	// Scope "anywhere" only: zero or more city centroids to anchor the
+	// search on instead of current_location. When set, takes priority over
+	// current_location for distance filtering (union of any-city radius).
+	Cities []locationDTO `json:"cities,omitempty"`
 }
 
 // attributionDTO is Google's mandatory author attribution for a Places
@@ -117,12 +123,18 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		categories = append(categories, cat)
 	}
 
+	cities := make([]*activitiesv1.Location, len(reqDTO.Cities))
+	for i, c := range reqDTO.Cities {
+		cities[i] = &activitiesv1.Location{Lat: c.Lat, Lng: c.Lng}
+	}
+
 	grpcReq := &activitiesv1.QueryActivitiesRequest{
 		Scope:           scope,
 		CurrentLocation: toProtoLocation(reqDTO.CurrentLocation),
 		Categories:      categories,
 		MinRating:       reqDTO.MinRating,
 		MaxDistanceKm:   reqDTO.MaxDistanceKM,
+		Cities:          cities,
 	}
 
 	resp, err := h.client.QueryActivities(r.Context(), grpcReq)

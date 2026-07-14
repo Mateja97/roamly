@@ -57,10 +57,13 @@ type Activity struct {
 
 // QueryFilter is the validated, scope-resolved query the service layer
 // passes to the repository. CurrentLocation is nil when not supplied
-// (ScopeAnywhere only — ScopeNearby always requires it).
+// (ScopeAnywhere only — ScopeNearby always requires it). Cities is
+// ScopeAnywhere-only: when non-empty it takes priority over CurrentLocation
+// for distance filtering (union of radius-from-any-city).
 type QueryFilter struct {
 	Scope           Scope
 	CurrentLocation *Point
+	Cities          []Point
 
 	Categories    []Category // empty = no category filter
 	MinRating     float64    // 0 = no filter
