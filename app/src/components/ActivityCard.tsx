@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
@@ -26,7 +26,10 @@ type ActivityCardProps = {
 // control (T1) — `onPress` opens the activity's detail screen; pressed/
 // focused states swap the card bg / add a focus border per the
 // interactive-states addendum in DESIGN_STANDARDS.md's card recipe.
-export function ActivityCard({ activity, showDistance, onPress }: ActivityCardProps) {
+// T1: memoized so a FlatList row only re-renders when its own props change —
+// unrelated screen state (filter sheet open, other rows) no longer forces a
+// re-render of every card.
+export const ActivityCard = memo(function ActivityCard({ activity, showDistance, onPress }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');
   const focus = useFocusable();
   const photo = activity.image_refs[0];
@@ -117,7 +120,7 @@ export function ActivityCard({ activity, showDistance, onPress }: ActivityCardPr
       </View>
     </Pressable>
   );
-}
+});
 
 // Same footprint as the loaded card — zero jump when real cards arrive.
 export function ActivityCardSkeleton() {
