@@ -25,27 +25,25 @@ type Scope int32
 
 const (
 	Scope_SCOPE_UNSPECIFIED Scope = 0
-	// Activities within the service's configured radius of home_location.
-	Scope_SCOPE_HOME Scope = 1
 	// Activities within the service's configured radius of current_location.
 	Scope_SCOPE_NEARBY Scope = 2
-	// Activities whose country differs from home_country.
-	Scope_SCOPE_OUTSIDE_COUNTRY Scope = 3
+	// Broad exploration anchored to current_location when supplied. With
+	// max_distance_km set, narrows to that radius; otherwise unfiltered by
+	// distance ("truly anywhere").
+	Scope_SCOPE_ANYWHERE Scope = 4
 )
 
 // Enum value maps for Scope.
 var (
 	Scope_name = map[int32]string{
 		0: "SCOPE_UNSPECIFIED",
-		1: "SCOPE_HOME",
 		2: "SCOPE_NEARBY",
-		3: "SCOPE_OUTSIDE_COUNTRY",
+		4: "SCOPE_ANYWHERE",
 	}
 	Scope_value = map[string]int32{
-		"SCOPE_UNSPECIFIED":     0,
-		"SCOPE_HOME":            1,
-		"SCOPE_NEARBY":          2,
-		"SCOPE_OUTSIDE_COUNTRY": 3,
+		"SCOPE_UNSPECIFIED": 0,
+		"SCOPE_NEARBY":      2,
+		"SCOPE_ANYWHERE":    4,
 	}
 )
 
@@ -135,54 +133,6 @@ func (x Category) Number() protoreflect.EnumNumber {
 // Deprecated: Use Category.Descriptor instead.
 func (Category) EnumDescriptor() ([]byte, []int) {
 	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{1}
-}
-
-type Sort int32
-
-const (
-	Sort_SORT_UNSPECIFIED Sort = 0
-	// Highest rating first, deterministic tie-break by title. The accepted
-	// "top activities" MVP ranking; only valid for SCOPE_OUTSIDE_COUNTRY.
-	Sort_SORT_TOP_RATED Sort = 1
-)
-
-// Enum value maps for Sort.
-var (
-	Sort_name = map[int32]string{
-		0: "SORT_UNSPECIFIED",
-		1: "SORT_TOP_RATED",
-	}
-	Sort_value = map[string]int32{
-		"SORT_UNSPECIFIED": 0,
-		"SORT_TOP_RATED":   1,
-	}
-)
-
-func (x Sort) Enum() *Sort {
-	p := new(Sort)
-	*p = x
-	return p
-}
-
-func (x Sort) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (Sort) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_activities_v1_activities_proto_enumTypes[2].Descriptor()
-}
-
-func (Sort) Type() protoreflect.EnumType {
-	return &file_proto_activities_v1_activities_proto_enumTypes[2]
-}
-
-func (x Sort) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use Sort.Descriptor instead.
-func (Sort) EnumDescriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
 }
 
 type Location struct {
@@ -306,24 +256,19 @@ func (x *Photo) GetAuthorLink() string {
 type QueryActivitiesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Scope Scope                  `protobuf:"varint,1,opt,name=scope,proto3,enum=activities.v1.Scope" json:"scope,omitempty"`
-	// Required when scope == SCOPE_NEARBY.
+	// Required when scope == SCOPE_NEARBY. Optional for SCOPE_ANYWHERE: when
+	// absent, anywhere returns broadly with no distance filter.
 	CurrentLocation *Location `protobuf:"bytes,2,opt,name=current_location,json=currentLocation,proto3" json:"current_location,omitempty"`
-	// Required when scope == SCOPE_HOME.
-	HomeLocation *Location `protobuf:"bytes,3,opt,name=home_location,json=homeLocation,proto3" json:"home_location,omitempty"`
-	// Required when scope == SCOPE_OUTSIDE_COUNTRY.
-	HomeCountry string `protobuf:"bytes,4,opt,name=home_country,json=homeCountry,proto3" json:"home_country,omitempty"`
 	// Filters, all optional, combined as AND. An unfiltered request returns
 	// all in-scope activities.
 	Categories []Category `protobuf:"varint,5,rep,packed,name=categories,proto3,enum=activities.v1.Category" json:"categories,omitempty"` // OR within this field.
 	MinRating  float64    `protobuf:"fixed64,7,opt,name=min_rating,json=minRating,proto3" json:"min_rating,omitempty"`                    // 0 = no filter.
-	// Further narrows the scope radius (SCOPE_HOME / SCOPE_NEARBY only).
-	// 0 = no filter. Setting it for SCOPE_OUTSIDE_COUNTRY is a validation error.
+	// Narrows results to within this radius of current_location.
+	// 0 = no filter (SCOPE_NEARBY still applies its configured default radius;
+	// SCOPE_ANYWHERE returns unfiltered by distance, i.e. "truly anywhere").
+	// Requires current_location to be set; SCOPE_ANYWHERE accepts any
+	// positive value (not capped to SCOPE_NEARBY's configured radius).
 	MaxDistanceKm float64 `protobuf:"fixed64,8,opt,name=max_distance_km,json=maxDistanceKm,proto3" json:"max_distance_km,omitempty"`
-	// Requests a specific result ordering. SORT_UNSPECIFIED = no explicit
-	// ordering requested. SORT_TOP_RATED is only valid for
-	// SCOPE_OUTSIDE_COUNTRY; setting it for SCOPE_HOME/SCOPE_NEARBY is a
-	// validation error.
-	Sort          Sort `protobuf:"varint,9,opt,name=sort,proto3,enum=activities.v1.Sort" json:"sort,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -372,20 +317,6 @@ func (x *QueryActivitiesRequest) GetCurrentLocation() *Location {
 	return nil
 }
 
-func (x *QueryActivitiesRequest) GetHomeLocation() *Location {
-	if x != nil {
-		return x.HomeLocation
-	}
-	return nil
-}
-
-func (x *QueryActivitiesRequest) GetHomeCountry() string {
-	if x != nil {
-		return x.HomeCountry
-	}
-	return ""
-}
-
 func (x *QueryActivitiesRequest) GetCategories() []Category {
 	if x != nil {
 		return x.Categories
@@ -407,13 +338,6 @@ func (x *QueryActivitiesRequest) GetMaxDistanceKm() float64 {
 	return 0
 }
 
-func (x *QueryActivitiesRequest) GetSort() Sort {
-	if x != nil {
-		return x.Sort
-	}
-	return Sort_SORT_UNSPECIFIED
-}
-
 type Activity struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -425,8 +349,9 @@ type Activity struct {
 	Rating      float64                `protobuf:"fixed64,8,opt,name=rating,proto3" json:"rating,omitempty"`
 	Photos      []*Photo               `protobuf:"bytes,9,rep,name=photos,proto3" json:"photos,omitempty"`
 	Tags        []string               `protobuf:"bytes,10,rep,name=tags,proto3" json:"tags,omitempty"`
-	// Distance from the request's reference location, in kilometers.
-	// Only populated for SCOPE_HOME / SCOPE_NEARBY; 0 otherwise.
+	// Distance from the request's reference location, in kilometers. Only
+	// populated when the request scope had a reference point (SCOPE_NEARBY
+	// always; SCOPE_ANYWHERE when current_location was supplied); 0 otherwise.
 	DistanceKm    float64 `protobuf:"fixed64,11,opt,name=distance_km,json=distanceKm,proto3" json:"distance_km,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -588,19 +513,17 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x1f\n" +
 	"\vauthor_link\x18\x03 \x01(\tR\n" +
-	"authorLink\"\x98\x03\n" +
+	"authorLink\"\xc3\x02\n" +
 	"\x16QueryActivitiesRequest\x12*\n" +
 	"\x05scope\x18\x01 \x01(\x0e2\x14.activities.v1.ScopeR\x05scope\x12B\n" +
-	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x12<\n" +
-	"\rhome_location\x18\x03 \x01(\v2\x17.activities.v1.LocationR\fhomeLocation\x12!\n" +
-	"\fhome_country\x18\x04 \x01(\tR\vhomeCountry\x127\n" +
+	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x127\n" +
 	"\n" +
 	"categories\x18\x05 \x03(\x0e2\x17.activities.v1.CategoryR\n" +
 	"categories\x12\x1d\n" +
 	"\n" +
 	"min_rating\x18\a \x01(\x01R\tminRating\x12&\n" +
-	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12'\n" +
-	"\x04sort\x18\t \x01(\x0e2\x13.activities.v1.SortR\x04sortJ\x04\b\x06\x10\a\"\xd7\x02\n" +
+	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKmJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"R\rhome_locationR\fhome_countryR\x04sort\"\xd7\x02\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -617,13 +540,12 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x17QueryActivitiesResponse\x127\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x17.activities.v1.ActivityR\n" +
-	"activities*[\n" +
+	"activities*s\n" +
 	"\x05Scope\x12\x15\n" +
-	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\x0e\n" +
-	"\n" +
-	"SCOPE_HOME\x10\x01\x12\x10\n" +
-	"\fSCOPE_NEARBY\x10\x02\x12\x19\n" +
-	"\x15SCOPE_OUTSIDE_COUNTRY\x10\x03*\xe0\x01\n" +
+	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\x10\n" +
+	"\fSCOPE_NEARBY\x10\x02\x12\x12\n" +
+	"\x0eSCOPE_ANYWHERE\x10\x04\"\x04\b\x01\x10\x01\"\x04\b\x03\x10\x03*\n" +
+	"SCOPE_HOME*\x15SCOPE_OUTSIDE_COUNTRY*\xe0\x01\n" +
 	"\bCategory\x12\x18\n" +
 	"\x14CATEGORY_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17CATEGORY_FOOD_AND_DRINK\x10\x01\x12 \n" +
@@ -631,10 +553,7 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x1cCATEGORY_NATURE_AND_OUTDOORS\x10\x03\x12\x1b\n" +
 	"\x17CATEGORY_ART_AND_DESIGN\x10\x04\x12\x13\n" +
 	"\x0fCATEGORY_SPORTS\x10\x05\x12'\n" +
-	"#CATEGORY_ENTERTAINMENT_AND_WELLNESS\x10\x06*0\n" +
-	"\x04Sort\x12\x14\n" +
-	"\x10SORT_UNSPECIFIED\x10\x00\x12\x12\n" +
-	"\x0eSORT_TOP_RATED\x10\x012u\n" +
+	"#CATEGORY_ENTERTAINMENT_AND_WELLNESS\x10\x062u\n" +
 	"\x11ActivitiesService\x12`\n" +
 	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
 
@@ -650,35 +569,32 @@ func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
 	return file_proto_activities_v1_activities_proto_rawDescData
 }
 
-var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(Scope)(0),                      // 0: activities.v1.Scope
 	(Category)(0),                   // 1: activities.v1.Category
-	(Sort)(0),                       // 2: activities.v1.Sort
-	(*Location)(nil),                // 3: activities.v1.Location
-	(*Photo)(nil),                   // 4: activities.v1.Photo
-	(*QueryActivitiesRequest)(nil),  // 5: activities.v1.QueryActivitiesRequest
-	(*Activity)(nil),                // 6: activities.v1.Activity
-	(*QueryActivitiesResponse)(nil), // 7: activities.v1.QueryActivitiesResponse
+	(*Location)(nil),                // 2: activities.v1.Location
+	(*Photo)(nil),                   // 3: activities.v1.Photo
+	(*QueryActivitiesRequest)(nil),  // 4: activities.v1.QueryActivitiesRequest
+	(*Activity)(nil),                // 5: activities.v1.Activity
+	(*QueryActivitiesResponse)(nil), // 6: activities.v1.QueryActivitiesResponse
 }
 var file_proto_activities_v1_activities_proto_depIdxs = []int32{
-	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
-	3,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
-	3,  // 2: activities.v1.QueryActivitiesRequest.home_location:type_name -> activities.v1.Location
-	1,  // 3: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
-	2,  // 4: activities.v1.QueryActivitiesRequest.sort:type_name -> activities.v1.Sort
-	1,  // 5: activities.v1.Activity.category:type_name -> activities.v1.Category
-	3,  // 6: activities.v1.Activity.location:type_name -> activities.v1.Location
-	4,  // 7: activities.v1.Activity.photos:type_name -> activities.v1.Photo
-	6,  // 8: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
-	5,  // 9: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	7,  // 10: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	10, // [10:11] is the sub-list for method output_type
-	9,  // [9:10] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	0, // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
+	2, // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
+	1, // 2: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
+	1, // 3: activities.v1.Activity.category:type_name -> activities.v1.Category
+	2, // 4: activities.v1.Activity.location:type_name -> activities.v1.Location
+	3, // 5: activities.v1.Activity.photos:type_name -> activities.v1.Photo
+	5, // 6: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
+	4, // 7: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	6, // 8: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	8, // [8:9] is the sub-list for method output_type
+	7, // [7:8] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }
@@ -691,7 +607,7 @@ func file_proto_activities_v1_activities_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
-			NumEnums:      3,
+			NumEnums:      2,
 			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,

@@ -13,12 +13,14 @@ service ActivitiesService {
 
 enum Scope {
   SCOPE_UNSPECIFIED = 0;
-  // Activities within the service's configured radius of home_location.
-  SCOPE_HOME = 1;
+  reserved 1, 3; // formerly SCOPE_HOME, SCOPE_OUTSIDE_COUNTRY; retired.
+  reserved "SCOPE_HOME", "SCOPE_OUTSIDE_COUNTRY";
   // Activities within the service's configured radius of current_location.
   SCOPE_NEARBY = 2;
-  // Activities whose country differs from home_country.
-  SCOPE_OUTSIDE_COUNTRY = 3;
+  // Broad exploration anchored to current_location when supplied. With
+  // max_distance_km set, narrows to that radius; otherwise unfiltered by
+  // distance ("truly anywhere").
+  SCOPE_ANYWHERE = 4;
 }
 
 enum Category {
@@ -29,13 +31,6 @@ enum Category {
   CATEGORY_ART_AND_DESIGN = 4;
   CATEGORY_SPORTS = 5;
   CATEGORY_ENTERTAINMENT_AND_WELLNESS = 6;
-}
-
-enum Sort {
-  SORT_UNSPECIFIED = 0;
-  // Highest rating first, deterministic tie-break by title. The accepted
-  // "top activities" MVP ranking; only valid for SCOPE_OUTSIDE_COUNTRY.
-  SORT_TOP_RATED = 1;
 }
 
 message Location {
@@ -56,30 +51,27 @@ message Photo {
 }
 
 message QueryActivitiesRequest {
-  reserved 6; // formerly a filter field, dropped as dead product surface.
+  reserved 3, 4, 6, 9; // formerly home_location, home_country, a dropped
+  // filter field, and sort — all dead product surface after the two-scope
+  // (nearby/anywhere) collapse.
+  reserved "home_location", "home_country", "sort";
 
   Scope scope = 1;
 
-  // Required when scope == SCOPE_NEARBY.
+  // Required when scope == SCOPE_NEARBY. Optional for SCOPE_ANYWHERE: when
+  // absent, anywhere returns broadly with no distance filter.
   Location current_location = 2;
-  // Required when scope == SCOPE_HOME.
-  Location home_location = 3;
-  // Required when scope == SCOPE_OUTSIDE_COUNTRY.
-  string home_country = 4;
 
   // Filters, all optional, combined as AND. An unfiltered request returns
   // all in-scope activities.
   repeated Category categories = 5; // OR within this field.
   double min_rating = 7;            // 0 = no filter.
-  // Further narrows the scope radius (SCOPE_HOME / SCOPE_NEARBY only).
-  // 0 = no filter. Setting it for SCOPE_OUTSIDE_COUNTRY is a validation error.
+  // Narrows results to within this radius of current_location.
+  // 0 = no filter (SCOPE_NEARBY still applies its configured default radius;
+  // SCOPE_ANYWHERE returns unfiltered by distance, i.e. "truly anywhere").
+  // Requires current_location to be set; SCOPE_ANYWHERE accepts any
+  // positive value (not capped to SCOPE_NEARBY's configured radius).
   double max_distance_km = 8;
-
-  // Requests a specific result ordering. SORT_UNSPECIFIED = no explicit
-  // ordering requested. SORT_TOP_RATED is only valid for
-  // SCOPE_OUTSIDE_COUNTRY; setting it for SCOPE_HOME/SCOPE_NEARBY is a
-  // validation error.
-  Sort sort = 9;
 }
 
 message Activity {
@@ -94,8 +86,9 @@ message Activity {
   double rating = 8;
   repeated Photo photos = 9;
   repeated string tags = 10;
-  // Distance from the request's reference location, in kilometers.
-  // Only populated for SCOPE_HOME / SCOPE_NEARBY; 0 otherwise.
+  // Distance from the request's reference location, in kilometers. Only
+  // populated when the request scope had a reference point (SCOPE_NEARBY
+  // always; SCOPE_ANYWHERE when current_location was supplied); 0 otherwise.
   double distance_km = 11;
 }
 

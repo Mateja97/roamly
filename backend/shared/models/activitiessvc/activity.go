@@ -7,9 +7,8 @@ package activitiessvc
 type Scope string
 
 const (
-	ScopeHome      Scope = "home"
-	ScopeNearby    Scope = "nearby"
-	ScopeMyCountry Scope = "my_country"
+	ScopeNearby   Scope = "nearby"
+	ScopeAnywhere Scope = "anywhere"
 )
 
 type Category string
@@ -21,16 +20,6 @@ const (
 	CategoryArtAndDesign             Category = "art_and_design"
 	CategorySports                   Category = "sports"
 	CategoryEntertainmentAndWellness Category = "entertainment_and_wellness"
-)
-
-// Sort requests a specific result ordering. SortTopRated is only valid for
-// ScopeMyCountry: the accepted "top activities" MVP is rating
-// descending, deterministic tie-break by title.
-type Sort string
-
-const (
-	SortUnspecified Sort = ""
-	SortTopRated    Sort = "top_rated"
 )
 
 // Point is a WGS84 coordinate pair.
@@ -51,7 +40,8 @@ type Photo struct {
 }
 
 // Activity is the activities table row, plus a server-computed DistanceKM
-// that is only meaningful for the SCOPE_HOME / SCOPE_NEARBY scopes.
+// that is only meaningful when the query had a reference point (ScopeNearby
+// always; ScopeAnywhere when CurrentLocation was supplied).
 type Activity struct {
 	ID          string
 	Title       string
@@ -66,16 +56,13 @@ type Activity struct {
 }
 
 // QueryFilter is the validated, scope-resolved query the service layer
-// passes to the repository. CurrentLocation/HomeLocation are nil when not
-// supplied/not relevant to Scope.
+// passes to the repository. CurrentLocation is nil when not supplied
+// (ScopeAnywhere only — ScopeNearby always requires it).
 type QueryFilter struct {
 	Scope           Scope
 	CurrentLocation *Point
-	HomeLocation    *Point
-	HomeCountry     string
 
 	Categories    []Category // empty = no category filter
 	MinRating     float64    // 0 = no filter
-	MaxDistanceKM float64    // 0 = no filter; HOME/NEARBY scopes only
-	Sort          Sort       // SortUnspecified = no explicit ordering requested
+	MaxDistanceKM float64    // 0 = no filter (no distance cap)
 }
