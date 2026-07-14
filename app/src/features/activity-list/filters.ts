@@ -1,16 +1,37 @@
 import type { ActivitiesQueryRequest, Location } from '../../api/activities';
 import type { Category, Filters, RatingOption } from './types';
-import type { ScopeSelection } from '../scope-picker/types';
+import type { Scope, ScopeSelection } from '../scope-picker/types';
 
-// T3: continuous slider range, 1km up to today's fixed-chip ceiling.
+// Nearby's continuous slider range — unchanged by T2.
 export const MIN_DISTANCE_KM = 1;
 export const MAX_DISTANCE_KM = 50;
 
-export const EMPTY_FILTERS: Filters = {
-  categories: [],
-  minRating: null,
-  maxDistanceKm: MAX_DISTANCE_KM,
-};
+// Anywhere's wider, design-tuned range (product-tasks.md: "behavior is
+// fixed, not the exact numbers"). The slider's true top position is one
+// step past MAX_DISTANCE_KM_ANYWHERE — a dedicated "No limit" stop, not
+// itself a distance value — see ANYWHERE_NO_LIMIT_SLIDER_VALUE below.
+export const MIN_DISTANCE_KM_ANYWHERE = 100;
+export const MAX_DISTANCE_KM_ANYWHERE = 2000;
+export const ANYWHERE_DISTANCE_STEP_KM = 100;
+// Slider-control-only sentinel (never sent to the API): the position past
+// the numeric ceiling that maps to Filters.maxDistanceKm = null ("no limit").
+export const ANYWHERE_NO_LIMIT_SLIDER_VALUE = MAX_DISTANCE_KM_ANYWHERE + ANYWHERE_DISTANCE_STEP_KM;
+
+// `maxDistanceKm: null` means "no limit" — only reachable for `anywhere`
+// (Nearby's slider has no such stop, always a 1-50 number). Widest/default
+// per scope, so a filter's first load never narrows results the user
+// hasn't asked to narrow (Slider recipe's "pinned at max" rule).
+export function defaultFilters(scope: Scope): Filters {
+  return {
+    categories: [],
+    minRating: null,
+    maxDistanceKm: scope === 'nearby' ? MAX_DISTANCE_KM : null,
+  };
+}
+
+// Kept for existing nearby-shaped callers/tests — equivalent to
+// defaultFilters('nearby').
+export const EMPTY_FILTERS: Filters = defaultFilters('nearby');
 
 export const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
   { value: 'food_and_drink', label: 'Food & Drink' },
@@ -33,11 +54,18 @@ export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: 4.8, label: '4.8+' },
 ];
 
-export function activeFilterCount(filters: Filters): number {
+// A scope's "widest" distance value — the same value defaultFilters uses —
+// is what "narrowed" is measured against, and what removing the distance
+// chip resets back to.
+function widestDistanceKm(scope: Scope): number | null {
+  return defaultFilters(scope).maxDistanceKm;
+}
+
+export function activeFilterCount(filters: Filters, scope: Scope): number {
   return (
     filters.categories.length +
     (filters.minRating !== null ? 1 : 0) +
-    (filters.maxDistanceKm < MAX_DISTANCE_KM ? 1 : 0)
+    (filters.maxDistanceKm !== widestDistanceKm(scope) ? 1 : 0)
   );
 }
 
@@ -45,7 +73,7 @@ export type FilterChipData = { key: string; label: string; remove: () => Filters
 
 // One removable chip per active filter value — categories get one chip each,
 // the other groups (single-select) get at most one.
-export function filterChips(filters: Filters): FilterChipData[] {
+export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
   const chips: FilterChipData[] = filters.categories.map((category) => ({
     key: `category:${category}`,
     label: CATEGORY_LABELS[category],
@@ -59,46 +87,39 @@ export function filterChips(filters: Filters): FilterChipData[] {
       remove: () => ({ ...filters, minRating: null }),
     });
   }
-  // Only a narrowing (< the widest/default) counts as an active, removable
-  // filter — mirrors the old "Any = no chip" semantics for the continuous
-  // control (see design-spec.md's T3 section).
-  if (filters.maxDistanceKm < MAX_DISTANCE_KM) {
+  // Only a narrowing (away from the scope's widest/default) counts as an
+  // active, removable filter.
+  if (filters.maxDistanceKm !== widestDistanceKm(scope)) {
     chips.push({
       key: 'max-distance',
       label: `≤ ${filters.maxDistanceKm} km`,
-      remove: () => ({ ...filters, maxDistanceKm: MAX_DISTANCE_KM }),
+      remove: () => ({ ...filters, maxDistanceKm: widestDistanceKm(scope) }),
     });
   }
 
   return chips;
 }
 
-// Builds the T2 proxy request body from the current scope/coordinates plus
-// the applied filters. `max_distance_km` only applies to home/nearby per T2's
-// contract (an error if sent with my_country), so it's omitted there —
-// including at the slider's default/ceiling value, which reproduces today's
-// widest breadth rather than actually narrowing anything.
-// `home_location`/`home_country` come from the place confirmed via T4's
-// Location screen (App.tsx populates them before reaching this screen) —
-// no hardcoded fallback here anymore.
+// Builds the proxy request body from the current scope/coordinates plus the
+// applied filters. `current_location` travels for either scope whenever a
+// device-location anchor was resolved (always for nearby; only when
+// granted, for anywhere). `max_distance_km` is sent for nearby unconditionally
+// (its slider always has a numeric value), and for anywhere only when the
+// user narrowed below the "no limit" top stop AND an anchor exists — sending
+// it without an anchor is a contract violation T1 rejects.
 export function buildActivitiesRequest(selection: ScopeSelection, filters: Filters): ActivitiesQueryRequest {
   const request: ActivitiesQueryRequest = { scope: selection.scope };
 
-  if (selection.scope === 'nearby' && selection.coordinates) {
+  if (selection.coordinates) {
     request.current_location = toLocation(selection.coordinates);
-  } else if (selection.scope === 'home' && selection.homeLocation) {
-    request.home_location = selection.homeLocation;
-  } else if (selection.scope === 'my_country' && selection.homeCountry) {
-    request.home_country = selection.homeCountry;
-    // T5's rating-descending ranking — requested only for my_country;
-    // the server rejects it for home/nearby, and results render server-order
-    // with no client re-sort (T6 out of scope).
-    request.sort = 'top_rated';
   }
 
   if (filters.categories.length > 0) request.categories = filters.categories;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
-  if (selection.scope !== 'my_country') {
+
+  if (selection.scope === 'nearby') {
+    request.max_distance_km = filters.maxDistanceKm ?? MAX_DISTANCE_KM;
+  } else if (selection.coordinates && filters.maxDistanceKm !== null) {
     request.max_distance_km = filters.maxDistanceKm;
   }
 
@@ -109,8 +130,7 @@ function toLocation(coordinates: { latitude: number; longitude: number }): Locat
   return { lat: coordinates.latitude, lng: coordinates.longitude };
 }
 
-export const SCOPE_TITLES: Record<ScopeSelection['scope'], string> = {
-  home: 'Home',
+export const SCOPE_TITLES: Record<Scope, string> = {
   nearby: 'Nearby',
-  my_country: 'My country',
+  anywhere: 'Anywhere',
 };

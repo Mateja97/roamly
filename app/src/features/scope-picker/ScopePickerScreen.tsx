@@ -1,23 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Ref } from 'react';
-import {
-  AccessibilityInfo,
-  findNodeHandle,
-  Linking,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { AccessibilityInfo, findNodeHandle, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Globe, Home, Navigation } from 'lucide-react-native';
-import { ChoiceCard } from '../../components/ChoiceCard';
-import { Spinner } from '../../components/Spinner';
+import { Globe, MapPin } from 'lucide-react-native';
+import { useFonts, Marcellus_400Regular } from '@expo-google-fonts/marcellus';
+import { ScopeTicket } from '../../components/ScopeTicket';
 import { Wordmark } from '../../components/Wordmark';
-import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
+import { FlightPathBackground } from './FlightPathBackground';
 import { useNearbyLocation } from './useNearbyLocation';
-import { useMyCountryLocation } from './useMyCountryLocation';
 import type { ScopeSelection } from './types';
 
 type ScopePickerScreenProps = {
@@ -25,42 +16,49 @@ type ScopePickerScreenProps = {
 };
 
 export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
-  const { state, requestLocation } = useNearbyLocation();
-  const myCountry = useMyCountryLocation();
-  const myCountryBusy =
-    myCountry.status === 'requesting-permission' ||
-    myCountry.status === 'locating' ||
-    myCountry.status === 'resolving';
-  const myCountryTitle = myCountry.status === 'resolved' ? myCountry.country : 'My country';
-  const myCountryHint = myCountryBusy ? 'Detecting your country…' : 'Explore activities in your country';
+  // Font-load gate: DESIGN_STANDARDS.md's Display accent rule — hold first
+  // paint until Marcellus loads so the prompt never flashes in the system
+  // font; fall back to the system stack if loading fails rather than block
+  // the screen forever.
+  const [fontsLoaded, fontError] = useFonts({ Marcellus_400Regular });
 
-  function handleMyCountryPress() {
-    if (myCountry.status === 'resolved') {
-      onScopeSelected({ scope: 'my_country', homeCountry: myCountry.country });
-    } else {
-      onScopeSelected({ scope: 'my_country' });
-    }
-  }
+  const nearby = useNearbyLocation();
+  // Anywhere reuses the identical permission/GPS-fix hook (same shape,
+  // separate instance so its busy/error state doesn't collide with
+  // Nearby's) — only ScopePickerScreen's handling of a denied/unavailable
+  // result differs: Nearby blocks with an error, Anywhere never does.
+  const anywhere = useNearbyLocation();
+
+  const nearbyBusy = nearby.state.status === 'requesting-permission' || nearby.state.status === 'locating';
+  const anywhereBusy = anywhere.state.status === 'requesting-permission' || anywhere.state.status === 'locating';
+  // Single-select across the two tickets, one per-screen --glow max: Nearby
+  // is the resting/default selection; Anywhere only takes the selected
+  // treatment while its own request is in flight (the press/active state).
+  const selectedTicket = anywhereBusy ? 'anywhere' : 'nearby';
 
   const messageRef = useRef<View>(null);
   const [reduceMotion, setReduceMotion] = useState(false);
 
-  // prefers-reduced-motion: skip the spinning Spinner and rely on the
-  // static "…" already in nearbyHint below (DESIGN_STANDARDS.md Spinner
-  // recipe: "replace with the static '…' in the label").
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
     return () => sub.remove();
   }, []);
 
-  const nearbyBusy = state.status === 'requesting-permission' || state.status === 'locating';
-
   async function handleNearbyPress() {
-    const coordinates = await requestLocation();
+    const coordinates = await nearby.requestLocation();
     if (coordinates) {
       onScopeSelected({ scope: 'nearby', coordinates });
     }
+  }
+
+  // Anywhere never blocks: granted location carries coordinates forward
+  // (enables the downstream distance slider); denied/unavailable still
+  // advances with no coordinates (slider hidden downstream) — no error
+  // state, no dead end, no crash (T2 contract).
+  async function handleAnywherePress() {
+    const coordinates = await anywhere.requestLocation();
+    onScopeSelected({ scope: 'anywhere', coordinates: coordinates ?? undefined });
   }
 
   function focusMessage() {
@@ -68,72 +66,84 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
     if (handle) AccessibilityInfo.setAccessibilityFocus(handle);
   }
 
+  function progressHint(status: 'requesting-permission' | 'locating') {
+    return status === 'requesting-permission' ? 'Requesting location…' : 'Getting your location…';
+  }
+
   const nearbyHint =
-    state.status === 'requesting-permission'
-      ? 'Requesting location…'
-      : state.status === 'locating'
-        ? 'Getting your location…'
-        : "What's around you right now";
+    nearby.state.status === 'requesting-permission' || nearby.state.status === 'locating'
+      ? progressHint(nearby.state.status)
+      : 'Within reach';
+  const anywhereHint =
+    anywhere.state.status === 'requesting-permission' || anywhere.state.status === 'locating'
+      ? progressHint(anywhere.state.status)
+      : 'Across the world';
+
+  if (!fontsLoaded && !fontError) {
+    // Hold first paint: keep the wine background stable, render nothing
+    // else, until the font resolves one way or the other.
+    return <SafeAreaView style={styles.screen} />;
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
+      <FlightPathBackground />
       <View style={styles.content}>
-        <Wordmark />
-        <Text style={styles.heading}>Where do you want to explore?</Text>
-        <Text style={styles.subHint}>Pick a scope to start browsing activities.</Text>
+        <View style={styles.logoRow}>
+          <Wordmark width={246} />
+        </View>
 
-        <View style={styles.cards}>
-          <ChoiceCard
-            icon={Home}
-            title="Home"
-            hint="Activities around your home base"
-            onPress={() => onScopeSelected({ scope: 'home' })}
-          />
-          <ChoiceCard
-            // Clicking (not tabbing to) a Pressable on web leaves it
-            // DOM-focused with no reliable onBlur, so `focused` can stay
-            // stuck true after a tap — remount on every status change to
-            // drop it instead of leaving a lingering gold border once the
-            // card returns to its default state (react-native-web
-            // focus-retention quirk; keyed on `state.status` rather than
-            // just `busy` since the denied path never goes through busy).
-            key={state.status}
-            icon={Navigation}
-            title="Nearby"
-            hint={nearbyHint}
-            busy={nearbyBusy}
-            onPress={handleNearbyPress}
-            accessoryRight={nearbyBusy && !reduceMotion ? <Spinner /> : undefined}
-          />
-          <ChoiceCard
-            icon={Globe}
-            title={myCountryTitle}
-            hint={myCountryHint}
-            // ponytail: no `busy` prop here on purpose (unlike Nearby) —
-            // detection runs automatically on mount, not triggered by this
-            // tap, so the card must stay tappable throughout: tapping while
-            // unresolved (or after a detection failure) falls back to the
-            // manual Location screen instead of waiting.
-            onPress={handleMyCountryPress}
-            accessoryRight={myCountryBusy && !reduceMotion ? <Spinner /> : undefined}
-          />
+        <View style={styles.centerBlock}>
+          <Text style={[styles.prompt, fontsLoaded && { fontFamily: fontFamily.display }]}>
+            Where do you want to go?
+          </Text>
+
+          <View style={styles.tickets}>
+            <ScopeTicket
+              // Clicking (not tabbing to) a Pressable on web leaves it
+              // DOM-focused with no reliable onBlur, so `focused` can stay
+              // stuck true — remount on every status change to drop it
+              // (react-native-web focus-retention quirk, see ChoiceCard's
+              // former note).
+              key={`nearby-${nearby.state.status}`}
+              icon={MapPin}
+              title="Nearby"
+              hint={nearbyHint}
+              selected={selectedTicket === 'nearby'}
+              busy={nearbyBusy}
+              reduceMotion={reduceMotion}
+              accessibilityLabel="Explore activities nearby"
+              onPress={handleNearbyPress}
+            />
+            <ScopeTicket
+              key={`anywhere-${anywhere.state.status}`}
+              icon={Globe}
+              title="Anywhere"
+              hint={anywhereHint}
+              selected={selectedTicket === 'anywhere'}
+              busy={anywhereBusy}
+              reduceMotion={reduceMotion}
+              accessibilityLabel="Explore activities anywhere"
+              onPress={handleAnywherePress}
+            />
+          </View>
         </View>
 
         <View style={styles.messageRegion}>
-          {state.status === 'denied' && (
+          {nearby.state.status === 'denied' && (
             <ErrorMessage
               ref={messageRef}
               onLayout={focusMessage}
-              text="Location access is off, so we can't find activities near you. Turn it on in Settings, or pick Home or My country instead."
+              text="Location access is off, so we can't find activities near you. Turn it on in Settings, or choose Anywhere instead."
               actionLabel="Open settings"
               onAction={() => Linking.openSettings()}
             />
           )}
-          {state.status === 'unavailable' && (
+          {nearby.state.status === 'unavailable' && (
             <ErrorMessage
               ref={messageRef}
               onLayout={focusMessage}
-              text="We couldn't get your current location. Try again, or pick Home or My country instead."
+              text="We couldn't get your current location. Try again, or choose Anywhere instead."
               actionLabel="Try again"
               onAction={handleNearbyPress}
             />
@@ -188,31 +198,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   content: {
-    flexGrow: 1,
-    paddingTop: space[8],
-    paddingHorizontal: space[4],
+    flex: 1,
+    paddingHorizontal: space[6],
   },
-  heading: {
-    fontSize: fontSize.xl,
-    color: colors.primary,
-    fontWeight: '700',
-    marginTop: space[6],
+  logoRow: {
+    alignItems: 'center',
+    paddingTop: space[16] + space[6], // ~88px below the safe-area top
   },
-  subHint: {
-    fontSize: fontSize.md,
-    color: colors.textMuted,
-    marginTop: space[3],
+  centerBlock: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: space[6],
   },
-  cards: {
-    marginTop: space[8],
+  prompt: {
+    fontSize: fontSize.xl - 2, // 26px
+    color: colors.text,
+    textAlign: 'center',
+  },
+  tickets: {
     gap: space[4],
   },
   messageRegion: {
-    marginTop: space[4],
+    paddingBottom: space[4],
     // ponytail: minHeight: 1 (not a true reserved height) is safe only
     // because this is the last element in the column — nothing below it to
-    // push down when the message appears. Give it a real min-height sized
-    // to the ErrorMessage block if a sibling is ever added below.
+    // push down when the message appears.
     minHeight: 1,
   },
   errorBox: {

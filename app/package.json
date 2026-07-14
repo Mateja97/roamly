@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo-google-fonts/marcellus": "^0.4.1",
     "@react-native-community/slider": "5.2.0",
     "expo": "~57.0.4",
+    "expo-asset": "~57.0.3",
+    "expo-font": "^57.0.0",
+    "expo-linear-gradient": "^57.0.0",
     "expo-location": "~57.0.2",
     "expo-status-bar": "~57.0.0",
     "lucide-react-native": "^1.24.0",
@@ -43,7 +47,9 @@
   },
   "jest": {
     "preset": "jest-expo",
-    "setupFiles": ["<rootDir>/jest.setup.js"],
+    "setupFiles": [
+      "<rootDir>/jest.setup.js"
+    ],
     "moduleNameMapper": {
       "^lucide-react-native$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/lucide-react-native.js"
     }

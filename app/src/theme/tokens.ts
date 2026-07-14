@@ -1,7 +1,3 @@
-// ponytail: --glow and --surface-gradient are skipped here — they need
-// expo-linear-gradient, not yet a project dependency. Add both if/when an
-// area:app task genuinely needs the depth accent (see DESIGN_STANDARDS.md's
-// Mobile-specific section).
 export const colors = {
   bg: '#7D2027',
   surface: '#8A2C35',
@@ -24,6 +20,15 @@ export const colors = {
 
   cardHighlight: 'rgba(206,144,66,0.5)',
   scrim: 'rgba(42,14,17,0.72)',
+
+  // Scope ticket's --surface-gradient (top-lit body) and --glow (one
+  // per-screen radial accent, approximated as a linear fade — see
+  // ScopeTicket.tsx). Welcome screen is the one area:app surface that
+  // brought in expo-linear-gradient for these (see DESIGN_STANDARDS.md's
+  // Mobile-specific "Depth devices deferred" exception) — don't reach for
+  // them on other app surfaces without the same justification.
+  surfaceGradient: ['#93313A', '#8A2C35'] as const,
+  glow: 'rgba(206,144,66,0.15)',
 } as const;
 
 export const fontSize = {
@@ -48,5 +53,14 @@ export const space = {
 
 export const radius = {
   default: 8,
+  lg: 16,
   full: 999,
+} as const;
+
+// --font-display (Marcellus) — the one display accent, used only for the
+// Welcome screen's "Where do you want to go?" prompt (see
+// ScopePickerScreen.tsx's font-load gate). Every other surface stays on RN's
+// system font stack (the default when no fontFamily is set).
+export const fontFamily = {
+  display: 'Marcellus_400Regular',
 } as const;

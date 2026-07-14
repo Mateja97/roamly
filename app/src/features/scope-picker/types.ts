@@ -1,4 +1,4 @@
-export type Scope = 'home' | 'nearby' | 'my_country';
+export type Scope = 'nearby' | 'anywhere';
 
 export type Coordinates = {
   latitude: number;
@@ -6,13 +6,12 @@ export type Coordinates = {
 };
 
 // The shape a follow-on screen (the activity list) plugs into: which scope
-// was picked, plus device coordinates when the scope is `nearby`, or the
-// place confirmed via T4's Location screen for `home`, or GPS-detected for
-// `my_country` (falling back to the same Location screen on detection
-// failure — see useMyCountryLocation.ts).
+// was picked, plus device coordinates when available. Nearby always has
+// coordinates by the time onScopeSelected fires; Anywhere carries them when
+// device location was granted, and is undefined when denied/unavailable —
+// Anywhere still works without an anchor (T2 contract), just with no
+// distance filter downstream.
 export type ScopeSelection = {
   scope: Scope;
   coordinates?: Coordinates;
-  homeLocation?: { lat: number; lng: number };
-  homeCountry?: string;
 };

@@ -21,20 +21,8 @@ import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { FilterSheet } from './FilterSheet';
-import { EMPTY_FILTERS, SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, filterChips } from './filters';
+import { SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, defaultFilters, filterChips } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
-
-// Country (my_country) scope header subtitle — static (doesn't wait on
-// the fetch) per design-spec.md's T6 section. The title reads
-// `selection.homeCountry`, either GPS-detected on the scope picker or
-// confirmed via T4's Location screen fallback before this screen ever mounts
-// (App.tsx routes my_country to activity-types directly once resolved, or
-// through the Location screen otherwise — see App.tsx). ponytail: the spec's
-// "no name resolvable" fallback (generic title, country folded into the
-// subtitle) is skipped — both paths always resolve a name, so `homeCountry`
-// is never empty in practice; the `?? SCOPE_TITLES.my_country` fallback
-// below exists only to satisfy the optional type, not a reachable UI state.
-const COUNTRY_HEADER_SUBTITLE = 'Top-rated activities';
 
 type QueryState =
   | { status: 'loading' }
@@ -50,7 +38,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
   // useState's lazy initializer (runs once, on mount) rather than reading
   // the `initialCategories` prop directly in the effect below — a parent
   // re-render passing a fresh empty-array default won't retrigger it.
-  const [initialFilters] = useState<Filters>(() => ({ ...EMPTY_FILTERS, categories: initialCategories }));
+  const [initialFilters] = useState<Filters>(() => ({ ...defaultFilters(selection.scope), categories: initialCategories }));
   const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
   const [queryState, setQueryState] = useState<QueryState>({ status: 'loading' });
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -166,10 +154,13 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
     filtersButtonRef.current?.focus?.();
   }
 
-  const chips = filterChips(appliedFilters);
-  const filterCount = activeFilterCount(appliedFilters);
+  const chips = filterChips(appliedFilters, selection.scope);
+  const filterCount = activeFilterCount(appliedFilters, selection.scope);
   const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
-  const showDistance = selection.scope !== 'my_country';
+  // Distance is only meaningful when a device-location anchor exists —
+  // always true for nearby, conditional for anywhere (see filters.ts /
+  // repository/activity.go's distance_km: 0 with no reference point).
+  const hasLocationAnchor = Boolean(selection.coordinates);
   const filtersFocus = useFocusable();
 
   return (
@@ -182,15 +173,8 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
         <View style={styles.header}>
           <View style={styles.headerTitleBlock}>
             <Text style={styles.headerTitle} numberOfLines={1}>
-              {selection.scope === 'my_country'
-                ? selection.homeCountry ?? SCOPE_TITLES.my_country
-                : SCOPE_TITLES[selection.scope]}
+              {SCOPE_TITLES[selection.scope]}
             </Text>
-            {selection.scope === 'my_country' && (
-              <Text style={styles.headerSubtitle} numberOfLines={1}>
-                {COUNTRY_HEADER_SUBTITLE}
-              </Text>
-            )}
           </View>
           <Pressable
             ref={filtersButtonRef}
@@ -239,13 +223,13 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
               <ActivityCard
                 key={activity.id}
                 activity={activity}
-                showDistance={showDistance}
+                showDistance={hasLocationAnchor}
                 onPress={() => setSelectedActivity(activity)}
               />
             ))}
 
           {queryState.status === 'empty' && (
-            <EmptyState hasFilters={filterCount > 0} onClearFilters={() => handleFiltersChange(EMPTY_FILTERS)} />
+            <EmptyState hasFilters={filterCount > 0} onClearFilters={() => handleFiltersChange(defaultFilters(selection.scope))} />
           )}
 
           {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}
@@ -259,6 +243,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
           visible={sheetVisible}
           initialFilters={appliedFilters}
           scope={selection.scope}
+          hasLocationAnchor={hasLocationAnchor}
           onApply={handleApply}
           onClose={closeSheet}
         />
@@ -268,7 +253,7 @@ export function ActivityListScreen({ selection, initialCategories = [], onBack }
         <View style={styles.detailOverlay}>
           <ActivityDetailScreen
             activity={selectedActivity}
-            showDistance={showDistance}
+            showDistance={hasLocationAnchor}
             onBack={() => setSelectedActivity(null)}
           />
         </View>
@@ -353,10 +338,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.lg,
     color: colors.text,
     fontWeight: '500',
-  },
-  headerSubtitle: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
   },
   filtersButton: {
     flexDirection: 'row',

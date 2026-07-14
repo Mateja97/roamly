@@ -12,13 +12,14 @@ export type RatingOption = 4.0 | 4.5 | 4.8;
 
 // The sheet's applied selection. `null` means "unset" for the single-select
 // groups; an empty array means "unset" for the multi-select category group.
-// `maxDistanceKm` is a continuous 1-50 slider value (T3) rather than a
-// nullable bucket — 50 (the widest/ceiling) is its own "unset"/default, per
-// filters.ts's MAX_DISTANCE_KM.
+// `maxDistanceKm` is a continuous slider value: for `nearby` it's always a
+// 1-50 number (50, the widest/ceiling, is its own "unset"/default); for
+// `anywhere` `null` means "no limit" (the slider's true widest/default
+// stop) — see filters.ts's `defaultFilters`.
 export type Filters = {
   categories: Category[];
   minRating: RatingOption | null;
-  maxDistanceKm: number;
+  maxDistanceKm: number | null;
 };
 
 export type ActivityListScreenProps = {

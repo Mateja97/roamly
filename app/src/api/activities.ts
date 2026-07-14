@@ -40,14 +40,12 @@ function toActivity(raw: RawActivity): Activity {
 
 export type ActivitiesQueryRequest = {
   scope: Scope;
+  // Device-location anchor: required for `nearby`, optional for `anywhere`
+  // (denied/unavailable still queries broadly, see T2).
   current_location?: Location;
-  home_location?: Location;
-  home_country?: string;
   categories?: Category[];
   min_rating?: number;
   max_distance_km?: number;
-  // T5's ranking flag — only meaningful (and only sent) for my_country.
-  sort?: 'top_rated';
 };
 
 // APP_STANDARDS.md's Error handling rule: never throw an opaque error, always
