@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, BackHandler, Easing, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Animated, BackHandler, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Check, MapPin, Search, SearchX, X } from 'lucide-react-native';
 import type { Place, PlaceSuggestion } from '../../api/places';
@@ -88,100 +88,105 @@ export function LocationScreen({ config, onConfirm, onBack }: LocationScreenProp
         <Text style={styles.headerTitle}>{config.headerTitle}</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.intro}>Search for a place, or confirm the suggested one.</Text>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.intro}>Search for a place, or confirm the suggested one.</Text>
 
-        {noKey ? (
-          <View style={styles.noticeBox}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeLabel}>Search unavailable</Text>
-            </View>
-            <Text style={styles.noticeHint}>{NO_KEY_HINT}</Text>
-          </View>
-        ) : (
-          <View>
-            <Text style={styles.inputLabel}>{config.inputLabel}</Text>
-            <View style={[styles.inputRow, inputFocus.focused && styles.inputRowFocused]}>
-              <Search size={16} color={colors.text} strokeWidth={1.75} />
-              <TextInput
-                value={search.query}
-                onChangeText={search.setQuery}
-                onFocus={inputFocus.onFocus}
-                onBlur={inputFocus.onBlur}
-                placeholder={config.placeholder}
-                placeholderTextColor={colors.textDisabled}
-                style={styles.input}
-                accessibilityLabel={config.inputLabel}
-              />
-              {busy ? (
-                <Spinner />
-              ) : (
-                search.query.length > 0 && (
-                  <Pressable
-                    onPress={() => search.setQuery('')}
-                    onFocus={clearFocus.onFocus}
-                    onBlur={clearFocus.onBlur}
-                    accessibilityRole="button"
-                    accessibilityLabel="Clear search"
-                    style={[styles.clearButton, clearFocus.focused && styles.clearButtonFocused]}
-                  >
-                    <X size={16} color={colors.textMuted} strokeWidth={1.75} />
-                  </Pressable>
-                )
-              )}
-            </View>
-          </View>
-        )}
-
-        <Animated.View
-          style={[styles.resultsRegion, { opacity: regionOpacity }]}
-          accessible
-          accessibilityLiveRegion="polite"
-        >
           {noKey ? (
-            <SummaryCard place={config.defaultPlace} readOnly />
-          ) : search.region.view === 'suggestions' ? (
-            // ponytail: rows are directly tappable, focusable, and announce
-            // their full accessible name (SuggestionRow below) — real
-            // arrow-key/Escape combobox semantics are a desktop-keyboard
-            // idiom this touch-first screen skips; add if a hardware
-            // keyboard becomes a first-class input for this app.
-            <View style={styles.rows}>
-              {search.region.items.map((item) => (
-                <SuggestionRow key={item.placeId} item={item} onPress={() => search.pick(item)} />
-              ))}
-            </View>
-          ) : busy ? (
-            <View style={styles.rows}>
-              <Skeleton width="100%" height={44} />
-              <Skeleton width="100%" height={44} />
-              <Skeleton width="100%" height={44} />
-            </View>
-          ) : search.region.view === 'empty' ? (
-            <View style={styles.emptyState}>
-              <SearchX size={20} color={colors.textMuted} strokeWidth={1.75} />
-              <Text style={styles.emptyTitle}>No places found</Text>
-              <Text style={styles.emptyHint}>Check the spelling or try a broader term.</Text>
-            </View>
-          ) : search.region.view === 'error' ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{search.region.message}</Text>
-              <Pressable
-                onPress={search.retry}
-                onFocus={retryFocus.onFocus}
-                onBlur={retryFocus.onBlur}
-                accessibilityRole="button"
-                accessibilityLabel="Try again"
-                style={[styles.secondaryButton, retryFocus.focused && styles.secondaryButtonFocused]}
-              >
-                <Text style={styles.secondaryButtonLabel}>Try again</Text>
-              </Pressable>
+            <View style={styles.noticeBox}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeLabel}>Search unavailable</Text>
+              </View>
+              <Text style={styles.noticeHint}>{NO_KEY_HINT}</Text>
             </View>
           ) : (
-            <SummaryCard place={search.selected} />
+            <View>
+              <Text style={styles.inputLabel}>{config.inputLabel}</Text>
+              <View style={[styles.inputRow, inputFocus.focused && styles.inputRowFocused]}>
+                <Search size={16} color={colors.text} strokeWidth={1.75} />
+                <TextInput
+                  value={search.query}
+                  onChangeText={search.setQuery}
+                  onFocus={inputFocus.onFocus}
+                  onBlur={inputFocus.onBlur}
+                  placeholder={config.placeholder}
+                  placeholderTextColor={colors.textDisabled}
+                  style={styles.input}
+                  accessibilityLabel={config.inputLabel}
+                />
+                {busy ? (
+                  <Spinner />
+                ) : (
+                  search.query.length > 0 && (
+                    <Pressable
+                      onPress={() => search.setQuery('')}
+                      onFocus={clearFocus.onFocus}
+                      onBlur={clearFocus.onBlur}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear search"
+                      style={[styles.clearButton, clearFocus.focused && styles.clearButtonFocused]}
+                    >
+                      <X size={16} color={colors.textMuted} strokeWidth={1.75} />
+                    </Pressable>
+                  )
+                )}
+              </View>
+            </View>
           )}
-        </Animated.View>
-      </ScrollView>
+
+          <Animated.View
+            style={[styles.resultsRegion, { opacity: regionOpacity }]}
+            accessible
+            accessibilityLiveRegion="polite"
+          >
+            {noKey ? (
+              <SummaryCard place={config.defaultPlace} readOnly />
+            ) : search.region.view === 'suggestions' ? (
+              // ponytail: rows are directly tappable, focusable, and announce
+              // their full accessible name (SuggestionRow below) — real
+              // arrow-key/Escape combobox semantics are a desktop-keyboard
+              // idiom this touch-first screen skips; add if a hardware
+              // keyboard becomes a first-class input for this app.
+              <View style={styles.rows}>
+                {search.region.items.map((item) => (
+                  <SuggestionRow key={item.placeId} item={item} onPress={() => search.pick(item)} />
+                ))}
+              </View>
+            ) : busy ? (
+              <View style={styles.rows}>
+                <Skeleton width="100%" height={44} />
+                <Skeleton width="100%" height={44} />
+                <Skeleton width="100%" height={44} />
+              </View>
+            ) : search.region.view === 'empty' ? (
+              <View style={styles.emptyState}>
+                <SearchX size={20} color={colors.textMuted} strokeWidth={1.75} />
+                <Text style={styles.emptyTitle}>No places found</Text>
+                <Text style={styles.emptyHint}>Check the spelling or try a broader term.</Text>
+              </View>
+            ) : search.region.view === 'error' ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{search.region.message}</Text>
+                <Pressable
+                  onPress={search.retry}
+                  onFocus={retryFocus.onFocus}
+                  onBlur={retryFocus.onBlur}
+                  accessibilityRole="button"
+                  accessibilityLabel="Try again"
+                  style={[styles.secondaryButton, retryFocus.focused && styles.secondaryButtonFocused]}
+                >
+                  <Text style={styles.secondaryButtonLabel}>Try again</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <SummaryCard place={search.selected} />
+            )}
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={styles.footer}>
         <Pressable
@@ -238,6 +243,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     borderBottomWidth: 1,
