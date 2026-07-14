@@ -1,7 +1,7 @@
 # Design Standards
 
 The visual design system for **Roamly** — the app that helps people find and
-explore activities (the opening flow asks *home / nearby / abroad*, then shows
+explore activities (the opening flow asks *nearby / anywhere*, then shows
 activities to match). Shared by `frontend/` and `app/`. Dark, minimalist,
 **deep-wine and gold**, premium. The `designer` agent applies these tokens per
 task; when a task genuinely needs something missing, it extends this file via
@@ -127,6 +127,14 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
 
 - System font stack — no added dependency:
   `-apple-system, "Segoe UI", Inter, Roboto, sans-serif`.
+- **Display accent** (`--font-display`): **Marcellus** (Google Font, regular
+  400), used ONLY for the opening prompt "Where do you want to go?" on the
+  Welcome screen — a single display line, never body copy or labels. On
+  `area: app` this is a new dependency (`expo-font` + `@expo-google-fonts/marcellus`);
+  gate first paint on the font load so the prompt never flashes in the system
+  stack, then falls back to the system stack only if loading fails. On
+  `area: frontend` load it via `@font-face`/Google Fonts. This is the one and
+  only non-system typeface in the system.
 - Scale: `--font-size-xs` 12px, `--font-size-sm` 14px, `--font-size-md` 16px,
   `--font-size-lg` 20px, `--font-size-xl` 28px, `--font-size-2xl` 36px.
   Body text is never smaller than `--font-size-sm` (14px); prefer
@@ -146,6 +154,9 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
   `--space-4` 16px, `--space-6` 24px, `--space-8` 32px, `--space-12` 48px,
   `--space-16` 64px.
 - `--radius`: `8px` on cards, buttons, inputs — soft but not pill-shaped.
+- `--radius-lg`: `16px` — larger feature surfaces only (the Scope ticket
+  card); the default `--radius` (8px) stays the norm for buttons, inputs, and
+  standard cards.
 - No box-shadows for elevation; a 1px `--border` line plus the gold top edge
   is enough.
 
@@ -276,18 +287,77 @@ For the number that IS the screen. Label above: `--font-size-sm`
 `tabular-nums`. Eligible for the one per-screen `--glow`. Sub-line
 (delta/status) `--font-size-sm` in the relevant semantic color.
 
-### Choice card (home / nearby / abroad)
+### Scope ticket (nearby / anywhere)
 
-The opening flow's core control — the three activity-scope options. Each is a
-full-width card (stacked on mobile, 3-up on wide): `--surface`, 1px `--border`
-with gold `--card-highlight` top edge, `--radius`, `--space-6` padding, tap
-target well over 44px. Contents: 20px `--primary` (gold) icon → title
-`--font-size-lg` `--text` → one-line hint `--font-size-sm` `--text-muted`.
-Rest → hover/press: `--surface-hover` bg + border → `--primary`. The selected
-card carries a `--primary` border and is the eligible spot for the one
-per-screen `--glow`. Fully keyboard-operable (it's a control, not decoration)
-with a visible focus border. ponytail: three cards is the whole flow today —
-don't build a generic wizard/stepper abstraction until a second step exists.
+The opening flow's core control: a horizontal **boarding-pass ticket** card,
+one per activity scope — **Nearby** and **Anywhere**. The whole card is a
+single tap control (one screen-reader button) that sets the scope and enters
+the browse flow. Exactly two, stacked full-width with `--space-4` between them;
+no third option. Replaces the earlier three-way choice card.
+
+**Container:** full width, `min-height: 104px`, `--radius-lg` (16px), content
+clipped to the radius. Background `--surface-gradient` (`#93313A → #8A2C35`,
+top-lit). Row layout: **stub | body | go-button**.
+
+**Stub (left):** 78px wide, centred icon, fill a faint gold tint
+(`rgba(206,144,66,0.14)`). Right edge is a **2px dashed tear line** in
+`--border`. Icon 28px `lucide` in `--primary` gold, stroke 1.75 — Nearby
+`MapPin`, Anywhere `Globe`. The icon is decorative (`aria-hidden`) — the card's
+text title and accessible name carry the meaning — so its ~2.6:1 contrast on
+the gold-tinted stub is an accepted decorative value, not an
+information-bearing UI pairing.
+
+**Perforation notches:** two 16px circles filled with the page background
+`--bg` wine, centred on the tear-line's x, half-off the top and bottom card
+edges, for the punched-ticket look. Decorative.
+
+**Body (middle, `flex:1`, `--space-4`/`--space-6` padding, vertically centred):**
+title `--font-size-lg` (20px), weight 600, `--text` cream (≥6.5:1 across the
+gradient ✓); one-line hint `--font-size-sm` (14px) `--text-muted` tan (4.8:1 on
+the gradient's lightest top stop ✓ — 14px honours the 14px body-text floor,
+rounding the reference's 13px up). Nearby → "Nearby" / "Within reach";
+Anywhere → "Anywhere" / "Across the world".
+
+**Go-button (right, `--space-6` padding-right, vertically centred):** 40px
+circle with a `lucide` `ArrowRight` (18px, stroke ~2.4), decorative
+(`aria-hidden`).
+- *Selected* ticket: circle filled `--primary` gold, arrow in `--ink` (6.6:1 ✓).
+- *Unselected*: transparent circle, 1.5px `--primary` border, `--primary` arrow.
+
+**Selection treatment** (single-select; **Nearby** is the default):
+- *Selected*: **2px `--primary` gold border** (3.65:1 on `--bg` — UI, clears
+  3:1 ✓) + the one per-screen `--glow` as a faint inner radial
+  (`radial-gradient(ellipse at 30% 0%, --glow, transparent 65%)`) + the filled
+  go-button. Never color-only — the filled-vs-outlined go-circle is the
+  redundant non-color cue.
+- *Unselected*: 1px `--border` with a gold `--card-highlight` top edge, and the
+  outlined go-button.
+
+**Interaction & states:**
+- The whole card is the tap target (well over 44×44; the 40px go-circle is
+  decorative, not a separate control). `--space-4` between the two tickets
+  (> the `--space-2` neighbour gap).
+- Tap navigates immediately (no separate confirm step in this flow), so the
+  "selected" styling is BOTH the resting emphasis on the recommended default
+  (Nearby) AND the press/active feedback: pressing either card shows the
+  selected treatment (gold border + filled go-circle) within ~100ms, then the
+  flow advances. There is no held toggle that moves the border between cards.
+- *Loading* (a scope whose entry resolves device location first): keep the
+  card's live colors (don't drop to disabled gray), disable re-trigger for the
+  request's duration, swap the hint to a progress line ("Getting your
+  location…") + inline Spinner in the go-button slot; `prefers-reduced-motion`
+  → static "…" in the hint, no Spinner.
+- *Focus* (keyboard/AT): the 2px `--primary` border is the focus indicator
+  (same as the selected border) — visible, no separate ring.
+- Each card exposes an accessible name — "Explore activities nearby" /
+  "Explore activities anywhere"; icon and go-arrow are `aria-hidden`.
+- Motion: color-only state change, no size/scale animation.
+
+Composes from `--surface-gradient`, `--glow`, `--primary`, `--ink`, `--border`,
+`--card-highlight`, `--text`, `--text-muted`, `--bg`, `--radius-lg`. On
+`area: app` the gradient and glow need `expo-linear-gradient` (see
+Mobile-specific). ponytail: two tickets is the whole flow — don't build a
+generic wizard/stepper abstraction until a second step exists.
 
 ### Activity card
 
@@ -598,7 +668,12 @@ the palette:
   (`expo-linear-gradient`) not yet a project dependency — skip these two
   accents for `area: app` tasks until a task genuinely needs them; the
   gold card top-highlight border device works identically on both platforms
-  (it's just a border color).
+  (it's just a border color). **Exception (Welcome screen):** the Scope ticket
+  recipe genuinely needs both accents — its `--surface-gradient` background and
+  the selected ticket's `--glow` inner radial — so that screen brings
+  `expo-linear-gradient` into the app as a dependency and mirrors
+  `--surface-gradient` and `--glow` into `tokens.ts`. Use them there; still
+  don't reach for them speculatively on other app surfaces.
 
 ## Delivery mechanics
 

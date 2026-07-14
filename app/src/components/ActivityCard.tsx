@@ -12,7 +12,7 @@ const MAX_TAGS = 3;
 
 type ActivityCardProps = {
   activity: Activity;
-  /** my_country's distance_km is always 0 (no distance concept there) — show the country instead. */
+  /** When the active scope has no location anchor, distance_km is always 0 — show the country instead. */
   showDistance: boolean;
   onPress: () => void;
 };

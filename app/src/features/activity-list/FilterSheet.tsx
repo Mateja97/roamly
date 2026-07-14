@@ -8,17 +8,27 @@ import { FilterChip } from '../../components/FilterChip';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { CATEGORY_OPTIONS, EMPTY_FILTERS, MAX_DISTANCE_KM, MIN_DISTANCE_KM, RATING_OPTIONS } from './filters';
+import {
+  ANYWHERE_DISTANCE_STEP_KM,
+  ANYWHERE_NO_LIMIT_SLIDER_VALUE,
+  CATEGORY_OPTIONS,
+  MAX_DISTANCE_KM,
+  MIN_DISTANCE_KM,
+  MIN_DISTANCE_KM_ANYWHERE,
+  RATING_OPTIONS,
+  defaultFilters,
+} from './filters';
 import type { Filters } from './types';
 import type { Scope } from '../scope-picker/types';
 
 type FilterSheetProps = {
   visible: boolean;
   initialFilters: Filters;
-  // T3: the "Max distance" group only applies to nearby/home — the proxy
-  // rejects max_distance_km for my_country, so the group is hidden
-  // there rather than sent-and-silently-ignored.
   scope: Scope;
+  // Anywhere's distance slider is meaningless (and hidden) without a
+  // device-location anchor — a value there-but-inert reads as a bug, not a
+  // rule (Slider recipe's "Hidden" state). Always true for nearby.
+  hasLocationAnchor: boolean;
   onApply: (filters: Filters) => Promise<ActivitiesQueryResult>;
   onClose: () => void;
 };
@@ -28,7 +38,7 @@ type FilterSheetProps = {
 // draft selection + apply-in-flight/error lifecycle — Apply only commits to
 // the screen's applied filters (via onApply) on success; on failure the
 // sheet stays open with the user's selection intact (see ActivityListScreen).
-export function FilterSheet({ visible, initialFilters, scope, onApply, onClose }: FilterSheetProps) {
+export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor, onApply, onClose }: FilterSheetProps) {
   const [draft, setDraft] = useState<Filters>(initialFilters);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +94,7 @@ export function FilterSheet({ visible, initialFilters, scope, onApply, onClose }
   }
 
   function handleClearAll() {
-    setDraft(EMPTY_FILTERS);
+    setDraft(defaultFilters(scope));
     setError(null);
   }
 
@@ -147,8 +157,9 @@ export function FilterSheet({ visible, initialFilters, scope, onApply, onClose }
               )}
             </FilterGroup>
 
-            {scope !== 'my_country' && (
+            {(scope === 'nearby' || hasLocationAnchor) && (
               <DistanceSlider
+                scope={scope}
                 value={draft.maxDistanceKm}
                 onChange={(maxDistanceKm) => setDraft((prev) => ({ ...prev, maxDistanceKm }))}
               />
@@ -223,51 +234,75 @@ function singleSelectChips<T>(
 const THUMB_SIZE = 20;
 const RING_SIZE = THUMB_SIZE + 8; // ~2px --surface gap on each side, per the recipe
 
-// DESIGN_STANDARDS.md's Slider (range) recipe: continuous 1-50km control
+// DESIGN_STANDARDS.md's Slider (range) recipe: continuous distance control
 // replacing the old fixed distance chips. Delegates drag/keyboard/a11y to
 // @react-native-community/slider (native thumb + track) and layers the
 // label row, end labels, and the decorative drag/focus ring on top — the
 // ring position is a percentage-of-track approximation (see trackWidth),
 // not a pixel-exact readout of the native thumb.
-function DistanceSlider({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+//
+// Scope-aware: Nearby keeps the unchanged 1-50km range. Anywhere's range is
+// wider (100-2000km) with one extra top stop past the numeric ceiling that
+// means "no limit" — modeled as a slider-only sentinel value
+// (ANYWHERE_NO_LIMIT_SLIDER_VALUE) that maps to Filters.maxDistanceKm = null.
+function DistanceSlider({
+  scope,
+  value,
+  onChange,
+}: {
+  scope: Scope;
+  value: number | null;
+  onChange: (value: number | null) => void;
+}) {
+  const isAnywhere = scope === 'anywhere';
+  const min = isAnywhere ? MIN_DISTANCE_KM_ANYWHERE : MIN_DISTANCE_KM;
+  const max = isAnywhere ? ANYWHERE_NO_LIMIT_SLIDER_VALUE : MAX_DISTANCE_KM;
+  const step = isAnywhere ? ANYWHERE_DISTANCE_STEP_KM : 1;
+  const sliderValue = value ?? (isAnywhere ? ANYWHERE_NO_LIMIT_SLIDER_VALUE : MAX_DISTANCE_KM);
+  const isNoLimit = isAnywhere && sliderValue >= ANYWHERE_NO_LIMIT_SLIDER_VALUE;
+
   const [dragging, setDragging] = useState(false);
   const [trackWidth, setTrackWidth] = useState(0);
   const focus = useFocusable();
   const showRing = (dragging || focus.focused) && trackWidth > 0;
-  const fraction = (value - MIN_DISTANCE_KM) / (MAX_DISTANCE_KM - MIN_DISTANCE_KM);
+  const fraction = (sliderValue - min) / (max - min);
   const thumbCenter = THUMB_SIZE / 2 + fraction * (trackWidth - THUMB_SIZE);
+
+  function handleValueChange(next: number) {
+    onChange(isAnywhere && next >= ANYWHERE_NO_LIMIT_SLIDER_VALUE ? null : next);
+  }
 
   return (
     <View style={styles.group}>
       <View style={styles.distanceLabelRow}>
         <Text style={styles.groupLabel}>Max distance</Text>
-        <Text style={styles.distanceValue}>Within {value} km</Text>
+        <Text style={styles.distanceValue}>{isNoLimit ? 'No limit' : `Within ${sliderValue} km`}</Text>
       </View>
       <View onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}>
         <Slider
           style={styles.slider}
-          minimumValue={MIN_DISTANCE_KM}
-          maximumValue={MAX_DISTANCE_KM}
-          step={1}
-          value={value}
+          minimumValue={min}
+          maximumValue={max}
+          step={step}
+          value={sliderValue}
           minimumTrackTintColor={colors.primary}
           maximumTrackTintColor={colors.border}
           thumbTintColor={colors.primary}
-          onValueChange={onChange}
+          onValueChange={handleValueChange}
           onSlidingStart={() => setDragging(true)}
           onSlidingComplete={() => setDragging(false)}
           onFocus={focus.onFocus}
           onBlur={focus.onBlur}
           accessibilityLabel="Max distance"
-          accessibilityValue={{ text: `${value} kilometres` }}
+          accessibilityValue={{ text: isNoLimit ? 'No limit' : `${sliderValue} kilometres` }}
         />
         {showRing && (
           <View pointerEvents="none" style={[styles.sliderRing, { left: thumbCenter - RING_SIZE / 2 }]} />
         )}
       </View>
       <View style={styles.distanceEndLabelsRow}>
-        <Text style={styles.distanceEndLabel}>{MIN_DISTANCE_KM} km</Text>
-        <Text style={styles.distanceEndLabel}>{MAX_DISTANCE_KM} km</Text>
+        <Text style={styles.distanceEndLabel}>{min} km</Text>
+        <Text style={styles.distanceEndLabel}>{isAnywhere ? 'No limit' : `${MAX_DISTANCE_KM} km`}</Text>
       </View>
     </View>
   );

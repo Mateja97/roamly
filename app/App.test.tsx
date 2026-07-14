@@ -14,10 +14,6 @@ async function flush() {
 jest.mock('./src/api/activities', () => ({ queryActivities: jest.fn() }));
 const mockedQuery = jest.mocked(queryActivities);
 
-// useMyCountryLocation (mounted by ScopePickerScreen) calls this on mount —
-// see ScopePickerScreen.test.tsx for the same mock. These tests only
-// exercise the Home/Nearby flow, so "denied" keeps the mount effect
-// terminal and cheap.
 jest.mock('expo-location', () => ({
   PermissionStatus: { GRANTED: 'granted', DENIED: 'denied', UNDETERMINED: 'undetermined' },
   getForegroundPermissionsAsync: jest.fn(),
@@ -25,6 +21,15 @@ jest.mock('expo-location', () => ({
   getCurrentPositionAsync: jest.fn(),
 }));
 const mockedLocation = jest.mocked(Location);
+
+// Marcellus's real load path goes through expo-font's native module, which
+// isn't available in the Jest environment — stub it to "already loaded" so
+// tests exercise the screen's actual content, not the font-load gate (see
+// ScopePickerScreen.test.tsx for the same mock).
+jest.mock('@expo-google-fonts/marcellus', () => ({
+  useFonts: () => [true, null],
+  Marcellus_400Regular: 'Marcellus_400Regular',
+}));
 
 function pressBackHandler(addBackListener: jest.SpyInstance) {
   const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
@@ -43,44 +48,45 @@ describe('App', () => {
     // calls — irrelevant to what these tests verify.
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
     jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
-    // My country card: default every test to "denied" (no OS prompt, no
-    // fetch) — these tests don't exercise My Country.
-    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+    mockedLocation.getCurrentPositionAsync.mockResolvedValue({
+      coords: { latitude: 44.8125, longitude: 20.4612 },
+    } as never);
   });
   afterEach(() => jest.resetAllMocks());
 
   it('opens on the scope picker', async () => {
     render(<App />);
     await flush();
-    expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
+    expect(screen.getByText('Where do you want to go?')).toBeTruthy();
   });
 
-  it('hands off the selected scope after choosing Home, through the Location screen, landing on the types picker', async () => {
+  it('hands off the selected scope after choosing Nearby, landing on the types picker', async () => {
     render(<App />);
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
-    expect(screen.getByText('Confirm your city')).toBeTruthy();
-
-    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
+    });
     expect(screen.getByText('What are you into?')).toBeTruthy();
   });
 
   it('confirming the types picker carries the location + category selection to the list, pre-filtered', async () => {
     render(<App />);
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
-    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
+    });
     fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
     });
 
-    expect(screen.getByText('Home')).toBeTruthy();
+    expect(screen.getByText('Nearby')).toBeTruthy();
     await waitFor(() =>
       expect(mockedQuery).toHaveBeenCalledWith({
-        scope: 'home',
-        home_location: { lat: 44.8125, lng: 20.4612 },
+        scope: 'nearby',
+        current_location: { lat: 44.8125, lng: 20.4612 },
         categories: ['sports'],
         max_distance_km: 50,
       })
@@ -88,45 +94,47 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
   });
 
-  it('Android hardware back on the types picker returns to the Location screen (not the scope picker)', async () => {
+  it('Anywhere with location denied still reaches the types picker with no anchor (no dead end)', async () => {
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
+    render(<App />);
+    await flush();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Explore activities anywhere' }));
+    });
+    expect(screen.getByText('What are you into?')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
+    });
+    expect(screen.getByText('Anywhere')).toBeTruthy();
+    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere' }));
+  });
+
+  it('Android hardware back on the types picker returns to the scope picker', async () => {
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
-    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
+    });
     expect(screen.getByText('What are you into?')).toBeTruthy();
 
     pressBackHandler(addBackListener);
-    // Popping back remounts LocationScreen, which kicks off its own mount
-    // effect — flush it before the test ends so its setState doesn't fire
-    // outside act().
+    // Popping back remounts ScopePickerScreen, which re-triggers its
+    // reduce-motion mount effect — flush it before the test ends so its
+    // setState doesn't fire outside act().
     await flush();
-    expect(screen.getByText('Confirm your city')).toBeTruthy();
+    expect(screen.getByText('Where do you want to go?')).toBeTruthy();
     addBackListener.mockRestore();
   });
 
-  it('Android hardware back on the Location screen returns to the scope picker', async () => {
+  it('Android hardware back on the activity list returns to the types picker (not the scope picker)', async () => {
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
-    expect(screen.getByText('Confirm your city')).toBeTruthy();
-
-    pressBackHandler(addBackListener);
-    // Popping back remounts ScopePickerScreen, which re-triggers
-    // useMyCountryLocation's mount effect — flush it before the test ends
-    // so its setState doesn't fire outside act().
-    await flush();
-    expect(screen.getByText(/where do you want to explore/i)).toBeTruthy();
-    addBackListener.mockRestore();
-  });
-
-  it('Android hardware back on the activity list returns to the types picker (not the Location or scope picker)', async () => {
-    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
-    render(<App />);
-    await flush();
-    fireEvent.press(screen.getByRole('button', { name: /^Home\./i }));
-    fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
+    });
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
     });

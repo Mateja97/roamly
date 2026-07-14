@@ -7,8 +7,8 @@ import { ActivityListScreen } from './ActivityListScreen';
 jest.mock('../../api/activities', () => ({ queryActivities: jest.fn() }));
 const mockedQuery = jest.mocked(queryActivities);
 
-const HOME_LOCATION = { lat: 44.8125, lng: 20.4612 };
-const HOME_COUNTRY = 'Serbia';
+const COORDINATES = { latitude: 44.8125, longitude: 20.4612 };
+const LOCATION = { lat: 44.8125, lng: 20.4612 };
 
 beforeEach(() => {
   // afterEach's resetAllMocks wipes the RN jest preset's default
@@ -47,37 +47,41 @@ async function flush() {
 describe('ActivityListScreen', () => {
   afterEach(() => jest.resetAllMocks());
 
-  it('fetches on mount using the scope + home location, and renders loaded cards', async () => {
+  it('fetches on mount using the scope + device location, and renders loaded cards', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
-    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'home', home_location: HOME_LOCATION, max_distance_km: 50 });
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'nearby', current_location: LOCATION, max_distance_km: 50 });
     expect(screen.getByText('1 activity')).toBeTruthy();
-    expect(screen.queryByText('Top-rated activities')).toBeNull();
+    expect(screen.getByText('Nearby')).toBeTruthy();
   });
 
-  it('country scope sends the top_rated sort flag and shows the two-line ranking header immediately', async () => {
+  it('anywhere with a device-location anchor sends current_location and no max_distance_km at its "no limit" default', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'my_country', homeCountry: HOME_COUNTRY }} onBack={jest.fn()} />);
-
-    // Static header copy renders at mount, before the fetch resolves.
-    expect(screen.getByText(HOME_COUNTRY)).toBeTruthy();
-    expect(screen.getByText('Top-rated activities')).toBeTruthy();
+    render(<ActivityListScreen selection={{ scope: 'anywhere', coordinates: COORDINATES }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
-    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'my_country', home_country: HOME_COUNTRY, sort: 'top_rated' });
-    // Ranking is server-trusted — no re-sort UI, header copy is unchanged
-    // after results arrive (the card's own country meta text also reads
-    // "Serbia" here, hence getAllByText).
-    expect(screen.getAllByText(HOME_COUNTRY).length).toBeGreaterThan(0);
-    expect(screen.getByText('Top-rated activities')).toBeTruthy();
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere', current_location: LOCATION });
+    expect(screen.getByText('Anywhere')).toBeTruthy();
+    // A location anchor exists, so distance renders (not the fallback country).
+    expect(screen.getByText('0.4 km away')).toBeTruthy();
+  });
+
+  it('anywhere with no device-location anchor omits current_location and shows the country instead of distance', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    render(<ActivityListScreen selection={{ scope: 'anywhere' }} onBack={jest.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere' });
+    expect(screen.getByText('Serbia')).toBeTruthy();
+    expect(screen.queryByText('0.4 km away')).toBeNull();
   });
 
   it('shows the empty state with no Clear-filters button when no filters are active', async () => {
     mockedQuery.mockResolvedValue(successResult([]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
     expect(screen.getByText('Nothing here right now.')).toBeTruthy();
@@ -86,7 +90,7 @@ describe('ActivityListScreen', () => {
 
   it('shows the error state with a Try again action that re-queries', async () => {
     mockedQuery.mockResolvedValueOnce({ status: 500, message: 'internal error' });
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
 
     await waitFor(() => expect(screen.getByText('internal error')).toBeTruthy());
 
@@ -102,7 +106,7 @@ describe('ActivityListScreen', () => {
     mockedQuery.mockResolvedValue(successResult([]));
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     const onBack = jest.fn();
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={onBack} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={onBack} />);
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
@@ -121,7 +125,7 @@ describe('ActivityListScreen', () => {
 
   it('opens the Filter sheet from the header Filters button', async () => {
     mockedQuery.mockResolvedValue(successResult([]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
@@ -131,7 +135,7 @@ describe('ActivityListScreen', () => {
 
   it('applying a filter in the sheet re-queries and shows the chip + updated count', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity, { ...activity, id: '2' }]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('2 activities')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
@@ -144,8 +148,8 @@ describe('ActivityListScreen', () => {
     });
 
     expect(mockedQuery).toHaveBeenLastCalledWith({
-      scope: 'home',
-      home_location: HOME_LOCATION,
+      scope: 'nearby',
+      current_location: LOCATION,
       categories: ['sports'],
       max_distance_km: 50,
     });
@@ -155,7 +159,7 @@ describe('ActivityListScreen', () => {
 
   it('removing an active-filter chip clears just that filter and re-queries', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('1 activity')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
@@ -172,14 +176,14 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Remove Sports filter' }));
     });
 
-    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'home', home_location: HOME_LOCATION, max_distance_km: 50 });
+    expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION, max_distance_km: 50 });
     expect(screen.getByText('2 activities')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Remove Sports filter' })).toBeNull();
   });
 
   it('tapping a card opens the detail screen, and the on-screen Back control returns to the list', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: /skadarlija food walk/i }));
@@ -196,7 +200,7 @@ describe('ActivityListScreen', () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     const onBack = jest.fn();
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={onBack} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={onBack} />);
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: /skadarlija food walk/i }));
@@ -219,7 +223,7 @@ describe('ActivityListScreen', () => {
 
   it('re-opening the sheet after applying reflects the now-applied filters, not the stale draft', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
-    render(<ActivityListScreen selection={{ scope: 'home', homeLocation: HOME_LOCATION }} onBack={jest.fn()} />);
+    render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByText('1 activity')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));

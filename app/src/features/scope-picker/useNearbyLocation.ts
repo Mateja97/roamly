@@ -16,8 +16,12 @@ type UseNearbyLocation = {
   requestLocation: () => Promise<Coordinates | null>;
 };
 
-// Encapsulates the Nearby card's async flow (permission check → request →
-// GPS fix) so ScopePickerScreen only needs to render off `state`.
+// Encapsulates a scope ticket's async location flow (permission check →
+// request → GPS fix) so ScopePickerScreen only needs to render off `state`.
+// Used as two independent instances — one for Nearby, one for Anywhere's
+// location anchor — since each ticket needs its own busy/error state; only
+// the caller's handling of a denied/unavailable result differs between the
+// two (Nearby blocks with an error, Anywhere never does).
 export function useNearbyLocation(): UseNearbyLocation {
   const [state, setState] = useState<NearbyLocationState>({ status: 'idle' });
 
