@@ -3,6 +3,20 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import * as Location from 'expo-location';
 import App from './App';
 import { queryActivities } from './src/api/activities';
+import type { Activity } from './src/api/activities';
+
+const activity: Activity = {
+  id: '1',
+  title: 'Skadarlija Food Walk',
+  description: 'A tasty walk',
+  category: 'sports',
+  location: { lat: 44.8153, lng: 20.4646 },
+  country: 'Serbia',
+  rating: 4.6,
+  image_refs: [],
+  tags: [],
+  distance_km: 0.4,
+};
 
 // ScopePickerScreen's mount effect checks `isReduceMotionEnabled()` on a
 // microtask — flush it inside `act` so a purely synchronous test doesn't
@@ -61,34 +75,38 @@ describe('App', () => {
     expect(screen.getByText('Where to?')).toBeTruthy();
   });
 
-  it('hands off the selected scope after choosing Nearby, landing on the types picker', async () => {
+  it('hands off the selected scope after choosing Nearby, landing on the search-setup screen', async () => {
     render(<App />);
     await flush();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
     });
-    expect(screen.getByText('What are you into?')).toBeTruthy();
+    expect(screen.getByText('Refine your search')).toBeTruthy();
   });
 
-  it('confirming the types picker carries the location + category selection to the list, pre-filtered', async () => {
+  it('confirming the Nearby search-setup screen carries the location + category selection to the list, pre-filtered', async () => {
+    // The search-setup screen's own live-count/CTA queries need a non-zero
+    // result to keep the CTA enabled — unrelated to what the list screen
+    // itself renders afterwards.
+    mockedQuery.mockResolvedValue({ status: 'success', activities: [activity] });
     render(<App />);
     await flush();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
     });
+    await flush();
     fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
+      fireEvent.press(screen.getByRole('button', { name: /^show \d+ activities$/i }));
     });
 
-    expect(screen.getByText('Nearby')).toBeTruthy();
+    expect(screen.getAllByText('Nearby').length).toBeGreaterThan(0);
     await waitFor(() =>
       expect(mockedQuery).toHaveBeenCalledWith({
         scope: 'nearby',
         current_location: { lat: 44.8125, lng: 20.4612 },
         categories: ['sports'],
-        max_distance_km: 50,
       })
     );
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
@@ -110,14 +128,14 @@ describe('App', () => {
     await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere' }));
   });
 
-  it('Android hardware back on the types picker returns to the scope picker', async () => {
+  it('Android hardware back on the Nearby search-setup screen returns to the scope picker', async () => {
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
     });
-    expect(screen.getByText('What are you into?')).toBeTruthy();
+    expect(screen.getByText('Refine your search')).toBeTruthy();
 
     pressBackHandler(addBackListener);
     // Popping back remounts ScopePickerScreen, which re-triggers its
@@ -128,20 +146,28 @@ describe('App', () => {
     addBackListener.mockRestore();
   });
 
-  it('Android hardware back on the activity list returns to the types picker (not the scope picker)', async () => {
+  it('Android hardware back on the activity list returns to the Nearby search-setup screen (not the scope picker)', async () => {
+    // Only the search-setup screen's own live-count + CTA queries need a
+    // non-zero result to keep the CTA enabled; the list screen's own query
+    // (the 3rd call) falls back to beforeEach's empty default, landing on
+    // the empty state this test asserts.
+    mockedQuery
+      .mockResolvedValueOnce({ status: 'success', activities: [activity] })
+      .mockResolvedValueOnce({ status: 'success', activities: [activity] });
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     render(<App />);
     await flush();
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
     });
+    await flush();
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
+      fireEvent.press(screen.getByRole('button', { name: /^show \d+ activities$/i }));
     });
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
     pressBackHandler(addBackListener);
-    expect(screen.getByText('What are you into?')).toBeTruthy();
+    expect(screen.getByText('Refine your search')).toBeTruthy();
     addBackListener.mockRestore();
   });
 });

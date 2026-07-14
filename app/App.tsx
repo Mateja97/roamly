@@ -3,6 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
 import type { Category } from './src/features/activity-list/types';
 import { ActivityTypesScreen } from './src/features/activity-types/ActivityTypesScreen';
+import { NearbySearchSetupScreen } from './src/features/search-setup/NearbySearchSetupScreen';
 import { ScopePickerScreen } from './src/features/scope-picker/ScopePickerScreen';
 import type { ScopeSelection } from './src/features/scope-picker/types';
 
@@ -41,11 +42,14 @@ function AppContent() {
   }
 
   if (screen.name === 'activity-types') {
-    return (
-      <ActivityTypesScreen
-        onConfirm={(categories) => push({ name: 'activity-list', selection: screen.selection, categories })}
-        onBack={pop}
-      />
+    const onConfirm = (categories: Category[]) =>
+      push({ name: 'activity-list', selection: screen.selection, categories });
+    // T6: Nearby gets its own fixed-10km search-setup screen; Anywhere keeps
+    // the generic types picker until T5 gives it the city-picker version.
+    return screen.selection.scope === 'nearby' ? (
+      <NearbySearchSetupScreen selection={screen.selection} onConfirm={onConfirm} onBack={pop} />
+    ) : (
+      <ActivityTypesScreen onConfirm={onConfirm} onBack={pop} />
     );
   }
 
