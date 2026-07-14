@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FilterChip } from '../../components/FilterChip';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
@@ -21,6 +21,7 @@ type ActivityTypesScreenProps = {
 export function ActivityTypesScreen({ onConfirm, onBack }: ActivityTypesScreenProps) {
   const [selected, setSelected] = useState<Category[]>([]);
   const confirmFocus = useFocusable();
+  const insets = useSafeAreaInsets();
 
   // Same native-affordance back handling as ActivityListScreen (no router
   // yet — see App.tsx and APP_STANDARDS.md). iOS has no back path without a
@@ -40,7 +41,7 @@ export function ActivityTypesScreen({ onConfirm, onBack }: ActivityTypesScreenPr
   const statusText = selected.length === 0 ? 'All activity types' : `${selected.length} types selected`;
 
   return (
-    <SafeAreaView style={styles.screen}>
+    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.heading}>What are you into?</Text>
         <Text style={styles.subHint}>Pick a few types, or continue to see everything.</Text>
@@ -58,7 +59,7 @@ export function ActivityTypesScreen({ onConfirm, onBack }: ActivityTypesScreenPr
         ))}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: space[6] + insets.bottom }]}>
         <View accessible accessibilityLiveRegion="polite">
           <Text style={styles.statusLine}>{statusText}</Text>
         </View>
@@ -109,10 +110,8 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: space[4],
-    // ponytail: fixed extra bottom padding approximates home-indicator
-    // clearance, same fixed-inset approach as FilterSheet's footer —
-    // react-native-safe-area-context isn't a dependency yet.
-    paddingBottom: space[6],
+    // Bottom padding (space[6] + insets.bottom) is set inline above, per
+    // DESIGN_STANDARDS.md's Bottom action-bar / footer inset formula.
   },
   statusLine: {
     marginBottom: space[3],
