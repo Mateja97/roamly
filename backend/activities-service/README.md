@@ -21,9 +21,12 @@ Environment variables, read once at startup in `main.go`:
 - `DATABASE_URL` — Postgres DSN (required), e.g.
   `postgres://user:pass@host:5432/activities?sslmode=disable`.
 - `GRPC_ADDR` — gRPC listen address, defaults to `:9090`.
-- `DEFAULT_RADIUS_KM` — default radius in km for the `nearby` scope (also the
-  cap `nearby` narrows within; `anywhere` is uncapped), defaults to `50`.
 - `LOG_LEVEL` — slog level, defaults to `info`.
+
+`nearby` scope always uses a fixed, non-adjustable 10 km radius
+(`service.NearbyRadiusKM`); any client-supplied `max_distance_km` is ignored
+for this scope. `anywhere` is uncapped unless the caller supplies
+`max_distance_km`.
 
 ## Data
 

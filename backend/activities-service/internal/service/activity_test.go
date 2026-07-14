@@ -113,7 +113,7 @@ func TestActivities_Query_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeRepo{}
-			svc := New(repo, 50)
+			svc := New(repo)
 			_, err := svc.Query(context.Background(), tt.req)
 			if tt.wantErr {
 				if err == nil {
@@ -131,22 +131,20 @@ func TestActivities_Query_Validation(t *testing.T) {
 	}
 }
 
-func TestActivities_Query_ResolvesEffectiveRadius(t *testing.T) {
+func TestActivities_Query_NearbyIgnoresRequestedDistance(t *testing.T) {
 	tests := []struct {
 		name           string
-		defaultRadius  float64
 		requestedMaxKM float64
-		want           float64
 	}{
-		{"no filter uses default", 50, 0, 50},
-		{"filter narrower than default wins", 50, 10, 10},
-		{"filter wider than default is capped at default", 50, 200, 50},
+		{"no filter supplied", 0},
+		{"smaller filter supplied", 5},
+		{"larger filter supplied", 200},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeRepo{}
-			svc := New(repo, tt.defaultRadius)
+			svc := New(repo)
 			_, err := svc.Query(context.Background(), Request{
 				Scope:           activitiessvc.ScopeNearby,
 				CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
@@ -155,16 +153,16 @@ func TestActivities_Query_ResolvesEffectiveRadius(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Query() unexpected error: %v", err)
 			}
-			if repo.got.MaxDistanceKM != tt.want {
-				t.Errorf("effective radius = %v, want %v", repo.got.MaxDistanceKM, tt.want)
+			if repo.got.MaxDistanceKM != NearbyRadiusKM {
+				t.Errorf("nearby radius = %v, want fixed %v", repo.got.MaxDistanceKM, NearbyRadiusKM)
 			}
 		})
 	}
 }
 
-func TestActivities_Query_AnywhereNotCappedByDefaultRadius(t *testing.T) {
+func TestActivities_Query_AnywhereNotCappedByNearbyRadius(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := New(repo, 50) // default radius (nearby's) is 50km
+	svc := New(repo)
 	_, err := svc.Query(context.Background(), Request{
 		Scope:           activitiessvc.ScopeAnywhere,
 		CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
@@ -180,7 +178,7 @@ func TestActivities_Query_AnywhereNotCappedByDefaultRadius(t *testing.T) {
 
 func TestActivities_Query_AnywhereNoDistanceCapWhenOmitted(t *testing.T) {
 	repo := &fakeRepo{}
-	svc := New(repo, 50)
+	svc := New(repo)
 	_, err := svc.Query(context.Background(), Request{
 		Scope:           activitiessvc.ScopeAnywhere,
 		CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
