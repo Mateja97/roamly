@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, ImageOff, MapPin, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity } from '../../api/activities';
@@ -56,9 +57,10 @@ export function ActivityDetailScreen({ activity, showDistance, onBack }: Activit
               testID="activity-detail-hero-image"
               source={{ uri: heroUri }}
               style={styles.image}
+              contentFit="cover"
+              cachePolicy="disk"
               onLoad={() => setHeroState('loaded')}
               onError={() => setHeroState('broken')}
-              accessibilityIgnoresInvertColors
             />
           ) : (
             <View style={styles.imageFallback}>
@@ -108,9 +110,10 @@ export function ActivityDetailScreen({ activity, showDistance, onBack }: Activit
                     testID="activity-detail-map-image"
                     source={{ uri: staticMapUrl(activity.location, DETAIL_MAP_WIDTH, DETAIL_MAP_HEIGHT) }}
                     style={styles.image}
+                    contentFit="cover"
+                    cachePolicy="disk"
                     onLoad={() => setMapState('loaded')}
                     onError={() => setMapState('broken')}
-                    accessibilityIgnoresInvertColors
                   />
                   {mapState === 'loading' && <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />}
                 </>

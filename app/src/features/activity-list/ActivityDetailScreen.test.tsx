@@ -53,7 +53,7 @@ describe('ActivityDetailScreen', () => {
   it('shows the broken-image fallback when the hero photo fails to load', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
-    fireEvent(screen.getByTestId('activity-detail-hero-image'), 'error');
+    fireEvent(screen.getByTestId('activity-detail-hero-image'), 'error', { nativeEvent: { error: 'load failed' } });
     expect(screen.queryByTestId('activity-detail-hero-image')).toBeNull();
   });
 
@@ -78,7 +78,7 @@ describe('ActivityDetailScreen', () => {
   it('falls back to the pin-off placeholder when the map image request fails', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
-    fireEvent(screen.getByTestId('activity-detail-map-image'), 'error');
+    fireEvent(screen.getByTestId('activity-detail-map-image'), 'error', { nativeEvent: { error: 'load failed' } });
     expect(screen.queryByTestId('activity-detail-map-image')).toBeNull();
   });
 
