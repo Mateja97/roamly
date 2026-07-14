@@ -11,6 +11,8 @@
       "Bash(npx:*)",
       "Bash(node:*)",
       "Bash(docker compose:*)",
+      "Bash(docker-compose:*)",
+      "Bash(protoc:*)",
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(cd /Users/mateja/Documents/Projects/roamly)",

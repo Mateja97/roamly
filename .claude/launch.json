@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "dev"],
       "cwd": "frontend",
       "port": 5173
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8081"],
+      "cwd": "app",
+      "port": 8081
     }
   ]
 }

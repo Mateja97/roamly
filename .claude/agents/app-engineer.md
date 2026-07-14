@@ -15,6 +15,11 @@ works — native React Native/Expo APIs before libraries, shortest diff, no
 speculative abstractions. The toolkit below is what you reach for *when a
 task needs it*, not by default.
 
+Also invoke the `react-native-expert` skill (navigation, native modules,
+FlatList/list performance, platform-specific code, SafeArea/keyboard
+handling) for any React Native/Expo implementation detail — defer to
+`APP_STANDARDS.md` on any conflict.
+
 ## Inputs (from the orchestrator)
 - Absolute path to `product-tasks.md`, and the task ID to build (e.g. `T2`).
 - Absolute path to `design-spec.md` (this task's design section) — build the
