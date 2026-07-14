@@ -22,9 +22,13 @@ type repository interface {
 type Request struct {
 	Scope           activitiessvc.Scope
 	CurrentLocation *activitiessvc.Point
-	Categories      []activitiessvc.Category
-	MinRating       float64
-	MaxDistanceKM   float64
+	// Cities is ScopeAnywhere-only: resolved city centroids to anchor the
+	// distance filter on instead of (and taking priority over)
+	// CurrentLocation.
+	Cities        []activitiessvc.Point
+	Categories    []activitiessvc.Category
+	MinRating     float64
+	MaxDistanceKM float64
 }
 
 // NearbyRadiusKM is the fixed, non-adjustable radius for ScopeNearby
@@ -79,16 +83,22 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 
 	case activitiessvc.ScopeAnywhere:
 		// current_location is optional: device location denied/unavailable
-		// still yields broad, distance-unfiltered results (T2 contract).
+		// still yields broad, distance-unfiltered results.
 		if req.CurrentLocation != nil {
 			if err := validatePoint(req.CurrentLocation); err != nil {
 				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location %s", sharederrors.ErrInvalidInput, err)
 			}
 			filter.CurrentLocation = req.CurrentLocation
 		}
+		for _, c := range req.Cities {
+			if err := validatePoint(&c); err != nil {
+				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: cities %s", sharederrors.ErrInvalidInput, err)
+			}
+		}
+		filter.Cities = req.Cities
 		if req.MaxDistanceKM > 0 {
-			if req.CurrentLocation == nil {
-				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location is required when max_distance_km is set for scope anywhere", sharederrors.ErrInvalidInput)
+			if req.CurrentLocation == nil && len(req.Cities) == 0 {
+				return activitiessvc.QueryFilter{}, fmt.Errorf("%w: current_location or cities is required when max_distance_km is set for scope anywhere", sharederrors.ErrInvalidInput)
 			}
 			// Unlike ScopeNearby's fixed NearbyRadiusKM, anywhere has no
 			// default radius to cap against, so any positive value passes

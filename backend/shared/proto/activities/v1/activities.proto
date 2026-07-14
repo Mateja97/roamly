@@ -66,12 +66,20 @@ message QueryActivitiesRequest {
   // all in-scope activities.
   repeated Category categories = 5; // OR within this field.
   double min_rating = 7;            // 0 = no filter.
-  // Narrows results to within this radius of current_location.
-  // 0 = no filter (SCOPE_NEARBY still applies its configured default radius;
-  // SCOPE_ANYWHERE returns unfiltered by distance, i.e. "truly anywhere").
-  // Requires current_location to be set; SCOPE_ANYWHERE accepts any
-  // positive value (not capped to SCOPE_NEARBY's configured radius).
+  // Narrows results to within this radius of current_location, or (for
+  // SCOPE_ANYWHERE) of the nearest entry in cities. 0 = no filter
+  // (SCOPE_NEARBY still applies its configured default radius; SCOPE_ANYWHERE
+  // returns unfiltered by distance, i.e. "truly anywhere"). Requires
+  // current_location or a non-empty cities to be set; SCOPE_ANYWHERE accepts
+  // any positive value (not capped to SCOPE_NEARBY's configured radius).
   double max_distance_km = 8;
+
+  // SCOPE_ANYWHERE only: zero or more city centroids (resolved client-side,
+  // e.g. from a typeahead) to anchor the search on instead of
+  // current_location. When set, results are the union of activities within
+  // max_distance_km of ANY listed city, and current_location is ignored for
+  // filtering purposes.
+  repeated Location cities = 10;
 }
 
 message Activity {

@@ -101,6 +101,23 @@ func TestActivities_Query_Validation(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "anywhere scope with cities and max_distance_km but no current_location accepted",
+			req: Request{
+				Scope:         activitiessvc.ScopeAnywhere,
+				Cities:        []activitiessvc.Point{{Lat: 41.9, Lng: 12.5}},
+				MaxDistanceKM: 200,
+			},
+			wantErr: false,
+		},
+		{
+			name: "anywhere scope with malformed city rejected",
+			req: Request{
+				Scope:  activitiessvc.ScopeAnywhere,
+				Cities: []activitiessvc.Point{{Lat: 999, Lng: 12.5}},
+			},
+			wantErr: true,
+		},
+		{
 			name: "anywhere scope with malformed location rejected",
 			req: Request{
 				Scope:           activitiessvc.ScopeAnywhere,
@@ -173,6 +190,27 @@ func TestActivities_Query_AnywhereNotCappedByNearbyRadius(t *testing.T) {
 	}
 	if repo.got.MaxDistanceKM != 500 {
 		t.Errorf("anywhere max_distance_km = %v, want 500 (uncapped)", repo.got.MaxDistanceKM)
+	}
+}
+
+func TestActivities_Query_AnywhereCitiesPassThroughAndOutrankLocation(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := New(repo)
+	cities := []activitiessvc.Point{{Lat: 41.9, Lng: 12.5}, {Lat: 48.85, Lng: 2.35}}
+	_, err := svc.Query(context.Background(), Request{
+		Scope:           activitiessvc.ScopeAnywhere,
+		CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 1},
+		Cities:          cities,
+		MaxDistanceKM:   50,
+	})
+	if err != nil {
+		t.Fatalf("Query() unexpected error: %v", err)
+	}
+	if len(repo.got.Cities) != 2 || repo.got.Cities[0] != cities[0] || repo.got.Cities[1] != cities[1] {
+		t.Errorf("Cities = %v, want %v", repo.got.Cities, cities)
+	}
+	if repo.got.MaxDistanceKM != 50 {
+		t.Errorf("MaxDistanceKM = %v, want 50 (uncapped)", repo.got.MaxDistanceKM)
 	}
 }
 

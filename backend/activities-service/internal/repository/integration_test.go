@@ -200,6 +200,37 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("anywhere scope with cities unions per-city radius, independent of current_location", func(t *testing.T) {
+		rome := activitiessvc.Point{Lat: 41.8902, Lng: 12.4922}
+		newYork := &activitiessvc.Point{Lat: 40.7128, Lng: -74.0060} // far from both Rome and Belgrade
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope:           activitiessvc.ScopeAnywhere,
+			CurrentLocation: newYork, // must be ignored for filtering once cities is set
+			Cities:          []activitiessvc.Point{rome},
+			MaxDistanceKM:   50,
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		if len(got) != 1 || got[0].Title != "Colosseum Guided Tour" {
+			t.Fatalf("got %v, want exactly the Rome activity (near city A, far from current_location)", got)
+		}
+	})
+
+	t.Run("anywhere scope with no cities falls back to point-radius from current_location", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope: activitiessvc.ScopeAnywhere, CurrentLocation: belgrade, MaxDistanceKM: 50,
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		for _, a := range got {
+			if a.Country != "Serbia" {
+				t.Errorf("activity %q has country %q, want Serbia (no-city fallback anchors on current_location)", a.Title, a.Country)
+			}
+		}
+	})
+
 	t.Run("category filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
 			Scope:      activitiessvc.ScopeAnywhere,
