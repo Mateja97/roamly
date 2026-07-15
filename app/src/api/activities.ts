@@ -33,6 +33,8 @@ export type ActivityDetails =
       hours?: string;
       open_status?: string;
       popular_dishes?: ItemPrice[];
+      // T7: primary CTA's external link ("Book a table").
+      action_url?: string;
     }
   | {
       category: 'bars';
@@ -40,6 +42,8 @@ export type ActivityDetails =
       happy_hour_window?: string;
       opens_time?: string;
       signature_pours?: string[];
+      // T7: primary CTA's external link ("See menu").
+      action_url?: string;
     }
   | {
       category: 'cafes';
@@ -55,6 +59,10 @@ export type ActivityDetails =
       opens_time?: string;
       open_tonight?: boolean;
       lineup?: { time: string; act: string; stage: string }[];
+      // T7: primary CTA's external link ("Guest list").
+      action_url?: string;
+      // T8: badge subtype qualifier, e.g. "Club".
+      venue_type?: string;
     }
   | {
       category: 'nature';
@@ -70,6 +78,10 @@ export type ActivityDetails =
       duration?: string;
       gear?: string;
       what_to_bring?: string[];
+      // T7: primary CTA's external link ("Book session").
+      action_url?: string;
+      // T8: badge subtype qualifier, e.g. "Climbing".
+      discipline?: string;
     }
   | {
       category: 'kids';
@@ -82,6 +94,8 @@ export type ActivityDetails =
       ticket_price?: string;
       hours?: string;
       now_showing?: DetailBanner;
+      // T7: primary CTA's external link ("Get tickets").
+      action_url?: string;
     }
   | {
       category: 'art';
@@ -90,17 +104,27 @@ export type ActivityDetails =
       hours?: string;
       artwork?: { artist?: string; work?: string; medium?: string };
       current_exhibition?: DetailBanner;
+      // T7: primary CTA's external link ("Get tickets").
+      action_url?: string;
+      // T7: current exhibition's artwork year, e.g. 2019.
+      year?: number;
     }
   | {
       category: 'wellness';
       treatments?: { item: string; duration?: string; price?: string }[];
       external_booking_note?: string;
+      // T7: primary CTA's external link ("Visit website").
+      action_url?: string;
+      // T8: badge subtype qualifier, e.g. "Spa".
+      venue_type?: string;
     }
   | {
       category: 'entertainment';
       genre?: string;
       neighborhood?: string;
       upcoming_shows?: { date: string; title: string; time_or_price?: string }[];
+      // T7: primary CTA's external link ("Get tickets").
+      action_url?: string;
     }
   | {
       category: 'shopping';

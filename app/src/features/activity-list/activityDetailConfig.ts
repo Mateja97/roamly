@@ -8,8 +8,6 @@ import {
   Image as ImageIcon,
   Landmark,
   Martini,
-  Music,
-  MapPin,
   Shirt,
   Store,
   Sun,
@@ -62,14 +60,12 @@ export type UniqueSectionData =
       heading: string;
       title: string;
       description?: string;
-      attribution?: string;
     }
   | {
       shape: 'schedule';
       heading: string;
       density: 'compact';
       rows: CompactRow[];
-      note?: string;
     }
   | {
       shape: 'schedule';
@@ -106,22 +102,129 @@ export function genericActionLabel(category: Category): 'Directions' | 'Share' {
   return primaryCTAIsDirections(category) ? 'Share' : 'Directions';
 }
 
-// Only the two qualifiers design-spec.md names explicitly (Restaurants'
-// cuisine, Kids' age range) — no speculative qualifier for categories the
-// spec doesn't call one out for.
+// design-spec.md T8 addendum #1: the 8 non-directions categories' primary
+// CTA opens this external `action_url` (T7). `undefined` only when the
+// field is genuinely absent — never force-disabled by category alone.
+export function primaryActionURL(activity: Activity): string | undefined {
+  const d = activity.details;
+  if (!d) return undefined;
+  switch (d.category) {
+    case 'restaurants':
+    case 'bars':
+    case 'nightlife':
+    case 'sport':
+    case 'culture':
+    case 'art':
+    case 'wellness':
+    case 'entertainment':
+      return d.action_url;
+    default:
+      return undefined;
+  }
+}
+
+// design-spec.md T8 addendum #3: per-category body-section top→bottom
+// order, replacing the previous single hardcoded order. Sections whose data
+// is absent are simply skipped by the renderer — this table only fixes
+// order, not the existing per-section omission rules.
+export type BodySection = 'description' | 'difficulty' | 'factstrip' | 'unique';
+
+export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
+  restaurants: ['factstrip', 'description', 'unique'],
+  bars: ['factstrip', 'description', 'unique'],
+  cafes: ['description', 'factstrip', 'unique'],
+  nightlife: ['unique', 'factstrip'],
+  nature: ['factstrip', 'description', 'unique'],
+  sport: ['difficulty', 'factstrip', 'unique'],
+  kids: ['description', 'unique'],
+  culture: ['unique', 'factstrip', 'description'],
+  art: ['unique', 'factstrip', 'description'],
+  wellness: ['description', 'unique'],
+  entertainment: ['unique'],
+  shopping: ['description', 'unique', 'factstrip'],
+};
+
+// design-spec.md T8 addendum #8: Entertainment's genre + neighborhood move
+// into the rating/meta row (muted, "·"-separated) instead of the removed
+// fact strip. No other category uses this — everything else keeps its
+// scalar meta-row item (openStatus) or omits.
+export function metaRowExtras(activity: Activity): string[] {
+  const d = activity.details;
+  if (!d || d.category !== 'entertainment') return [];
+  return [d.genre, d.neighborhood].filter((v): v is string => Boolean(v));
+}
+
+// design-spec.md T8 addendum #5: Art's artist/work/medium/year attribution
+// line, lifted out of the unique-section banner into the title block.
+// `workYear` is rendered in italic by the caller; `undefined` fields are
+// simply left out of the joined line by the caller.
+export type ArtAttribution = { artist?: string; workYear?: string; medium?: string };
+
+export function artAttribution(activity: Activity): ArtAttribution | undefined {
+  const d = activity.details;
+  if (!d || d.category !== 'art' || !d.artwork) return undefined;
+  const { artist, work, medium } = d.artwork;
+  if (!artist && !work && !medium) return undefined;
+  const workYear = work ? (d.year ? `${work}, ${d.year}` : work) : undefined;
+  return { artist, workYear, medium };
+}
+
+// design-spec.md T8 addendum #6: Wellness' external-booking note, lifted
+// out of the Treatments rows into the bottom action bar (above the button
+// row) — always present for Wellness once this data exists.
+export function wellnessBookingNote(activity: Activity): string | undefined {
+  const d = activity.details;
+  return d?.category === 'wellness' ? d.external_booking_note : undefined;
+}
+
+// design-spec.md T8 addendum #2: the noun before the "·" is the *singular*
+// category word, not the plural CATEGORY_LABELS value — only these three
+// differ from their plural label (Kids stays "Kids", every other category's
+// label word is already singular).
+const SINGULAR_NOUN: Partial<Record<Category, string>> = {
+  restaurants: 'Restaurant',
+  cafes: 'Café',
+  bars: 'Bar',
+};
+
+function categoryNoun(category: Category): string {
+  return SINGULAR_NOUN[category] ?? CATEGORY_LABELS[category];
+}
+
+// Per-category subtype qualifier, pulled from an existing `details` field —
+// omitted (no dangling "·") when that field is absent, per the
+// omit-rather-than-blank rule.
 export function badgeQualifier(activity: Activity): string | undefined {
   const d = activity.details;
   if (!d) return undefined;
-  if (d.category === 'restaurants') return d.cuisine;
-  if (d.category === 'kids')
-    return d.age_range ? `Ages ${d.age_range}` : undefined;
-  return undefined;
+  switch (d.category) {
+    case 'restaurants':
+      return d.cuisine;
+    case 'cafes':
+      return d.known_for_brew;
+    case 'nightlife':
+      return d.venue_type;
+    case 'sport':
+      return d.discipline;
+    case 'kids':
+      return d.age_range ? `Ages ${d.age_range}` : undefined;
+    case 'culture':
+    case 'art':
+    case 'shopping':
+      return d.venue_type;
+    case 'wellness':
+      return d.venue_type;
+    case 'entertainment':
+      return d.genre;
+    default:
+      return undefined;
+  }
 }
 
 export function badgeLabel(activity: Activity): string {
   const qualifier = badgeQualifier(activity);
-  const base = CATEGORY_LABELS[activity.category];
-  return qualifier ? `${base} · ${qualifier}` : base;
+  const noun = categoryNoun(activity.category);
+  return qualifier ? `${noun} · ${qualifier}` : noun;
 }
 
 // The one scalar field design-spec.md places in the rating/meta row instead
@@ -213,11 +316,6 @@ export function factStripFields(activity: Activity): FactChip[] {
         [Euro, 'Tickets', d.ticket_price],
         [Clock, 'Hours', d.hours],
       ]);
-    case 'entertainment':
-      return buildChips([
-        [Music, 'Genre', d.genre],
-        [MapPin, 'Neighborhood', d.neighborhood],
-      ]);
     case 'shopping':
       return buildChips([
         [Store, 'Venue', d.venue_type],
@@ -234,14 +332,6 @@ export function factStripFields(activity: Activity): FactChip[] {
       // crashing FactStrip on `fields.length` of undefined.
       return [];
   }
-}
-
-function artworkAttribution(
-  artwork: { artist?: string; work?: string; medium?: string } | undefined,
-): string | undefined {
-  if (!artwork) return undefined;
-  const parts = [artwork.artist, artwork.work, artwork.medium].filter(Boolean);
-  return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 // Backend's `upcoming_shows[].date` has no fixed documented format; parse it
@@ -338,7 +428,6 @@ export function uniqueSection(
             heading: 'Current exhibition',
             title: d.current_exhibition.title,
             description: d.current_exhibition.description,
-            attribution: artworkAttribution(d.artwork),
           }
         : undefined;
     case 'nightlife':
@@ -367,7 +456,6 @@ export function uniqueSection(
               trailing: t.price,
               trailingStyle: 'price' as const,
             })),
-            note: d.external_booking_note,
           }
         : undefined;
     case 'entertainment':

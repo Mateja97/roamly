@@ -44,7 +44,7 @@ describe('ActivityDetailScreen', () => {
     expect(screen.getByText('local')).toBeTruthy();
     expect(screen.getByText('evening')).toBeTruthy();
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
-    expect(screen.getByText('Restaurants')).toBeTruthy();
+    expect(screen.getByText('Restaurant')).toBeTruthy();
     expect(screen.getByText('4.6')).toBeTruthy();
     expect(screen.getByText('0.4 km away')).toBeTruthy();
   });
@@ -270,7 +270,7 @@ describe('ActivityDetailScreen', () => {
         />,
       );
 
-      expect(screen.getByText('Restaurants · Italian')).toBeTruthy();
+      expect(screen.getByText('Restaurant · Italian')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
       expect(screen.getByText('€€')).toBeTruthy();
       expect(screen.getByText('9am–11pm')).toBeTruthy();
@@ -316,7 +316,7 @@ describe('ActivityDetailScreen', () => {
           onBack={jest.fn()}
         />,
       );
-      expect(screen.getByText('Intermediate · 3/5')).toBeTruthy();
+      expect(screen.getByText('Intermediate')).toBeTruthy();
       expect(screen.getByText('Moderate')).toBeTruthy();
     });
 
@@ -405,6 +405,164 @@ describe('ActivityDetailScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Share' }));
       await waitFor(() => expect(shareSpy).toHaveBeenCalled());
       shareSpy.mockRestore();
+    });
+  });
+
+  describe('design-fidelity fixes across categories (T8)', () => {
+    it('opens the external action_url for a non-directions category (Sport) and is never disabled once the URL exists', async () => {
+      const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+      const sport: Activity = {
+        ...activity,
+        category: 'sport',
+        details: {
+          category: 'sport',
+          difficulty: 2,
+          action_url: 'https://booking.example.com/kayaking-sava',
+        },
+      };
+      render(
+        <ActivityDetailScreen activity={sport} showDistance onBack={jest.fn()} />,
+      );
+      const cta = screen.getByRole('button', { name: 'Book session' });
+      expect(cta.props.accessibilityState.disabled).toBe(false);
+      fireEvent.press(cta);
+      await waitFor(() =>
+        expect(openURLSpy).toHaveBeenCalledWith(
+          'https://booking.example.com/kayaking-sava',
+        ),
+      );
+      openURLSpy.mockRestore();
+    });
+
+    it('surfaces the generic error banner when the external action_url handoff fails', async () => {
+      const openURLSpy = jest
+        .spyOn(Linking, 'openURL')
+        .mockRejectedValue(new Error('no browser'));
+      const sport: Activity = {
+        ...activity,
+        category: 'sport',
+        details: {
+          category: 'sport',
+          action_url: 'https://booking.example.com/kayaking-sava',
+        },
+      };
+      render(
+        <ActivityDetailScreen activity={sport} showDistance onBack={jest.fn()} />,
+      );
+      fireEvent.press(screen.getByRole('button', { name: 'Book session' }));
+      await waitFor(() =>
+        expect(
+          screen.getByText('Could not open the link. Please try again.'),
+        ).toBeTruthy(),
+      );
+      openURLSpy.mockRestore();
+    });
+
+    it('shows the singular badge noun + venue_type subtype for Nightlife, in fact-strip-first order with no description', () => {
+      const nightlife: Activity = {
+        ...activity,
+        category: 'nightlife',
+        description: 'Should not render for Nightlife',
+        details: {
+          category: 'nightlife',
+          venue_type: 'Club',
+          entry_price: '€10',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={nightlife}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Nightlife · Club')).toBeTruthy();
+      expect(
+        screen.queryByText('Should not render for Nightlife'),
+      ).toBeNull();
+    });
+
+    it('shows the Nightlife open-tonight status dot + success-colored text, leading the meta row', () => {
+      const nightlife: Activity = {
+        ...activity,
+        category: 'nightlife',
+        details: { category: 'nightlife', open_tonight: true },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={nightlife}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Open tonight')).toBeTruthy();
+    });
+
+    it('shows Entertainment genre + neighborhood inline in the meta row instead of a fact strip', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        details: {
+          category: 'entertainment',
+          genre: 'Concerts & theatre',
+          neighborhood: 'Dorćol',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={entertainment}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Concerts & theatre')).toBeTruthy();
+      expect(screen.getByText('Dorćol')).toBeTruthy();
+      expect(screen.queryByText('Genre')).toBeNull();
+    });
+
+    it("shows Art's artist/work/year/medium attribution line above the badge, not inside the exhibition banner", () => {
+      const art: Activity = {
+        ...activity,
+        category: 'art',
+        details: {
+          category: 'art',
+          artwork: {
+            artist: 'Marina Abramović',
+            work: 'The Cleaner',
+            medium: 'mixed media',
+          },
+          year: 2019,
+          current_exhibition: { title: 'Retrospective' },
+        },
+      };
+      render(
+        <ActivityDetailScreen activity={art} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('Marina Abramović')).toBeTruthy();
+      expect(screen.getByText('The Cleaner, 2019')).toBeTruthy();
+      expect(screen.getByText('mixed media')).toBeTruthy();
+    });
+
+    it("shows Wellness' external-booking note above the footer button row, not among the treatments", () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: {
+          category: 'wellness',
+          external_booking_note: "Booking is handled on the venue's own site",
+          treatments: [{ item: 'Massage' }],
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={wellness}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(
+        screen.getByText("Booking is handled on the venue's own site"),
+      ).toBeTruthy();
     });
   });
 });

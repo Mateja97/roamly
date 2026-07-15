@@ -122,6 +122,8 @@ type NightlifeDetails struct {
 	Lineup      []LineupItem `json:"lineup,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Guest list").
 	ActionURL *string `json:"action_url,omitempty"`
+	// VenueType (T8) is the badge subtype qualifier, e.g. "Club".
+	VenueType string `json:"venue_type,omitempty"`
 }
 
 // NatureDetails is CategoryNature's detail payload.
@@ -141,6 +143,8 @@ type SportDetails struct {
 	WhatToBring []string `json:"what_to_bring,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Book session").
 	ActionURL *string `json:"action_url,omitempty"`
+	// Discipline (T8) is the badge subtype qualifier, e.g. "Climbing".
+	Discipline string `json:"discipline,omitempty"`
 }
 
 // KidsDetails is CategoryKids' detail payload.
@@ -200,6 +204,8 @@ type WellnessDetails struct {
 	ExternalBookingNote string      `json:"external_booking_note,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Visit website").
 	ActionURL *string `json:"action_url,omitempty"`
+	// VenueType (T8) is the badge subtype qualifier, e.g. "Spa".
+	VenueType string `json:"venue_type,omitempty"`
 }
 
 // Show is one entry in Entertainment's upcoming shows list.
