@@ -154,7 +154,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 		var insideID, outsideID string
 		err := db.QueryRow(ctx,
 			`INSERT INTO activities (title, description, category, location, country, rating)
-			VALUES ('Boundary Inside Test', 'test fixture', 'nature_and_outdoors',
+			VALUES ('Boundary Inside Test', 'test fixture', 'nature',
 				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Serbia', 4.0)
 			RETURNING id`,
 			belgrade.Lng, insideLat,
@@ -166,7 +166,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 		err = db.QueryRow(ctx,
 			`INSERT INTO activities (title, description, category, location, country, rating)
-			VALUES ('Boundary Outside Test', 'test fixture', 'nature_and_outdoors',
+			VALUES ('Boundary Outside Test', 'test fixture', 'nature',
 				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Serbia', 4.0)
 			RETURNING id`,
 			belgrade.Lng, outsideLat,
@@ -234,18 +234,18 @@ func TestActivities_Query_Integration(t *testing.T) {
 	t.Run("category filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
 			Scope:      activitiessvc.ScopeAnywhere,
-			Categories: []activitiessvc.Category{activitiessvc.CategorySports},
+			Categories: []activitiessvc.Category{activitiessvc.CategorySport},
 		})
 		if err != nil {
 			t.Fatalf("Query() error: %v", err)
 		}
 		for _, a := range got {
-			if a.Category != activitiessvc.CategorySports {
-				t.Errorf("activity %q has category %q, want sports", a.Title, a.Category)
+			if a.Category != activitiessvc.CategorySport {
+				t.Errorf("activity %q has category %q, want sport", a.Title, a.Category)
 			}
 		}
 		if len(got) == 0 {
-			t.Fatal("expected at least one sports activity")
+			t.Fatal("expected at least one sport activity")
 		}
 	})
 

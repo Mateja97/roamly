@@ -14,12 +14,18 @@ const (
 type Category string
 
 const (
-	CategoryFoodAndDrink             Category = "food_and_drink"
-	CategoryHistoryAndCulture        Category = "history_and_culture"
-	CategoryNatureAndOutdoors        Category = "nature_and_outdoors"
-	CategoryArtAndDesign             Category = "art_and_design"
-	CategorySports                   Category = "sports"
-	CategoryEntertainmentAndWellness Category = "entertainment_and_wellness"
+	CategoryRestaurants   Category = "restaurants"
+	CategoryCafes         Category = "cafes"
+	CategoryBars          Category = "bars"
+	CategoryNightlife     Category = "nightlife"
+	CategoryNature        Category = "nature"
+	CategorySport         Category = "sport"
+	CategoryKids          Category = "kids"
+	CategoryCulture       Category = "culture"
+	CategoryArt           Category = "art"
+	CategoryWellness      Category = "wellness"
+	CategoryShopping      Category = "shopping"
+	CategoryEntertainment Category = "entertainment"
 )
 
 // Point is a WGS84 coordinate pair.

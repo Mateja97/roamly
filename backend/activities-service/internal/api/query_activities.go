@@ -91,18 +91,30 @@ func toDomainScope(s activitiesv1.Scope) activitiessvc.Scope {
 
 func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
 	switch c {
-	case activitiesv1.Category_CATEGORY_FOOD_AND_DRINK:
-		return activitiessvc.CategoryFoodAndDrink
-	case activitiesv1.Category_CATEGORY_HISTORY_AND_CULTURE:
-		return activitiessvc.CategoryHistoryAndCulture
-	case activitiesv1.Category_CATEGORY_NATURE_AND_OUTDOORS:
-		return activitiessvc.CategoryNatureAndOutdoors
-	case activitiesv1.Category_CATEGORY_ART_AND_DESIGN:
-		return activitiessvc.CategoryArtAndDesign
-	case activitiesv1.Category_CATEGORY_SPORTS:
-		return activitiessvc.CategorySports
-	case activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS:
-		return activitiessvc.CategoryEntertainmentAndWellness
+	case activitiesv1.Category_CATEGORY_RESTAURANTS:
+		return activitiessvc.CategoryRestaurants
+	case activitiesv1.Category_CATEGORY_CAFES:
+		return activitiessvc.CategoryCafes
+	case activitiesv1.Category_CATEGORY_BARS:
+		return activitiessvc.CategoryBars
+	case activitiesv1.Category_CATEGORY_NIGHTLIFE:
+		return activitiessvc.CategoryNightlife
+	case activitiesv1.Category_CATEGORY_NATURE:
+		return activitiessvc.CategoryNature
+	case activitiesv1.Category_CATEGORY_SPORT:
+		return activitiessvc.CategorySport
+	case activitiesv1.Category_CATEGORY_KIDS:
+		return activitiessvc.CategoryKids
+	case activitiesv1.Category_CATEGORY_CULTURE:
+		return activitiessvc.CategoryCulture
+	case activitiesv1.Category_CATEGORY_ART:
+		return activitiessvc.CategoryArt
+	case activitiesv1.Category_CATEGORY_WELLNESS:
+		return activitiessvc.CategoryWellness
+	case activitiesv1.Category_CATEGORY_SHOPPING:
+		return activitiessvc.CategoryShopping
+	case activitiesv1.Category_CATEGORY_ENTERTAINMENT:
+		return activitiessvc.CategoryEntertainment
 	default:
 		return "" // service layer rejects this as an unknown category
 	}
@@ -133,18 +145,30 @@ func toProtoPhotos(photos []activitiessvc.Photo) []*activitiesv1.Photo {
 
 func toProtoCategory(c activitiessvc.Category) activitiesv1.Category {
 	switch c {
-	case activitiessvc.CategoryFoodAndDrink:
-		return activitiesv1.Category_CATEGORY_FOOD_AND_DRINK
-	case activitiessvc.CategoryHistoryAndCulture:
-		return activitiesv1.Category_CATEGORY_HISTORY_AND_CULTURE
-	case activitiessvc.CategoryNatureAndOutdoors:
-		return activitiesv1.Category_CATEGORY_NATURE_AND_OUTDOORS
-	case activitiessvc.CategoryArtAndDesign:
-		return activitiesv1.Category_CATEGORY_ART_AND_DESIGN
-	case activitiessvc.CategorySports:
-		return activitiesv1.Category_CATEGORY_SPORTS
-	case activitiessvc.CategoryEntertainmentAndWellness:
-		return activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS
+	case activitiessvc.CategoryRestaurants:
+		return activitiesv1.Category_CATEGORY_RESTAURANTS
+	case activitiessvc.CategoryCafes:
+		return activitiesv1.Category_CATEGORY_CAFES
+	case activitiessvc.CategoryBars:
+		return activitiesv1.Category_CATEGORY_BARS
+	case activitiessvc.CategoryNightlife:
+		return activitiesv1.Category_CATEGORY_NIGHTLIFE
+	case activitiessvc.CategoryNature:
+		return activitiesv1.Category_CATEGORY_NATURE
+	case activitiessvc.CategorySport:
+		return activitiesv1.Category_CATEGORY_SPORT
+	case activitiessvc.CategoryKids:
+		return activitiesv1.Category_CATEGORY_KIDS
+	case activitiessvc.CategoryCulture:
+		return activitiesv1.Category_CATEGORY_CULTURE
+	case activitiessvc.CategoryArt:
+		return activitiesv1.Category_CATEGORY_ART
+	case activitiessvc.CategoryWellness:
+		return activitiesv1.Category_CATEGORY_WELLNESS
+	case activitiessvc.CategoryShopping:
+		return activitiesv1.Category_CATEGORY_SHOPPING
+	case activitiessvc.CategoryEntertainment:
+		return activitiesv1.Category_CATEGORY_ENTERTAINMENT
 	default:
 		return activitiesv1.Category_CATEGORY_UNSPECIFIED
 	}

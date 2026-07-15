@@ -152,12 +152,18 @@ func validatePoint(p *activitiessvc.Point) error {
 
 func validCategory(c activitiessvc.Category) bool {
 	switch c {
-	case activitiessvc.CategoryFoodAndDrink,
-		activitiessvc.CategoryHistoryAndCulture,
-		activitiessvc.CategoryNatureAndOutdoors,
-		activitiessvc.CategoryArtAndDesign,
-		activitiessvc.CategorySports,
-		activitiessvc.CategoryEntertainmentAndWellness:
+	case activitiessvc.CategoryRestaurants,
+		activitiessvc.CategoryCafes,
+		activitiessvc.CategoryBars,
+		activitiessvc.CategoryNightlife,
+		activitiessvc.CategoryNature,
+		activitiessvc.CategorySport,
+		activitiessvc.CategoryKids,
+		activitiessvc.CategoryCulture,
+		activitiessvc.CategoryArt,
+		activitiessvc.CategoryWellness,
+		activitiessvc.CategoryShopping,
+		activitiessvc.CategoryEntertainment:
 		return true
 	}
 	return false

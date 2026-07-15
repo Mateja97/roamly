@@ -234,6 +234,41 @@ func TestActivities_Query_AnywhereNoDistanceCapWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestValidCategory(t *testing.T) {
+	tests := []struct {
+		name string
+		cat  activitiessvc.Category
+		want bool
+	}{
+		{"restaurants valid", activitiessvc.CategoryRestaurants, true},
+		{"cafes valid", activitiessvc.CategoryCafes, true},
+		{"bars valid", activitiessvc.CategoryBars, true},
+		{"nightlife valid", activitiessvc.CategoryNightlife, true},
+		{"nature valid", activitiessvc.CategoryNature, true},
+		{"sport valid", activitiessvc.CategorySport, true},
+		{"kids valid", activitiessvc.CategoryKids, true},
+		{"culture valid", activitiessvc.CategoryCulture, true},
+		{"art valid", activitiessvc.CategoryArt, true},
+		{"wellness valid", activitiessvc.CategoryWellness, true},
+		{"shopping valid", activitiessvc.CategoryShopping, true},
+		{"entertainment valid", activitiessvc.CategoryEntertainment, true},
+		{"retired food_and_drink rejected", activitiessvc.Category("food_and_drink"), false},
+		{"retired history_and_culture rejected", activitiessvc.Category("history_and_culture"), false},
+		{"retired nature_and_outdoors rejected", activitiessvc.Category("nature_and_outdoors"), false},
+		{"retired art_and_design rejected", activitiessvc.Category("art_and_design"), false},
+		{"retired sports rejected", activitiessvc.Category("sports"), false},
+		{"retired entertainment_and_wellness rejected", activitiessvc.Category("entertainment_and_wellness"), false},
+		{"unknown category rejected", activitiessvc.Category("bogus"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validCategory(tt.cat); got != tt.want {
+				t.Errorf("validCategory(%q) = %v, want %v", tt.cat, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestActivities_SuggestCities(t *testing.T) {
 	tests := []struct {
 		name    string
