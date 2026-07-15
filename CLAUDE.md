@@ -14,6 +14,16 @@ web client), and `app/` (React Native + Expo, iOS/Android).
 - `DESIGN_STANDARDS.md` — the visual design system shared by `frontend/` and `app/` (dark, minimalist, olive-green, premium tokens). Read before writing any frontend or mobile UI.
 - `BUSINESS_STANDARDS.md` — domain rules: the activity category taxonomy and Nearby/Anywhere search-scope behavior. Read before touching activity categories, search-scope logic, or filters in any of `backend/`, `frontend/`, or `app/`.
 
+## Claude Design project
+
+Roamly's page/flow designs live in the claude.ai/design project **"Roamly"**,
+id `e93d4e9b-8c28-4bef-971e-aaa37462d1ec`. This is the default design source:
+when a task or pipeline run names a design file (e.g. `Implement: <name>.dc.html`)
+without a project URL, import it from this project. Read/write it with the
+built-in `DesignSync` tool (auth via `/design-login` if needed) — never
+configure a `claude_design` MCP server for it. The project's
+`uploads/DESIGN_STANDARDS.md` is a mirror of the repo's `DESIGN_STANDARDS.md`.
+
 ## Model policy
 
 - Brainstorming and planning phases: use **Opus 4.8**.
