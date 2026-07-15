@@ -41,9 +41,9 @@ describe('buildAnywhereSearchRequest', () => {
   it('includes selected categories on top of the distance anchor', () => {
     const request = buildAnywhereSearchRequest(
       { scope: 'anywhere' },
-      { maxDistanceKm: 500, cities: [], categories: ['sports', 'nature_and_outdoors'] }
+      { maxDistanceKm: 500, cities: [], categories: ['sport', 'nature'] }
     );
-    expect(request.categories).toEqual(['sports', 'nature_and_outdoors']);
+    expect(request.categories).toEqual(['sport', 'nature']);
   });
 });
 
@@ -55,6 +55,6 @@ describe('isAnywhereSearchDefault', () => {
   it('is false once distance, a city, or a category diverges', () => {
     expect(isAnywhereSearchDefault({ maxDistanceKm: 100, cities: [], categories: [] })).toBe(false);
     expect(isAnywhereSearchDefault({ maxDistanceKm: 500, cities: [suggestion('Rome', 'Italy', 1, 2)], categories: [] })).toBe(false);
-    expect(isAnywhereSearchDefault({ maxDistanceKm: 500, cities: [], categories: ['sports'] })).toBe(false);
+    expect(isAnywhereSearchDefault({ maxDistanceKm: 500, cities: [], categories: ['sport'] })).toBe(false);
   });
 });

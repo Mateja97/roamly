@@ -13,7 +13,7 @@ const activity = (id: string) => ({
   id,
   title: 'Tour',
   description: '',
-  category: 'sports' as const,
+  category: 'sport' as const,
   location: { lat: 0, lng: 0 },
   country: 'Spain',
   rating: 4.5,
@@ -82,7 +82,7 @@ describe('AnywhereSearchScreen', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Show 2 activities' })).toBeTruthy());
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     });
 
     await waitFor(() =>
@@ -90,12 +90,12 @@ describe('AnywhereSearchScreen', () => {
         scope: 'anywhere',
         max_distance_km: 500,
         current_location: { lat: 1, lng: 2 },
-        categories: ['sports'],
+        categories: ['sport'],
       })
     );
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Sports, selected' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Sport, selected' }));
     });
     await waitFor(() =>
       expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'anywhere', max_distance_km: 500, current_location: { lat: 1, lng: 2 } })
@@ -112,7 +112,7 @@ describe('AnywhereSearchScreen', () => {
     expect(screen.getByRole('button', { name: 'Reset' }).props.accessibilityState.disabled).toBe(true);
 
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     });
     expect(screen.getByRole('button', { name: 'Reset' }).props.accessibilityState.disabled).toBe(false);
 

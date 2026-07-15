@@ -39,12 +39,18 @@ export function defaultFilters(_scope: Scope): Filters {
 export const EMPTY_FILTERS: Filters = defaultFilters('nearby');
 
 export const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
-  { value: 'food_and_drink', label: 'Food & Drink' },
-  { value: 'history_and_culture', label: 'History & Culture' },
-  { value: 'nature_and_outdoors', label: 'Nature & Outdoors' },
-  { value: 'art_and_design', label: 'Art & Design' },
-  { value: 'sports', label: 'Sports' },
-  { value: 'entertainment_and_wellness', label: 'Entertainment & Wellness' },
+  { value: 'restaurants', label: 'Restaurants' },
+  { value: 'cafes', label: 'Cafés' },
+  { value: 'bars', label: 'Bars' },
+  { value: 'nightlife', label: 'Nightlife' },
+  { value: 'nature', label: 'Nature' },
+  { value: 'sport', label: 'Sport' },
+  { value: 'kids', label: 'Kids' },
+  { value: 'culture', label: 'Culture' },
+  { value: 'art', label: 'Art' },
+  { value: 'wellness', label: 'Wellness' },
+  { value: 'shopping', label: 'Shopping' },
+  { value: 'entertainment', label: 'Entertainment' },
 ];
 
 export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce(

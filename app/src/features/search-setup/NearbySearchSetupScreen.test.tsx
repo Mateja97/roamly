@@ -18,7 +18,7 @@ const activity: Activity = {
   id: '1',
   title: 'Skadarlija Food Walk',
   description: 'A tasty walk',
-  category: 'food_and_drink',
+  category: 'restaurants',
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
@@ -56,14 +56,14 @@ describe('NearbySearchSetupScreen', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Show 1 activities' })).toBeTruthy());
 
     mockedQuery.mockResolvedValueOnce(successResult([activity, activity, activity]));
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
 
     expect(screen.getByText('1 selected')).toBeTruthy();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Show 3 activities' })).toBeTruthy());
     expect(mockedQuery).toHaveBeenLastCalledWith({
       scope: 'nearby',
       current_location: { lat: 44.8125, lng: 20.4612 },
-      categories: ['sports'],
+      categories: ['sport'],
     });
   });
 
@@ -74,12 +74,12 @@ describe('NearbySearchSetupScreen', () => {
 
     expect(screen.getByRole('button', { name: 'Reset' })).toHaveProp('accessibilityState', { disabled: true });
 
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     expect(screen.getByRole('button', { name: 'Reset' })).toHaveProp('accessibilityState', { disabled: false });
 
     fireEvent.press(screen.getByRole('button', { name: 'Reset' }));
     expect(screen.getByText('0 selected')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /sports, selected/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /sport, selected/i })).toBeNull();
   });
 
   it('disables the CTA and reads "Show 0 activities" when the filter yields no results', async () => {
@@ -99,14 +99,14 @@ describe('NearbySearchSetupScreen', () => {
     render(<NearbySearchSetupScreen selection={SELECTION} onConfirm={onConfirm} onBack={jest.fn()} />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Show 1 activities' })).toBeTruthy());
 
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     await waitFor(() => expect(screen.getByRole('button', { name: /show \d+ activities/i })).toBeTruthy());
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /show \d+ activities/i }));
     });
 
-    expect(onConfirm).toHaveBeenCalledWith(['sports']);
+    expect(onConfirm).toHaveBeenCalledWith(['sport']);
   });
 
   it('shows an error banner and never confirms when the CTA-triggered search fails', async () => {

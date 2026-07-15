@@ -6,7 +6,7 @@ const activity: Activity = {
   id: '1',
   title: 'Skadarlija Food Walk',
   description: 'A tasty walk',
-  category: 'food_and_drink',
+  category: 'restaurants',
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
@@ -21,10 +21,10 @@ describe('ActivityCard', () => {
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
     // Category/rating pills are accessibilityElementsHidden (decorative — the
     // combined label already carries them), so queries need includeHiddenElements.
-    expect(screen.getByText('Food & Drink', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('Restaurants', { includeHiddenElements: true })).toBeTruthy();
     expect(screen.getByText('4.6', { includeHiddenElements: true })).toBeTruthy();
     expect(screen.queryByText('$$', { includeHiddenElements: true })).toBeNull();
-    const card = screen.getByLabelText(/skadarlija food walk.*food & drink.*rated 4.6.*0.4 km away/i);
+    const card = screen.getByLabelText(/skadarlija food walk.*restaurants.*rated 4.6.*0.4 km away/i);
     expect(card.props.accessibilityLabel).not.toMatch(/\$/);
   });
 

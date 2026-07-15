@@ -3,10 +3,10 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { ActivityTypesScreen } from './ActivityTypesScreen';
 
 describe('ActivityTypesScreen', () => {
-  it('renders the six category chips, all unselected, with the all-types status', () => {
+  it('renders the twelve category chips, all unselected, with the all-types status', () => {
     render(<ActivityTypesScreen onConfirm={jest.fn()} onBack={jest.fn()} />);
-    expect(screen.getByRole('button', { name: 'Food & Drink' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Restaurants' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sport' })).toBeTruthy();
     expect(screen.getByText('All activity types')).toBeTruthy();
   });
 
@@ -21,15 +21,15 @@ describe('ActivityTypesScreen', () => {
     const onConfirm = jest.fn();
     render(<ActivityTypesScreen onConfirm={onConfirm} onBack={jest.fn()} />);
 
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
-    fireEvent.press(screen.getByRole('button', { name: 'Food & Drink' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
     expect(screen.getByText('2 types selected')).toBeTruthy();
 
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     expect(screen.getByText('1 types selected')).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: 'Show activities' }));
-    expect(onConfirm).toHaveBeenCalledWith(['food_and_drink']);
+    expect(onConfirm).toHaveBeenCalledWith(['restaurants']);
   });
 
   it('calls onBack on Android hardware back press — no custom back control', () => {

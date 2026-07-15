@@ -33,7 +33,7 @@ describe('FilterSheet', () => {
     expect(screen.getByText('Category')).toBeTruthy();
     expect(screen.getByText('Minimum rating')).toBeTruthy();
     expect(screen.queryByText('Max distance')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sport' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '4.5+' })).toBeTruthy();
   });
 
@@ -85,14 +85,14 @@ describe('FilterSheet', () => {
     );
     await flush();
 
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
     });
 
     expect(onApply).toHaveBeenCalledWith({
-      categories: ['sports'],
+      categories: ['sport'],
       minRating: null,
       maxDistanceKm: null,
     });
@@ -114,7 +114,7 @@ describe('FilterSheet', () => {
     );
     await flush();
 
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
@@ -122,12 +122,12 @@ describe('FilterSheet', () => {
 
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByText('internal error')).toBeTruthy();
-    // Selection preserved: Sports chip still shows as selected.
-    expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
+    // Selection preserved: Sport chip still shows as selected.
+    expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
   });
 
   it('Clear all resets every group to unset for nearby (no distance control to reset)', async () => {
-    const initial: Filters = { categories: ['sports'], minRating: 4.5, maxDistanceKm: null };
+    const initial: Filters = { categories: ['sport'], minRating: 4.5, maxDistanceKm: null };
     render(
       <FilterSheet
         visible
@@ -139,14 +139,14 @@ describe('FilterSheet', () => {
       />
     );
     await flush();
-    expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: 'Clear all' }));
 
-    // Sports chip returns to unselected; the always-present "Any" rating
+    // Sport chip returns to unselected; the always-present "Any" rating
     // option legitimately stays selected as the default.
-    expect(screen.getByRole('button', { name: 'Sports' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /sports, selected/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sport' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /sport, selected/i })).toBeNull();
     expect(screen.queryByText('Max distance')).toBeNull();
   });
 
@@ -175,7 +175,7 @@ describe('FilterSheet', () => {
     // open — keyed on open/closed — rather than this component reacting to
     // an `initialFilters` prop change in place; a fresh mount already reads
     // the latest `initialFilters` as its starting draft.
-    const withSports: Filters = { ...EMPTY_FILTERS, categories: ['sports'] };
+    const withSports: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
     render(
       <FilterSheet
         visible
@@ -187,6 +187,6 @@ describe('FilterSheet', () => {
       />
     );
     await flush();
-    expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
   });
 });
