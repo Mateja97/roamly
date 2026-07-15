@@ -134,9 +134,24 @@ export type Activity = {
 // T3 lands, and needs no follow-up change once it does.
 type RawActivity = Omit<Activity, 'image_refs'> & { image_refs: (string | ActivityPhoto)[] };
 
+// T6: the wire `details` payload never carries a `category` key — it's just
+// that category's own fields (confirmed against the backend's Go structs and
+// seed JSON). `raw.details`'s type claims `category` but it's never really
+// there at runtime; the row's top-level `category` is the only source of
+// truth. Stamp it on here, once, so every consumer in activityDetailConfig.ts
+// that switches on `details.category` sees real data.
+function attachCategory(
+  details: ActivityDetails | undefined,
+  category: Category,
+): ActivityDetails | undefined {
+  if (!details || typeof details !== 'object') return undefined;
+  return { ...details, category } as ActivityDetails;
+}
+
 function toActivity(raw: RawActivity): Activity {
   return {
     ...raw,
+    details: attachCategory(raw.details, raw.category),
     image_refs: (raw.image_refs ?? []).map((ref) => (typeof ref === 'string' ? { uri: ref } : ref)),
   };
 }
