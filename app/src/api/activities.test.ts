@@ -1,4 +1,9 @@
 import { queryActivities } from './activities';
+import {
+  badgeQualifier,
+  factStripFields,
+  uniqueSection,
+} from '../features/activity-list/activityDetailConfig';
 
 function mockFetchOnce(status: number, body: unknown, ok = status < 300) {
   global.fetch = jest.fn().mockResolvedValue({
@@ -70,5 +75,123 @@ describe('queryActivities', () => {
     mockFetchOnce(418, { error: "I'm a teapot" });
     const result = await queryActivities({ scope: 'nearby' });
     expect(result.status).toBe(500);
+  });
+
+  // T6: real wire shape — `details` never carries a `category` key, only the
+  // category's own fields. This is the exact fixture shape the old test
+  // suite was missing (fixtures elsewhere manually added `category` inside
+  // `details`), which let the discriminant bug ship undetected.
+  it('stamps the top-level category onto a wire-shaped details payload with no nested category key', async () => {
+    mockFetchOnce(200, {
+      activities: [
+        {
+          id: '1',
+          category: 'restaurants',
+          details: { cuisine: 'Serbian', price_tier: '$$' },
+        },
+      ],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    const activity = result.activities[0];
+    expect(activity.details).toEqual({ category: 'restaurants', cuisine: 'Serbian', price_tier: '$$' });
+
+    const chips = factStripFields(activity);
+    expect(chips.map((c) => c.label)).toEqual(['Cuisine', 'Price']);
+    expect(chips.map((c) => c.value)).toEqual(['Serbian', '$$']);
+  });
+
+  it('still handles an empty wire-shaped details object ({}) cleanly after stamping category', async () => {
+    mockFetchOnce(200, {
+      activities: [{ id: '1', category: 'restaurants', details: {} }],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    const activity = result.activities[0];
+    expect(activity.details).toEqual({ category: 'restaurants' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  // Representative categories beyond Restaurants, each with wire-shaped
+  // details (no nested category key) — confirms the fix isn't a
+  // Restaurants-only special case.
+  it('renders Sport fact strip + checklist unique section from a wire-shaped payload', async () => {
+    mockFetchOnce(200, {
+      activities: [
+        {
+          id: '1',
+          category: 'sport',
+          details: {
+            difficulty: 3,
+            effort_level: 'Moderate',
+            duration: '2h',
+            gear: 'Boots',
+            what_to_bring: ['Water', 'Sunscreen'],
+          },
+        },
+      ],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    const activity = result.activities[0];
+    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Effort', 'Duration', 'Gear']);
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'What to bring',
+      items: ['Water', 'Sunscreen'],
+    });
+  });
+
+  it('renders Kids badge qualifier + icon-grid unique section from a wire-shaped payload', async () => {
+    mockFetchOnce(200, {
+      activities: [
+        {
+          id: '1',
+          category: 'kids',
+          details: { age_range: '3-10', facilities: ['Parking', 'Restrooms'] },
+        },
+      ],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    const activity = result.activities[0];
+    expect(badgeQualifier(activity)).toBe('Ages 3-10');
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'icongrid',
+      heading: 'Facilities',
+      items: ['Parking', 'Restrooms'],
+    });
+  });
+
+  it('renders Culture fact strip + now-showing banner from a wire-shaped payload', async () => {
+    mockFetchOnce(200, {
+      activities: [
+        {
+          id: '1',
+          category: 'culture',
+          details: {
+            venue_type: 'Museum',
+            ticket_price: '€10',
+            hours: '10am–6pm',
+            now_showing: { title: 'Modern Serbian Art', description: 'Through October' },
+          },
+        },
+      ],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    const activity = result.activities[0];
+    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Venue', 'Tickets', 'Hours']);
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'banner',
+      heading: 'Now showing',
+      title: 'Modern Serbian Art',
+      description: 'Through October',
+    });
   });
 });
