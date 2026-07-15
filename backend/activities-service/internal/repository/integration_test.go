@@ -348,6 +348,29 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("SuggestCities excludes a draft-only city (T1)", func(t *testing.T) {
+		var id string
+		err := db.QueryRow(ctx,
+			`INSERT INTO activities (title, description, category, location, country, city, rating, status)
+			VALUES ('Draft City Fixture', 'test fixture', 'nature',
+				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Narnia', 'Zzzville', 4.0, 'draft')
+			RETURNING id`,
+			belgrade.Lng, belgrade.Lat,
+		).Scan(&id)
+		if err != nil {
+			t.Fatalf("inserting draft-only city fixture: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, id) })
+
+		got, err := repo.SuggestCities(ctx, "Zzz")
+		if err != nil {
+			t.Fatalf("SuggestCities() error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("got %+v, want no suggestions (Zzzville only exists as a draft row)", got)
+		}
+	})
+
 	t.Run("SuggestCities non-matching prefix returns an empty list, not an error", func(t *testing.T) {
 		got, err := repo.SuggestCities(ctx, "Zzznope")
 		if err != nil {

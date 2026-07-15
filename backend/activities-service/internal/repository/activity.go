@@ -138,11 +138,14 @@ func citiesDistanceFilter(where *[]string, arg func(any) string, cities []activi
 // and _ are escaped so they match literally rather than as SQL LIKE
 // wildcards.
 func (r *Activities) SuggestCities(ctx context.Context, prefix string) ([]activitiessvc.CitySuggestion, error) {
+	// Published-only (T1), same invariant as Query: this is the other
+	// public-app-facing reader of the activities table (GET /cities/suggest),
+	// so a draft row must not surface a city or skew its centroid AVG.
 	escaped := likeEscaper.Replace(prefix)
 	rows, err := r.db.Query(ctx, `
 		SELECT city, country, AVG(ST_Y(location::geometry)), AVG(ST_X(location::geometry))
 		FROM activities
-		WHERE city ILIKE $1 || '%' ESCAPE '\'
+		WHERE city ILIKE $1 || '%' ESCAPE '\' AND status = '`+string(activitiessvc.StatusPublished)+`'
 		GROUP BY city, country
 		ORDER BY city ASC
 		LIMIT 10`, escaped)
