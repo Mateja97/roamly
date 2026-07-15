@@ -350,6 +350,55 @@ For the number that IS the screen. Label above: `--font-size-sm`
 `tabular-nums`. Eligible for the one per-screen `--glow`. Sub-line
 (delta/status) `--font-size-sm` in the relevant semantic color.
 
+### Difficulty meter (segmented)
+
+A discrete N-segment level bar (e.g. an activity's difficulty, 3 of 5). Not a
+continuous Slider — this is a read-only rating shown as filled-vs-unfilled
+segments plus a text readout.
+
+- **Label row:** name left — `--font-size-xs` (12px), uppercase,
+  `letter-spacing: 0.05em`, `--text-muted` (6.2:1 on `--bg` ✓); current level
+  right — `--font-size-sm` `--text`, weight 600 (e.g. "Intermediate" / "3/5",
+  8.5:1 on `--bg` ✓). The text readout — never color alone — carries the value.
+- **Segments:** a full-width row of equal-flex bars, 6px tall, `--radius-full`,
+  `--space-2` gap. Filled segments `--primary` gold (3.65:1 on `--bg` — UI
+  element, clears 3:1 ✓); unfilled `--border` (decorative track). The
+  filled-count is the redundant non-color cue beside the text level.
+- Non-interactive; no hover/press/focus. Exposed to AT as the text level, not
+  as an adjustable control. No animation (static on render).
+
+Composes from `--primary`, `--border`, `--text`, `--text-muted`,
+`--radius-full`, `--font-size-xs`/`--font-size-sm`. No new color token.
+
+### Accent banner card
+
+A highlighted info banner calling out one time-bound item (e.g. a museum's
+current show, a gallery's current exhibition). The one emphasised block on a
+detail screen, distinct from the flat fact chips around it.
+
+- **Container:** `--surface-gradient` (flat `--surface` where the gradient
+  isn't available), 1px `--border` with the gold `--card-highlight` top edge,
+  `--radius`, `--space-4` padding, plus a **3px `--primary` gold left-accent
+  bar** running the card's full height (decorative structure — a UI/decorative
+  edge, no text-contrast requirement, same class as the card top-highlight).
+- **Content stack** (`--space-1`/`--space-2` between lines): overline —
+  `--font-size-xs`, uppercase, `letter-spacing: 0.08em`, `--text-muted` (5.3:1
+  on `--surface` ✓). The overline is **not gold**: gold at this size fails the
+  4.5:1 normal-text bar (`--primary` on `--surface` is 3.1:1) — the gold
+  left-bar carries the accent, tan/cream the text (the gold-structure /
+  cream-label rule the Scope indicator pill uses). Title — `--font-size-md`
+  `--text`, weight 600 (≥6.5:1 across the gradient ✓, per the Activity card's
+  gradient findings). Subline — `--font-size-sm` `--text-muted` (≥4.8:1 across
+  the gradient ✓).
+- Non-interactive. Reserves its layout space; **omitted entirely** when the
+  screen has no such item to feature (no empty/placeholder banner — matches the
+  omit-rather-than-blank pattern).
+
+On `area: app` the gradient reuses `expo-linear-gradient` (already a dependency
+via the Activity card / Scope ticket); fall back to flat `--surface` otherwise.
+Composes from `--surface-gradient`/`--surface`, `--border`, `--card-highlight`,
+`--primary`, `--text`, `--text-muted`, `--radius`. No new color token.
+
 ### Scope ticket (nearby / anywhere)
 
 The opening flow's core control: a horizontal **boarding-pass ticket** card,

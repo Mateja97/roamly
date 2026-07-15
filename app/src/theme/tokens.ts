@@ -61,7 +61,8 @@ export const radius = {
 // identity headers only: the Welcome "Where to?" headline (see
 // ScopePickerScreen.tsx's font-load gate, which every screen after it in the
 // nav stack rides on — Marcellus loads once, globally) and the
-// activities-list/search-setup H1s. Every other surface stays on RN's system
+// activities-list/search-setup H1s, and the Activity detail screen's title
+// (T4). Every other surface stays on RN's system
 // font stack (the default when no fontFamily is set).
 export const fontFamily = {
   display: 'Marcellus_400Regular',
