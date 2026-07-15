@@ -622,45 +622,56 @@
     }
   },
   "XL Fitness Factory": {
-    "category": "sport",
+    "category": "wellness",
     "details": {
-      "discipline": "Fitness",
-      "effort_level": "Your pace",
-      "duration": "Flexible",
-      "gear": "Full equipment on site",
-      "what_to_bring": [
-        "Sportswear",
-        "Water bottle",
-        "Towel"
+      "venue_type": "Gym / fitness centre",
+      "treatments": [
+        {
+          "item": "Personal Training Session",
+          "duration": "60 min"
+        },
+        {
+          "item": "Open Gym Access",
+          "duration": "Day pass"
+        }
       ],
+      "external_booking_note": "Professional trainers on site; walk-ins welcome during opening hours.",
       "action_url": "https://teretanaxl.rs/"
     }
   },
   "Sky Experience": {
-    "category": "sport",
+    "category": "wellness",
     "details": {
-      "discipline": "Fitness",
-      "effort_level": "Your pace",
-      "duration": "Flexible",
-      "gear": "Latest Technogym equipment",
-      "what_to_bring": [
-        "Sportswear",
-        "Water bottle"
+      "venue_type": "Gym / fitness centre",
+      "treatments": [
+        {
+          "item": "Open Gym Access",
+          "duration": "Day pass"
+        },
+        {
+          "item": "Technogym Equipment Session",
+          "duration": "60 min"
+        }
       ],
+      "external_booking_note": "High-end 950m2 gym at the river confluence; day passes available at reception.",
       "action_url": "https://www.skyexperience.rs/"
     }
   },
   "Extreme gym": {
-    "category": "sport",
+    "category": "wellness",
     "details": {
-      "discipline": "Fitness",
-      "effort_level": "Your pace",
-      "duration": "Flexible",
-      "gear": "Full range of machines",
-      "what_to_bring": [
-        "Sportswear",
-        "Water bottle"
+      "venue_type": "Gym / fitness centre",
+      "treatments": [
+        {
+          "item": "Open Gym Access",
+          "duration": "Day pass"
+        },
+        {
+          "item": "Personal Training Session",
+          "duration": "60 min"
+        }
       ],
+      "external_booking_note": "City-centre gym near major hotels; trainers available on request.",
       "action_url": "http://www.x3mgym.com/"
     }
   },
@@ -693,16 +704,20 @@
     }
   },
   "Planet Gym & Fitness": {
-    "category": "sport",
+    "category": "wellness",
     "details": {
-      "discipline": "Fitness",
-      "effort_level": "Your pace",
-      "duration": "Flexible (open 24h)",
-      "gear": "Modern equipment",
-      "what_to_bring": [
-        "Sportswear",
-        "Water bottle"
+      "venue_type": "Gym / fitness centre",
+      "treatments": [
+        {
+          "item": "Open Gym Access",
+          "duration": "Day pass"
+        },
+        {
+          "item": "Group Fitness Class",
+          "duration": "45 min"
+        }
       ],
+      "external_booking_note": "Open 24 hours; classes and equipment for all levels.",
       "action_url": "https://planetgym.rs/en/"
     }
   },

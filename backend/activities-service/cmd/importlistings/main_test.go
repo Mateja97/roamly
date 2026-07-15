@@ -208,6 +208,23 @@ Some Bar,A bar,bars,,{},Addr,Belgrade,,Serbia,44.80,20.45,,,,,4.0,5,pending_revi
 	}
 }
 
+func TestParseCSVRejectsNonFiniteCoordinates(t *testing.T) {
+	// strconv.ParseFloat accepts "NaN"/"Inf" with err == nil; these must
+	// still be skipped, not emitted raw into ST_MakePoint.
+	const csvData = `name,description,primary_type,secondary_types,attributes,address,city,region,country,latitude,longitude,photos,website,phone,hours,avg_rating,review_count,status,classification_confidence,source,source_url,external_id
+NaN Lat,x,bars,,{},Addr,Belgrade,,Serbia,NaN,20.45,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,1
+Inf Lng,x,bars,,{},Addr,Belgrade,,Serbia,44.80,Inf,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,2
+Good Row,x,bars,,{},Addr,Belgrade,,Serbia,44.80,20.45,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,3
+`
+	rows, err := parseCSV(strings.NewReader(csvData), nil)
+	if err != nil {
+		t.Fatalf("parseCSV: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Title != "Good Row" {
+		t.Fatalf("want only 'Good Row' to survive, got %+v", rows)
+	}
+}
+
 func TestParseCSVDedupe(t *testing.T) {
 	// two rows with the same name → only the first is emitted
 	const csvData = `name,description,primary_type,secondary_types,attributes,address,city,region,country,latitude,longitude,photos,website,phone,hours,avg_rating,review_count,status,classification_confidence,source,source_url,external_id

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -290,7 +291,10 @@ func parseCSV(r io.Reader, decisions map[string]decision) ([]listing, error) {
 		}
 		lat, errLat := strconv.ParseFloat(get(rec, "latitude"), 64)
 		lng, errLng := strconv.ParseFloat(get(rec, "longitude"), 64)
-		if errLat != nil || errLng != nil {
+		// strconv.ParseFloat accepts "NaN"/"Inf"/"Infinity" with err == nil, so
+		// a non-finite value would otherwise slip past the error check above
+		// and land raw (unquoted) in ST_MakePoint, producing invalid SQL.
+		if errLat != nil || errLng != nil || math.IsNaN(lat) || math.IsInf(lat, 0) || math.IsNaN(lng) || math.IsInf(lng, 0) {
 			slog.Warn("skipping row with unparseable coordinates",
 				"name", name, "latitude", get(rec, "latitude"), "longitude", get(rec, "longitude"))
 			continue
