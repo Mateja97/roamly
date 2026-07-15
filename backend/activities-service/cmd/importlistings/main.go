@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -293,6 +294,83 @@ func parseCSV(r io.Reader) ([]listing, error) {
 		})
 	}
 	return out, nil
+}
+
+// decision is one reviewed row: the corrected category and the real
+// category-specific details, keyed by row name in the decisions file.
+type decision struct {
+	Category activitiessvc.Category `json:"category"`
+	Details  json.RawMessage        `json:"details"`
+}
+
+// structForCategory returns a pointer to an empty detail struct matching c,
+// used to validate a decision's details against the real API shape. Returns
+// nil for an unrecognized category.
+func structForCategory(c activitiessvc.Category) any {
+	switch c {
+	case activitiessvc.CategoryRestaurants:
+		return &activitiessvc.RestaurantDetails{}
+	case activitiessvc.CategoryCafes:
+		return &activitiessvc.CafeDetails{}
+	case activitiessvc.CategoryBars:
+		return &activitiessvc.BarDetails{}
+	case activitiessvc.CategoryNightlife:
+		return &activitiessvc.NightlifeDetails{}
+	case activitiessvc.CategoryNature:
+		return &activitiessvc.NatureDetails{}
+	case activitiessvc.CategorySport:
+		return &activitiessvc.SportDetails{}
+	case activitiessvc.CategoryKids:
+		return &activitiessvc.KidsDetails{}
+	case activitiessvc.CategoryCulture:
+		return &activitiessvc.CultureDetails{}
+	case activitiessvc.CategoryArt:
+		return &activitiessvc.ArtDetails{}
+	case activitiessvc.CategoryWellness:
+		return &activitiessvc.WellnessDetails{}
+	case activitiessvc.CategoryShopping:
+		return &activitiessvc.ShoppingDetails{}
+	case activitiessvc.CategoryEntertainment:
+		return &activitiessvc.EntertainmentDetails{}
+	default:
+		return nil
+	}
+}
+
+// validateDetails decodes raw into the detail struct for category c, rejecting
+// unknown fields so a typo in an authored decisions file fails loudly, then
+// re-marshals to compact JSON matching exactly what the API decodes.
+func validateDetails(c activitiessvc.Category, raw json.RawMessage) (string, error) {
+	v := structForCategory(c)
+	if v == nil {
+		return "", fmt.Errorf("unknown category %q", c)
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return "", fmt.Errorf("invalid details for category %q: %w", c, err)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("re-marshaling details for %q: %w", c, err)
+	}
+	return string(b), nil
+}
+
+// loadDecisions reads the review-decisions JSON (name -> decision). Unknown
+// object keys are rejected so a mistyped "category"/"details" fails loudly.
+func loadDecisions(path string) (map[string]decision, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading decisions: %w", err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	var m map[string]decision
+	if err := dec.Decode(&m); err != nil {
+		return nil, fmt.Errorf("parsing decisions: %w", err)
+	}
+	return m, nil
 }
 
 func main() {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -173,5 +174,57 @@ func TestNeedsReview(t *testing.T) {
 		if got := needsReview(tt.in); got != tt.want {
 			t.Errorf("needsReview(%q) = %v, want %v", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestValidateDetails(t *testing.T) {
+	// valid restaurant details round-trip and keep their fields
+	good := json.RawMessage(`{"cuisine":"Serbian","hours":"11:00-23:00","action_url":"https://x.test"}`)
+	out, err := validateDetails(activitiessvc.CategoryRestaurants, good)
+	if err != nil {
+		t.Fatalf("valid details errored: %v", err)
+	}
+	if !strings.Contains(out, `"cuisine":"Serbian"`) || !strings.Contains(out, `"action_url":"https://x.test"`) {
+		t.Errorf("re-marshaled details missing fields: %s", out)
+	}
+
+	// unknown field is rejected
+	if _, err := validateDetails(activitiessvc.CategoryRestaurants, json.RawMessage(`{"cusine":"typo"}`)); err == nil {
+		t.Errorf("expected error for unknown field, got nil")
+	}
+
+	// a field valid on another category but not this one is rejected
+	// (signature_pours belongs to bars, not cafes)
+	if _, err := validateDetails(activitiessvc.CategoryCafes, json.RawMessage(`{"signature_pours":["x"]}`)); err == nil {
+		t.Errorf("expected error for wrong-category field, got nil")
+	}
+
+	// unrecognized category errors
+	if _, err := validateDetails(activitiessvc.Category("bogus"), json.RawMessage(`{}`)); err == nil {
+		t.Errorf("expected error for unknown category, got nil")
+	}
+}
+
+func TestLoadDecisions(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/d.json"
+	if err := os.WriteFile(path, []byte(`{"Ambar":{"category":"restaurants","details":{"cuisine":"Serbian"}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := loadDecisions(path)
+	if err != nil {
+		t.Fatalf("loadDecisions: %v", err)
+	}
+	if d, ok := m["Ambar"]; !ok || d.Category != activitiessvc.CategoryRestaurants {
+		t.Errorf("decision not loaded: %+v", m)
+	}
+
+	// unknown top-level field rejected (typo guard)
+	bad := dir + "/bad.json"
+	if err := os.WriteFile(bad, []byte(`{"Ambar":{"catgory":"restaurants","details":{}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadDecisions(bad); err == nil {
+		t.Errorf("expected error for unknown decision field, got nil")
 	}
 }
