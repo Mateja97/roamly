@@ -280,6 +280,61 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("existing seed rows backfill to published (T1)", func(t *testing.T) {
+		var nonPublished int
+		if err := db.QueryRow(ctx, "SELECT count(*) FROM activities WHERE status != 'published'").Scan(&nonPublished); err != nil {
+			t.Fatalf("counting non-published rows: %v", err)
+		}
+		if nonPublished != 0 {
+			t.Errorf("got %d non-published seed rows, want 0 (the live catalog must backfill to published, not draft)", nonPublished)
+		}
+	})
+
+	t.Run("draft and pending activities never appear in Query results (T1)", func(t *testing.T) {
+		insertWithStatus := func(title, status string) string {
+			var id string
+			err := db.QueryRow(ctx,
+				`INSERT INTO activities (title, description, category, location, country, rating, status)
+				VALUES ($1, 'test fixture', 'nature',
+					ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, 'Serbia', 4.0, $4)
+				RETURNING id`,
+				title, belgrade.Lng, belgrade.Lat, status,
+			).Scan(&id)
+			if err != nil {
+				t.Fatalf("inserting %s fixture: %v", status, err)
+			}
+			t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, id) })
+			return id
+		}
+		draftID := insertWithStatus("Draft Fixture", "draft")
+		pendingID := insertWithStatus("Pending Fixture", "pending")
+
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		for _, a := range got {
+			if a.ID == draftID {
+				t.Error("draft activity leaked into public Query results")
+			}
+			if a.ID == pendingID {
+				t.Error("pending activity leaked into public Query results")
+			}
+		}
+	})
+
+	t.Run("status CHECK constraint rejects an invalid value", func(t *testing.T) {
+		_, err := db.Exec(ctx,
+			`INSERT INTO activities (title, description, category, location, country, rating, status)
+			VALUES ('Bad Status Fixture', 'test fixture', 'nature',
+				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Serbia', 4.0, 'bogus')`,
+			belgrade.Lng, belgrade.Lat,
+		)
+		if err == nil {
+			t.Fatal("expected an error inserting an invalid status value, got nil")
+		}
+	})
+
 	t.Run("SuggestCities prefix match returns city, country and centroid (T4)", func(t *testing.T) {
 		got, err := repo.SuggestCities(ctx, "Bar")
 		if err != nil {
@@ -290,6 +345,29 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 		if got[0].Centroid.Lat == 0 || got[0].Centroid.Lng == 0 {
 			t.Errorf("got zero-value centroid %+v, want the activity's coordinates", got[0].Centroid)
+		}
+	})
+
+	t.Run("SuggestCities excludes a draft-only city (T1)", func(t *testing.T) {
+		var id string
+		err := db.QueryRow(ctx,
+			`INSERT INTO activities (title, description, category, location, country, city, rating, status)
+			VALUES ('Draft City Fixture', 'test fixture', 'nature',
+				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Narnia', 'Zzzville', 4.0, 'draft')
+			RETURNING id`,
+			belgrade.Lng, belgrade.Lat,
+		).Scan(&id)
+		if err != nil {
+			t.Fatalf("inserting draft-only city fixture: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, id) })
+
+		got, err := repo.SuggestCities(ctx, "Zzz")
+		if err != nil {
+			t.Fatalf("SuggestCities() error: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("got %+v, want no suggestions (Zzzville only exists as a draft row)", got)
 		}
 	})
 

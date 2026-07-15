@@ -54,9 +54,9 @@ func TestBuildQuery(t *testing.T) {
 			wantArgs:   []any{20.4, 44.8},
 		},
 		{
-			name:       "anywhere scope with no location and no filters falls back to TRUE and title order",
+			name:       "anywhere scope with no location and no filters still filters to published, title order",
 			filter:     activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere},
-			wantSQL:    []string{"WHERE TRUE", "ORDER BY title ASC"},
+			wantSQL:    []string{"WHERE status = 'published'", "ORDER BY title ASC"},
 			notWantSQL: []string{"ST_DWithin"},
 		},
 		{
@@ -148,5 +148,27 @@ func TestBuildQuery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestBuildQuery_AlwaysFiltersToPublished proves T1's acceptance criteria
+// directly: QueryActivities (the public app-facing RPC, backed by this
+// query) must never surface a draft or pending activity, regardless of
+// scope or any other combination of filters.
+func TestBuildQuery_AlwaysFiltersToPublished(t *testing.T) {
+	filters := []activitiessvc.QueryFilter{
+		{Scope: activitiessvc.ScopeAnywhere},
+		{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 2}, MaxDistanceKM: 10},
+		{Scope: activitiessvc.ScopeAnywhere, Categories: []activitiessvc.Category{activitiessvc.CategorySport}, MinRating: 4},
+		{Scope: activitiessvc.ScopeAnywhere, Cities: []activitiessvc.Point{{Lat: 41.9, Lng: 12.5}}, MaxDistanceKM: 50},
+	}
+	for _, f := range filters {
+		query, _, err := buildQuery(f)
+		if err != nil {
+			t.Fatalf("buildQuery(%+v) unexpected error: %v", f, err)
+		}
+		if !strings.Contains(query, "status = 'published'") {
+			t.Errorf("buildQuery(%+v) = %q, want the published-only filter present (drafts/pending must never reach the public query)", f, query)
+		}
 	}
 }

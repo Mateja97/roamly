@@ -42,6 +42,17 @@ enum Category {
   CATEGORY_ENTERTAINMENT = 12;
 }
 
+// ActivityStatus (T1) is an activity's catalog lifecycle state. Only
+// ACTIVITY_STATUS_PUBLISHED activities are ever returned by
+// QueryActivities, the public app-facing RPC — draft/pending exist for the
+// admin surface (T2) to read and write.
+enum ActivityStatus {
+  ACTIVITY_STATUS_UNSPECIFIED = 0;
+  ACTIVITY_STATUS_PUBLISHED = 1;
+  ACTIVITY_STATUS_DRAFT = 2;
+  ACTIVITY_STATUS_PENDING = 3;
+}
+
 message Location {
   double lat = 1;
   double lng = 2;
@@ -114,6 +125,15 @@ message Activity {
   // 12 proto messages: the app renders it generically off a data-driven
   // config, not 12 typed screens.
   string details = 12;
+
+  // city, address, and status are T1 additions: city was already a DB
+  // column (unexposed on the wire before now); address is new. Both are
+  // empty when unset. status is always ACTIVITY_STATUS_PUBLISHED on
+  // QueryActivities responses (see ActivityStatus above); exposed here as
+  // a real field for the admin surface (T2), which reads/writes all three.
+  string city = 13;
+  string address = 14;
+  ActivityStatus status = 15;
 }
 
 message QueryActivitiesResponse {

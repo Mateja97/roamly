@@ -47,6 +47,8 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 			},
 			Tags: []string{"sports"}, DistanceKm: 3.2,
 			Details: `{"difficulty":3,"what_to_bring":["water"]}`,
+			City:    "Belgrade", Address: "Ada Ciganlija bb",
+			Status: activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED,
 		}},
 	}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
@@ -73,6 +75,9 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	wantDetails := `{"difficulty":3,"what_to_bring":["water"]}`
 	if string(got.Activities[0].Details) != wantDetails {
 		t.Errorf("details = %s, want %s (decoded object, not a re-encoded string)", got.Activities[0].Details, wantDetails)
+	}
+	if got.Activities[0].City != "Belgrade" || got.Activities[0].Address != "Ada Ciganlija bb" || got.Activities[0].Status != "published" {
+		t.Errorf("unexpected city/address/status: %+v", got.Activities[0])
 	}
 	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_NEARBY {
 		t.Errorf("gRPC request scope = %v, want SCOPE_NEARBY", fake.got.GetScope())
@@ -231,6 +236,30 @@ func TestCategoryTranslation(t *testing.T) {
 	t.Run("unknown proto value maps to empty domain with a warning log", func(t *testing.T) {
 		if got := toDomainCategory(activitiesv1.Category(99), slog.New(slog.DiscardHandler)); got != "" {
 			t.Errorf("toDomainCategory(99) = %q, want empty", got)
+		}
+	})
+}
+
+func TestStatusTranslation(t *testing.T) {
+	tests := []struct {
+		name  string
+		proto activitiesv1.ActivityStatus
+		want  string
+	}{
+		{"published", activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED, "published"},
+		{"draft", activitiesv1.ActivityStatus_ACTIVITY_STATUS_DRAFT, "draft"},
+		{"pending", activitiesv1.ActivityStatus_ACTIVITY_STATUS_PENDING, "pending"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toDomainStatus(tt.proto, slog.New(slog.DiscardHandler)); got != tt.want {
+				t.Errorf("toDomainStatus(%v) = %q, want %q", tt.proto, got, tt.want)
+			}
+		})
+	}
+	t.Run("unknown proto value maps to empty with a warning log", func(t *testing.T) {
+		if got := toDomainStatus(activitiesv1.ActivityStatus(99), slog.New(slog.DiscardHandler)); got != "" {
+			t.Errorf("toDomainStatus(99) = %q, want empty", got)
 		}
 	})
 }

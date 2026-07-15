@@ -13,6 +13,17 @@ const (
 	ScopeAnywhere Scope = "anywhere"
 )
 
+// Status is an activity's catalog lifecycle state (T1). Only
+// StatusPublished activities are ever returned by the public QueryActivities
+// RPC; draft/pending exist for the admin surface (T2) to read and write.
+type Status string
+
+const (
+	StatusPublished Status = "published"
+	StatusDraft     Status = "draft"
+	StatusPending   Status = "pending"
+)
+
 type Category string
 
 const (
@@ -67,6 +78,13 @@ type Activity struct {
 	// (below) is ever valid for a given row's Category; decode with the
 	// matching struct once Category is known (see service.ValidateDetails).
 	Details json.RawMessage
+	// City, Address, and Status are T1 additions: City was already a DB
+	// column (never selected until now); Address is new. Status gates the
+	// public QueryActivities RPC to StatusPublished only — draft/pending
+	// rows exist for the admin surface (T2) but never reach the app.
+	City    string
+	Address string
+	Status  Status
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar

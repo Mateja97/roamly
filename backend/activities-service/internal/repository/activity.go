@@ -25,7 +25,13 @@ func New(db *pgxpool.Pool) *Activities {
 // buildQuery turns a validated QueryFilter into a parameterized SQL query.
 // Pure function (no I/O) so it's unit-testable without a database.
 func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
-	var where []string
+	// Every query is scoped to published activities only (T1): drafts and
+	// pending rows exist for the admin surface (T2) but must never reach
+	// QueryActivities, the public app-facing RPC. Hardcoded rather than a
+	// caller-supplied filter, so no combination of scope/filters can leak
+	// one; a literal (not a bound arg) since it's a fixed Go constant, not
+	// user input.
+	where := []string{fmt.Sprintf("status = '%s'", activitiessvc.StatusPublished)}
 	var args []any
 	arg := func(v any) string {
 		args = append(args, v)
@@ -70,16 +76,15 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		where = append(where, fmt.Sprintf("rating >= %s", arg(filter.MinRating)))
 	}
 
-	whereClause := "TRUE" // ponytail: ScopeAnywhere with no reference point and no
-	// other filters has no WHERE condition at all; TRUE is the standard
-	// always-true placeholder rather than a special-cased query template.
-	if len(where) > 0 {
-		whereClause = strings.Join(where, " AND ")
-	}
+	// where always has at least the status filter above, so this is never
+	// empty — no "always true" placeholder needed.
+	whereClause := strings.Join(where, " AND ")
 
 	query := fmt.Sprintf(
 		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
-			country, rating, photos, tags, details, %s AS distance_km
+			country, rating, photos, tags, details,
+			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status,
+			%s AS distance_km
 		FROM activities
 		WHERE %s
 		%s`,
@@ -133,11 +138,14 @@ func citiesDistanceFilter(where *[]string, arg func(any) string, cities []activi
 // and _ are escaped so they match literally rather than as SQL LIKE
 // wildcards.
 func (r *Activities) SuggestCities(ctx context.Context, prefix string) ([]activitiessvc.CitySuggestion, error) {
+	// Published-only (T1), same invariant as Query: this is the other
+	// public-app-facing reader of the activities table (GET /cities/suggest),
+	// so a draft row must not surface a city or skew its centroid AVG.
 	escaped := likeEscaper.Replace(prefix)
 	rows, err := r.db.Query(ctx, `
 		SELECT city, country, AVG(ST_Y(location::geometry)), AVG(ST_X(location::geometry))
 		FROM activities
-		WHERE city ILIKE $1 || '%' ESCAPE '\'
+		WHERE city ILIKE $1 || '%' ESCAPE '\' AND status = '`+string(activitiessvc.StatusPublished)+`'
 		GROUP BY city, country
 		ORDER BY city ASC
 		LIMIT 10`, escaped)
@@ -182,7 +190,8 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 			&a.ID, &a.Title, &a.Description, &a.Category,
 			&a.Location.Lat, &a.Location.Lng,
 			&a.Country, &a.Rating,
-			&a.Photos, &a.Tags, &a.Details, &a.DistanceKM,
+			&a.Photos, &a.Tags, &a.Details,
+			&a.City, &a.Address, &a.Status, &a.DistanceKM,
 		); err != nil {
 			return nil, fmt.Errorf("scanning activity row: %w", err)
 		}
