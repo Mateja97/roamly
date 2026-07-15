@@ -75,6 +75,7 @@ export function ActivityDetailScreen({
   const backFocus = useFocusable();
   const genericFocus = useFocusable();
   const primaryFocus = useFocusable();
+  const mapFocus = useFocusable();
   const insets = useSafeAreaInsets();
   const [heroState, setHeroState] = useState<'loading' | 'loaded' | 'broken'>(
     'loading',
@@ -240,7 +241,18 @@ export function ActivityDetailScreen({
           ) : null}
 
           {hasMapsKey() && (
-            <View style={styles.mapBox}>
+            <Pressable
+              onPress={openDirections}
+              onFocus={mapFocus.onFocus}
+              onBlur={mapFocus.onBlur}
+              disabled={!hasValidCoordinates(activity.location) || ctaBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Open in Google Maps"
+              style={[
+                styles.mapBox,
+                mapFocus.focused && styles.mapBoxFocused,
+              ]}
+            >
               {hasValidCoordinates(activity.location) &&
               mapState !== 'broken' ? (
                 <>
@@ -277,7 +289,7 @@ export function ActivityDetailScreen({
                   />
                 </View>
               )}
-            </View>
+            </Pressable>
           )}
         </View>
       </ScrollView>
@@ -381,6 +393,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.default,
     overflow: 'hidden',
     backgroundColor: colors.surfaceHover,
+    outlineStyle: 'solid',
+    outlineWidth: 0,
+  },
+  mapBoxFocused: {
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
   image: {
     width: '100%',

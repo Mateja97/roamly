@@ -137,6 +137,70 @@ describe('ActivityDetailScreen', () => {
     expect(screen.queryByTestId('activity-detail-map-image')).toBeNull();
   });
 
+  it('opens Google Maps directions when the map preview is tapped', async () => {
+    const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    render(
+      <ActivityDetailScreen
+        activity={activity}
+        showDistance
+        onBack={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(
+      screen.getByRole('button', { name: 'Open in Google Maps' }),
+    );
+
+    await waitFor(() =>
+      expect(openURLSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `${activity.location.lat},${activity.location.lng}`,
+        ),
+      ),
+    );
+    openURLSpy.mockRestore();
+  });
+
+  it('surfaces the generic error banner when tapping the map preview fails to open maps', async () => {
+    const openURLSpy = jest
+      .spyOn(Linking, 'openURL')
+      .mockRejectedValue(new Error('no maps app'));
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    render(
+      <ActivityDetailScreen
+        activity={activity}
+        showDistance
+        onBack={jest.fn()}
+      />,
+    );
+
+    fireEvent.press(
+      screen.getByRole('button', { name: 'Open in Google Maps' }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText('Could not open maps. Please try again.'),
+      ).toBeTruthy(),
+    );
+    openURLSpy.mockRestore();
+  });
+
+  it('disables the map preview tap when coordinates are invalid (0,0)', () => {
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    render(
+      <ActivityDetailScreen
+        activity={{ ...activity, location: { lat: 0, lng: 0 } }}
+        showDistance
+        onBack={jest.fn()}
+      />,
+    );
+    const mapButton = screen.getByRole('button', {
+      name: 'Open in Google Maps',
+    });
+    expect(mapButton.props.accessibilityState.disabled).toBe(true);
+  });
+
   it('omits the tags row when tags is empty', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     render(
