@@ -13,7 +13,9 @@ const LABELS = ['Beginner', 'Easy', 'Intermediate', 'Advanced', 'Expert'];
 // redundant so the value is never color-only.
 export function DifficultyMeter({ difficulty }: DifficultyMeterProps) {
   const level = Math.min(SEGMENTS, Math.max(1, Math.round(difficulty)));
-  const readout = `${LABELS[level - 1]} · ${level}/${SEGMENTS}`;
+  // design-spec.md T8 addendum #7: level label only — the filled segments
+  // already convey the N/M count, so no redundant "· N/M" suffix.
+  const readout = LABELS[level - 1];
 
   return (
     <View accessible accessibilityLabel={`Difficulty: ${readout}`}>

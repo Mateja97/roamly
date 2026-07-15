@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Linking,
   Pressable,
@@ -16,6 +17,7 @@ import {
 import {
   ChevronLeft,
   ImageOff,
+  Info,
   MapPin,
   MapPinOff,
   Star,
@@ -38,13 +40,19 @@ import {
   space,
 } from '../../theme/tokens';
 import {
+  artAttribution,
   badgeLabel,
+  BODY_SECTION_ORDER,
   factStripFields,
   genericActionLabel,
+  metaRowExtras,
   openStatus,
   PRIMARY_CTA_LABEL,
+  primaryActionURL,
   primaryCTAIsDirections,
   uniqueSection,
+  wellnessBookingNote,
+  type BodySection,
 } from './activityDetailConfig';
 import { DifficultyMeter } from './DifficultyMeter';
 import { FactStrip } from './FactStrip';
@@ -91,10 +99,15 @@ export function ActivityDetailScreen({
     ? `${activity.distance_km.toFixed(1)} km away`
     : activity.country;
   const status = openStatus(activity);
+  const metaExtras = metaRowExtras(activity);
   const fields = factStripFields(activity);
   const unique = uniqueSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
   const genericLabel = genericActionLabel(activity.category);
+  const actionURL = primaryActionURL(activity);
+  const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
+  const attribution = artAttribution(activity);
+  const bookingNote = wellnessBookingNote(activity);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -130,6 +143,52 @@ export function ActivityDetailScreen({
 
   function handleGenericPress() {
     return genericLabel === 'Directions' ? openDirections() : openShare();
+  }
+
+  // design-spec.md T8 addendum #1: the 8 non-directions categories' primary
+  // CTA opens their external `action_url` (T7) via the same async/error
+  // pattern as openDirections above.
+  async function openExternalLink(url: string) {
+    setCtaBusy(true);
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setCtaError('Could not open the link. Please try again.');
+    } finally {
+      setCtaBusy(false);
+    }
+  }
+
+  function handlePrimaryPress() {
+    if (isDirectionsPrimary) return openDirections();
+    if (actionURL) return openExternalLink(actionURL);
+  }
+
+  // design-spec.md T8 addendum #3: per-category body-section order.
+  // FactStrip/UniqueSection/DifficultyMeter each already render nothing
+  // when their own data is absent, so this only controls order, not
+  // per-section omission.
+  function renderBodySection(section: BodySection): ReactNode {
+    switch (section) {
+      case 'description':
+        return activity.description ? (
+          <Text key="description" style={styles.description}>
+            {activity.description}
+          </Text>
+        ) : null;
+      case 'difficulty':
+        return activity.details?.category === 'sport' &&
+          activity.details.difficulty !== undefined ? (
+          <DifficultyMeter
+            key="difficulty"
+            difficulty={activity.details.difficulty}
+          />
+        ) : null;
+      case 'factstrip':
+        return <FactStrip key="factstrip" fields={fields} />;
+      case 'unique':
+        return <UniqueSection key="unique" data={unique} />;
+    }
   }
 
   return (
@@ -180,55 +239,98 @@ export function ActivityDetailScreen({
         />
 
         <View style={styles.titleBlock}>
-          <View style={styles.row}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
-            </View>
-            <View style={styles.rating}>
-              <Star
-                size={16}
-                color={colors.primary}
-                strokeWidth={1.75}
-                fill={colors.primary}
-              />
-              <Text style={styles.ratingLabel}>
-                {activity.rating.toFixed(1)}
+          <View style={styles.badgeGroup}>
+            {attribution && (
+              <Text style={styles.attributionLine}>
+                {[
+                  attribution.artist && <Text key="artist">{attribution.artist}</Text>,
+                  attribution.workYear && (
+                    <Text key="workYear" style={styles.attributionItalic}>
+                      {attribution.workYear}
+                    </Text>
+                  ),
+                  attribution.medium && <Text key="medium">{attribution.medium}</Text>,
+                ]
+                  .filter(Boolean)
+                  .flatMap((node, i) => (i === 0 ? [node] : [' · ', node]))}
               </Text>
+            )}
+
+            <View style={styles.row}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
+              </View>
+              <View style={styles.rating}>
+                <Star
+                  size={16}
+                  color={colors.primary}
+                  strokeWidth={1.75}
+                  fill={colors.primary}
+                />
+                <Text style={styles.ratingLabel}>
+                  {activity.rating.toFixed(1)}
+                </Text>
+              </View>
             </View>
           </View>
 
           <Text style={styles.title}>{activity.title}</Text>
 
           <View style={styles.metaRow}>
-            <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-            <Text style={styles.metaText}>{metaText}</Text>
-            {status && (
+            {activity.category === 'nightlife' && status ? (
+              // design-spec.md T8 addendum #9: the status dot + label is the
+              // only place a leading status dot appears, and sits first,
+              // before the usual "·"-separated items.
               <>
+                <View style={styles.statusGroup}>
+                  {status.isOpen && (
+                    <View
+                      style={styles.statusDot}
+                      accessibilityElementsHidden
+                      importantForAccessibility="no"
+                    />
+                  )}
+                  <Text
+                    style={
+                      status.isOpen ? styles.statusOpen : styles.statusClosed
+                    }
+                  >
+                    {status.text}
+                  </Text>
+                </View>
                 <Text style={styles.metaSeparator}>·</Text>
-                <Text
-                  style={
-                    status.isOpen ? styles.statusOpen : styles.statusClosed
-                  }
-                >
-                  {status.text}
-                </Text>
+                <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
+                <Text style={styles.metaText}>{metaText}</Text>
+              </>
+            ) : (
+              <>
+                <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
+                <Text style={styles.metaText}>{metaText}</Text>
+                {metaExtras.map((extra) => (
+                  <View key={extra} style={styles.metaExtraGroup}>
+                    <Text style={styles.metaSeparator}>·</Text>
+                    <Text style={styles.metaText}>{extra}</Text>
+                  </View>
+                ))}
+                {status && (
+                  <View style={styles.metaExtraGroup}>
+                    <Text style={styles.metaSeparator}>·</Text>
+                    <Text
+                      style={
+                        status.isOpen
+                          ? styles.statusOpen
+                          : styles.statusClosed
+                      }
+                    >
+                      {status.text}
+                    </Text>
+                  </View>
+                )}
               </>
             )}
           </View>
 
-          {activity.description ? (
-            <Text style={styles.description}>{activity.description}</Text>
-          ) : null}
-
-          {activity.category === 'sport' &&
-            activity.details?.category === 'sport' &&
-            activity.details.difficulty !== undefined && (
-              <DifficultyMeter difficulty={activity.details.difficulty} />
-            )}
-
-          <FactStrip fields={fields} />
-
-          <UniqueSection data={unique} />
+          {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 
           {activity.tags.length > 0 ? (
             <View style={styles.tagsRow}>
@@ -301,6 +403,13 @@ export function ActivityDetailScreen({
       <View
         style={[styles.footer, { paddingBottom: space[6] + insets.bottom }]}
       >
+        {bookingNote && (
+          <View style={styles.bookingNote}>
+            <Info size={16} color={colors.textMuted} strokeWidth={1.75} />
+            <Text style={styles.bookingNoteText}>{bookingNote}</Text>
+          </View>
+        )}
+        <View style={styles.footerButtons}>
         <Pressable
           onPress={handleGenericPress}
           onFocus={genericFocus.onFocus}
@@ -316,17 +425,17 @@ export function ActivityDetailScreen({
           <Text style={styles.secondaryLabel}>{genericLabel}</Text>
         </Pressable>
         <Pressable
-          onPress={isDirectionsPrimary ? openDirections : undefined}
+          onPress={handlePrimaryPress}
           onFocus={primaryFocus.onFocus}
           onBlur={primaryFocus.onBlur}
-          disabled={!isDirectionsPrimary || ctaBusy}
+          disabled={!primaryEnabled || ctaBusy}
           accessibilityRole="button"
           accessibilityLabel={PRIMARY_CTA_LABEL[activity.category]}
-          accessibilityState={{ disabled: !isDirectionsPrimary }}
+          accessibilityState={{ disabled: !primaryEnabled }}
           style={[
             styles.primaryButton,
-            !isDirectionsPrimary && styles.primaryButtonDisabled,
-            isDirectionsPrimary &&
+            !primaryEnabled && styles.primaryButtonDisabled,
+            primaryEnabled &&
               primaryFocus.focused &&
               styles.primaryButtonFocused,
           ]}
@@ -334,12 +443,13 @@ export function ActivityDetailScreen({
           <Text
             style={[
               styles.primaryLabel,
-              !isDirectionsPrimary && styles.primaryLabelDisabled,
+              !primaryEnabled && styles.primaryLabelDisabled,
             ]}
           >
             {PRIMARY_CTA_LABEL[activity.category]}
           </Text>
         </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -420,12 +530,26 @@ const styles = StyleSheet.create({
     paddingTop: space[6],
     gap: space[6],
   },
+  badgeGroup: {
+    gap: space[3],
+  },
+  attributionLine: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    letterSpacing: 0.24,
+  },
+  attributionItalic: {
+    fontStyle: 'italic',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: space[2],
   },
   badge: {
+    flexShrink: 1,
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: radius.full,
@@ -478,6 +602,22 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textMuted,
   },
+  metaExtraGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+  },
+  statusGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: radius.full,
+    backgroundColor: colors.success,
+  },
   statusOpen: {
     fontSize: fontSize.sm,
     color: colors.success,
@@ -510,13 +650,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   footer: {
-    flexDirection: 'row',
-    gap: space[3],
     paddingHorizontal: space[6],
     paddingTop: space[4],
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.bg,
+  },
+  bookingNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    marginBottom: space[3],
+  },
+  bookingNoteText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+  },
+  footerButtons: {
+    flexDirection: 'row',
+    gap: space[3],
   },
   secondaryButton: {
     flex: 1,

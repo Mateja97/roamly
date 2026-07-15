@@ -1,8 +1,33 @@
+import type { ComponentType } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Check, ChevronRight, CircleCheck, Info } from 'lucide-react-native';
+import {
+  Baby,
+  Check,
+  ChevronRight,
+  CircleCheck,
+  Coffee,
+  Toilet,
+  Trees,
+} from 'lucide-react-native';
+import type { LucideProps } from 'lucide-react-native';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import type { UniqueSectionData } from './activityDetailConfig';
+
+// design-spec.md T8 addendum #4: per-facility icon, keyword-matched
+// case-insensitively against the facility label — first match wins.
+// Unmapped labels keep the generic CircleCheck fallback (intended, not a
+// bug).
+const FACILITY_ICONS: [RegExp, ComponentType<LucideProps>][] = [
+  [/toilet|restroom|\bwc\b/i, Toilet],
+  [/stroller|pram/i, Baby],
+  [/kiosk|caf[eé]|coffee|snack/i, Coffee],
+  [/shade|shaded|tree/i, Trees],
+];
+
+function facilityIcon(label: string): ComponentType<LucideProps> {
+  return FACILITY_ICONS.find(([re]) => re.test(label))?.[1] ?? CircleCheck;
+}
 
 type UniqueSectionProps = { data: UniqueSectionData | undefined };
 
@@ -60,16 +85,21 @@ export function UniqueSection({ data }: UniqueSectionProps) {
 
       {data.shape === 'icongrid' && (
         <View style={styles.grid}>
-          {data.items.map((item) => (
-            <View key={item} style={styles.gridCell}>
-              <CircleCheck
-                size={20}
-                color={colors.primary}
-                strokeWidth={1.75}
-              />
-              <Text style={styles.gridLabel}>{item}</Text>
-            </View>
-          ))}
+          {data.items.map((item) => {
+            const Icon = facilityIcon(item);
+            return (
+              <View key={item} style={styles.gridCell}>
+                <Icon
+                  size={20}
+                  color={colors.primary}
+                  strokeWidth={1.75}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+                <Text style={styles.gridLabel}>{item}</Text>
+              </View>
+            );
+          })}
         </View>
       )}
 
@@ -82,9 +112,6 @@ export function UniqueSection({ data }: UniqueSectionProps) {
           />
           <View style={styles.bannerAccent} />
           <View style={styles.bannerContent}>
-            {data.attribution && (
-              <Text style={styles.bannerAttribution}>{data.attribution}</Text>
-            )}
             <Text style={styles.bannerOverline}>{data.heading}</Text>
             <Text style={styles.bannerTitle}>{data.title}</Text>
             {data.description && (
@@ -95,35 +122,27 @@ export function UniqueSection({ data }: UniqueSectionProps) {
       )}
 
       {data.shape === 'schedule' && data.density === 'compact' && (
-        <View>
-          <View style={styles.compactContainer}>
-            {data.rows.map((row, i) => (
-              <View
-                key={i}
-                style={[styles.compactRow, i > 0 && styles.hairlineTop]}
-              >
-                <Text style={styles.compactLeading}>{row.leading}</Text>
-                <Text style={styles.compactMain}>{row.main}</Text>
-                {row.trailing ? (
-                  <Text
-                    style={
-                      row.trailingStyle === 'price'
-                        ? styles.compactTrailingPrice
-                        : styles.compactTrailingMuted
-                    }
-                  >
-                    {row.trailing}
-                  </Text>
-                ) : null}
-              </View>
-            ))}
-          </View>
-          {data.note && (
-            <View style={styles.note}>
-              <Info size={14} color={colors.textMuted} strokeWidth={1.75} />
-              <Text style={styles.noteText}>{data.note}</Text>
+        <View style={styles.compactContainer}>
+          {data.rows.map((row, i) => (
+            <View
+              key={i}
+              style={[styles.compactRow, i > 0 && styles.hairlineTop]}
+            >
+              <Text style={styles.compactLeading}>{row.leading}</Text>
+              <Text style={styles.compactMain}>{row.main}</Text>
+              {row.trailing ? (
+                <Text
+                  style={
+                    row.trailingStyle === 'price'
+                      ? styles.compactTrailingPrice
+                      : styles.compactTrailingMuted
+                  }
+                >
+                  {row.trailing}
+                </Text>
+              ) : null}
             </View>
-          )}
+          ))}
         </View>
       )}
 
@@ -269,12 +288,6 @@ const styles = StyleSheet.create({
     paddingLeft: space[4] + 3,
     gap: space[1],
   },
-  bannerAttribution: {
-    fontSize: fontSize.xs,
-    fontStyle: 'italic',
-    color: colors.textMuted,
-    marginBottom: space[1],
-  },
   bannerOverline: {
     fontSize: fontSize.xs,
     textTransform: 'uppercase',
@@ -325,17 +338,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     fontVariant: ['tabular-nums'],
-  },
-  note: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-    marginTop: space[3],
-  },
-  noteText: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
   },
   // Shape F — scheduled-items list (date-block density)
   dateBlockList: {

@@ -53,24 +53,43 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Restrooms')).toBeTruthy();
   });
 
-  it('shape E (accent banner): renders overline, title, description, and attribution', () => {
+  it('shape D (icon grid): maps each of the 4 mocked facilities to its own icon, unmapped labels fall back to the generic icon', () => {
+    const data: UniqueSectionData = {
+      shape: 'icongrid',
+      heading: 'Facilities',
+      items: [
+        'Toilets',
+        'Stroller-friendly',
+        'Kiosk & café',
+        'Shaded areas',
+        'Something unmapped',
+      ],
+    };
+    const { UNSAFE_getAllByType } = render(<UniqueSection data={data} />);
+    const { Toilet, Baby, Coffee, Trees, CircleCheck } = jest.requireActual(
+      'lucide-react-native',
+    );
+    expect(UNSAFE_getAllByType(Toilet)).toHaveLength(1);
+    expect(UNSAFE_getAllByType(Baby)).toHaveLength(1);
+    expect(UNSAFE_getAllByType(Coffee)).toHaveLength(1);
+    expect(UNSAFE_getAllByType(Trees)).toHaveLength(1);
+    expect(UNSAFE_getAllByType(CircleCheck)).toHaveLength(1);
+  });
+
+  it('shape E (accent banner): renders overline, title, and description', () => {
     const data: UniqueSectionData = {
       shape: 'banner',
       heading: 'Current exhibition',
       title: 'Modern Serbian Art',
       description: 'Through October',
-      attribution: 'Nadežda Petrović · Untitled, 1910 · oil on canvas',
     };
     render(<UniqueSection data={data} />);
     expect(screen.getByText('Current exhibition')).toBeTruthy();
     expect(screen.getByText('Modern Serbian Art')).toBeTruthy();
     expect(screen.getByText('Through October')).toBeTruthy();
-    expect(
-      screen.getByText('Nadežda Petrović · Untitled, 1910 · oil on canvas'),
-    ).toBeTruthy();
   });
 
-  it('shape E (accent banner): omits description/attribution when absent', () => {
+  it('shape E (accent banner): omits description when absent', () => {
     const data: UniqueSectionData = {
       shape: 'banner',
       heading: 'Now showing',
@@ -80,7 +99,7 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Jazz Night')).toBeTruthy();
   });
 
-  it('shape F (schedule, compact density): renders leading/main/trailing per row and the note', () => {
+  it('shape F (schedule, compact density): renders leading/main/trailing per row', () => {
     const data: UniqueSectionData = {
       shape: 'schedule',
       heading: 'Tonight',
@@ -93,34 +112,11 @@ describe('UniqueSection', () => {
           trailingStyle: 'muted',
         },
       ],
-      note: undefined,
     };
     render(<UniqueSection data={data} />);
     expect(screen.getByText('23:00')).toBeTruthy();
     expect(screen.getByText('DJ Nina')).toBeTruthy();
     expect(screen.getByText('Main stage')).toBeTruthy();
-  });
-
-  it('shape F (schedule, compact density): renders the external-booking note when present', () => {
-    const data: UniqueSectionData = {
-      shape: 'schedule',
-      heading: 'Treatments',
-      density: 'compact',
-      rows: [
-        {
-          leading: '60 min',
-          main: 'Deep tissue massage',
-          trailing: '€45',
-          trailingStyle: 'price',
-        },
-      ],
-      note: "Booking is handled on the venue's own site",
-    };
-    render(<UniqueSection data={data} />);
-    expect(screen.getByText('€45')).toBeTruthy();
-    expect(
-      screen.getByText("Booking is handled on the venue's own site"),
-    ).toBeTruthy();
   });
 
   it('shape F (schedule, date-block density): renders day, date, title, and subline', () => {
