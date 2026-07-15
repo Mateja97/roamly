@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"backend/shared/models/activitiessvc"
@@ -39,6 +41,39 @@ func TestParseRating(t *testing.T) {
 		if got := parseRating(tt.in); got != tt.want {
 			t.Errorf("parseRating(%q) = %v, want %v", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestDetailsJSON(t *testing.T) {
+	// Every category returns valid JSON that round-trips as an object.
+	all := []activitiessvc.Category{
+		activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes,
+		activitiessvc.CategoryBars, activitiessvc.CategoryNightlife,
+		activitiessvc.CategoryNature, activitiessvc.CategorySport,
+		activitiessvc.CategoryKids, activitiessvc.CategoryCulture,
+		activitiessvc.CategoryArt, activitiessvc.CategoryWellness,
+		activitiessvc.CategoryShopping, activitiessvc.CategoryEntertainment,
+	}
+	for _, c := range all {
+		got := detailsJSON(c)
+		var m map[string]any
+		if err := json.Unmarshal([]byte(got), &m); err != nil {
+			t.Errorf("detailsJSON(%q) = %q, not valid JSON: %v", c, got, err)
+		}
+	}
+
+	// A restaurant payload decodes back into the real struct with a cuisine.
+	var rd activitiessvc.RestaurantDetails
+	if err := json.Unmarshal([]byte(detailsJSON(activitiessvc.CategoryRestaurants)), &rd); err != nil {
+		t.Fatalf("decoding restaurant details: %v", err)
+	}
+	if rd.Cuisine == "" {
+		t.Errorf("restaurant details missing cuisine: %+v", rd)
+	}
+
+	// Unknown category yields empty object.
+	if got := detailsJSON(activitiessvc.Category("bogus")); strings.TrimSpace(got) != "{}" {
+		t.Errorf("detailsJSON(bogus) = %q, want {}", got)
 	}
 }
 
