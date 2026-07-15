@@ -5,7 +5,11 @@
 // DB and is not wired into the service startup path — same contract as
 // cmd/resolvephotos (see GO_STANDARDS.md's "seed/build time, not live" rule).
 //
-// Usage: go run ./cmd/importlistings path/to/listings.csv > out.sql
+// Rows are deduplicated by name (first occurrence wins). An optional
+// -decisions file (name -> {category, details}) supplies reviewed rows: those
+// take the given category and real details, and drop the needs-review tag.
+//
+// Usage: go run ./cmd/importlistings [-decisions decisions.json] path/to/listings.csv > out.sql
 package main
 
 import (
