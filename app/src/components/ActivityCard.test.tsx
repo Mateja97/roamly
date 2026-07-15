@@ -19,9 +19,11 @@ describe('ActivityCard', () => {
   it('renders title, category, rating, and distance as one accessible group, with no price signage', () => {
     render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
-    expect(screen.getByText('Food & Drink')).toBeTruthy();
-    expect(screen.getByText('4.6')).toBeTruthy();
-    expect(screen.queryByText('$$')).toBeNull();
+    // Category/rating pills are accessibilityElementsHidden (decorative — the
+    // combined label already carries them), so queries need includeHiddenElements.
+    expect(screen.getByText('Food & Drink', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('4.6', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.queryByText('$$', { includeHiddenElements: true })).toBeNull();
     const card = screen.getByLabelText(/skadarlija food walk.*food & drink.*rated 4.6.*0.4 km away/i);
     expect(card.props.accessibilityLabel).not.toMatch(/\$/);
   });
@@ -32,6 +34,15 @@ describe('ActivityCard', () => {
     const card = screen.getByLabelText(/skadarlija food walk/i);
     expect(card.props.accessibilityRole).toBe('button');
     fireEvent.press(card);
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the go-button as decorative (no own role) but tapping it still fires onPress', () => {
+    const onPress = jest.fn();
+    render(<ActivityCard activity={activity} showDistance onPress={onPress} />);
+    const goButton = screen.getByTestId('activity-card-go-button', { includeHiddenElements: true });
+    expect(goButton.props.accessibilityElementsHidden).toBe(true);
+    fireEvent.press(goButton);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
@@ -52,7 +63,7 @@ describe('ActivityCard', () => {
     expect(screen.queryByText('Skadarlija Food Walk')).toBeNull();
   });
 
-  it('renders the description snippet and up to 3 tags, both included in the a11y label', () => {
+  it('renders the description snippet, included in the a11y label, and no tags row', () => {
     render(
       <ActivityCard
         activity={{ ...activity, tags: ['food', 'walking', 'local', 'extra'] }}
@@ -61,12 +72,10 @@ describe('ActivityCard', () => {
       />
     );
     expect(screen.getByText('A tasty walk')).toBeTruthy();
-    expect(screen.getByText('food')).toBeTruthy();
-    expect(screen.getByText('walking')).toBeTruthy();
-    expect(screen.getByText('local')).toBeTruthy();
-    expect(screen.queryByText('extra')).toBeNull();
-    const card = screen.getByLabelText(/a tasty walk.*tags: food, walking, local/i);
-    expect(card).toBeTruthy();
+    expect(screen.queryByText('food')).toBeNull();
+    expect(screen.queryByText('walking')).toBeNull();
+    const card = screen.getByLabelText(/a tasty walk/i);
+    expect(card.props.accessibilityLabel).not.toMatch(/tags:/i);
   });
 
   it('omits the description line and its label clause when description is empty', () => {
@@ -74,13 +83,6 @@ describe('ActivityCard', () => {
     expect(screen.queryByText('A tasty walk')).toBeNull();
     const card = screen.getByLabelText(/skadarlija food walk/i);
     expect(card.props.accessibilityLabel).not.toMatch(/tasty walk/i);
-  });
-
-  it('omits the tags row and its label clause when tags is empty', () => {
-    render(<ActivityCard activity={{ ...activity, tags: [] }} showDistance onPress={jest.fn()} />);
-    expect(screen.queryByText('food')).toBeNull();
-    const card = screen.getByLabelText(/skadarlija food walk/i);
-    expect(card.props.accessibilityLabel).not.toMatch(/tags:/i);
   });
 
   it('renders no attribution caption when the photo carries none (no-op)', () => {

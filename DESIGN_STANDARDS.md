@@ -392,90 +392,102 @@ generic wizard/stepper abstraction until a second step exists.
 
 ### Activity card
 
-The visual, image-led card for one browseable activity in a list (title,
-category, rating, image, description, tags, distance/location + a map
-thumbnail). The List row recipe is for compact text rows; this is richer.
+The visual, image-led **ticket** card for one browseable activity in a list
+(cover image, category, rating, title, description, distance/location + a
+go-arrow). Styled as a torn boarding-pass stub — the horizontal sibling of the
+Scope ticket. The List row recipe is for compact text rows; this is richer.
 The whole card is one tap control that opens the activity's detail screen —
-exposed as a single screen-reader button (not a plain group), with the same
-accessibility label described below acting as the button's name.
+exposed as a single screen-reader button (not a plain group), with the
+accessibility label below acting as the button's name.
 
-Structure (image-top):
-- **Image** at the top, full card width, fixed 3:2 aspect ratio (space
-  reserved so nothing jumps as it loads), `--radius` on the top corners only.
-  - Loading: `--surface-hover` placeholder block at the reserved ratio, using
-    the Skeleton loader opacity pulse.
+**Container:** full card width, `--radius-lg` (16px), content clipped to the
+radius. Body background `--surface-gradient` (`#93313A → #8A2C35`, top-lit —
+needs `expo-linear-gradient` on `area: app`, already a dependency). 1px
+`--border` on all sides with the top edge set to `--card-highlight` (the gold
+hairline), the standard card elevation device. `--space-4` between stacked
+cards.
+
+Structure (image-top, torn-stub):
+- **Cover image** at the top, full width, fixed reserved height **150px** (a
+  uniform cover strip; space reserved so nothing jumps as it loads),
+  `--radius-lg` on the top corners only. Two overlay pills sit on it, each a
+  `--scrim`-filled `--radius-full` pill:
+  - **Category badge**, top-left, `--space-3` inset: `--font-size-xs`,
+    uppercase, weight 600, `--text` (cream) label.
+  - **Rating pill**, top-right, `--space-3` inset: a small `--primary` gold
+    `Star` icon (decorative) + value `--font-size-sm` `--text` with
+    `tabular-nums`.
+  - `--text` on `--scrim` is ≥6.1:1 even over a pure-white photo (72%-opaque
+    wine-black) — clears 4.5:1. The gold `Star` is ~2.6:1 worst-case, so it's
+    decorative; the cream value carries the rating.
+  - Loading: `--surface-hover` placeholder at the reserved 150px box with the
+    Skeleton opacity pulse; the overlay pills (from data, not the image) still
+    render.
   - Broken/missing: `--surface-hover` block with a centered 20px `--text-muted`
     `ImageOff` icon — never a broken-image glyph, never collapse the box.
   - Image *optimization* and *lazy-loading* are the engineer's concern
     (FRONTEND_STANDARDS / APP_STANDARDS); this recipe fixes only the reserved
     box and its loading/broken look.
-- **Body**, `--space-4` padding, on `--surface` with the gold `--card-highlight`
-  top edge and 1px `--border`, `--space-2` between stacked elements:
-  - Row 1: category **Badge/pill** (neutral variant) left; **rating** right —
-    16px `--primary` star icon (gold on `--surface` = 3.1:1, a UI icon, clears
-    3:1) + value `--font-size-sm` `--text` (7.1:1) with `tabular-nums`.
-  - Title `--font-size-lg` `--text` (7.1:1), up to 2 lines then ellipsis
-    (truncate, never clip — honor dynamic text scaling).
-  - **Description snippet**: `--font-size-sm` `--text-muted` (5.3:1), up to 2
-    lines then ellipsis, from `Activity.description`. Omitted entirely when
-    the activity has no description — a shorter card than its neighbour is
-    not a layout jump (jump = an element shifting on a state change, which
-    doesn't happen here).
-  - **Tags row**: a single non-wrapping row of up to 3 tags from
-    `Activity.tags`, each a neutral **Badge/pill** (`--font-size-xs`,
-    uppercase, `--text-muted` label, 1px `--border`, `--radius-full`).
-    Overflow tags beyond 3 are simply dropped (no "+N" chip — decorative
-    scannable keywords, not a control). Omitted entirely when `tags` is empty.
-  - **Location row**: a leading fixed-size **Map thumbnail** (below), then
-    16px `MapPin` + distance/location `--font-size-sm` `--text-muted` (5.3:1
-    on `--surface`) to its right, vertically centered. No price/cost
-    element — the flow shows no price signage anywhere (product decision;
-    the `PriceTier` field stays in the wire contract but never renders).
-- **Map thumbnail** (in the location row): a static map image pinned to
-  `Activity.location` (lat/lng) with a gold `--primary` (#CE9042) marker
-  centered. Fixed **72×72** square, `--radius`, box reserved so every card in
-  a list keeps a uniform location-row height. The marker is baked into the
-  third-party map image — decorative imagery, no WCAG text/background pairing
-  applies (same as the hero photo). Placed to the left of the location text
-  (not full-width) to avoid stacking two full-width visuals and to keep the
-  map to one small HTTP request per card; a full interactive map is out of
-  scope for this card.
-  - Loading: `--surface-hover` block at the reserved 72×72 square with the
-    Skeleton opacity pulse.
-  - Loaded: the static map image with the gold pin.
-  - Broken (image request fails) or coordinates missing/invalid (lat/lng
-    absent or 0,0): `--surface-hover` block with a centered 20px
-    `--text-muted` `MapPinOff` icon — never a broken-image glyph, never
-    collapse the box, so one anomalous card doesn't shorten its location row
-    out of line with the rest of the list.
-  - Key absent (env var unset, app-wide): the map thumbnail is omitted for
-    **every** card and the location row falls back to just `MapPin` + text.
-    A missing key is an app-wide/config condition, so a placeholder square on
-    every card would be a wall of identical "unavailable" boxes — worse than
-    not showing a map at all. Per-card coords-missing, by contrast, is a rare
-    data gap and keeps its placeholder square.
-- **ActivityCardSkeleton**: matches the richer loaded card — image/badge/
-  rating/title skeleton blocks, plus two `--surface-hover` skeleton lines for
-  the description (~100% and ~70% width) and a 72×72 skeleton square in the
-  location row, so real cards arrive with zero jump.
+- **Perforation seam** directly under the image (the torn-stub tear line):
+  - a full-width horizontal **dashed rule** in `--border`, ~2px, drawn as an
+    **SVG stroke with `stroke-dasharray`** (`~"2 12"`) — never a CSS/RN dashed
+    border, which renders inconsistently across web and native (same rule as
+    the Destination header's dashed underline). Sits in a ~2px seam row so it
+    reserves its own space.
+  - two **perforation notches**: 16px circles filled with the page background
+    `--bg` wine, centered on the seam line, half-off the card's left and right
+    edges (`left: -8` / `right: -8`); with the card's clip-to-radius the outer
+    half is clipped and a wine half-circle bites into each edge (punched-ticket
+    look). Decorative.
+- **Body**, `--space-4` padding, on the gradient, `--space-2` between stacked
+  elements:
+  - **Title** `--font-size-lg` (20px) weight 600 `--text` (≥6.5:1 across the
+    gradient ✓), up to 2 lines then ellipsis (truncate, never clip — honor
+    dynamic text scaling). System font — **not** the Marcellus display accent
+    (that stays the Welcome headline only).
+  - **Description snippet**: `--font-size-sm` `--text-muted` (~5.3:1 on the
+    gradient's lower stop), up to 2 lines then ellipsis, from
+    `Activity.description`. Omitted entirely when the activity has no
+    description — a shorter card than its neighbour is not a layout jump.
+  - **Distance / location row**: a 16px `--primary` gold `MapPin` (decorative
+    — the text carries the meaning) + distance/location `--font-size-sm`
+    `--text-muted` (`tabular-nums` on the km value) on the **left**; the
+    **go-button** on the **right**, spaced apart, vertically centered. No
+    price/cost element — the flow shows no price signage anywhere (product
+    decision; `PriceTier` stays in the wire contract but never renders).
+  - No tags row: the ticket body is title → description → distance/go-row.
+- **Go-button** (bottom-right of the distance row): a **38px** circle filled
+  `--primary` gold with a `lucide` `ArrowRight` (~17px, stroke ~2.4) in
+  `--ink` (6.6:1 ✓). **Decorative, not a separate control** — no own role and
+  no own handler; a tap on it lands inside the card and fires the card's
+  single `onPress` (opens the detail screen). Its sub-44px size is fine
+  because the whole card is the tap target. Same size/token pattern as the
+  Scope ticket go-button, scaled to 38px.
+- **ActivityCardSkeleton**: matches this footprint — a 150px image skeleton
+  block, the perforation seam, a title skeleton line (~80%), one-to-two
+  description skeleton lines (~100% / ~70%), and a bottom row with a short
+  distance skeleton line plus a 38px `--surface-hover` circle for the
+  go-button — so real cards arrive with zero jump.
 - **Accessibility label**: title, category, "rated {rating}", the
-  distance/location phrase, then the description, then the tags (e.g. "Tags:
-  {tag}, {tag}, {tag}") — description and tags omitted from the label when
-  absent, mirroring the visual. The map thumbnail is decorative and excluded
-  from the label (its only information, the location, is already spoken via
-  the location phrase); no price reference ever appears in the label.
+  distance/location phrase, then the description — description omitted from the
+  label when absent, mirroring the visual. The cover image, both overlay
+  pills, the dashed line, both notches, the go-button, and every icon are
+  decorative and excluded from the label / hidden from the a11y tree
+  (`accessibilityElementsHidden` / `importantForAccessibility`); no price
+  reference ever appears.
 
 **Interactive states** (the card is a control, not decoration): rest is the
-`--surface` card described above; **pressed** swaps the body bg to
-`--surface-hover` (the whole card, one target — carries on touch, no hover
-reliance); **focused** (keyboard/AT) adds a 2px `--primary` focus border
-(replacing the 1px `--border`, keeping the gold `--card-highlight` top edge).
-The card already clears the 44×44 floor by a wide margin; stacked cards keep
-`--space-4` between them (well over the `--space-2` neighbor gap). Press
-feedback lands within ~100ms; no size/scale animation — only the bg color
-swaps. Fully keyboard-operable, never tap-only.
+gradient card above; **pressed** swaps the body to `--surface-hover` (a single
+bg color swap, whole card, one target — carries on touch, no hover reliance);
+**focused** (keyboard/AT) adds a 2px `--primary` focus border (replacing the
+1px `--border`, keeping the gold `--card-highlight` top edge). The card clears
+the 44×44 floor by a wide margin; stacked cards keep `--space-4` between them.
+Press feedback lands within ~100ms; no size/scale animation — only the bg
+color swaps. Fully keyboard-operable, never tap-only.
 
-No new color tokens. `--space-4` between stacked cards.
+No new color tokens — composes from `--surface-gradient`, `--border`,
+`--card-highlight`, `--scrim`, `--primary`, `--ink`, `--text`, `--text-muted`,
+`--bg`, `--radius-lg`, `--radius-full`. `--space-4` between stacked cards.
 
 ### Photo attribution (Google-sourced imagery)
 
