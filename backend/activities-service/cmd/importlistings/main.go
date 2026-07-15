@@ -10,6 +10,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -180,4 +181,46 @@ func detailsJSON(c activitiessvc.Category) string {
 		return "{}" // unreachable: all payloads above marshal cleanly
 	}
 	return string(b)
+}
+
+// sqlQuote single-quotes s and doubles any embedded single quote — the only
+// escaping SQL string literals here need.
+func sqlQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// formatInsertSQL renders rows as one multi-row INSERT a maintainer saves as
+// a migration. location is emitted as a raw ST_SetSRID expression (not a
+// quoted literal); every text/JSON cell goes through sqlQuote. An empty slice
+// produces no statement.
+func formatInsertSQL(rows []listing) string {
+	if len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("INSERT INTO activities (title, description, category, location, country, city, rating, tags, details) VALUES\n")
+	for i, r := range rows {
+		tags := "ARRAY[]::TEXT[]"
+		if r.NeedsReview {
+			tags = "ARRAY['needs-review']"
+		}
+		location := fmt.Sprintf("ST_SetSRID(ST_MakePoint(%g, %g), 4326)::geography", r.Lng, r.Lat)
+		fmt.Fprintf(&b, "  (%s, %s, %s, %s, %s, %s, %g, %s, %s::jsonb)",
+			sqlQuote(r.Title),
+			sqlQuote(r.Description),
+			sqlQuote(string(r.Category)),
+			location,
+			sqlQuote(r.Country),
+			sqlQuote(r.City),
+			r.Rating,
+			tags,
+			sqlQuote(detailsJSON(r.Category)),
+		)
+		if i < len(rows)-1 {
+			b.WriteString(",\n")
+		} else {
+			b.WriteString(";\n")
+		}
+	}
+	return b.String()
 }

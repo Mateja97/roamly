@@ -77,6 +77,51 @@ func TestDetailsJSON(t *testing.T) {
 	}
 }
 
+func TestFormatInsertSQL(t *testing.T) {
+	rows := []listing{
+		{
+			Title: "Ambar", Description: "Balkan restaurant",
+			Category: activitiessvc.CategoryRestaurants,
+			Lat:      44.819824, Lng: 20.448128,
+			City: "Belgrade", Country: "Serbia",
+			Rating: 4.6, NeedsReview: true,
+		},
+		{
+			Title: "O'Hara's", Description: "Corner pub",
+			Category: activitiessvc.CategoryBars,
+			Lat:      44.8, Lng: 20.46,
+			City: "Belgrade", Country: "Serbia",
+			Rating: 0, NeedsReview: false,
+		},
+	}
+	got := formatInsertSQL(rows)
+
+	wants := []string{
+		"INSERT INTO activities (title, description, category, location, country, city, rating, tags, details) VALUES",
+		"'Ambar'",
+		"'restaurants'",
+		"ST_SetSRID(ST_MakePoint(20.448128, 44.819824), 4326)::geography",
+		"ARRAY['needs-review']", // low-confidence row
+		"'O''Hara''s'",          // embedded quote escaped
+		"ARRAY[]::TEXT[]",       // confident row, no review tag
+		"::jsonb",               // details cast
+	}
+	for _, w := range wants {
+		if !strings.Contains(got, w) {
+			t.Errorf("formatInsertSQL() missing %q\n---\n%s", w, got)
+		}
+	}
+	if !strings.HasSuffix(strings.TrimSpace(got), ";") {
+		t.Errorf("formatInsertSQL() should end with ';', got:\n%s", got)
+	}
+}
+
+func TestFormatInsertSQLEmpty(t *testing.T) {
+	if got := formatInsertSQL(nil); got != "" {
+		t.Errorf("formatInsertSQL(nil) = %q, want empty", got)
+	}
+}
+
 func TestNeedsReview(t *testing.T) {
 	tests := []struct {
 		in   string
