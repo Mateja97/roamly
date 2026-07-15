@@ -132,7 +132,17 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		Photos:      toProtoPhotos(a.Photos),
 		Tags:        a.Tags,
 		DistanceKm:  a.DistanceKM,
+		Details:     detailsJSON(a.Details),
 	}
+}
+
+// detailsJSON stringifies the details column for the wire; the DB column is
+// NOT NULL DEFAULT '{}' so this is a defensive fallback, not the normal path.
+func detailsJSON(details []byte) string {
+	if len(details) == 0 {
+		return "{}"
+	}
+	return string(details)
 }
 
 func toProtoPhotos(photos []activitiessvc.Photo) []*activitiesv1.Photo {

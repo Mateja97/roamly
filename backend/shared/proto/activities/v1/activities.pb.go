@@ -384,7 +384,14 @@ type Activity struct {
 	// Distance from the request's reference location, in kilometers. Only
 	// populated when the request scope had a reference point (SCOPE_NEARBY
 	// always; SCOPE_ANYWHERE when current_location was supplied); 0 otherwise.
-	DistanceKm    float64 `protobuf:"fixed64,11,opt,name=distance_km,json=distanceKm,proto3" json:"distance_km,omitempty"`
+	DistanceKm float64 `protobuf:"fixed64,11,opt,name=distance_km,json=distanceKm,proto3" json:"distance_km,omitempty"`
+	// Category-specific structured detail payload (T2), JSON-encoded (a
+	// decoded JSON object per APP_STANDARDS.md's per-category field table,
+	// e.g. {"cuisine": "Italian", "popular_dishes": [...]});
+	// "{}" when the category has no detail data. A JSON string rather than
+	// 12 proto messages: the app renders it generically off a data-driven
+	// config, not 12 typed screens.
+	Details       string `protobuf:"bytes,12,opt,name=details,proto3" json:"details,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -487,6 +494,13 @@ func (x *Activity) GetDistanceKm() float64 {
 		return x.DistanceKm
 	}
 	return 0
+}
+
+func (x *Activity) GetDetails() string {
+	if x != nil {
+		return x.Details
+	}
+	return ""
 }
 
 type QueryActivitiesResponse struct {
@@ -709,7 +723,7 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12/\n" +
 	"\x06cities\x18\n" +
 	" \x03(\v2\x17.activities.v1.LocationR\x06citiesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
-	"R\rhome_locationR\fhome_countryR\x04sort\"\xd7\x02\n" +
+	"R\rhome_locationR\fhome_countryR\x04sort\"\xf1\x02\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -722,7 +736,8 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x04tags\x18\n" +
 	" \x03(\tR\x04tags\x12\x1f\n" +
 	"\vdistance_km\x18\v \x01(\x01R\n" +
-	"distanceKmJ\x04\b\a\x10\b\"R\n" +
+	"distanceKm\x12\x18\n" +
+	"\adetails\x18\f \x01(\tR\adetailsJ\x04\b\a\x10\b\"R\n" +
 	"\x17QueryActivitiesResponse\x127\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x17.activities.v1.ActivityR\n" +

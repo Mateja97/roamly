@@ -46,6 +46,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 				{Url: "img2"}, // unresolved: no author, attribution must be omitted
 			},
 			Tags: []string{"sports"}, DistanceKm: 3.2,
+			Details: `{"difficulty":3,"what_to_bring":["water"]}`,
 		}},
 	}}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
@@ -68,6 +69,10 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	}
 	if photos[1].URI != "img2" || photos[1].Attribution != nil {
 		t.Errorf("unresolved photo must omit attribution: %+v", photos[1])
+	}
+	wantDetails := `{"difficulty":3,"what_to_bring":["water"]}`
+	if string(got.Activities[0].Details) != wantDetails {
+		t.Errorf("details = %s, want %s (decoded object, not a re-encoded string)", got.Activities[0].Details, wantDetails)
 	}
 	if fake.got.GetScope() != activitiesv1.Scope_SCOPE_NEARBY {
 		t.Errorf("gRPC request scope = %v, want SCOPE_NEARBY", fake.got.GetScope())
@@ -238,6 +243,25 @@ func TestQueryActivitiesHandler_GRPCInvalidArgumentMapsTo400(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestDetailsJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"valid object passes through unchanged", `{"cuisine":"Italian"}`, `{"cuisine":"Italian"}`},
+		{"empty string falls back to empty object", "", "{}"},
+		{"malformed JSON falls back to empty object", `{not-json`, "{}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := string(detailsJSON(tt.in)); got != tt.want {
+				t.Errorf("detailsJSON(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -10,6 +10,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -297,6 +298,52 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 		if len(got) != 0 {
 			t.Fatalf("got %d suggestions, want 0", len(got))
+		}
+	})
+
+	t.Run("details column round-trips category-specific JSON and defaults seeded rows to {}", func(t *testing.T) {
+		var restaurantID string
+		err := db.QueryRow(ctx,
+			`INSERT INTO activities (title, description, category, location, country, rating, details)
+			VALUES ('Details Fixture', 'test fixture', 'restaurants',
+				ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 'Serbia', 4.0, $3)
+			RETURNING id`,
+			belgrade.Lng, belgrade.Lat, `{"cuisine":"Italian","popular_dishes":[{"name":"Pizza","price":"$12"}]}`,
+		).Scan(&restaurantID)
+		if err != nil {
+			t.Fatalf("inserting details fixture: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, restaurantID) })
+
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope: activitiessvc.ScopeAnywhere, CurrentLocation: belgrade, MaxDistanceKM: 5,
+			Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants},
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+
+		var found bool
+		for _, a := range got {
+			if a.ID != restaurantID {
+				// Every other in-scope seeded activity is untouched by this
+				// migration and must still carry the JSONB default.
+				if string(a.Details) != "{}" {
+					t.Errorf("seeded activity %q has details %s, want default {}", a.Title, a.Details)
+				}
+				continue
+			}
+			found = true
+			var details activitiessvc.RestaurantDetails
+			if err := json.Unmarshal(a.Details, &details); err != nil {
+				t.Fatalf("unmarshaling details: %v", err)
+			}
+			if details.Cuisine != "Italian" || len(details.PopularDishes) != 1 {
+				t.Errorf("got details %+v, want Cuisine=Italian with 1 popular dish", details)
+			}
+		}
+		if !found {
+			t.Fatal("expected the details fixture activity in the results")
 		}
 	})
 

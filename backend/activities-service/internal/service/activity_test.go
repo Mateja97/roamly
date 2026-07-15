@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -264,6 +265,47 @@ func TestValidCategory(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := validCategory(tt.cat); got != tt.want {
 				t.Errorf("validCategory(%q) = %v, want %v", tt.cat, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateDetails(t *testing.T) {
+	tests := []struct {
+		name    string
+		cat     activitiessvc.Category
+		details string
+		wantErr bool
+	}{
+		{"empty payload always valid", activitiessvc.CategorySport, "", false},
+		{"empty object always valid", activitiessvc.CategorySport, "{}", false},
+		{"matching restaurant shape accepted", activitiessvc.CategoryRestaurants,
+			`{"cuisine":"Italian","price_tier":"$$","popular_dishes":[{"name":"Pizza","price":"$12"}]}`, false},
+		{"restaurant field on sport category rejected", activitiessvc.CategorySport,
+			`{"cuisine":"Italian"}`, true},
+		{"matching sport shape accepted", activitiessvc.CategorySport,
+			`{"difficulty":3,"effort_level":"moderate","what_to_bring":["water","boots"]}`, false},
+		{"matching wellness shape accepted", activitiessvc.CategoryWellness,
+			`{"treatments":[{"item":"Massage","duration":"60m","price":"$80"}],"external_booking_note":"book via website"}`, false},
+		{"unknown field on wellness rejected", activitiessvc.CategoryWellness,
+			`{"vibe":"chill"}`, true},
+		{"unknown category rejected even with empty-ish payload", activitiessvc.Category("bogus"),
+			`{"anything":"goes"}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDetails(tt.cat, json.RawMessage(tt.details))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ValidateDetails() error = nil, want error")
+				}
+				if !errors.Is(err, sharederrors.ErrInvalidInput) {
+					t.Errorf("ValidateDetails() error = %v, want wrapping ErrInvalidInput", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateDetails() unexpected error: %v", err)
 			}
 		})
 	}

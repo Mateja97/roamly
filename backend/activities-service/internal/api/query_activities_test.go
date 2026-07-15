@@ -71,6 +71,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 			Rating: 4.8,
 			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com"}},
 			Tags:   []string{"sports"}, DistanceKM: 3.2,
+			Details: []byte(`{"difficulty":3}`),
 		},
 	}}
 	client := dialServer(t, fake)
@@ -92,8 +93,30 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	if len(got.GetPhotos()) != 1 || got.GetPhotos()[0].GetUrl() != "img1" || got.GetPhotos()[0].GetAuthor() != "Jane Doe" {
 		t.Errorf("unexpected photo translation: %+v", got.GetPhotos())
 	}
+	if got.GetDetails() != `{"difficulty":3}` {
+		t.Errorf("details = %q, want passthrough of the domain JSON", got.GetDetails())
+	}
 	if fake.got.Scope != activitiessvc.ScopeNearby {
 		t.Errorf("service received scope = %v, want nearby", fake.got.Scope)
+	}
+}
+
+func TestDetailsJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []byte
+		want string
+	}{
+		{"nil defaults to empty object", nil, "{}"},
+		{"empty slice defaults to empty object", []byte{}, "{}"},
+		{"non-empty payload passes through unchanged", []byte(`{"cuisine":"Italian"}`), `{"cuisine":"Italian"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := detailsJSON(tt.in); got != tt.want {
+				t.Errorf("detailsJSON(%s) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 

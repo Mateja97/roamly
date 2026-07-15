@@ -5,7 +5,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -148,6 +150,64 @@ func validatePoint(p *activitiessvc.Point) error {
 		return fmt.Errorf("lng %v out of range [-180,180]", p.Lng)
 	}
 	return nil
+}
+
+// ValidateDetails rejects a details payload whose fields don't match its
+// category's shape (T2), e.g. `cuisine` set on a CategorySport row. An
+// empty payload ("" or "{}") is always valid regardless of category — a
+// category with no detail data yet is the common case, not an error.
+//
+// ponytail: not called from any RPC yet — ActivitiesService is read-only
+// today (Query/SuggestCities only, no create/update). Wire this in when a
+// write path lands; exported and tested now per T2's acceptance criteria.
+func ValidateDetails(category activitiessvc.Category, details json.RawMessage) error {
+	if len(bytes.TrimSpace(details)) == 0 {
+		return nil
+	}
+	target, err := detailsTarget(category)
+	if err != nil {
+		return err
+	}
+	dec := json.NewDecoder(bytes.NewReader(details))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(target); err != nil {
+		return fmt.Errorf("%w: details do not match category %q: %s", sharederrors.ErrInvalidInput, category, err)
+	}
+	return nil
+}
+
+// detailsTarget returns a fresh, addressable instance of category's detail
+// struct for ValidateDetails to strict-decode into. One switch arm per
+// category from APP_STANDARDS.md's per-category table.
+func detailsTarget(category activitiessvc.Category) (any, error) {
+	switch category {
+	case activitiessvc.CategoryRestaurants:
+		return &activitiessvc.RestaurantDetails{}, nil
+	case activitiessvc.CategoryBars:
+		return &activitiessvc.BarDetails{}, nil
+	case activitiessvc.CategoryCafes:
+		return &activitiessvc.CafeDetails{}, nil
+	case activitiessvc.CategoryNightlife:
+		return &activitiessvc.NightlifeDetails{}, nil
+	case activitiessvc.CategoryNature:
+		return &activitiessvc.NatureDetails{}, nil
+	case activitiessvc.CategorySport:
+		return &activitiessvc.SportDetails{}, nil
+	case activitiessvc.CategoryKids:
+		return &activitiessvc.KidsDetails{}, nil
+	case activitiessvc.CategoryCulture:
+		return &activitiessvc.CultureDetails{}, nil
+	case activitiessvc.CategoryArt:
+		return &activitiessvc.ArtDetails{}, nil
+	case activitiessvc.CategoryWellness:
+		return &activitiessvc.WellnessDetails{}, nil
+	case activitiessvc.CategoryEntertainment:
+		return &activitiessvc.EntertainmentDetails{}, nil
+	case activitiessvc.CategoryShopping:
+		return &activitiessvc.ShoppingDetails{}, nil
+	default:
+		return nil, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, category)
+	}
 }
 
 func validCategory(c activitiessvc.Category) bool {
