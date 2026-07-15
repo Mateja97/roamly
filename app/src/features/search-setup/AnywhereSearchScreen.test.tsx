@@ -131,7 +131,7 @@ describe('AnywhereSearchScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Show 2 activities' }));
     });
 
-    expect(onSearchComplete).toHaveBeenCalledWith([activity('1'), activity('2')], []);
+    expect(onSearchComplete).toHaveBeenCalledWith([activity('1'), activity('2')], [], []);
   });
 
   it('a failed search shows the error banner and lets the CTA be retried', async () => {

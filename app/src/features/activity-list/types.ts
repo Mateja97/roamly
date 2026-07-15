@@ -1,4 +1,5 @@
 import type { Activity } from '../../api/activities';
+import type { CitySuggestion } from '../../api/cities';
 import type { ScopeSelection } from '../scope-picker/types';
 
 export type Category =
@@ -33,5 +34,9 @@ export type ActivityListScreenProps = {
   // query itself — when present, this screen shows those results directly
   // instead of re-querying with an equivalent request on mount.
   initialActivities?: Activity[];
+  // T2: the Anywhere search-setup screen's selected cities, carried forward
+  // for the header's composite subtitle (`{count} activities · {cities}`).
+  // Undefined/empty means the zero-city fallback (current_location anchor).
+  initialCities?: CitySuggestion[];
   onBack: () => void;
 };

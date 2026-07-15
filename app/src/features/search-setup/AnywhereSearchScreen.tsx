@@ -27,7 +27,7 @@ import type { AnywhereSearchState } from './anywhereSearch';
 type AnywhereSearchScreenProps = {
   selection: ScopeSelection;
   onBack: () => void;
-  onSearchComplete: (activities: Activity[], categories: Category[]) => void;
+  onSearchComplete: (activities: Activity[], categories: Category[], cities: CitySuggestion[]) => void;
 };
 
 // The debounce window for both the city typeahead and the live result-count
@@ -131,7 +131,7 @@ export function AnywhereSearchScreen({ selection, onBack, onSearchComplete }: An
     setSubmitting(false);
     if (result.status === 'success') {
       setActivities(result.activities);
-      onSearchComplete(result.activities, state.categories);
+      onSearchComplete(result.activities, state.categories, state.cities);
     } else {
       setSubmitError(result.message);
     }
