@@ -32,6 +32,27 @@ models multiply their quota cost.
   one-command checks this flow already requires (e.g. `gh pr list`,
   `gh pr ready`).
 
+## Environment failures (fix globally, not per-worktree)
+If a task, its verification, or its review fails because a **tool** is
+missing from the machine rather than the project (e.g. `Cannot find module
+'playwright'` from an ad-hoc script, a missing global CLI like `gh`,
+`jq`, `protoc`) — as opposed to a project dependency declared in
+`package.json`/`go.mod` (those install locally as normal) — do not let the
+subagent patch around it inside its own worktree; that fix vanishes for
+every other worktree. Instead have the subagent (or, if it can't, dispatch
+`general-purpose`) install the fix at the machine level so it survives for
+all future worktrees:
+- Missing global npm package → `npm install -g <pkg>`, and if it's a
+  `require()`-style dependency (not just a CLI), ensure
+  `export NODE_PATH="$(npm root -g)"` is present in `~/.zshrc` (append once
+  if missing) so any worktree's scripts resolve it.
+- Missing Playwright browser binaries → `playwright install <browser>`
+  (global npm install, not a project devDependency install).
+- Missing global CLI (brew/apt package) → install via the machine's package
+  manager, not vendored into the repo.
+Record what was installed in the final report so the user knows the
+machine's baseline changed.
+
 ## 0. Isolate (worktree)
 Autopilot builds must never share a working tree with another session — parallel
 sessions collide (`git add -A` in one sweeps another's uncommitted edits).
