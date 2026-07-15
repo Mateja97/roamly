@@ -376,6 +376,47 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("0009 backfills action_url onto every seed row in the 8 affected categories, and year onto Art", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+
+		actionURLCategories := map[activitiessvc.Category]bool{
+			activitiessvc.CategoryRestaurants:   true,
+			activitiessvc.CategoryBars:          true,
+			activitiessvc.CategoryNightlife:     true,
+			activitiessvc.CategorySport:         true,
+			activitiessvc.CategoryCulture:       true,
+			activitiessvc.CategoryArt:           true,
+			activitiessvc.CategoryWellness:      true,
+			activitiessvc.CategoryEntertainment: true,
+		}
+
+		for _, a := range got {
+			if !actionURLCategories[a.Category] {
+				continue
+			}
+			var payload struct {
+				ActionURL *string `json:"action_url"`
+				Year      *int    `json:"year"`
+			}
+			if err := json.Unmarshal(a.Details, &payload); err != nil {
+				t.Errorf("activity %q: unmarshaling details: %v", a.Title, err)
+				continue
+			}
+			if payload.ActionURL == nil || *payload.ActionURL == "" {
+				t.Errorf("activity %q (category %s) missing action_url after migration 0009", a.Title, a.Category)
+			}
+			if a.Category == activitiessvc.CategoryArt && (payload.Year == nil || *payload.Year == 0) {
+				t.Errorf("activity %q (Art) missing year after migration 0009", a.Title)
+			}
+			if err := service.ValidateDetails(a.Category, a.Details); err != nil {
+				t.Errorf("activity %q (category %s): ValidateDetails failed after 0009 backfill: %v", a.Title, a.Category, err)
+			}
+		}
+	})
+
 	t.Run("min_rating filter narrows results", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
 			Scope: activitiessvc.ScopeNearby, CurrentLocation: belgrade, MaxDistanceKM: 50,
