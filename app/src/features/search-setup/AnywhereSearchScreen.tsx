@@ -8,6 +8,7 @@ import { queryActivities } from '../../api/activities';
 import type { CitySuggestion } from '../../api/cities';
 import { suggestCities } from '../../api/cities';
 import { FilterChip } from '../../components/FilterChip';
+import { HeaderFlightPath } from '../../components/HeaderFlightPath';
 import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
@@ -150,6 +151,7 @@ export function AnywhereSearchScreen({ selection, onBack, onSearchComplete }: An
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
+        <HeaderFlightPath />
         <Pressable
           onPress={onBack}
           onFocus={backFocus.onFocus}
@@ -340,6 +342,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    position: 'relative',
+    overflow: 'hidden',
   },
   backButton: {
     flexDirection: 'row',

@@ -5,6 +5,7 @@ import { ChevronLeft, MapPin, X } from 'lucide-react-native';
 import type { ActivitiesQueryRequest } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { FilterChip } from '../../components/FilterChip';
+import { HeaderFlightPath } from '../../components/HeaderFlightPath';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
@@ -115,6 +116,7 @@ export function NearbySearchSetupScreen({ selection, onConfirm, onBack }: Nearby
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
+        <HeaderFlightPath />
         <Pressable
           onPress={onBack}
           onFocus={backFocus.onFocus}
@@ -239,6 +241,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    position: 'relative',
+    overflow: 'hidden',
   },
   backButton: {
     flexDirection: 'row',
