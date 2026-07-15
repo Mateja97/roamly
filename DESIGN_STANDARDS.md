@@ -128,9 +128,17 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
 - System font stack — no added dependency:
   `-apple-system, "Segoe UI", Inter, Roboto, sans-serif`.
 - **Display accent** (`--font-display`): **Marcellus** (Google Font, regular
-  400), used ONLY for the Welcome screen's destination-field headline
-  ("Where to?" — see the Destination header recipe) — a single display line,
-  never body copy or labels. On
+  400), the display type for **screen headers** — the Welcome destination
+  hero and the primary title/H1 that gives a screen its identity — never body
+  copy, labels, in-card titles (Activity card titles stay system font), or
+  utility-bar titles. **Marcellus header sizes** (the full set — keep this
+  list the single source so header work stays consistent):
+  Welcome destination hero `--font-size-2xl` (36px) · search-setup H1
+  ("Refine your search") `--font-size-xl` (28px) · activities-list title
+  (Nearby/Anywhere) 26px. All render `--text` cream on `--bg`, weight 400
+  (Marcellus ships one weight), line-height 1.2. Every size is ≥24px, so each
+  is large text and clears contrast with margin (`--text` on `--bg` is 8.5:1).
+  On
   `area: app` this is a new dependency (`expo-font` + `@expo-google-fonts/marcellus`);
   gate first paint on the font load so the prompt never flashes in the system
   stack, then falls back to the system stack only if loading fails. On
@@ -279,6 +287,30 @@ two-line title block on the left; the actions stay right-aligned and
 top-aligned. Truncate each line to one line with ellipsis (honor dynamic text
 scaling). No new token or color pairing — reuses the documented
 `--text-muted`-on-`--bg` combination.
+
+**Display-title variant (Marcellus header):** a screen whose header IS the
+screen's identity (not a utility bar) sets its title in `--font-display`
+(Marcellus) at the matching **Marcellus header size** (see Typography) instead
+of the system `--font-size-lg` — e.g. the activities-list title (26px) and the
+search-setup H1 ("Refine your search", `--font-size-xl` 28px). `--text` cream
+on `--bg`, weight 400, line-height 1.2, tightened tracking. Font-load-gated
+like all Marcellus use — no system-stack flash before the font resolves. The
+optional subtitle above applies unchanged. The nav affordances that flank such
+a header (an interim back control, a scope indicator) are separate elements,
+not part of the title block — see the Mobile-specific interim back control and
+the scope indicator pill below.
+
+**Scope indicator pill (non-interactive):** a small status pill that names the
+active search scope (Nearby / Globe icon + "Nearby"/"Anywhere") in a header
+row. Transparent bg on `--bg`, 1px `--primary` gold border (UI element, 3.65:1
+✓), a 16px `--primary` gold scope icon (`MapPin` Nearby / `Globe` Anywhere),
+and an uppercase label `--font-size-xs`, weight 600, `letter-spacing 0.05em`.
+The **label is `--text` cream, not gold** — gold `--primary` on `--bg` is only
+3.65:1, which clears the 3:1 UI/large bar the border and icon sit on but fails
+the 4.5:1 normal-text bar a 12px label needs; cream is 8.5:1. Non-interactive
+(no hover/press/focus); the icon is decorative (`aria-hidden`) since the label
+carries the scope. This is the AA-safe reading of the gold-outline pill —
+gold structure, cream label. No new token.
 
 ### Destination header (overline + display headline)
 

@@ -11,7 +11,7 @@ import { FilterChip } from '../../components/FilterChip';
 import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
-import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
 import { CATEGORY_OPTIONS } from '../activity-list/filters';
 import type { Category } from '../activity-list/types';
 import type { ScopeSelection } from '../scope-picker/types';
@@ -162,8 +162,8 @@ export function AnywhereSearchScreen({ selection, onBack, onSearchComplete }: An
           <Text style={styles.backLabel}>Back</Text>
         </Pressable>
         <View style={styles.scopePill} accessible accessibilityLabel="Scope: Anywhere">
-          <Globe size={16} color={colors.textMuted} strokeWidth={1.75} />
-          <Text style={styles.scopePillLabel}>Anywhere</Text>
+          <Globe size={16} color={colors.primary} strokeWidth={1.75} />
+          <Text style={styles.scopePillLabel}>ANYWHERE</Text>
         </View>
       </View>
 
@@ -363,14 +363,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space[1],
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
     borderRadius: radius.full,
     paddingHorizontal: space[3],
     paddingVertical: space[1],
   },
   scopePillLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    color: colors.text,
   },
   scroll: {
     paddingHorizontal: space[6],
@@ -380,9 +382,10 @@ const styles = StyleSheet.create({
     paddingTop: space[6],
   },
   title: {
+    fontFamily: fontFamily.display,
     fontSize: fontSize.xl,
     color: colors.text,
-    fontWeight: '600',
+    fontWeight: '400',
     lineHeight: fontSize.xl * 1.2,
   },
   subtitle: {
