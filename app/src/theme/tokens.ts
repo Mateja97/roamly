@@ -57,10 +57,12 @@ export const radius = {
   full: 999,
 } as const;
 
-// --font-display (Marcellus) — the one display accent, used only for the
-// Welcome screen's "Where to?" headline (see ScopePickerScreen.tsx's
-// font-load gate). Every other surface stays on RN's system font stack (the
-// default when no fontFamily is set).
+// --font-display (Marcellus) — the one display accent, used for screen-
+// identity headers only: the Welcome "Where to?" headline (see
+// ScopePickerScreen.tsx's font-load gate, which every screen after it in the
+// nav stack rides on — Marcellus loads once, globally) and the
+// activities-list/search-setup H1s. Every other surface stays on RN's system
+// font stack (the default when no fontFamily is set).
 export const fontFamily = {
   display: 'Marcellus_400Regular',
 } as const;

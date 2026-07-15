@@ -5,9 +5,10 @@ import { ChevronLeft, MapPin, X } from 'lucide-react-native';
 import type { ActivitiesQueryRequest } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { FilterChip } from '../../components/FilterChip';
+import { HeaderFlightPath } from '../../components/HeaderFlightPath';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
-import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
 import { CATEGORY_OPTIONS, NEARBY_RADIUS_KM } from '../activity-list/filters';
 import type { Category } from '../activity-list/types';
 import type { ScopeSelection } from '../scope-picker/types';
@@ -115,6 +116,7 @@ export function NearbySearchSetupScreen({ selection, onConfirm, onBack }: Nearby
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
+        <HeaderFlightPath />
         <Pressable
           onPress={onBack}
           onFocus={backFocus.onFocus}
@@ -126,9 +128,9 @@ export function NearbySearchSetupScreen({ selection, onConfirm, onBack }: Nearby
           <ChevronLeft size={16} color={colors.textMuted} strokeWidth={1.75} />
           <Text style={styles.backLabel}>Back</Text>
         </Pressable>
-        <View style={styles.scopePill}>
-          <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-          <Text style={styles.scopePillLabel}>Nearby</Text>
+        <View style={styles.scopePill} accessible accessibilityLabel="Scope: Nearby">
+          <MapPin size={16} color={colors.primary} strokeWidth={1.75} />
+          <Text style={styles.scopePillLabel}>NEARBY</Text>
         </View>
       </View>
 
@@ -239,6 +241,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    position: 'relative',
+    overflow: 'hidden',
   },
   backButton: {
     flexDirection: 'row',
@@ -263,14 +267,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space[1],
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
     borderRadius: radius.full,
     paddingVertical: space[1],
     paddingHorizontal: space[3],
   },
   scopePillLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    color: colors.text,
   },
   scroll: {
     paddingHorizontal: space[6],
@@ -280,9 +286,10 @@ const styles = StyleSheet.create({
     marginTop: space[6],
   },
   title: {
+    fontFamily: fontFamily.display,
     fontSize: fontSize.xl,
     color: colors.text,
-    fontWeight: '600',
+    fontWeight: '400',
     lineHeight: fontSize.xl * 1.2,
   },
   subtitle: {
