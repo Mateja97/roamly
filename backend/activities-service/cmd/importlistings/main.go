@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,6 +34,7 @@ type listing struct {
 	Country     string
 	Rating      float64
 	NeedsReview bool
+	Details     string
 }
 
 // knownCategories is the 12-value taxonomy (BUSINESS_STANDARDS.md); any
@@ -219,7 +221,7 @@ func formatInsertSQL(rows []listing) string {
 			sqlQuote(r.City),
 			r.Rating,
 			tags,
-			sqlQuote(detailsJSON(r.Category)),
+			sqlQuote(rowDetails(r)),
 		)
 		if i < len(rows)-1 {
 			b.WriteString(",\n")
@@ -228,6 +230,15 @@ func formatInsertSQL(rows []listing) string {
 		}
 	}
 	return b.String()
+}
+
+// rowDetails is the reviewed details override when present, else the
+// mechanical per-category placeholder.
+func rowDetails(r listing) string {
+	if r.Details != "" {
+		return r.Details
+	}
+	return detailsJSON(r.Category)
 }
 
 // columnIndex maps required CSV header names to their position, so the parser
@@ -244,7 +255,7 @@ func columnIndex(header []string) map[string]int {
 // latitude/longitude can't be parsed is logged and skipped (never emitted
 // with fake coordinates) — the same "skip, don't fake" rule cmd/resolvephotos
 // uses for unresolved photos.
-func parseCSV(r io.Reader) ([]listing, error) {
+func parseCSV(r io.Reader, decisions map[string]decision) ([]listing, error) {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1 // tolerate ragged trailing fields
 	records, err := cr.ReadAll()
@@ -265,8 +276,14 @@ func parseCSV(r io.Reader) ([]listing, error) {
 	}
 
 	var out []listing
+	usedDecisions := make(map[string]bool)
+	seenNames := make(map[string]bool)
 	for _, rec := range records[1:] {
 		name := get(rec, "name")
+		if seenNames[name] {
+			slog.Warn("skipping duplicate row", "name", name)
+			continue
+		}
 		lat, errLat := strconv.ParseFloat(get(rec, "latitude"), 64)
 		lng, errLng := strconv.ParseFloat(get(rec, "longitude"), 64)
 		if errLat != nil || errLng != nil {
@@ -274,6 +291,29 @@ func parseCSV(r io.Reader) ([]listing, error) {
 				"name", name, "latitude", get(rec, "latitude"), "longitude", get(rec, "longitude"))
 			continue
 		}
+		seenNames[name] = true
+
+		if d, reviewed := decisions[name]; reviewed {
+			detailsStr, err := validateDetails(d.Category, d.Details)
+			if err != nil {
+				return nil, fmt.Errorf("decision %q: %w", name, err)
+			}
+			out = append(out, listing{
+				Title:       name,
+				Description: get(rec, "description"),
+				Category:    d.Category,
+				Lat:         lat,
+				Lng:         lng,
+				City:        get(rec, "city"),
+				Country:     get(rec, "country"),
+				Rating:      parseRating(get(rec, "avg_rating")),
+				NeedsReview: false,
+				Details:     detailsStr,
+			})
+			usedDecisions[name] = true
+			continue
+		}
+
 		primary := get(rec, "primary_type")
 		category := mapCategory(primary)
 		prefix, _, _ := strings.Cut(primary, "-")
@@ -292,6 +332,11 @@ func parseCSV(r io.Reader) ([]listing, error) {
 			Rating:      parseRating(get(rec, "avg_rating")),
 			NeedsReview: needsReview(get(rec, "classification_confidence")),
 		})
+	}
+	for name := range decisions {
+		if !usedDecisions[name] {
+			return nil, fmt.Errorf("decision for %q matches no CSV row", name)
+		}
 	}
 	return out, nil
 }
@@ -377,18 +422,33 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
 
-	if len(os.Args) < 2 {
-		logger.Error("usage: importlistings path/to/listings.csv")
+	decisionsPath := flag.String("decisions", "", "optional path to a review-decisions JSON file")
+	flag.Parse()
+	if flag.NArg() < 1 {
+		logger.Error("usage: importlistings [-decisions file.json] path/to/listings.csv")
 		os.Exit(1)
 	}
-	f, err := os.Open(os.Args[1])
+
+	var (
+		f   *os.File
+		err error
+	)
+	var decisions map[string]decision
+	if *decisionsPath != "" {
+		decisions, err = loadDecisions(*decisionsPath)
+		if err != nil {
+			logger.Error("loading decisions", "error", err)
+			os.Exit(1)
+		}
+	}
+	f, err = os.Open(flag.Arg(0))
 	if err != nil {
 		logger.Error("opening csv", "error", err)
 		os.Exit(1)
 	}
 	defer func() { _ = f.Close() }()
 
-	rows, err := parseCSV(f)
+	rows, err := parseCSV(f, decisions)
 	if err != nil {
 		logger.Error("parsing csv", "error", err)
 		os.Exit(1)

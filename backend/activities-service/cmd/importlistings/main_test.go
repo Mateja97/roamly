@@ -94,6 +94,13 @@ func TestFormatInsertSQL(t *testing.T) {
 			City: "Belgrade", Country: "Serbia",
 			Rating: 0, NeedsReview: false,
 		},
+		{
+			Title: "Reviewed Cafe", Description: "x",
+			Category: activitiessvc.CategoryCafes,
+			Lat:      44.8, Lng: 20.46, City: "Belgrade", Country: "Serbia",
+			Rating: 4.5, NeedsReview: false,
+			Details: `{"known_for_brew":"Ethiopian"}`,
+		},
 	}
 	got := formatInsertSQL(rows)
 
@@ -106,6 +113,7 @@ func TestFormatInsertSQL(t *testing.T) {
 		"'O''Hara''s'",          // embedded quote escaped
 		"ARRAY[]::TEXT[]",       // confident row, no review tag
 		"::jsonb",               // details cast
+		`{"known_for_brew":"Ethiopian"}`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {
@@ -129,7 +137,7 @@ Ambar,Balkan restaurant,restaurants,bars,{},Addr 1,Belgrade,,Serbia,44.819824,20
 NoRating Cafe,A cafe,cafes-coffee-shop,,{},Addr 2,Belgrade,,Serbia,44.8,20.46,,,,,,,pending_review,0.6,TripAdvisor,url,2
 Broken Coords,Bad row,bars,,{},Addr 3,Belgrade,,Serbia,not-a-lat,20.46,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,3
 `
-	rows, err := parseCSV(strings.NewReader(csvData))
+	rows, err := parseCSV(strings.NewReader(csvData), nil)
 	if err != nil {
 		t.Fatalf("parseCSV: %v", err)
 	}
@@ -155,6 +163,83 @@ Broken Coords,Bad row,bars,,{},Addr 3,Belgrade,,Serbia,not-a-lat,20.46,,,,,4.0,5
 	}
 	if rows[1].NeedsReview {
 		t.Errorf("row1 confidence 0.6 should NOT be flagged")
+	}
+}
+
+func TestParseCSVWithDecisions(t *testing.T) {
+	const csvData = `name,description,primary_type,secondary_types,attributes,address,city,region,country,latitude,longitude,photos,website,phone,hours,avg_rating,review_count,status,classification_confidence,source,source_url,external_id
+Cafe Moskva,Historic pastry shop,restaurants-bakery-dessert,,{},Addr,Belgrade,,Serbia,44.81,20.46,,,,,4.3,10,pending_review,0.16,TripAdvisor,url,1
+Some Bar,A bar,bars,,{},Addr,Belgrade,,Serbia,44.80,20.45,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,2
+`
+	decisions := map[string]decision{
+		"Cafe Moskva": {
+			Category: activitiessvc.CategoryCafes,
+			Details:  json.RawMessage(`{"known_for_brew":"Turkish coffee","hours":"07:00-24:00"}`),
+		},
+	}
+	rows, err := parseCSV(strings.NewReader(csvData), decisions)
+	if err != nil {
+		t.Fatalf("parseCSV: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows, got %d", len(rows))
+	}
+
+	// reviewed row: category corrected, real details, flag cleared
+	if rows[0].Category != activitiessvc.CategoryCafes {
+		t.Errorf("row0 category = %q, want cafes", rows[0].Category)
+	}
+	if rows[0].NeedsReview {
+		t.Errorf("row0 should have flag cleared")
+	}
+	if !strings.Contains(rows[0].Details, "Turkish coffee") {
+		t.Errorf("row0 details = %q", rows[0].Details)
+	}
+
+	// unreviewed flagged row: mechanical category, no Details override, flag kept
+	if rows[1].Category != activitiessvc.CategoryBars {
+		t.Errorf("row1 category = %q, want bars", rows[1].Category)
+	}
+	if rows[1].Details != "" {
+		t.Errorf("row1 should have no Details override, got %q", rows[1].Details)
+	}
+	if !rows[1].NeedsReview {
+		t.Errorf("row1 (conf 0.3) should keep needs-review")
+	}
+}
+
+func TestParseCSVDedupe(t *testing.T) {
+	// two rows with the same name → only the first is emitted
+	const csvData = `name,description,primary_type,secondary_types,attributes,address,city,region,country,latitude,longitude,photos,website,phone,hours,avg_rating,review_count,status,classification_confidence,source,source_url,external_id
+Belgrade Zoo,Zoo,nature,,{},Addr,Belgrade,,Serbia,44.82,20.45,,,,,4.2,10,pending_review,0.2,TripAdvisor,url,1
+Belgrade Zoo,Zoo,kids,,{},Addr,Belgrade,,Serbia,44.82,20.45,,,,,4.2,10,pending_review,0.25,TripAdvisor,url,1
+Other,x,bars,,{},Addr,Belgrade,,Serbia,44.80,20.45,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,2
+`
+	rows, err := parseCSV(strings.NewReader(csvData), nil)
+	if err != nil {
+		t.Fatalf("parseCSV: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("want 2 rows after dedupe, got %d", len(rows))
+	}
+	// first Belgrade Zoo (nature) survives, not the second (kids)
+	if rows[0].Title != "Belgrade Zoo" || rows[0].Category != activitiessvc.CategoryNature {
+		t.Errorf("row0 = %+v, want first Belgrade Zoo (nature)", rows[0])
+	}
+	if rows[1].Title != "Other" {
+		t.Errorf("row1 = %q, want Other", rows[1].Title)
+	}
+}
+
+func TestParseCSVDecisionNoMatch(t *testing.T) {
+	const csvData = `name,description,primary_type,secondary_types,attributes,address,city,region,country,latitude,longitude,photos,website,phone,hours,avg_rating,review_count,status,classification_confidence,source,source_url,external_id
+Real Place,x,bars,,{},Addr,Belgrade,,Serbia,44.80,20.45,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,1
+`
+	decisions := map[string]decision{
+		"Ghost Place": {Category: activitiessvc.CategoryBars, Details: json.RawMessage(`{}`)},
+	}
+	if _, err := parseCSV(strings.NewReader(csvData), decisions); err == nil {
+		t.Errorf("expected error for decision matching no CSV row, got nil")
 	}
 }
 
