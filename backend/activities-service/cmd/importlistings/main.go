@@ -9,8 +9,12 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 
@@ -223,4 +227,93 @@ func formatInsertSQL(rows []listing) string {
 		}
 	}
 	return b.String()
+}
+
+// columnIndex maps required CSV header names to their position, so the parser
+// is order-independent (the source CSV column order isn't guaranteed stable).
+func columnIndex(header []string) map[string]int {
+	idx := make(map[string]int, len(header))
+	for i, name := range header {
+		idx[strings.TrimSpace(name)] = i
+	}
+	return idx
+}
+
+// parseCSV reads the listings CSV and returns mapped rows. A row whose
+// latitude/longitude can't be parsed is logged and skipped (never emitted
+// with fake coordinates) — the same "skip, don't fake" rule cmd/resolvephotos
+// uses for unresolved photos.
+func parseCSV(r io.Reader) ([]listing, error) {
+	cr := csv.NewReader(r)
+	cr.FieldsPerRecord = -1 // tolerate ragged trailing fields
+	records, err := cr.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("reading csv: %w", err)
+	}
+	if len(records) < 2 {
+		return nil, fmt.Errorf("csv has no data rows")
+	}
+	col := columnIndex(records[0])
+
+	get := func(rec []string, name string) string {
+		i, ok := col[name]
+		if !ok || i >= len(rec) {
+			return ""
+		}
+		return strings.TrimSpace(rec[i])
+	}
+
+	var out []listing
+	for _, rec := range records[1:] {
+		name := get(rec, "name")
+		lat, errLat := strconv.ParseFloat(get(rec, "latitude"), 64)
+		lng, errLng := strconv.ParseFloat(get(rec, "longitude"), 64)
+		if errLat != nil || errLng != nil {
+			slog.Warn("skipping row with unparseable coordinates",
+				"name", name, "latitude", get(rec, "latitude"), "longitude", get(rec, "longitude"))
+			continue
+		}
+		primary := get(rec, "primary_type")
+		category := mapCategory(primary)
+		prefix, _, _ := strings.Cut(primary, "-")
+		if _, known := knownCategories[prefix]; !known {
+			slog.Warn("unmapped primary_type, defaulting to entertainment",
+				"name", name, "primary_type", primary)
+		}
+		out = append(out, listing{
+			Title:       name,
+			Description: get(rec, "description"),
+			Category:    category,
+			Lat:         lat,
+			Lng:         lng,
+			City:        get(rec, "city"),
+			Country:     get(rec, "country"),
+			Rating:      parseRating(get(rec, "avg_rating")),
+			NeedsReview: needsReview(get(rec, "classification_confidence")),
+		})
+	}
+	return out, nil
+}
+
+func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	slog.SetDefault(logger)
+
+	if len(os.Args) < 2 {
+		logger.Error("usage: importlistings path/to/listings.csv")
+		os.Exit(1)
+	}
+	f, err := os.Open(os.Args[1])
+	if err != nil {
+		logger.Error("opening csv", "error", err)
+		os.Exit(1)
+	}
+	defer func() { _ = f.Close() }()
+
+	rows, err := parseCSV(f)
+	if err != nil {
+		logger.Error("parsing csv", "error", err)
+		os.Exit(1)
+	}
+	fmt.Print(formatInsertSQL(rows))
 }

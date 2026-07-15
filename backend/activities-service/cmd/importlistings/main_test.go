@@ -122,6 +122,41 @@ func TestFormatInsertSQLEmpty(t *testing.T) {
 	}
 }
 
+func TestParseCSV(t *testing.T) {
+	const csvData = `name,description,primary_type,secondary_types,attributes,address,city,region,country,latitude,longitude,photos,website,phone,hours,avg_rating,review_count,status,classification_confidence,source,source_url,external_id
+Ambar,Balkan restaurant,restaurants,bars,{},Addr 1,Belgrade,,Serbia,44.819824,20.448128,,,,,4.6,10,pending_review,0.4,TripAdvisor,url,1
+NoRating Cafe,A cafe,cafes-coffee-shop,,{},Addr 2,Belgrade,,Serbia,44.8,20.46,,,,,,,pending_review,0.6,TripAdvisor,url,2
+Broken Coords,Bad row,bars,,{},Addr 3,Belgrade,,Serbia,not-a-lat,20.46,,,,,4.0,5,pending_review,0.3,TripAdvisor,url,3
+`
+	rows, err := parseCSV(strings.NewReader(csvData))
+	if err != nil {
+		t.Fatalf("parseCSV: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows (broken-coords skipped), got %d", len(rows))
+	}
+
+	if rows[0].Title != "Ambar" || rows[0].Category != activitiessvc.CategoryRestaurants {
+		t.Errorf("row0 = %+v", rows[0])
+	}
+	if !rows[0].NeedsReview {
+		t.Errorf("row0 confidence 0.4 should be flagged needs-review")
+	}
+	if rows[0].Lat != 44.819824 || rows[0].Lng != 20.448128 {
+		t.Errorf("row0 coords = %v,%v", rows[0].Lat, rows[0].Lng)
+	}
+
+	if rows[1].Category != activitiessvc.CategoryCafes {
+		t.Errorf("row1 category = %q", rows[1].Category)
+	}
+	if rows[1].Rating != 0 {
+		t.Errorf("row1 missing rating should default to 0, got %v", rows[1].Rating)
+	}
+	if rows[1].NeedsReview {
+		t.Errorf("row1 confidence 0.6 should NOT be flagged")
+	}
+}
+
 func TestNeedsReview(t *testing.T) {
 	tests := []struct {
 		in   string
