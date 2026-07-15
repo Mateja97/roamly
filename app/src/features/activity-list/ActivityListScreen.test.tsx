@@ -1,4 +1,4 @@
-import { AccessibilityInfo, BackHandler } from 'react-native';
+import { AccessibilityInfo, BackHandler, StyleSheet } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
@@ -60,7 +60,13 @@ describe('ActivityListScreen', () => {
 
     expect(mockedQuery).toHaveBeenCalledWith({ scope: 'nearby', current_location: LOCATION });
     expect(screen.getByText('1 activity · within 10 km')).toBeTruthy();
-    expect(screen.getByText('Nearby')).toBeTruthy();
+    // T1: title renders in the Marcellus display face at the 26px list-header
+    // size, not the system font.
+    const title = screen.getByText('Nearby');
+    expect(StyleSheet.flatten(title.props.style)).toMatchObject({ fontFamily: 'Marcellus_400Regular', fontSize: 26 });
+    // Filters pill: radius.full + gold border, per the pill recipe.
+    const filtersButton = screen.getByRole('button', { name: 'Filters' });
+    expect(StyleSheet.flatten(filtersButton.props.style)).toMatchObject({ borderRadius: 999, borderColor: '#CE9042' });
   });
 
   it('anywhere with a device-location anchor sends current_location and no max_distance_km at its "no limit" default', async () => {
