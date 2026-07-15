@@ -9,6 +9,7 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"activities-service/internal/service"
 	shareddb "backend/shared/db"
 	"backend/shared/models/activitiessvc"
 )
@@ -252,7 +254,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
 		wantCounts := map[string]int{
-			"Belgrade":  7,
+			"Belgrade":  13, // 7 from 0002_seed.sql + 6 new demo activities from 0008
 			"Rome":      1,
 			"Paris":     1,
 			"Tokyo":     1,
@@ -301,7 +303,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
-	t.Run("details column round-trips category-specific JSON and defaults seeded rows to {}", func(t *testing.T) {
+	t.Run("details column round-trips category-specific JSON for a fresh row", func(t *testing.T) {
 		var restaurantID string
 		err := db.QueryRow(ctx,
 			`INSERT INTO activities (title, description, category, location, country, rating, details)
@@ -326,11 +328,6 @@ func TestActivities_Query_Integration(t *testing.T) {
 		var found bool
 		for _, a := range got {
 			if a.ID != restaurantID {
-				// Every other in-scope seeded activity is untouched by this
-				// migration and must still carry the JSONB default.
-				if string(a.Details) != "{}" {
-					t.Errorf("seeded activity %q has details %s, want default {}", a.Title, a.Details)
-				}
 				continue
 			}
 			found = true
@@ -344,6 +341,38 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 		if !found {
 			t.Fatal("expected the details fixture activity in the results")
+		}
+	})
+
+	t.Run("0008 backfills every category with a demo activity carrying valid, non-empty details", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+
+		wantCategories := []activitiessvc.Category{
+			activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars,
+			activitiessvc.CategoryNightlife, activitiessvc.CategoryNature, activitiessvc.CategorySport,
+			activitiessvc.CategoryKids, activitiessvc.CategoryCulture, activitiessvc.CategoryArt,
+			activitiessvc.CategoryWellness, activitiessvc.CategoryShopping, activitiessvc.CategoryEntertainment,
+		}
+
+		seenWithDetails := map[activitiessvc.Category]bool{}
+		for _, a := range got {
+			if len(bytes.TrimSpace(a.Details)) == 0 || string(a.Details) == "{}" {
+				continue
+			}
+			if err := service.ValidateDetails(a.Category, a.Details); err != nil {
+				t.Errorf("activity %q (category %s) has details that fail ValidateDetails: %v", a.Title, a.Category, err)
+				continue
+			}
+			seenWithDetails[a.Category] = true
+		}
+
+		for _, cat := range wantCategories {
+			if !seenWithDetails[cat] {
+				t.Errorf("no seeded activity found for category %q with a non-empty, valid details payload", cat)
+			}
 		}
 	})
 
