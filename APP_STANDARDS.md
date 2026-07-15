@@ -114,3 +114,36 @@ TypeScript constants, **manually kept in sync** with
 `frontend/src/styles/tokens.css`. This is a known drift risk — flagged
 here rather than solved here; a single-sourcing mechanism is a separate
 future initiative, not this doc's job.
+
+## Activity detail pages — per-category standard
+
+Each of the 12 categories in `BUSINESS_STANDARDS.md` owns its own extra
+properties and one unique detail-page section, on top of a shared base
+layout. This is a target standard for when each category's detail page is
+actually built — it does not describe anything implemented today (the
+current `ActivityDetailScreen` is one generic layout for every category).
+
+Reference design: `Roamly Activity Types.dc.html`, in the claude.ai/design
+project `e93d4e9b-8c28-4bef-971e-aaa37462d1ec` ("Designer Standards
+Request") — mocks up all 12 category detail screens. Pull exact visual
+treatment (colors, spacing, copy) from that file when implementing a
+category, not from the table below.
+
+Shared base layout (every category): hero image, back button, category
+badge, title, rating row, description, bottom action bar (a generic
+Directions/Share action plus one category-specific primary CTA).
+
+| Category | Extra properties | Unique section | Primary CTA |
+|---|---|---|---|
+| Restaurants | cuisine, price tier, hours, open status | Popular dishes (name + price) | Book a table |
+| Bars | vibe, happy-hour window, opens time | Signature pours (pill list) | See menu |
+| Cafés | known-for brew, wifi quality, hours | On the bar (item + price) | Get directions |
+| Nightlife | entry price, dress code, opens time, live "open tonight" status | Tonight lineup (time + act + stage) | Guest list |
+| Nature | time to spend, best time, cost | Good to know (checklist) | Get directions |
+| Sport | difficulty (segmented meter), effort level, duration, gear | What to bring (checklist) | Book session |
+| Kids | age range, facilities | Facilities (icon grid) | Get directions |
+| Culture | venue type, ticket price, hours | Now showing (banner) | Get tickets |
+| Art | venue type, ticket price, hours, artwork attribution (artist/work/medium) | Current exhibition (banner) | Get tickets |
+| Wellness | — | Treatments (item + duration + price), external-booking note | Visit website |
+| Entertainment | genre, neighborhood | Upcoming shows (date + title + time/price) | Get tickets |
+| Shopping | venue type, best day, hours | What you'll find (tag pills) | Get directions |
