@@ -1,6 +1,12 @@
 # OS
 .DS_Store
 
+# Expo CLI (device/session cache)
+.expo/
+
+# Node version pin (machine-local)
+.nvmrc
+
 # Editors
 .idea/
 .vscode/
