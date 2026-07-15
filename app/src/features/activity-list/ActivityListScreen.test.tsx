@@ -2,6 +2,7 @@ import { AccessibilityInfo, BackHandler } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
+import type { CitySuggestion } from '../../api/cities';
 import { ActivityListScreen } from './ActivityListScreen';
 
 jest.mock('../../api/activities', () => ({ queryActivities: jest.fn() }));
@@ -37,6 +38,10 @@ function successResult(activities: Activity[]): ActivitiesQueryResult {
   return { status: 'success', activities };
 }
 
+function city(city: string, country: string): CitySuggestion {
+  return { city, country, centroid: { lat: 0, lng: 0 } };
+}
+
 // Opening the sheet kicks off its own `isReduceMotionEnabled()` check on a
 // microtask — flush it inside `act` so the resulting Animated.Value writes
 // aren't attributed to "outside act" (same reasoning as FilterSheet.test.tsx).
@@ -54,7 +59,7 @@ describe('ActivityListScreen', () => {
     await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
     expect(mockedQuery).toHaveBeenCalledWith({ scope: 'nearby', current_location: LOCATION });
-    expect(screen.getByText('1 activity')).toBeTruthy();
+    expect(screen.getByText('1 activity · within 10 km')).toBeTruthy();
     expect(screen.getByText('Nearby')).toBeTruthy();
   });
 
@@ -136,7 +141,7 @@ describe('ActivityListScreen', () => {
   it('applying a filter in the sheet re-queries and shows the chip + updated count', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity, { ...activity, id: '2' }]));
     render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText('2 activities')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('2 activities · within 10 km')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
@@ -152,14 +157,14 @@ describe('ActivityListScreen', () => {
       current_location: LOCATION,
       categories: ['sports'],
     });
-    expect(screen.getByText('1 activity')).toBeTruthy();
+    expect(screen.getByText('1 activity · within 10 km')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
   });
 
   it('removing an active-filter chip clears just that filter and re-queries', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText('1 activity')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('1 activity · within 10 km')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
@@ -176,7 +181,7 @@ describe('ActivityListScreen', () => {
     });
 
     expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION });
-    expect(screen.getByText('2 activities')).toBeTruthy();
+    expect(screen.getByText('2 activities · within 10 km')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Remove Sports filter' })).toBeNull();
   });
 
@@ -223,7 +228,7 @@ describe('ActivityListScreen', () => {
   it('re-opening the sheet after applying reflects the now-applied filters, not the stale draft', async () => {
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText('1 activity')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('1 activity · within 10 km')).toBeTruthy());
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
@@ -238,5 +243,55 @@ describe('ActivityListScreen', () => {
     fireEvent.press(screen.getByRole('button', { name: /^filters/i }));
     await flush();
     expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
+  });
+
+  it('T2: Anywhere with one selected city shows just its name in the subtitle', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    render(
+      <ActivityListScreen
+        selection={{ scope: 'anywhere', coordinates: COORDINATES }}
+        initialCities={[city('Lisbon', 'Portugal')]}
+        onBack={jest.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('1 activity · Lisbon')).toBeTruthy());
+  });
+
+  it('T2: Anywhere with two selected cities joins them with "&"', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity, { ...activity, id: '2' }]));
+    render(
+      <ActivityListScreen
+        selection={{ scope: 'anywhere', coordinates: COORDINATES }}
+        initialCities={[city('Lisbon', 'Portugal'), city('Barcelona', 'Spain')]}
+        onBack={jest.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('2 activities · Lisbon & Barcelona')).toBeTruthy());
+  });
+
+  it('T2: Anywhere with three-or-more selected cities comma-joins with "&" before the last, no Oxford comma', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    render(
+      <ActivityListScreen
+        selection={{ scope: 'anywhere', coordinates: COORDINATES }}
+        initialCities={[city('Lisbon', 'Portugal'), city('Barcelona', 'Spain'), city('Amsterdam', 'Netherlands')]}
+        onBack={jest.fn()}
+      />
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText('1 activity · Lisbon, Barcelona & Amsterdam')).toBeTruthy()
+    );
+  });
+
+  it('T2: Anywhere with zero selected cities falls back to the title-only header (no subtitle)', async () => {
+    mockedQuery.mockResolvedValue(successResult([activity]));
+    render(<ActivityListScreen selection={{ scope: 'anywhere', coordinates: COORDINATES }} onBack={jest.fn()} />);
+
+    await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+    expect(screen.queryByText(/^1 activity/)).toBeNull();
+    expect(screen.queryByText(/·/)).toBeNull();
   });
 });

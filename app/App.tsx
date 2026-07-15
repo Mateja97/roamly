@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { Activity } from './src/api/activities';
+import type { CitySuggestion } from './src/api/cities';
 import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
 import type { Category } from './src/features/activity-list/types';
 import { AnywhereSearchScreen } from './src/features/search-setup/AnywhereSearchScreen';
@@ -18,7 +19,7 @@ type Screen =
   | { name: 'scope-picker' }
   | { name: 'activity-types'; selection: ScopeSelection }
   | { name: 'anywhere-search'; selection: ScopeSelection }
-  | { name: 'activity-list'; selection: ScopeSelection; categories: Category[]; activities?: Activity[] };
+  | { name: 'activity-list'; selection: ScopeSelection; categories: Category[]; activities?: Activity[]; cities?: CitySuggestion[] };
 
 function AppContent() {
   const [stack, setStack] = useState<Screen[]>([{ name: 'scope-picker' }]);
@@ -43,6 +44,7 @@ function AppContent() {
         selection={screen.selection}
         initialCategories={screen.categories}
         initialActivities={screen.activities}
+        initialCities={screen.cities}
         onBack={pop}
       />
     );
@@ -53,8 +55,8 @@ function AppContent() {
       <AnywhereSearchScreen
         selection={screen.selection}
         onBack={pop}
-        onSearchComplete={(activities, categories) =>
-          push({ name: 'activity-list', selection: screen.selection, categories, activities })
+        onSearchComplete={(activities, categories, cities) =>
+          push({ name: 'activity-list', selection: screen.selection, categories, activities, cities })
         }
       />
     );

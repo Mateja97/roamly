@@ -22,7 +22,7 @@ import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { FilterSheet } from './FilterSheet';
-import { SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, defaultFilters, filterChips } from './filters';
+import { SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, defaultFilters, filterChips, headerSubtitle } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
 
 type QueryState =
@@ -33,7 +33,13 @@ type QueryState =
 
 const SKELETON_CARD_COUNT = 5;
 
-export function ActivityListScreen({ selection, initialCategories = [], initialActivities, onBack }: ActivityListScreenProps) {
+export function ActivityListScreen({
+  selection,
+  initialCategories = [],
+  initialActivities,
+  initialCities = [],
+  onBack,
+}: ActivityListScreenProps) {
   // T2: the types-picker screen carries its selection in as the initial
   // applied filter, so the first query arrives pre-filtered. Frozen via
   // useState's lazy initializer (runs once, on mount) rather than reading
@@ -169,6 +175,13 @@ export function ActivityListScreen({ selection, initialCategories = [], initialA
   const chips = filterChips(appliedFilters, selection.scope);
   const filterCount = activeFilterCount(appliedFilters, selection.scope);
   const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
+  // T2: whether the composite subtitle will render at all is knowable before
+  // the count resolves — nearby always has one, anywhere only when cities
+  // were selected upstream (both fixed at mount, unaffected by the query) —
+  // so the loading placeholder never flashes then disappears once
+  // `resultCount` resolves to the zero-city fallback.
+  const willShowSubtitle = selection.scope === 'nearby' || initialCities.length > 0;
+  const subtitle = resultCount === null ? null : headerSubtitle(selection.scope, resultCount, initialCities);
   // Distance is only meaningful when a device-location anchor exists —
   // always true for nearby, conditional for anywhere (see filters.ts /
   // repository/activity.go's distance_km: 0 with no reference point).
@@ -198,6 +211,15 @@ export function ActivityListScreen({ selection, initialCategories = [], initialA
             <Text style={styles.headerTitle} numberOfLines={1}>
               {SCOPE_TITLES[selection.scope]}
             </Text>
+            <View ref={countRef} accessible accessibilityLiveRegion="polite">
+              {resultCount === null
+                ? willShowSubtitle && <Skeleton width={140} height={14} style={styles.headerSubtitleSkeleton} />
+                : subtitle && (
+                    <Text style={styles.headerSubtitle} numberOfLines={1}>
+                      {subtitle}
+                    </Text>
+                  )}
+            </View>
           </View>
           <Pressable
             ref={filtersButtonRef}
@@ -218,24 +240,15 @@ export function ActivityListScreen({ selection, initialCategories = [], initialA
           </Pressable>
         </View>
 
-        <View style={styles.resultRegion}>
-          <View ref={countRef} accessible accessibilityLiveRegion="polite">
-            {resultCount === null ? (
-              <Skeleton width={90} height={16} />
-            ) : (
-              <Text style={styles.resultCount}>
-                {resultCount} {resultCount === 1 ? 'activity' : 'activities'}
-              </Text>
-            )}
-          </View>
-          {chips.length > 0 && (
+        {chips.length > 0 && (
+          <View style={styles.resultRegion}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
               {chips.map((chip) => (
                 <FilterChip key={chip.key} variant="remove" label={chip.label} onPress={() => handleFiltersChange(chip.remove())} />
               ))}
             </ScrollView>
-          )}
-        </View>
+          </View>
+        )}
 
         {queryState.status === 'loaded' ? (
           // T1: only the loaded-results case needs virtualization — an
@@ -368,6 +381,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '500',
   },
+  headerSubtitle: {
+    marginTop: space[1],
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    fontVariant: ['tabular-nums'],
+  },
+  headerSubtitleSkeleton: {
+    marginTop: space[1],
+  },
   filtersButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -407,11 +429,6 @@ const styles = StyleSheet.create({
     paddingTop: space[4],
     paddingHorizontal: space[4],
     gap: space[2],
-  },
-  resultCount: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    fontVariant: ['tabular-nums'],
   },
   chipRow: {
     gap: space[2],

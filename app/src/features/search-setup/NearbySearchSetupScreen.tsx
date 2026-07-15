@@ -8,7 +8,7 @@ import { FilterChip } from '../../components/FilterChip';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { CATEGORY_OPTIONS } from '../activity-list/filters';
+import { CATEGORY_OPTIONS, NEARBY_RADIUS_KM } from '../activity-list/filters';
 import type { Category } from '../activity-list/types';
 import type { ScopeSelection } from '../scope-picker/types';
 
@@ -143,11 +143,11 @@ export function NearbySearchSetupScreen({ selection, onConfirm, onBack }: Nearby
           <View
             style={styles.rangeCard}
             accessible
-            accessibilityLabel="Range: within 10 km, fixed range around your location"
+            accessibilityLabel={`Range: within ${NEARBY_RADIUS_KM} km, fixed range around your location`}
           >
             <MapPin size={20} color={colors.primary} strokeWidth={1.75} />
             <View style={styles.rangeTextColumn}>
-              <Text style={styles.rangeTitle}>Within 10 km</Text>
+              <Text style={styles.rangeTitle}>Within {NEARBY_RADIUS_KM} km</Text>
               <Text style={styles.rangeSubtitle}>Fixed range around your location</Text>
             </View>
             <View style={styles.fixedBadge}>

@@ -1,6 +1,12 @@
 import type { ActivitiesQueryRequest, Location } from '../../api/activities';
+import type { CitySuggestion } from '../../api/cities';
 import type { Category, Filters, RatingOption } from './types';
 import type { Scope, ScopeSelection } from '../scope-picker/types';
+
+// T2: Nearby's server-fixed radius (activities-service's activity.go) — the
+// one copy of the number; NearbySearchSetupScreen's range card and
+// ActivityListScreen's header subtitle both read it from here.
+export const NEARBY_RADIUS_KM = 10;
 
 // Anywhere's wider, design-tuned range (product-tasks.md: "behavior is
 // fixed, not the exact numbers"). The slider's true top position is one
@@ -141,3 +147,26 @@ export const SCOPE_TITLES: Record<Scope, string> = {
   nearby: 'Nearby',
   anywhere: 'Anywhere',
 };
+
+function activityCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'activity' : 'activities'}`;
+}
+
+// "Lisbon" / "Lisbon & Barcelona" / "Lisbon, Barcelona & Amsterdam" — comma
+// join with "&" before the last item, no Oxford comma. Empty input returns
+// '' (callers only reach for this once they know cities.length > 0).
+export function citiesJoinLabel(cities: CitySuggestion[]): string {
+  const names = cities.map((c) => c.city);
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
+}
+
+// Composite Page-header subtitle (design-spec.md T2). `null` means
+// "title-only header" — Anywhere's zero-city fallback (current_location
+// anchor, no city list to show).
+export function headerSubtitle(scope: Scope, count: number, cities: CitySuggestion[]): string | null {
+  const countLabel = activityCountLabel(count);
+  if (scope === 'nearby') return `${countLabel} · within ${NEARBY_RADIUS_KM} km`;
+  if (cities.length === 0) return null;
+  return `${countLabel} · ${citiesJoinLabel(cities)}`;
+}
