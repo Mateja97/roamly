@@ -100,6 +100,7 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
       <View style={styles.content}>
         <View style={styles.logoRow}>
           <Wordmark width={246} />
+          <Text style={styles.tagline}>Search activities to do</Text>
         </View>
 
         <View style={styles.centerBlock}>
@@ -248,6 +249,14 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     fontWeight: '600',
     letterSpacing: 3, // ~0.22em at 14px
+  },
+  tagline: {
+    marginTop: space[3],
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    fontWeight: '600',
+    letterSpacing: 2.9, // ~0.24em at 12px
   },
   headline: {
     marginTop: space[3],
