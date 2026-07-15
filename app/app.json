@@ -16,7 +16,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.mateja97.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -24,6 +25,11 @@
     "plugins": [
       "expo-asset",
       "expo-image"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "d0553dd1-9f9d-4f3c-bd9f-3eac3c9be4b1"
+      }
+    }
   }
 }
