@@ -50,6 +50,13 @@ one-line rule to resolve overlaps:
 - **Category taxonomy**: the 12-category list above is the target; the
   actual `Category` enum (Go, proto, DB, frontend/app) still has 6 values
   today. Migrating it is a separate follow-up task.
+- **Two Anywhere distance ranges**: the 5-500km slider above is the
+  Anywhere search-setup screen's range
+  (`app/src/features/search-setup/anywhereSearch.ts`). The activity list's
+  Filter sheet has a second Anywhere distance slider with a different
+  100-2000km range plus a "No limit" stop
+  (`app/src/features/activity-list/filters.ts`). Converging on one
+  canonical range is a separate follow-up task.
 
 ## See also
 
