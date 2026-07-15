@@ -107,6 +107,13 @@ message Activity {
   // populated when the request scope had a reference point (SCOPE_NEARBY
   // always; SCOPE_ANYWHERE when current_location was supplied); 0 otherwise.
   double distance_km = 11;
+  // Category-specific structured detail payload (T2), JSON-encoded (a
+  // decoded JSON object per APP_STANDARDS.md's per-category field table,
+  // e.g. {"cuisine": "Italian", "popular_dishes": [...]});
+  // "{}" when the category has no detail data. A JSON string rather than
+  // 12 proto messages: the app renders it generically off a data-driven
+  // config, not 12 typed screens.
+  string details = 12;
 }
 
 message QueryActivitiesResponse {

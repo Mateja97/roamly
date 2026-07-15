@@ -84,16 +84,21 @@ type photoDTO struct {
 
 // activityDTO carries every field the app's activity card needs to render.
 type activityDTO struct {
-	ID          string      `json:"id"`
-	Title       string      `json:"title"`
-	Description string      `json:"description"`
-	Category    string      `json:"category"`
-	Location    locationDTO `json:"location"`
-	Country     string      `json:"country"`
-	Rating      float64     `json:"rating"`
-	ImageRefs   []photoDTO  `json:"image_refs"`
-	Tags        []string    `json:"tags"`
-	DistanceKM  float64     `json:"distance_km"`
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Category    string          `json:"category"`
+	Location    locationDTO     `json:"location"`
+	Country     string          `json:"country"`
+	Rating      float64         `json:"rating"`
+	ImageRefs   []photoDTO      `json:"image_refs"`
+	Tags        []string        `json:"tags"`
+	DistanceKM  float64         `json:"distance_km"`
+	// Details is the category-specific detail payload (T2), passed through
+	// as a decoded JSON object — activities-service's `details` proto field
+	// is already a JSON string, so this is a raw re-embed, not a
+	// string-of-a-string.
+	Details json.RawMessage `json:"details"`
 }
 
 type queryActivitiesResponseDTO struct {
@@ -219,7 +224,18 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		ImageRefs:   toPhotoDTOs(a.GetPhotos()),
 		Tags:        a.GetTags(),
 		DistanceKM:  a.GetDistanceKm(),
+		Details:     detailsJSON(a.GetDetails()),
 	}
+}
+
+// detailsJSON re-embeds activities-service's JSON-string details field as a
+// raw JSON value; empty/malformed input falls back to "{}" rather than
+// breaking the whole response over one activity's detail data.
+func detailsJSON(details string) json.RawMessage {
+	if !json.Valid([]byte(details)) {
+		return json.RawMessage("{}")
+	}
+	return json.RawMessage(details)
 }
 
 func toPhotoDTOs(photos []*activitiesv1.Photo) []photoDTO {
