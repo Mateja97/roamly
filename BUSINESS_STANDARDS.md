@@ -12,7 +12,7 @@ Supersedes today's 6-value enum (`food_and_drink`, `history_and_culture`,
 one-line rule to resolve overlaps:
 
 - **Restaurants** — sit-down food venues.
-- **Cafes** — coffee-primary spots (coffee is the main draw, food secondary).
+- **Cafés** — coffee-primary spots (coffee is the main draw, food secondary).
 - **Bars** — alcohol-primary venues, standard hours.
 - **Nightlife** — after-midnight venues with loud music and a standing
   crowd — distinguished from Bars by time and format, not just "serves
