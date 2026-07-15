@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Globe, MapPin, SearchX, SlidersHorizontal } from 'lucide-react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { ActivityCard, ActivityCardSkeleton } from '../../components/ActivityCard';
@@ -207,6 +208,26 @@ export function ActivityListScreen({
         importantForAccessibility={selectedActivity !== null ? 'no-hide-descendants' : 'auto'}
       >
         <View style={styles.header}>
+          <Svg
+            viewBox="0 0 402 180"
+            preserveAspectRatio="xMidYMid slice"
+            style={styles.headerFlightPath}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Path
+              d="M-20 90 C 110 46, 260 140, 430 74"
+              stroke={colors.primary}
+              strokeWidth={2.5}
+              strokeDasharray="2 12"
+              strokeLinecap="round"
+              strokeOpacity={0.22}
+              fill="none"
+            />
+            <Circle cx={-20} cy={90} r={4.5} fill={colors.primary} stroke="none" opacity={0.22} />
+            <Circle cx={430} cy={74} r={5} fill="none" stroke={colors.primary} strokeWidth={3} strokeOpacity={0.22} />
+          </Svg>
           <View style={styles.headerTitleBlock}>
             <View style={styles.headerTitleRow}>
               <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
@@ -384,6 +405,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  headerFlightPath: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
   },
   headerTitleBlock: {
     flex: 1,
