@@ -227,6 +227,12 @@ export function factStripFields(activity: Activity): FactChip[] {
     case 'kids':
     case 'wellness':
       return [];
+    default:
+      // ponytail: proxy sends `details: {}` (no omitempty) for every
+      // activity with no category-specific data — `.category` is missing,
+      // not one of the known values. Degrade to "no fact strip" instead of
+      // crashing FactStrip on `fields.length` of undefined.
+      return [];
   }
 }
 
@@ -373,5 +379,8 @@ export function uniqueSection(
             rows: d.upcoming_shows.map(dateBlockRow),
           }
         : undefined;
+    default:
+      // ponytail: same `details: {}` shape as factStripFields above.
+      return undefined;
   }
 }

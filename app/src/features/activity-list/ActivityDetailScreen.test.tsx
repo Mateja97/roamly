@@ -216,7 +216,12 @@ describe('ActivityDetailScreen', () => {
     });
 
     it('omits the fact strip and unique section (no placeholder, no crash) for empty details {}', () => {
-      const emptyDetails: Activity = { ...activity, details: undefined };
+      // Wire payload from the proxy: `details: {}` (no omitempty), never
+      // `undefined` — this is the real shape every seed activity sends.
+      const emptyDetails: Activity = {
+        ...activity,
+        details: {} as Activity['details'],
+      };
       render(
         <ActivityDetailScreen
           activity={emptyDetails}
