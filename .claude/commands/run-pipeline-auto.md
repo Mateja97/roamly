@@ -235,8 +235,11 @@ merge it into `main` — respecting dependency order and integrating conflicts:
 **Standards push-back (design-import runs only):** if any merged PR changed
 `DESIGN_STANDARDS.md` and `pipeline/<slug>/design-import/SOURCE.md` exists,
 push the post-merge copy back to the design project so its mirror stays
-fresh: read the project UUID from `SOURCE.md`, write `main`'s file to a temp
-file (`git show main:DESIGN_STANDARDS.md > <tmpdir>/DESIGN_STANDARDS.md`),
+fresh: read the project UUID from `SOURCE.md`, then take the file from the
+**remote** main tip — `gh pr merge` never advances local `main`, so `git
+fetch origin && git show origin/main:DESIGN_STANDARDS.md >
+<tmpdir>/DESIGN_STANDARDS.md` (plain `git show main:` would push a stale
+pre-merge copy),
 then `DesignSync finalize_plan` (writes: `uploads/DESIGN_STANDARDS.md`,
 localDir: `<tmpdir>`) + `write_files` (localPath). This is the one permission
 prompt allowed after the merges; a declined or failed push is non-fatal —
@@ -248,7 +251,9 @@ tagged `merged`, `escalated` (review), or `merge-escalated` (approved but a
 conflict blocked the merge — needs the user), plus every `DESIGN_STANDARDS.md`
 standard addition the designer applied during the run (or "standard additions:
 none") — they auto-applied without a checkpoint, so this is where the user
-learns about them. If everything merged, say so plainly and confirm `main` is
+learns about them. On design-import runs, also report the standards
+push-back status: `pushed`, `skipped` (nothing to push), or `failed` (with
+the reason and a note that the design project's mirror is stale). If everything merged, say so plainly and confirm `main` is
 green. For any `merge-escalated` PR, name the conflicting files and what the
 user needs to decide.
 
