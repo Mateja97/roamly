@@ -66,7 +66,7 @@ func dialServer(t *testing.T, svc queryService) activitiesv1.ActivitiesServiceCl
 func TestQueryActivities_HappyPath(t *testing.T) {
 	fake := &fakeQueryService{out: []activitiessvc.Activity{
 		{
-			ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySports,
+			ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySport,
 			Location: activitiessvc.Point{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
 			Rating: 4.8,
 			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com"}},
@@ -86,7 +86,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 		t.Fatalf("got %d activities, want 1", len(resp.GetActivities()))
 	}
 	got := resp.GetActivities()[0]
-	if got.GetId() != "1" || got.GetCategory() != activitiesv1.Category_CATEGORY_SPORTS {
+	if got.GetId() != "1" || got.GetCategory() != activitiesv1.Category_CATEGORY_SPORT {
 		t.Errorf("unexpected activity translation: %+v", got)
 	}
 	if len(got.GetPhotos()) != 1 || got.GetPhotos()[0].GetUrl() != "img1" || got.GetPhotos()[0].GetAuthor() != "Jane Doe" {
@@ -130,6 +130,47 @@ func TestToDomainScope(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCategoryTranslation(t *testing.T) {
+	tests := []struct {
+		name   string
+		domain activitiessvc.Category
+		proto  activitiesv1.Category
+	}{
+		{"restaurants", activitiessvc.CategoryRestaurants, activitiesv1.Category_CATEGORY_RESTAURANTS},
+		{"cafes", activitiessvc.CategoryCafes, activitiesv1.Category_CATEGORY_CAFES},
+		{"bars", activitiessvc.CategoryBars, activitiesv1.Category_CATEGORY_BARS},
+		{"nightlife", activitiessvc.CategoryNightlife, activitiesv1.Category_CATEGORY_NIGHTLIFE},
+		{"nature", activitiessvc.CategoryNature, activitiesv1.Category_CATEGORY_NATURE},
+		{"sport", activitiessvc.CategorySport, activitiesv1.Category_CATEGORY_SPORT},
+		{"kids", activitiessvc.CategoryKids, activitiesv1.Category_CATEGORY_KIDS},
+		{"culture", activitiessvc.CategoryCulture, activitiesv1.Category_CATEGORY_CULTURE},
+		{"art", activitiessvc.CategoryArt, activitiesv1.Category_CATEGORY_ART},
+		{"wellness", activitiessvc.CategoryWellness, activitiesv1.Category_CATEGORY_WELLNESS},
+		{"shopping", activitiessvc.CategoryShopping, activitiesv1.Category_CATEGORY_SHOPPING},
+		{"entertainment", activitiessvc.CategoryEntertainment, activitiesv1.Category_CATEGORY_ENTERTAINMENT},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toProtoCategory(tt.domain); got != tt.proto {
+				t.Errorf("toProtoCategory(%q) = %v, want %v", tt.domain, got, tt.proto)
+			}
+			if got := toDomainCategory(tt.proto); got != tt.domain {
+				t.Errorf("toDomainCategory(%v) = %q, want %q", tt.proto, got, tt.domain)
+			}
+		})
+	}
+	t.Run("unknown proto value maps to empty domain", func(t *testing.T) {
+		if got := toDomainCategory(activitiesv1.Category(99)); got != "" {
+			t.Errorf("toDomainCategory(99) = %q, want empty", got)
+		}
+	})
+	t.Run("unknown domain value maps to CATEGORY_UNSPECIFIED", func(t *testing.T) {
+		if got := toProtoCategory(activitiessvc.Category("bogus")); got != activitiesv1.Category_CATEGORY_UNSPECIFIED {
+			t.Errorf("toProtoCategory(bogus) = %v, want CATEGORY_UNSPECIFIED", got)
+		}
+	})
 }
 
 func TestQueryActivities_UnexpectedErrorMapsToInternal(t *testing.T) {

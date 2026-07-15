@@ -178,18 +178,30 @@ func toProtoScope(s string) (activitiesv1.Scope, bool) {
 
 func toProtoCategory(c string) (activitiesv1.Category, bool) {
 	switch activitiessvc.Category(c) {
-	case activitiessvc.CategoryFoodAndDrink:
-		return activitiesv1.Category_CATEGORY_FOOD_AND_DRINK, true
-	case activitiessvc.CategoryHistoryAndCulture:
-		return activitiesv1.Category_CATEGORY_HISTORY_AND_CULTURE, true
-	case activitiessvc.CategoryNatureAndOutdoors:
-		return activitiesv1.Category_CATEGORY_NATURE_AND_OUTDOORS, true
-	case activitiessvc.CategoryArtAndDesign:
-		return activitiesv1.Category_CATEGORY_ART_AND_DESIGN, true
-	case activitiessvc.CategorySports:
-		return activitiesv1.Category_CATEGORY_SPORTS, true
-	case activitiessvc.CategoryEntertainmentAndWellness:
-		return activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS, true
+	case activitiessvc.CategoryRestaurants:
+		return activitiesv1.Category_CATEGORY_RESTAURANTS, true
+	case activitiessvc.CategoryCafes:
+		return activitiesv1.Category_CATEGORY_CAFES, true
+	case activitiessvc.CategoryBars:
+		return activitiesv1.Category_CATEGORY_BARS, true
+	case activitiessvc.CategoryNightlife:
+		return activitiesv1.Category_CATEGORY_NIGHTLIFE, true
+	case activitiessvc.CategoryNature:
+		return activitiesv1.Category_CATEGORY_NATURE, true
+	case activitiessvc.CategorySport:
+		return activitiesv1.Category_CATEGORY_SPORT, true
+	case activitiessvc.CategoryKids:
+		return activitiesv1.Category_CATEGORY_KIDS, true
+	case activitiessvc.CategoryCulture:
+		return activitiesv1.Category_CATEGORY_CULTURE, true
+	case activitiessvc.CategoryArt:
+		return activitiesv1.Category_CATEGORY_ART, true
+	case activitiessvc.CategoryWellness:
+		return activitiesv1.Category_CATEGORY_WELLNESS, true
+	case activitiessvc.CategoryShopping:
+		return activitiesv1.Category_CATEGORY_SHOPPING, true
+	case activitiessvc.CategoryEntertainment:
+		return activitiesv1.Category_CATEGORY_ENTERTAINMENT, true
 	default:
 		return activitiesv1.Category_CATEGORY_UNSPECIFIED, false
 	}
@@ -224,18 +236,30 @@ func toPhotoDTOs(photos []*activitiesv1.Photo) []photoDTO {
 
 func toDomainCategory(c activitiesv1.Category, logger *slog.Logger) activitiessvc.Category {
 	switch c {
-	case activitiesv1.Category_CATEGORY_FOOD_AND_DRINK:
-		return activitiessvc.CategoryFoodAndDrink
-	case activitiesv1.Category_CATEGORY_HISTORY_AND_CULTURE:
-		return activitiessvc.CategoryHistoryAndCulture
-	case activitiesv1.Category_CATEGORY_NATURE_AND_OUTDOORS:
-		return activitiessvc.CategoryNatureAndOutdoors
-	case activitiesv1.Category_CATEGORY_ART_AND_DESIGN:
-		return activitiessvc.CategoryArtAndDesign
-	case activitiesv1.Category_CATEGORY_SPORTS:
-		return activitiessvc.CategorySports
-	case activitiesv1.Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS:
-		return activitiessvc.CategoryEntertainmentAndWellness
+	case activitiesv1.Category_CATEGORY_RESTAURANTS:
+		return activitiessvc.CategoryRestaurants
+	case activitiesv1.Category_CATEGORY_CAFES:
+		return activitiessvc.CategoryCafes
+	case activitiesv1.Category_CATEGORY_BARS:
+		return activitiessvc.CategoryBars
+	case activitiesv1.Category_CATEGORY_NIGHTLIFE:
+		return activitiessvc.CategoryNightlife
+	case activitiesv1.Category_CATEGORY_NATURE:
+		return activitiessvc.CategoryNature
+	case activitiesv1.Category_CATEGORY_SPORT:
+		return activitiessvc.CategorySport
+	case activitiesv1.Category_CATEGORY_KIDS:
+		return activitiessvc.CategoryKids
+	case activitiesv1.Category_CATEGORY_CULTURE:
+		return activitiessvc.CategoryCulture
+	case activitiesv1.Category_CATEGORY_ART:
+		return activitiessvc.CategoryArt
+	case activitiesv1.Category_CATEGORY_WELLNESS:
+		return activitiessvc.CategoryWellness
+	case activitiesv1.Category_CATEGORY_SHOPPING:
+		return activitiessvc.CategoryShopping
+	case activitiesv1.Category_CATEGORY_ENTERTAINMENT:
+		return activitiessvc.CategoryEntertainment
 	default:
 		logger.Warn("unrecognized category from activities-service", "category", c)
 		return ""

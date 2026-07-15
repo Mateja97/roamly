@@ -77,34 +77,52 @@ func (Scope) EnumDescriptor() ([]byte, []int) {
 type Category int32
 
 const (
-	Category_CATEGORY_UNSPECIFIED                Category = 0
-	Category_CATEGORY_FOOD_AND_DRINK             Category = 1
-	Category_CATEGORY_HISTORY_AND_CULTURE        Category = 2
-	Category_CATEGORY_NATURE_AND_OUTDOORS        Category = 3
-	Category_CATEGORY_ART_AND_DESIGN             Category = 4
-	Category_CATEGORY_SPORTS                     Category = 5
-	Category_CATEGORY_ENTERTAINMENT_AND_WELLNESS Category = 6
+	Category_CATEGORY_UNSPECIFIED   Category = 0
+	Category_CATEGORY_RESTAURANTS   Category = 1
+	Category_CATEGORY_CAFES         Category = 2
+	Category_CATEGORY_BARS          Category = 3
+	Category_CATEGORY_NIGHTLIFE     Category = 4
+	Category_CATEGORY_NATURE        Category = 5
+	Category_CATEGORY_SPORT         Category = 6
+	Category_CATEGORY_KIDS          Category = 7
+	Category_CATEGORY_CULTURE       Category = 8
+	Category_CATEGORY_ART           Category = 9
+	Category_CATEGORY_WELLNESS      Category = 10
+	Category_CATEGORY_SHOPPING      Category = 11
+	Category_CATEGORY_ENTERTAINMENT Category = 12
 )
 
 // Enum value maps for Category.
 var (
 	Category_name = map[int32]string{
-		0: "CATEGORY_UNSPECIFIED",
-		1: "CATEGORY_FOOD_AND_DRINK",
-		2: "CATEGORY_HISTORY_AND_CULTURE",
-		3: "CATEGORY_NATURE_AND_OUTDOORS",
-		4: "CATEGORY_ART_AND_DESIGN",
-		5: "CATEGORY_SPORTS",
-		6: "CATEGORY_ENTERTAINMENT_AND_WELLNESS",
+		0:  "CATEGORY_UNSPECIFIED",
+		1:  "CATEGORY_RESTAURANTS",
+		2:  "CATEGORY_CAFES",
+		3:  "CATEGORY_BARS",
+		4:  "CATEGORY_NIGHTLIFE",
+		5:  "CATEGORY_NATURE",
+		6:  "CATEGORY_SPORT",
+		7:  "CATEGORY_KIDS",
+		8:  "CATEGORY_CULTURE",
+		9:  "CATEGORY_ART",
+		10: "CATEGORY_WELLNESS",
+		11: "CATEGORY_SHOPPING",
+		12: "CATEGORY_ENTERTAINMENT",
 	}
 	Category_value = map[string]int32{
-		"CATEGORY_UNSPECIFIED":                0,
-		"CATEGORY_FOOD_AND_DRINK":             1,
-		"CATEGORY_HISTORY_AND_CULTURE":        2,
-		"CATEGORY_NATURE_AND_OUTDOORS":        3,
-		"CATEGORY_ART_AND_DESIGN":             4,
-		"CATEGORY_SPORTS":                     5,
-		"CATEGORY_ENTERTAINMENT_AND_WELLNESS": 6,
+		"CATEGORY_UNSPECIFIED":   0,
+		"CATEGORY_RESTAURANTS":   1,
+		"CATEGORY_CAFES":         2,
+		"CATEGORY_BARS":          3,
+		"CATEGORY_NIGHTLIFE":     4,
+		"CATEGORY_NATURE":        5,
+		"CATEGORY_SPORT":         6,
+		"CATEGORY_KIDS":          7,
+		"CATEGORY_CULTURE":       8,
+		"CATEGORY_ART":           9,
+		"CATEGORY_WELLNESS":      10,
+		"CATEGORY_SHOPPING":      11,
+		"CATEGORY_ENTERTAINMENT": 12,
 	}
 )
 
@@ -721,15 +739,22 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fSCOPE_NEARBY\x10\x02\x12\x12\n" +
 	"\x0eSCOPE_ANYWHERE\x10\x04\"\x04\b\x01\x10\x01\"\x04\b\x03\x10\x03*\n" +
-	"SCOPE_HOME*\x15SCOPE_OUTSIDE_COUNTRY*\xe0\x01\n" +
+	"SCOPE_HOME*\x15SCOPE_OUTSIDE_COUNTRY*\xab\x02\n" +
 	"\bCategory\x12\x18\n" +
-	"\x14CATEGORY_UNSPECIFIED\x10\x00\x12\x1b\n" +
-	"\x17CATEGORY_FOOD_AND_DRINK\x10\x01\x12 \n" +
-	"\x1cCATEGORY_HISTORY_AND_CULTURE\x10\x02\x12 \n" +
-	"\x1cCATEGORY_NATURE_AND_OUTDOORS\x10\x03\x12\x1b\n" +
-	"\x17CATEGORY_ART_AND_DESIGN\x10\x04\x12\x13\n" +
-	"\x0fCATEGORY_SPORTS\x10\x05\x12'\n" +
-	"#CATEGORY_ENTERTAINMENT_AND_WELLNESS\x10\x062\xd1\x01\n" +
+	"\x14CATEGORY_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14CATEGORY_RESTAURANTS\x10\x01\x12\x12\n" +
+	"\x0eCATEGORY_CAFES\x10\x02\x12\x11\n" +
+	"\rCATEGORY_BARS\x10\x03\x12\x16\n" +
+	"\x12CATEGORY_NIGHTLIFE\x10\x04\x12\x13\n" +
+	"\x0fCATEGORY_NATURE\x10\x05\x12\x12\n" +
+	"\x0eCATEGORY_SPORT\x10\x06\x12\x11\n" +
+	"\rCATEGORY_KIDS\x10\a\x12\x14\n" +
+	"\x10CATEGORY_CULTURE\x10\b\x12\x10\n" +
+	"\fCATEGORY_ART\x10\t\x12\x15\n" +
+	"\x11CATEGORY_WELLNESS\x10\n" +
+	"\x12\x15\n" +
+	"\x11CATEGORY_SHOPPING\x10\v\x12\x1a\n" +
+	"\x16CATEGORY_ENTERTAINMENT\x10\f2\xd1\x01\n" +
 	"\x11ActivitiesService\x12`\n" +
 	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponse\x12Z\n" +
 	"\rSuggestCities\x12#.activities.v1.SuggestCitiesRequest\x1a$.activities.v1.SuggestCitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"

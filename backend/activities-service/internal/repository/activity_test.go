@@ -100,7 +100,7 @@ func TestBuildQuery(t *testing.T) {
 			name: "category filter narrows with ANY",
 			filter: activitiessvc.QueryFilter{
 				Scope:      activitiessvc.ScopeAnywhere,
-				Categories: []activitiessvc.Category{activitiessvc.CategorySports, activitiessvc.CategoryArtAndDesign},
+				Categories: []activitiessvc.Category{activitiessvc.CategorySport, activitiessvc.CategoryArt},
 			},
 			wantSQL: []string{"category = ANY"},
 		},
@@ -108,7 +108,7 @@ func TestBuildQuery(t *testing.T) {
 			name: "min rating filter combines with AND alongside another filter",
 			filter: activitiessvc.QueryFilter{
 				Scope:      activitiessvc.ScopeAnywhere,
-				Categories: []activitiessvc.Category{activitiessvc.CategorySports},
+				Categories: []activitiessvc.Category{activitiessvc.CategorySport},
 				MinRating:  4.5,
 			},
 			wantSQL: []string{"category = ANY", "rating >=", " AND "},

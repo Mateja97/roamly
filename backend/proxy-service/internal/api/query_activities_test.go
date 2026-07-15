@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"backend/shared/models/activitiessvc"
 	activitiesv1 "backend/shared/proto/activities/v1"
 )
 
@@ -37,7 +38,7 @@ func doRequest(t *testing.T, h *QueryActivitiesHandler, body string) *httptest.R
 func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	fake := &fakeActivitiesClient{resp: &activitiesv1.QueryActivitiesResponse{
 		Activities: []*activitiesv1.Activity{{
-			Id: "1", Title: "Kayaking", Category: activitiesv1.Category_CATEGORY_SPORTS,
+			Id: "1", Title: "Kayaking", Category: activitiesv1.Category_CATEGORY_SPORT,
 			Location: &activitiesv1.Location{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
 			Rating: 4.8,
 			Photos: []*activitiesv1.Photo{
@@ -58,7 +59,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decoding response: %v", err)
 	}
-	if len(got.Activities) != 1 || got.Activities[0].Category != "sports" {
+	if len(got.Activities) != 1 || got.Activities[0].Category != "sport" {
 		t.Errorf("unexpected response: %+v", got)
 	}
 	photos := got.Activities[0].ImageRefs
@@ -173,6 +174,60 @@ func TestQueryActivitiesHandler_StrayRemovedFieldIsIgnored(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+}
+
+func TestCategoryTranslation(t *testing.T) {
+	tests := []struct {
+		name   string
+		wire   string
+		proto  activitiesv1.Category
+		domain activitiessvc.Category
+	}{
+		{"restaurants", "restaurants", activitiesv1.Category_CATEGORY_RESTAURANTS, activitiessvc.CategoryRestaurants},
+		{"cafes", "cafes", activitiesv1.Category_CATEGORY_CAFES, activitiessvc.CategoryCafes},
+		{"bars", "bars", activitiesv1.Category_CATEGORY_BARS, activitiessvc.CategoryBars},
+		{"nightlife", "nightlife", activitiesv1.Category_CATEGORY_NIGHTLIFE, activitiessvc.CategoryNightlife},
+		{"nature", "nature", activitiesv1.Category_CATEGORY_NATURE, activitiessvc.CategoryNature},
+		{"sport", "sport", activitiesv1.Category_CATEGORY_SPORT, activitiessvc.CategorySport},
+		{"kids", "kids", activitiesv1.Category_CATEGORY_KIDS, activitiessvc.CategoryKids},
+		{"culture", "culture", activitiesv1.Category_CATEGORY_CULTURE, activitiessvc.CategoryCulture},
+		{"art", "art", activitiesv1.Category_CATEGORY_ART, activitiessvc.CategoryArt},
+		{"wellness", "wellness", activitiesv1.Category_CATEGORY_WELLNESS, activitiessvc.CategoryWellness},
+		{"shopping", "shopping", activitiesv1.Category_CATEGORY_SHOPPING, activitiessvc.CategoryShopping},
+		{"entertainment", "entertainment", activitiesv1.Category_CATEGORY_ENTERTAINMENT, activitiessvc.CategoryEntertainment},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotProto, ok := toProtoCategory(tt.wire)
+			if !ok || gotProto != tt.proto {
+				t.Errorf("toProtoCategory(%q) = (%v, %v), want (%v, true)", tt.wire, gotProto, ok, tt.proto)
+			}
+			gotDomain := toDomainCategory(tt.proto, slog.New(slog.DiscardHandler))
+			if gotDomain != tt.domain {
+				t.Errorf("toDomainCategory(%v) = %q, want %q", tt.proto, gotDomain, tt.domain)
+			}
+		})
+	}
+
+	oldValues := []string{"food_and_drink", "history_and_culture", "nature_and_outdoors", "art_and_design", "sports", "entertainment_and_wellness"}
+	for _, v := range oldValues {
+		t.Run("retired value "+v+" rejected", func(t *testing.T) {
+			if _, ok := toProtoCategory(v); ok {
+				t.Errorf("toProtoCategory(%q) accepted a retired category value", v)
+			}
+		})
+	}
+
+	t.Run("unknown wire value rejected", func(t *testing.T) {
+		if _, ok := toProtoCategory("bogus"); ok {
+			t.Error("toProtoCategory(bogus) accepted an unknown category value")
+		}
+	})
+	t.Run("unknown proto value maps to empty domain with a warning log", func(t *testing.T) {
+		if got := toDomainCategory(activitiesv1.Category(99), slog.New(slog.DiscardHandler)); got != "" {
+			t.Errorf("toDomainCategory(99) = %q, want empty", got)
+		}
+	})
 }
 
 func TestQueryActivitiesHandler_GRPCInvalidArgumentMapsTo400(t *testing.T) {
