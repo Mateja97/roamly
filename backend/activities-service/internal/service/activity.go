@@ -9,7 +9,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
+	"time"
 
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
@@ -172,6 +174,60 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) e
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(target); err != nil {
 		return fmt.Errorf("%w: details do not match category %q: %s", sharederrors.ErrInvalidInput, category, err)
+	}
+	return validateExtraFields(target)
+}
+
+// validateExtraFields runs semantic checks the strict decode above can't
+// express structurally: action_url (T7, 8 categories) must be an absolute
+// http(s) URL, and Art's year must be a plausible 4-digit year.
+func validateExtraFields(target any) error {
+	switch t := target.(type) {
+	case *activitiessvc.RestaurantDetails:
+		return validateActionURL(t.ActionURL)
+	case *activitiessvc.BarDetails:
+		return validateActionURL(t.ActionURL)
+	case *activitiessvc.NightlifeDetails:
+		return validateActionURL(t.ActionURL)
+	case *activitiessvc.SportDetails:
+		return validateActionURL(t.ActionURL)
+	case *activitiessvc.CultureDetails:
+		return validateActionURL(t.ActionURL)
+	case *activitiessvc.ArtDetails:
+		if err := validateActionURL(t.ActionURL); err != nil {
+			return err
+		}
+		return validateYear(t.Year)
+	case *activitiessvc.WellnessDetails:
+		return validateActionURL(t.ActionURL)
+	case *activitiessvc.EntertainmentDetails:
+		return validateActionURL(t.ActionURL)
+	default:
+		return nil
+	}
+}
+
+// validateActionURL rejects a non-nil action_url that isn't an absolute
+// http(s) URL. A nil value (field absent) is always valid.
+func validateActionURL(raw *string) error {
+	if raw == nil {
+		return nil
+	}
+	u, err := url.Parse(*raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%w: action_url %q is not an absolute http(s) URL", sharederrors.ErrInvalidInput, *raw)
+	}
+	return nil
+}
+
+// validateYear rejects a non-nil year outside a plausible 4-digit range. A
+// nil value (field absent) is always valid.
+func validateYear(year *int) error {
+	if year == nil {
+		return nil
+	}
+	if *year < 1000 || *year > time.Now().Year()+1 {
+		return fmt.Errorf("%w: year %d is not a plausible year", sharederrors.ErrInvalidInput, *year)
 	}
 	return nil
 }

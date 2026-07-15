@@ -83,6 +83,9 @@ type RestaurantDetails struct {
 	Hours         string      `json:"hours,omitempty"`
 	OpenStatus    string      `json:"open_status,omitempty"`
 	PopularDishes []ItemPrice `json:"popular_dishes,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Book a table"),
+	// validated as an absolute http(s) URL when present.
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // BarDetails is CategoryBars' detail payload.
@@ -91,6 +94,8 @@ type BarDetails struct {
 	HappyHourWindow string   `json:"happy_hour_window,omitempty"`
 	OpensTime       string   `json:"opens_time,omitempty"`
 	SignaturePours  []string `json:"signature_pours,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("See menu").
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // CafeDetails is CategoryCafes' detail payload.
@@ -115,6 +120,8 @@ type NightlifeDetails struct {
 	OpensTime   string       `json:"opens_time,omitempty"`
 	OpenTonight bool         `json:"open_tonight,omitempty"`
 	Lineup      []LineupItem `json:"lineup,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Guest list").
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // NatureDetails is CategoryNature's detail payload.
@@ -132,6 +139,8 @@ type SportDetails struct {
 	Duration    string   `json:"duration,omitempty"`
 	Gear        string   `json:"gear,omitempty"`
 	WhatToBring []string `json:"what_to_bring,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Book session").
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // KidsDetails is CategoryKids' detail payload.
@@ -153,6 +162,8 @@ type CultureDetails struct {
 	TicketPrice string  `json:"ticket_price,omitempty"`
 	Hours       string  `json:"hours,omitempty"`
 	NowShowing  *Banner `json:"now_showing,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // ArtworkAttribution is Art's artist/work/medium extra property.
@@ -169,6 +180,10 @@ type ArtDetails struct {
 	Hours             string              `json:"hours,omitempty"`
 	Artwork           *ArtworkAttribution `json:"artwork,omitempty"`
 	CurrentExhibition *Banner             `json:"current_exhibition,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
+	ActionURL *string `json:"action_url,omitempty"`
+	// Year (T7) is the current exhibition's artwork year, e.g. 2019.
+	Year *int `json:"year,omitempty"`
 }
 
 // Treatment is one entry in Wellness' treatments list.
@@ -183,6 +198,8 @@ type Treatment struct {
 type WellnessDetails struct {
 	Treatments          []Treatment `json:"treatments,omitempty"`
 	ExternalBookingNote string      `json:"external_booking_note,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Visit website").
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // Show is one entry in Entertainment's upcoming shows list.
@@ -197,6 +214,8 @@ type EntertainmentDetails struct {
 	Genre         string `json:"genre,omitempty"`
 	Neighborhood  string `json:"neighborhood,omitempty"`
 	UpcomingShows []Show `json:"upcoming_shows,omitempty"`
+	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
+	ActionURL *string `json:"action_url,omitempty"`
 }
 
 // ShoppingDetails is CategoryShopping's detail payload.
