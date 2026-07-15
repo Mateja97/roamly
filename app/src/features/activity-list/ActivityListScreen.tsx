@@ -12,14 +12,15 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SearchX, SlidersHorizontal } from 'lucide-react-native';
+import { Globe, MapPin, SearchX, SlidersHorizontal } from 'lucide-react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { ActivityCard, ActivityCardSkeleton } from '../../components/ActivityCard';
 import { FilterChip } from '../../components/FilterChip';
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
-import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { FilterSheet } from './FilterSheet';
 import { SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, defaultFilters, filterChips, headerSubtitle } from './filters';
@@ -207,10 +208,39 @@ export function ActivityListScreen({
         importantForAccessibility={selectedActivity !== null ? 'no-hide-descendants' : 'auto'}
       >
         <View style={styles.header}>
+          <Svg
+            viewBox="0 0 402 180"
+            preserveAspectRatio="xMidYMid slice"
+            style={styles.headerFlightPath}
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Path
+              d="M-20 90 C 110 46, 260 140, 430 74"
+              stroke={colors.primary}
+              strokeWidth={2.5}
+              strokeDasharray="2 12"
+              strokeLinecap="round"
+              strokeOpacity={0.22}
+              fill="none"
+            />
+            <Circle cx={-20} cy={90} r={4.5} fill={colors.primary} stroke="none" opacity={0.22} />
+            <Circle cx={430} cy={74} r={5} fill="none" stroke={colors.primary} strokeWidth={3} strokeOpacity={0.22} />
+          </Svg>
           <View style={styles.headerTitleBlock}>
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {SCOPE_TITLES[selection.scope]}
-            </Text>
+            <View style={styles.headerTitleRow}>
+              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                {selection.scope === 'nearby' ? (
+                  <MapPin size={20} color={colors.primary} strokeWidth={1.75} />
+                ) : (
+                  <Globe size={20} color={colors.primary} strokeWidth={1.75} />
+                )}
+              </View>
+              <Text style={styles.headerTitle} numberOfLines={1}>
+                {SCOPE_TITLES[selection.scope]}
+              </Text>
+            </View>
             <View ref={countRef} accessible accessibilityLiveRegion="polite">
               {resultCount === null
                 ? willShowSubtitle && <Skeleton width={140} height={14} style={styles.headerSubtitleSkeleton} />
@@ -228,9 +258,12 @@ export function ActivityListScreen({
             onBlur={filtersFocus.onBlur}
             accessibilityRole="button"
             accessibilityLabel={filterCount > 0 ? `Filters, ${filterCount} active` : 'Filters'}
-            style={[styles.filtersButton, filtersFocus.focused && styles.filtersButtonFocused]}
+            style={({ pressed }) => [
+              styles.filtersButton,
+              (pressed || filtersFocus.focused) && styles.filtersButtonActive,
+            ]}
           >
-            <SlidersHorizontal size={16} color={colors.text} strokeWidth={1.75} />
+            <SlidersHorizontal size={16} color={colors.primary} strokeWidth={1.75} />
             <Text style={styles.filtersButtonLabel}>Filters</Text>
             {filterCount > 0 && (
               <View style={styles.countBadge}>
@@ -372,14 +405,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  headerFlightPath: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
   },
   headerTitleBlock: {
     flex: 1,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
   headerTitle: {
-    fontSize: fontSize.lg,
+    // 26px is the activities-list entry in DESIGN_STANDARDS.md's Marcellus
+    // header-size list — not one of tokens.ts's fontSize steps.
+    fontFamily: fontFamily.display,
+    fontSize: 26,
     color: colors.text,
-    fontWeight: '500',
+    lineHeight: 26 * 1.2,
   },
   headerSubtitle: {
     marginTop: space[1],
@@ -396,20 +447,19 @@ const styles = StyleSheet.create({
     gap: space[2],
     minHeight: 44,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.default,
+    borderColor: colors.primary,
+    borderRadius: radius.full,
     paddingHorizontal: space[4],
     outlineStyle: 'solid',
     outlineWidth: 0,
   },
-  filtersButtonFocused: {
+  filtersButtonActive: {
     backgroundColor: colors.surfaceHover,
-    borderColor: colors.primary,
   },
   filtersButtonLabel: {
-    fontSize: fontSize.md,
+    fontSize: fontSize.sm,
     color: colors.text,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   countBadge: {
     minWidth: 18,
