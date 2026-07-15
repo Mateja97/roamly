@@ -6,7 +6,7 @@ const activity: Activity = {
   id: '1',
   title: 'Skadarlija Food Walk',
   description: 'A tasty walk through the old bohemian quarter, with stops at three taverns.',
-  category: 'food_and_drink',
+  category: 'restaurants',
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
@@ -31,7 +31,7 @@ describe('ActivityDetailScreen', () => {
     expect(screen.getByText('local')).toBeTruthy();
     expect(screen.getByText('evening')).toBeTruthy();
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
-    expect(screen.getByText('Food & Drink')).toBeTruthy();
+    expect(screen.getByText('Restaurants')).toBeTruthy();
     expect(screen.getByText('4.6')).toBeTruthy();
     expect(screen.getByText('0.4 km away')).toBeTruthy();
   });

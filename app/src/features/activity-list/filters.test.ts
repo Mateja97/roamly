@@ -30,7 +30,7 @@ describe('activeFilterCount', () => {
 
   it('counts each category plus each single-select group (nearby), distance never counted', () => {
     const filters: Filters = {
-      categories: ['sports', 'food_and_drink'],
+      categories: ['sport', 'restaurants'],
       minRating: 4.5,
       maxDistanceKm: null,
     };
@@ -46,20 +46,20 @@ describe('activeFilterCount', () => {
 describe('filterChips', () => {
   it('produces one chip per category and one per single-select group, no distance chip for nearby', () => {
     const filters: Filters = {
-      categories: ['sports'],
+      categories: ['sport'],
       minRating: 4.5,
       maxDistanceKm: null,
     };
     const chips = filterChips(filters, 'nearby');
-    expect(chips.map((c) => c.label)).toEqual(['Sports', '4.5+']);
+    expect(chips.map((c) => c.label)).toEqual(['Sport', '4.5+']);
   });
 
   it('a chip.remove() clears only that one filter value', () => {
-    const filters: Filters = { categories: ['sports', 'art_and_design'], minRating: null, maxDistanceKm: null };
+    const filters: Filters = { categories: ['sport', 'art'], minRating: null, maxDistanceKm: null };
     const chips = filterChips(filters, 'nearby');
-    const sportsChip = chips.find((c) => c.label === 'Sports')!;
+    const sportsChip = chips.find((c) => c.label === 'Sport')!;
     expect(sportsChip.remove()).toEqual({
-      categories: ['art_and_design'],
+      categories: ['art'],
       minRating: null,
       maxDistanceKm: null,
     });
@@ -136,7 +136,7 @@ describe('buildActivitiesRequest', () => {
 
   it('includes only the set filter fields (nearby never gets max_distance_km)', () => {
     const filters: Filters = {
-      categories: ['sports'],
+      categories: ['sport'],
       minRating: 4.5,
       maxDistanceKm: null,
     };
@@ -144,7 +144,7 @@ describe('buildActivitiesRequest', () => {
     expect(req).toEqual({
       scope: 'nearby',
       current_location: { lat: 1, lng: 2 },
-      categories: ['sports'],
+      categories: ['sport'],
       min_rating: 4.5,
     });
   });

@@ -9,7 +9,7 @@ const activity: Activity = {
   id: '1',
   title: 'Skadarlija Food Walk',
   description: 'A tasty walk',
-  category: 'sports',
+  category: 'sport',
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
@@ -95,7 +95,7 @@ describe('App', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
     });
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
 
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^show \d+ activities$/i }));
@@ -106,17 +106,17 @@ describe('App', () => {
       expect(mockedQuery).toHaveBeenCalledWith({
         scope: 'nearby',
         current_location: { lat: 44.8125, lng: 20.4612 },
-        categories: ['sports'],
+        categories: ['sport'],
       })
     );
-    expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Sport filter' })).toBeTruthy();
   });
 
   it('Anywhere with location denied still reaches the search-setup screen with no anchor (no dead end)', async () => {
     mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
     mockedQuery.mockResolvedValue({
       status: 'success',
-      activities: [{ id: '1', title: 'Tour', description: '', category: 'sports', location: { lat: 0, lng: 0 }, country: 'Spain', rating: 4.5, image_refs: [], tags: [], distance_km: 1 }],
+      activities: [{ id: '1', title: 'Tour', description: '', category: 'sport', location: { lat: 0, lng: 0 }, country: 'Spain', rating: 4.5, image_refs: [], tags: [], distance_km: 1 }],
     });
     render(<App />);
     await flush();

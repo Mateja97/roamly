@@ -25,7 +25,7 @@ const activity: Activity = {
   id: '1',
   title: 'Skadarlija Food Walk',
   description: 'A tasty walk',
-  category: 'food_and_drink',
+  category: 'restaurants',
   location: { lat: 44.8153, lng: 20.4646 },
   country: 'Serbia',
   rating: 4.6,
@@ -151,7 +151,7 @@ describe('ActivityListScreen', () => {
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
 
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     await act(async () => {
@@ -161,10 +161,10 @@ describe('ActivityListScreen', () => {
     expect(mockedQuery).toHaveBeenLastCalledWith({
       scope: 'nearby',
       current_location: LOCATION,
-      categories: ['sports'],
+      categories: ['sport'],
     });
     expect(screen.getByText('1 activity · within 10 km')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Sport filter' })).toBeTruthy();
   });
 
   it('removing an active-filter chip clears just that filter and re-queries', async () => {
@@ -174,21 +174,21 @@ describe('ActivityListScreen', () => {
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
     });
-    expect(screen.getByRole('button', { name: 'Remove Sports filter' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove Sport filter' })).toBeTruthy();
 
     mockedQuery.mockResolvedValueOnce(successResult([activity, { ...activity, id: '2' }]));
     await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Remove Sports filter' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Remove Sport filter' }));
     });
 
     expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION });
     expect(screen.getByText('2 activities · within 10 km')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Remove Sports filter' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove Sport filter' })).toBeNull();
   });
 
   it('tapping a card opens the detail screen, and the on-screen Back control returns to the list', async () => {
@@ -238,7 +238,7 @@ describe('ActivityListScreen', () => {
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: 'Sports' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
@@ -248,7 +248,7 @@ describe('ActivityListScreen', () => {
     // already selected (the now-applied filter), not the pre-Apply draft.
     fireEvent.press(screen.getByRole('button', { name: /^filters/i }));
     await flush();
-    expect(screen.getByRole('button', { name: /sports, selected/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
   });
 
   it('T2: Anywhere with one selected city shows just its name in the subtitle', async () => {

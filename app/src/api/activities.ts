@@ -12,6 +12,104 @@ export type PhotoAttribution = { author: string; link?: string };
 
 export type ActivityPhoto = { uri: string; attribution?: PhotoAttribution };
 
+// T3: name/price pair — Restaurants' popular dishes and Cafés' on-the-bar
+// items share this shape (mirrors backend's ItemPrice).
+export type ItemPrice = { name: string; price: string };
+
+// T3: single-block callout — Culture's "now showing" and Art's "current
+// exhibition" unique sections share this shape (mirrors backend's Banner).
+export type DetailBanner = { title: string; description?: string };
+
+// T3: per-category structured detail payload (T4 consumes this for the
+// Activity Detail screen's fact strip + unique section). Discriminated by
+// `category` so a consumer narrows to the right shape via
+// `activity.category`. All fields optional/omittable, matching the
+// backend's `omitempty` JSON tags and the "omit rather than blank" pattern.
+export type ActivityDetails =
+  | {
+      category: 'restaurants';
+      cuisine?: string;
+      price_tier?: string;
+      hours?: string;
+      open_status?: string;
+      popular_dishes?: ItemPrice[];
+    }
+  | {
+      category: 'bars';
+      vibe?: string;
+      happy_hour_window?: string;
+      opens_time?: string;
+      signature_pours?: string[];
+    }
+  | {
+      category: 'cafes';
+      known_for_brew?: string;
+      wifi_quality?: string;
+      hours?: string;
+      on_the_bar?: ItemPrice[];
+    }
+  | {
+      category: 'nightlife';
+      entry_price?: string;
+      dress_code?: string;
+      opens_time?: string;
+      open_tonight?: boolean;
+      lineup?: { time: string; act: string; stage: string }[];
+    }
+  | {
+      category: 'nature';
+      time_to_spend?: string;
+      best_time?: string;
+      cost?: string;
+      good_to_know?: string[];
+    }
+  | {
+      category: 'sport';
+      difficulty?: number;
+      effort_level?: string;
+      duration?: string;
+      gear?: string;
+      what_to_bring?: string[];
+    }
+  | {
+      category: 'kids';
+      age_range?: string;
+      facilities?: string[];
+    }
+  | {
+      category: 'culture';
+      venue_type?: string;
+      ticket_price?: string;
+      hours?: string;
+      now_showing?: DetailBanner;
+    }
+  | {
+      category: 'art';
+      venue_type?: string;
+      ticket_price?: string;
+      hours?: string;
+      artwork?: { artist?: string; work?: string; medium?: string };
+      current_exhibition?: DetailBanner;
+    }
+  | {
+      category: 'wellness';
+      treatments?: { item: string; duration?: string; price?: string }[];
+      external_booking_note?: string;
+    }
+  | {
+      category: 'entertainment';
+      genre?: string;
+      neighborhood?: string;
+      upcoming_shows?: { date: string; title: string; time_or_price?: string }[];
+    }
+  | {
+      category: 'shopping';
+      venue_type?: string;
+      best_day?: string;
+      hours?: string;
+      what_youll_find?: string[];
+    };
+
 export type Activity = {
   id: string;
   title: string;
@@ -23,6 +121,11 @@ export type Activity = {
   image_refs: ActivityPhoto[];
   tags: string[];
   distance_km: number;
+  // T3: category-specific structured payload from T2's `details` JSONB
+  // column. Optional/absent for rows with no detail data (`{}`) — T4's
+  // detail screen omits the fact-strip/unique-section slot rather than
+  // rendering an empty placeholder.
+  details?: ActivityDetails;
 };
 
 // The wire format today (pre-T3) is still a plain string[] of URLs; T3 will

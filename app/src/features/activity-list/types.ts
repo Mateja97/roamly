@@ -3,12 +3,18 @@ import type { CitySuggestion } from '../../api/cities';
 import type { ScopeSelection } from '../scope-picker/types';
 
 export type Category =
-  | 'food_and_drink'
-  | 'history_and_culture'
-  | 'nature_and_outdoors'
-  | 'art_and_design'
-  | 'sports'
-  | 'entertainment_and_wellness';
+  | 'restaurants'
+  | 'cafes'
+  | 'bars'
+  | 'nightlife'
+  | 'nature'
+  | 'sport'
+  | 'kids'
+  | 'culture'
+  | 'art'
+  | 'wellness'
+  | 'shopping'
+  | 'entertainment';
 
 export type RatingOption = 4.0 | 4.5 | 4.8;
 
