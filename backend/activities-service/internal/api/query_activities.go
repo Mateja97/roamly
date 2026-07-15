@@ -133,6 +133,25 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		Tags:        a.Tags,
 		DistanceKm:  a.DistanceKM,
 		Details:     detailsJSON(a.Details),
+		City:        a.City,
+		Address:     a.Address,
+		Status:      toProtoStatus(a.Status),
+	}
+}
+
+// toProtoStatus maps the domain lifecycle value onto the wire enum (T1); an
+// unrecognized domain value (shouldn't happen — the DB CHECK constraint
+// guards it) falls back to ACTIVITY_STATUS_UNSPECIFIED rather than panicking.
+func toProtoStatus(s activitiessvc.Status) activitiesv1.ActivityStatus {
+	switch s {
+	case activitiessvc.StatusPublished:
+		return activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED
+	case activitiessvc.StatusDraft:
+		return activitiesv1.ActivityStatus_ACTIVITY_STATUS_DRAFT
+	case activitiessvc.StatusPending:
+		return activitiesv1.ActivityStatus_ACTIVITY_STATUS_PENDING
+	default:
+		return activitiesv1.ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED
 	}
 }
 

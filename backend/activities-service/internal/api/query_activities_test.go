@@ -72,6 +72,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com"}},
 			Tags:   []string{"sports"}, DistanceKM: 3.2,
 			Details: []byte(`{"difficulty":3}`),
+			City:    "Belgrade", Address: "Ada Ciganlija bb", Status: activitiessvc.StatusPublished,
 		},
 	}}
 	client := dialServer(t, fake)
@@ -89,6 +90,9 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	got := resp.GetActivities()[0]
 	if got.GetId() != "1" || got.GetCategory() != activitiesv1.Category_CATEGORY_SPORT {
 		t.Errorf("unexpected activity translation: %+v", got)
+	}
+	if got.GetCity() != "Belgrade" || got.GetAddress() != "Ada Ciganlija bb" || got.GetStatus() != activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED {
+		t.Errorf("unexpected city/address/status translation: %+v", got)
 	}
 	if len(got.GetPhotos()) != 1 || got.GetPhotos()[0].GetUrl() != "img1" || got.GetPhotos()[0].GetAuthor() != "Jane Doe" {
 		t.Errorf("unexpected photo translation: %+v", got.GetPhotos())
@@ -192,6 +196,30 @@ func TestCategoryTranslation(t *testing.T) {
 	t.Run("unknown domain value maps to CATEGORY_UNSPECIFIED", func(t *testing.T) {
 		if got := toProtoCategory(activitiessvc.Category("bogus")); got != activitiesv1.Category_CATEGORY_UNSPECIFIED {
 			t.Errorf("toProtoCategory(bogus) = %v, want CATEGORY_UNSPECIFIED", got)
+		}
+	})
+}
+
+func TestStatusTranslation(t *testing.T) {
+	tests := []struct {
+		name   string
+		domain activitiessvc.Status
+		proto  activitiesv1.ActivityStatus
+	}{
+		{"published", activitiessvc.StatusPublished, activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED},
+		{"draft", activitiessvc.StatusDraft, activitiesv1.ActivityStatus_ACTIVITY_STATUS_DRAFT},
+		{"pending", activitiessvc.StatusPending, activitiesv1.ActivityStatus_ACTIVITY_STATUS_PENDING},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toProtoStatus(tt.domain); got != tt.proto {
+				t.Errorf("toProtoStatus(%q) = %v, want %v", tt.domain, got, tt.proto)
+			}
+		})
+	}
+	t.Run("unknown domain value maps to ACTIVITY_STATUS_UNSPECIFIED", func(t *testing.T) {
+		if got := toProtoStatus(activitiessvc.Status("bogus")); got != activitiesv1.ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED {
+			t.Errorf("toProtoStatus(bogus) = %v, want ACTIVITY_STATUS_UNSPECIFIED", got)
 		}
 	})
 }

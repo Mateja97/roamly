@@ -99,6 +99,12 @@ type activityDTO struct {
 	// is already a JSON string, so this is a raw re-embed, not a
 	// string-of-a-string.
 	Details json.RawMessage `json:"details"`
+	// City, Address, and Status are T1 additions. Status is always
+	// "published" here: QueryActivities (the RPC this handler calls) only
+	// ever returns published activities.
+	City    string `json:"city"`
+	Address string `json:"address"`
+	Status  string `json:"status"`
 }
 
 type queryActivitiesResponseDTO struct {
@@ -225,6 +231,27 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		Tags:        a.GetTags(),
 		DistanceKM:  a.GetDistanceKm(),
 		Details:     detailsJSON(a.GetDetails()),
+		City:        a.GetCity(),
+		Address:     a.GetAddress(),
+		Status:      toDomainStatus(a.GetStatus(), logger),
+	}
+}
+
+// toDomainStatus converts the wire enum to the lowercase snake_case string
+// convention this JSON API already uses for category; an unrecognized value
+// logs a warning and falls back to "" rather than breaking the whole
+// response over one activity's status.
+func toDomainStatus(s activitiesv1.ActivityStatus, logger *slog.Logger) string {
+	switch s {
+	case activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED:
+		return string(activitiessvc.StatusPublished)
+	case activitiesv1.ActivityStatus_ACTIVITY_STATUS_DRAFT:
+		return string(activitiessvc.StatusDraft)
+	case activitiesv1.ActivityStatus_ACTIVITY_STATUS_PENDING:
+		return string(activitiessvc.StatusPending)
+	default:
+		logger.Warn("unrecognized status from activities-service", "status", s)
+		return ""
 	}
 }
 

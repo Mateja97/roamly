@@ -153,6 +153,62 @@ func (Category) EnumDescriptor() ([]byte, []int) {
 	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{1}
 }
 
+// ActivityStatus (T1) is an activity's catalog lifecycle state. Only
+// ACTIVITY_STATUS_PUBLISHED activities are ever returned by
+// QueryActivities, the public app-facing RPC — draft/pending exist for the
+// admin surface (T2) to read and write.
+type ActivityStatus int32
+
+const (
+	ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED ActivityStatus = 0
+	ActivityStatus_ACTIVITY_STATUS_PUBLISHED   ActivityStatus = 1
+	ActivityStatus_ACTIVITY_STATUS_DRAFT       ActivityStatus = 2
+	ActivityStatus_ACTIVITY_STATUS_PENDING     ActivityStatus = 3
+)
+
+// Enum value maps for ActivityStatus.
+var (
+	ActivityStatus_name = map[int32]string{
+		0: "ACTIVITY_STATUS_UNSPECIFIED",
+		1: "ACTIVITY_STATUS_PUBLISHED",
+		2: "ACTIVITY_STATUS_DRAFT",
+		3: "ACTIVITY_STATUS_PENDING",
+	}
+	ActivityStatus_value = map[string]int32{
+		"ACTIVITY_STATUS_UNSPECIFIED": 0,
+		"ACTIVITY_STATUS_PUBLISHED":   1,
+		"ACTIVITY_STATUS_DRAFT":       2,
+		"ACTIVITY_STATUS_PENDING":     3,
+	}
+)
+
+func (x ActivityStatus) Enum() *ActivityStatus {
+	p := new(ActivityStatus)
+	*p = x
+	return p
+}
+
+func (x ActivityStatus) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ActivityStatus) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_activities_v1_activities_proto_enumTypes[2].Descriptor()
+}
+
+func (ActivityStatus) Type() protoreflect.EnumType {
+	return &file_proto_activities_v1_activities_proto_enumTypes[2]
+}
+
+func (x ActivityStatus) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ActivityStatus.Descriptor instead.
+func (ActivityStatus) EnumDescriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
+}
+
 type Location struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Lat           float64                `protobuf:"fixed64,1,opt,name=lat,proto3" json:"lat,omitempty"`
@@ -391,7 +447,15 @@ type Activity struct {
 	// "{}" when the category has no detail data. A JSON string rather than
 	// 12 proto messages: the app renders it generically off a data-driven
 	// config, not 12 typed screens.
-	Details       string `protobuf:"bytes,12,opt,name=details,proto3" json:"details,omitempty"`
+	Details string `protobuf:"bytes,12,opt,name=details,proto3" json:"details,omitempty"`
+	// city, address, and status are T1 additions: city was already a DB
+	// column (unexposed on the wire before now); address is new. Both are
+	// empty when unset. status is always ACTIVITY_STATUS_PUBLISHED on
+	// QueryActivities responses (see ActivityStatus above); exposed here as
+	// a real field for the admin surface (T2), which reads/writes all three.
+	City          string         `protobuf:"bytes,13,opt,name=city,proto3" json:"city,omitempty"`
+	Address       string         `protobuf:"bytes,14,opt,name=address,proto3" json:"address,omitempty"`
+	Status        ActivityStatus `protobuf:"varint,15,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -501,6 +565,27 @@ func (x *Activity) GetDetails() string {
 		return x.Details
 	}
 	return ""
+}
+
+func (x *Activity) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *Activity) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *Activity) GetStatus() ActivityStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED
 }
 
 type QueryActivitiesResponse struct {
@@ -723,7 +808,7 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12/\n" +
 	"\x06cities\x18\n" +
 	" \x03(\v2\x17.activities.v1.LocationR\x06citiesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
-	"R\rhome_locationR\fhome_countryR\x04sort\"\xf1\x02\n" +
+	"R\rhome_locationR\fhome_countryR\x04sort\"\xd6\x03\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -737,7 +822,10 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	" \x03(\tR\x04tags\x12\x1f\n" +
 	"\vdistance_km\x18\v \x01(\x01R\n" +
 	"distanceKm\x12\x18\n" +
-	"\adetails\x18\f \x01(\tR\adetailsJ\x04\b\a\x10\b\"R\n" +
+	"\adetails\x18\f \x01(\tR\adetails\x12\x12\n" +
+	"\x04city\x18\r \x01(\tR\x04city\x12\x18\n" +
+	"\aaddress\x18\x0e \x01(\tR\aaddress\x125\n" +
+	"\x06status\x18\x0f \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06statusJ\x04\b\a\x10\b\"R\n" +
 	"\x17QueryActivitiesResponse\x127\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x17.activities.v1.ActivityR\n" +
@@ -769,7 +857,12 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x11CATEGORY_WELLNESS\x10\n" +
 	"\x12\x15\n" +
 	"\x11CATEGORY_SHOPPING\x10\v\x12\x1a\n" +
-	"\x16CATEGORY_ENTERTAINMENT\x10\f2\xd1\x01\n" +
+	"\x16CATEGORY_ENTERTAINMENT\x10\f*\x88\x01\n" +
+	"\x0eActivityStatus\x12\x1f\n" +
+	"\x1bACTIVITY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19ACTIVITY_STATUS_PUBLISHED\x10\x01\x12\x19\n" +
+	"\x15ACTIVITY_STATUS_DRAFT\x10\x02\x12\x1b\n" +
+	"\x17ACTIVITY_STATUS_PENDING\x10\x032\xd1\x01\n" +
 	"\x11ActivitiesService\x12`\n" +
 	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponse\x12Z\n" +
 	"\rSuggestCities\x12#.activities.v1.SuggestCitiesRequest\x1a$.activities.v1.SuggestCitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
@@ -786,40 +879,42 @@ func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
 	return file_proto_activities_v1_activities_proto_rawDescData
 }
 
-var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(Scope)(0),                      // 0: activities.v1.Scope
 	(Category)(0),                   // 1: activities.v1.Category
-	(*Location)(nil),                // 2: activities.v1.Location
-	(*Photo)(nil),                   // 3: activities.v1.Photo
-	(*QueryActivitiesRequest)(nil),  // 4: activities.v1.QueryActivitiesRequest
-	(*Activity)(nil),                // 5: activities.v1.Activity
-	(*QueryActivitiesResponse)(nil), // 6: activities.v1.QueryActivitiesResponse
-	(*SuggestCitiesRequest)(nil),    // 7: activities.v1.SuggestCitiesRequest
-	(*CitySuggestion)(nil),          // 8: activities.v1.CitySuggestion
-	(*SuggestCitiesResponse)(nil),   // 9: activities.v1.SuggestCitiesResponse
+	(ActivityStatus)(0),             // 2: activities.v1.ActivityStatus
+	(*Location)(nil),                // 3: activities.v1.Location
+	(*Photo)(nil),                   // 4: activities.v1.Photo
+	(*QueryActivitiesRequest)(nil),  // 5: activities.v1.QueryActivitiesRequest
+	(*Activity)(nil),                // 6: activities.v1.Activity
+	(*QueryActivitiesResponse)(nil), // 7: activities.v1.QueryActivitiesResponse
+	(*SuggestCitiesRequest)(nil),    // 8: activities.v1.SuggestCitiesRequest
+	(*CitySuggestion)(nil),          // 9: activities.v1.CitySuggestion
+	(*SuggestCitiesResponse)(nil),   // 10: activities.v1.SuggestCitiesResponse
 }
 var file_proto_activities_v1_activities_proto_depIdxs = []int32{
 	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
-	2,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
+	3,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
 	1,  // 2: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
-	2,  // 3: activities.v1.QueryActivitiesRequest.cities:type_name -> activities.v1.Location
+	3,  // 3: activities.v1.QueryActivitiesRequest.cities:type_name -> activities.v1.Location
 	1,  // 4: activities.v1.Activity.category:type_name -> activities.v1.Category
-	2,  // 5: activities.v1.Activity.location:type_name -> activities.v1.Location
-	3,  // 6: activities.v1.Activity.photos:type_name -> activities.v1.Photo
-	5,  // 7: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
-	2,  // 8: activities.v1.CitySuggestion.centroid:type_name -> activities.v1.Location
-	8,  // 9: activities.v1.SuggestCitiesResponse.suggestions:type_name -> activities.v1.CitySuggestion
-	4,  // 10: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	7,  // 11: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
-	6,  // 12: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	9,  // 13: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
-	12, // [12:14] is the sub-list for method output_type
-	10, // [10:12] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	3,  // 5: activities.v1.Activity.location:type_name -> activities.v1.Location
+	4,  // 6: activities.v1.Activity.photos:type_name -> activities.v1.Photo
+	2,  // 7: activities.v1.Activity.status:type_name -> activities.v1.ActivityStatus
+	6,  // 8: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
+	3,  // 9: activities.v1.CitySuggestion.centroid:type_name -> activities.v1.Location
+	9,  // 10: activities.v1.SuggestCitiesResponse.suggestions:type_name -> activities.v1.CitySuggestion
+	5,  // 11: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	8,  // 12: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
+	7,  // 13: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	10, // 14: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
+	13, // [13:15] is the sub-list for method output_type
+	11, // [11:13] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }
@@ -832,7 +927,7 @@ func file_proto_activities_v1_activities_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
