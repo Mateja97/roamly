@@ -29,6 +29,22 @@ type fakeQueryService struct {
 	citySuggestOut  []activitiessvc.CitySuggestion
 	citySuggestErr  error
 	gotCitySuggestQ string
+
+	listOut       activitiessvc.ListResult
+	listPage      int
+	listPageSize  int
+	listErr       error
+	gotListReq    service.ListRequest
+	getOut        activitiessvc.Activity
+	getErr        error
+	gotGetID      string
+	createOut     activitiessvc.Activity
+	createErr     error
+	gotCreate     activitiessvc.NewActivity
+	updateOut     activitiessvc.Activity
+	updateErr     error
+	gotUpdateID   string
+	gotUpdatePtch activitiessvc.UpdatePatch
 }
 
 func (f *fakeQueryService) Query(_ context.Context, req service.Request) ([]activitiessvc.Activity, error) {
@@ -39,6 +55,27 @@ func (f *fakeQueryService) Query(_ context.Context, req service.Request) ([]acti
 func (f *fakeQueryService) SuggestCities(_ context.Context, query string) ([]activitiessvc.CitySuggestion, error) {
 	f.gotCitySuggestQ = query
 	return f.citySuggestOut, f.citySuggestErr
+}
+
+func (f *fakeQueryService) List(_ context.Context, req service.ListRequest) (activitiessvc.ListResult, int, int, error) {
+	f.gotListReq = req
+	return f.listOut, f.listPage, f.listPageSize, f.listErr
+}
+
+func (f *fakeQueryService) GetByID(_ context.Context, id string) (activitiessvc.Activity, error) {
+	f.gotGetID = id
+	return f.getOut, f.getErr
+}
+
+func (f *fakeQueryService) Create(_ context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error) {
+	f.gotCreate = in
+	return f.createOut, f.createErr
+}
+
+func (f *fakeQueryService) Update(_ context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error) {
+	f.gotUpdateID = id
+	f.gotUpdatePtch = patch
+	return f.updateOut, f.updateErr
 }
 
 func dialServer(t *testing.T, svc queryService) activitiesv1.ActivitiesServiceClient {

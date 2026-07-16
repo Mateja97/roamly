@@ -20,6 +20,10 @@ import (
 type repository interface {
 	Query(ctx context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error)
 	SuggestCities(ctx context.Context, prefix string) ([]activitiessvc.CitySuggestion, error)
+	List(ctx context.Context, filter activitiessvc.ListFilter) (activitiessvc.ListResult, error)
+	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
+	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
+	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
 }
 
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
@@ -158,10 +162,8 @@ func validatePoint(p *activitiessvc.Point) error {
 // category's shape (T2), e.g. `cuisine` set on a CategorySport row. An
 // empty payload ("" or "{}") is always valid regardless of category — a
 // category with no detail data yet is the common case, not an error.
-//
-// ponytail: not called from any RPC yet — ActivitiesService is read-only
-// today (Query/SuggestCities only, no create/update). Wire this in when a
-// write path lands; exported and tested now per T2's acceptance criteria.
+// Called from Create and Update (below) — the write path this validator
+// was written ahead of in T1.
 func ValidateDetails(category activitiessvc.Category, details json.RawMessage) error {
 	if len(bytes.TrimSpace(details)) == 0 {
 		return nil
@@ -264,6 +266,173 @@ func detailsTarget(category activitiessvc.Category) (any, error) {
 	default:
 		return nil, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, category)
 	}
+}
+
+// DefaultListPageSize and MaxListPageSize bound ListActivities' page_size
+// (T2): a caller-supplied page_size is always clamped to this range, never
+// trusted as-is — an unbounded page_size would let a caller force a
+// full-table load.
+const (
+	DefaultListPageSize = 20
+	MaxListPageSize     = 100
+)
+
+// ListRequest is the admin list's caller-supplied query (T2), pre-clamp:
+// Page/PageSize are the raw requested values (<= 0 meaning "use the
+// default"). "" means "no filter" for Q/Category/City/Status.
+type ListRequest struct {
+	Q        string
+	Category activitiessvc.Category
+	City     string
+	Status   activitiessvc.Status
+	Page     int
+	PageSize int
+}
+
+// List validates the filter, clamps Page/PageSize, and returns the
+// resolved page/pageSize alongside the repository result so the caller can
+// echo back what was actually used (never the raw, unclamped request).
+func (a *Activities) List(ctx context.Context, req ListRequest) (result activitiessvc.ListResult, page int, pageSize int, err error) {
+	if req.Category != "" && !validCategory(req.Category) {
+		return activitiessvc.ListResult{}, 0, 0, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, req.Category)
+	}
+	if req.Status != "" && !validStatus(req.Status) {
+		return activitiessvc.ListResult{}, 0, 0, fmt.Errorf("%w: unknown status %q", sharederrors.ErrInvalidInput, req.Status)
+	}
+
+	page = req.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize = req.PageSize
+	switch {
+	case pageSize <= 0:
+		pageSize = DefaultListPageSize
+	case pageSize > MaxListPageSize:
+		pageSize = MaxListPageSize
+	}
+
+	result, err = a.repo.List(ctx, activitiessvc.ListFilter{
+		Q:        strings.TrimSpace(req.Q),
+		Category: req.Category,
+		City:     req.City,
+		Status:   req.Status,
+		Limit:    pageSize,
+		Offset:   (page - 1) * pageSize,
+	})
+	if err != nil {
+		return activitiessvc.ListResult{}, 0, 0, fmt.Errorf("listing activities: %w", err)
+	}
+	return result, page, pageSize, nil
+}
+
+// GetByID returns a single activity by id, sentinel errors passed through
+// untouched (wrapped for context) — see GO_STANDARDS.md "Errors".
+func (a *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Activity, error) {
+	activity, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
+	}
+	return activity, nil
+}
+
+// Create validates and inserts a new activity (T2): title is required,
+// category must be a known value, status defaults to StatusDraft when
+// unset, and any details payload must match the (possibly just-validated)
+// category's shape.
+func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error) {
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: title is required", sharederrors.ErrInvalidInput)
+	}
+	if !validCategory(in.Category) {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, in.Category)
+	}
+
+	newStatus := in.Status
+	switch {
+	case newStatus == "":
+		newStatus = activitiessvc.StatusDraft
+	case !validStatus(newStatus):
+		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown status %q", sharederrors.ErrInvalidInput, newStatus)
+	}
+
+	details := normalizeDetails(in.Details)
+	if err := ValidateDetails(in.Category, details); err != nil {
+		return activitiessvc.Activity{}, err
+	}
+
+	created, err := a.repo.Create(ctx, activitiessvc.NewActivity{
+		Title: title, Description: in.Description, Category: in.Category,
+		City: in.City, Address: in.Address, Status: newStatus, Details: details, Photos: in.Photos,
+	})
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("creating activity: %w", err)
+	}
+	return created, nil
+}
+
+// Update applies a partial update (T2): only patch's non-nil fields are
+// validated/persisted, everything else stays untouched (see
+// activitiessvc.UpdatePatch's doc). A details payload is validated against
+// the patch's own category when both are set in the same request,
+// otherwise against the activity's current category — fetched only in that
+// case, not on every update.
+func (a *Activities) Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error) {
+	if patch.Category != nil && !validCategory(*patch.Category) {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, *patch.Category)
+	}
+	if patch.Status != nil && !validStatus(*patch.Status) {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown status %q", sharederrors.ErrInvalidInput, *patch.Status)
+	}
+
+	if patch.Details != nil {
+		normalized := normalizeDetails(*patch.Details)
+		patch.Details = &normalized
+
+		category := patch.Category
+		if category == nil {
+			current, err := a.repo.GetByID(ctx, id)
+			if err != nil {
+				return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
+			}
+			category = &current.Category
+		}
+		if err := ValidateDetails(*category, normalized); err != nil {
+			return activitiessvc.Activity{}, err
+		}
+	}
+
+	updated, err := a.repo.Update(ctx, id, patch)
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("updating activity %s: %w", id, err)
+	}
+	return updated, nil
+}
+
+// normalizeDetails treats an empty payload as an explicit "{}" (no detail
+// data): an admin submitting a blank details field is choosing to clear it,
+// not sending malformed JSON — same "empty is always valid" rule
+// ValidateDetails already applies.
+func normalizeDetails(raw json.RawMessage) json.RawMessage {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return json.RawMessage("{}")
+	}
+	return raw
+}
+
+// validStatus is the Go-side boundary validator T1 deferred to T2 (see
+// engineering-notes.md): activitiessvc.Status is just a typed string with
+// no runtime enforcement on its own (`Status("bogus")` compiles fine) — the
+// DB CHECK constraint is T1's actual guard, but Create/Update are the first
+// write path, so this is the first place a bad value must be rejected
+// before it ever reaches SQL.
+func validStatus(s activitiessvc.Status) bool {
+	switch s {
+	case activitiessvc.StatusPublished, activitiessvc.StatusDraft, activitiessvc.StatusPending:
+		return true
+	}
+	return false
 }
 
 func validCategory(c activitiessvc.Category) bool {

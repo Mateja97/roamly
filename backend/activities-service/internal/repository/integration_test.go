@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 
 	"activities-service/internal/service"
 	shareddb "backend/shared/db"
+	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
 )
 
@@ -508,5 +510,220 @@ func TestActivities_Query_Integration(t *testing.T) {
 				t.Errorf("activity %q has rating %v, want >= 4.7", a.Title, a.Rating)
 			}
 		}
+	})
+}
+
+// TestActivities_AdminCRUD_Integration covers T2's first real write path
+// against real Postgres: JSONB details/photos round-trip through pgx's
+// automatic marshaling (never exercised before T2 — QueryActivities only
+// ever reads), Create's location/country/rating sentinels, Update's partial
+// SET list, and List's pagination/filtering/stats. A separate container
+// from TestActivities_Query_Integration so writes here can't perturb that
+// test's exact-count assertions on the seeded catalog.
+func TestActivities_AdminCRUD_Integration(t *testing.T) {
+	db := startTestPostgres(t)
+	repo := New(db)
+	ctx := context.Background()
+
+	t.Run("Create defaults status to what's given, sentinels location/country/rating, and round-trips details+photos", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{
+			Title: "Admin Created Kayaking", Description: "test fixture", Category: activitiessvc.CategorySport,
+			City: "Belgrade", Address: "Ada Ciganlija bb", Status: activitiessvc.StatusDraft,
+			Details: json.RawMessage(`{"difficulty":3,"what_to_bring":["water"]}`),
+			Photos:  []activitiessvc.Photo{{URL: "https://example.com/kayak.jpg"}},
+		})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+		if created.ID == "" {
+			t.Fatal("Create() returned an empty id")
+		}
+		if created.Status != activitiessvc.StatusDraft || created.City != "Belgrade" || created.Address != "Ada Ciganlija bb" {
+			t.Errorf("created activity = %+v, want status=draft city=Belgrade address='Ada Ciganlija bb'", created)
+		}
+		if created.Location.Lat != 0 || created.Location.Lng != 0 || created.Country != "" || created.Rating != 0 {
+			t.Errorf("created activity location/country/rating = %+v, want the (0,0)/''/0 sentinels", created)
+		}
+		var details activitiessvc.SportDetails
+		if err := json.Unmarshal(created.Details, &details); err != nil {
+			t.Fatalf("unmarshaling created details: %v", err)
+		}
+		if details.Difficulty != 3 || len(details.WhatToBring) != 1 {
+			t.Errorf("created details = %+v, want difficulty=3 with 1 item", details)
+		}
+		if len(created.Photos) != 1 || created.Photos[0].URL != "https://example.com/kayak.jpg" {
+			t.Errorf("created photos = %+v, want the one submitted photo", created.Photos)
+		}
+
+		t.Run("GetByID returns the created row, drafts included (unlike Query)", func(t *testing.T) {
+			got, err := repo.GetByID(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("GetByID() error: %v", err)
+			}
+			if got.ID != created.ID || got.Title != created.Title {
+				t.Errorf("GetByID() = %+v, want the created activity", got)
+			}
+		})
+	})
+
+	t.Run("Create with no details defaults to an empty object, not NULL/invalid JSON", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{Title: "No Details", Category: activitiessvc.CategoryKids, Status: activitiessvc.StatusDraft})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+		if string(created.Details) != "{}" {
+			t.Errorf("created details = %s, want {}", created.Details)
+		}
+	})
+
+	t.Run("GetByID on a missing id returns ErrNotFound", func(t *testing.T) {
+		_, err := repo.GetByID(ctx, "00000000-0000-0000-0000-000000000000")
+		if !errors.Is(err, sharederrors.ErrNotFound) {
+			t.Errorf("GetByID() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("Update on a missing id returns ErrNotFound", func(t *testing.T) {
+		title := "X"
+		_, err := repo.Update(ctx, "00000000-0000-0000-0000-000000000000", activitiessvc.UpdatePatch{Title: &title})
+		if !errors.Is(err, sharederrors.ErrNotFound) {
+			t.Errorf("Update() error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("Update only touches the fields set in the patch", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{
+			Title: "Original Title", Description: "original description", Category: activitiessvc.CategorySport,
+			City: "Belgrade", Status: activitiessvc.StatusDraft,
+		})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+		newTitle := "Updated Title"
+		newStatus := activitiessvc.StatusPublished
+		updated, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{Title: &newTitle, Status: &newStatus})
+		if err != nil {
+			t.Fatalf("Update() error: %v", err)
+		}
+		if updated.Title != "Updated Title" || updated.Status != activitiessvc.StatusPublished {
+			t.Errorf("updated = %+v, want title/status changed", updated)
+		}
+		if updated.Description != "original description" || updated.City != "Belgrade" || updated.Category != activitiessvc.CategorySport {
+			t.Errorf("updated = %+v, want every other field untouched (PATCH semantics)", updated)
+		}
+	})
+
+	t.Run("Update with an empty-string field sets it, distinct from omitting it", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{
+			Title: "Has A City", Category: activitiessvc.CategoryArt, City: "Paris", Status: activitiessvc.StatusDraft,
+		})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+		emptyCity := ""
+		updated, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{City: &emptyCity})
+		if err != nil {
+			t.Fatalf("Update() error: %v", err)
+		}
+		if updated.City != "" {
+			t.Errorf("updated city = %q, want cleared to empty string", updated.City)
+		}
+	})
+
+	t.Run("Update with no set fields is a no-op read, not an invalid SQL statement", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{Title: "Untouched", Category: activitiessvc.CategoryArt, Status: activitiessvc.StatusDraft})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+		got, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{})
+		if err != nil {
+			t.Fatalf("Update() error: %v", err)
+		}
+		if got.Title != "Untouched" {
+			t.Errorf("Update() with an empty patch = %+v, want the row unchanged", got)
+		}
+	})
+
+	t.Run("List paginates in SQL, filters, and computes catalog-wide stats", func(t *testing.T) {
+		fixtures := []struct {
+			title, category, city, status string
+		}{
+			{"List Fixture Alpha", "sport", "Novi Sad", "draft"},
+			{"List Fixture Bravo", "sport", "Novi Sad", "pending"},
+			{"List Fixture Charlie", "art", "Novi Sad", "published"},
+		}
+		var ids []string
+		for _, f := range fixtures {
+			created, err := repo.Create(ctx, activitiessvc.NewActivity{
+				Title: f.title, Category: activitiessvc.Category(f.category), City: f.city, Status: activitiessvc.Status(f.status),
+			})
+			if err != nil {
+				t.Fatalf("Create() fixture error: %v", err)
+			}
+			ids = append(ids, created.ID)
+		}
+		t.Cleanup(func() {
+			for _, id := range ids {
+				db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, id)
+			}
+		})
+
+		t.Run("city + category filter narrows to the matching fixtures, sorted by title", func(t *testing.T) {
+			result, err := repo.List(ctx, activitiessvc.ListFilter{City: "Novi Sad", Category: activitiessvc.CategorySport, Limit: 10, Offset: 0})
+			if err != nil {
+				t.Fatalf("List() error: %v", err)
+			}
+			if result.Total != 2 || len(result.Activities) != 2 {
+				t.Fatalf("List() total/len = %d/%d, want 2/2", result.Total, len(result.Activities))
+			}
+			if result.Activities[0].Title != "List Fixture Alpha" || result.Activities[1].Title != "List Fixture Bravo" {
+				t.Errorf("List() activities = %+v, want title ASC order", result.Activities)
+			}
+		})
+
+		t.Run("q substring filter is case-insensitive", func(t *testing.T) {
+			result, err := repo.List(ctx, activitiessvc.ListFilter{Q: "fixture charlie", Limit: 10, Offset: 0})
+			if err != nil {
+				t.Fatalf("List() error: %v", err)
+			}
+			if result.Total != 1 || len(result.Activities) != 1 || result.Activities[0].Title != "List Fixture Charlie" {
+				t.Errorf("List() = %+v, want exactly the Charlie fixture", result)
+			}
+		})
+
+		t.Run("pagination narrows the page while total reflects the whole filtered set", func(t *testing.T) {
+			result, err := repo.List(ctx, activitiessvc.ListFilter{City: "Novi Sad", Limit: 1, Offset: 1})
+			if err != nil {
+				t.Fatalf("List() error: %v", err)
+			}
+			if result.Total != 3 {
+				t.Errorf("List() total = %d, want 3 (unaffected by LIMIT/OFFSET)", result.Total)
+			}
+			if len(result.Activities) != 1 {
+				t.Fatalf("List() page = %+v, want exactly 1 row (limit)", result.Activities)
+			}
+		})
+
+		t.Run("stats count the whole catalog, ignoring the filter", func(t *testing.T) {
+			result, err := repo.List(ctx, activitiessvc.ListFilter{City: "Novi Sad", Category: activitiessvc.CategoryArt, Limit: 10, Offset: 0})
+			if err != nil {
+				t.Fatalf("List() error: %v", err)
+			}
+			if result.Stats.Total < result.Total {
+				t.Errorf("stats.Total = %d, want >= the filtered Total %d (stats ignore the filter)", result.Stats.Total, result.Total)
+			}
+			if result.Stats.Draft < 1 || result.Stats.Pending < 1 || result.Stats.Published < 1 {
+				t.Errorf("stats = %+v, want at least 1 of each status counted (from these fixtures + the seed data)", result.Stats)
+			}
+		})
 	})
 }

@@ -272,3 +272,69 @@ type QueryFilter struct {
 	MinRating     float64    // 0 = no filter
 	MaxDistanceKM float64    // 0 = no filter (no distance cap)
 }
+
+// ListFilter is the admin list query (T2): unlike QueryFilter, there is no
+// status restriction baked in — the admin surface reads every lifecycle
+// state, filtered only by whatever the caller explicitly asks for. "" means
+// "no filter on this field" for Q/Category/City/Status; Limit/Offset are
+// already clamped/resolved by the service layer before this reaches the
+// repository.
+type ListFilter struct {
+	Q        string
+	Category Category
+	City     string
+	Status   Status
+	Limit    int
+	Offset   int
+}
+
+// Stats counts the whole catalog by status, ignoring any ListFilter — it
+// backs the admin panel's global stat cards, which read as catalog-wide
+// totals regardless of the list's current filters.
+type Stats struct {
+	Total     int
+	Published int
+	Draft     int
+	Pending   int
+}
+
+// ListResult is one page of the admin list: Activities is the current page,
+// Total is the count matching the filter (for pagination), Stats is
+// catalog-wide and unaffected by the filter.
+type ListResult struct {
+	Activities []Activity
+	Total      int
+	Stats      Stats
+}
+
+// NewActivity is CreateActivity's input (T2): the admin-settable fields for
+// a brand-new activity. Location/Country/Rating aren't part of the admin
+// API surface yet (no geocoding, no ratings input in this pass — see
+// product-tasks.md's T4 caveat), so they're deliberately absent here; the
+// repository gives every new row an honest "not yet set" sentinel for those.
+type NewActivity struct {
+	Title       string
+	Description string
+	Category    Category
+	City        string
+	Address     string
+	Status      Status // "" -> service defaults to StatusDraft
+	Details     json.RawMessage
+	Photos      []Photo
+}
+
+// UpdatePatch is a partial update (T2): a nil field is left untouched, a
+// non-nil one (even pointing at an empty string) is set to that value. The
+// same pointer-presence convention flows end to end — proxy-service's JSON
+// decode, the gRPC UpdateActivityRequest's proto3 `optional` fields, and
+// this type the repository builds a dynamic SQL SET list from.
+type UpdatePatch struct {
+	Title       *string
+	Description *string
+	Category    *Category
+	City        *string
+	Address     *string
+	Status      *Status
+	Details     *json.RawMessage
+	Photos      *[]Photo
+}

@@ -14,6 +14,23 @@ type fakeRepo struct {
 	got            activitiessvc.QueryFilter
 	out            []activitiessvc.Activity
 	citySuggestOut []activitiessvc.CitySuggestion
+
+	gotListFilter activitiessvc.ListFilter
+	listOut       activitiessvc.ListResult
+	listErr       error
+
+	gotGetID string
+	getOut   activitiessvc.Activity
+	getErr   error
+
+	gotCreate activitiessvc.NewActivity
+	createOut activitiessvc.Activity
+	createErr error
+
+	gotUpdateID    string
+	gotUpdatePatch activitiessvc.UpdatePatch
+	updateOut      activitiessvc.Activity
+	updateErr      error
 }
 
 func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
@@ -23,6 +40,27 @@ func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([
 
 func (f *fakeRepo) SuggestCities(_ context.Context, _ string) ([]activitiessvc.CitySuggestion, error) {
 	return f.citySuggestOut, nil
+}
+
+func (f *fakeRepo) List(_ context.Context, filter activitiessvc.ListFilter) (activitiessvc.ListResult, error) {
+	f.gotListFilter = filter
+	return f.listOut, f.listErr
+}
+
+func (f *fakeRepo) GetByID(_ context.Context, id string) (activitiessvc.Activity, error) {
+	f.gotGetID = id
+	return f.getOut, f.getErr
+}
+
+func (f *fakeRepo) Create(_ context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error) {
+	f.gotCreate = in
+	return f.createOut, f.createErr
+}
+
+func (f *fakeRepo) Update(_ context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error) {
+	f.gotUpdateID = id
+	f.gotUpdatePatch = patch
+	return f.updateOut, f.updateErr
 }
 
 func TestActivities_Query_Validation(t *testing.T) {
@@ -368,4 +406,304 @@ func TestActivities_SuggestCities(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		s    activitiessvc.Status
+		want bool
+	}{
+		{"published valid", activitiessvc.StatusPublished, true},
+		{"draft valid", activitiessvc.StatusDraft, true},
+		{"pending valid", activitiessvc.StatusPending, true},
+		{"empty rejected", activitiessvc.Status(""), false},
+		{"unknown value rejected", activitiessvc.Status("bogus"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := validStatus(tt.s); got != tt.want {
+				t.Errorf("validStatus(%q) = %v, want %v", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestActivities_List(t *testing.T) {
+	tests := []struct {
+		name         string
+		req          ListRequest
+		wantErr      bool
+		wantPage     int
+		wantPageSize int
+		wantOffset   int
+	}{
+		{
+			name:         "defaults page to 1 and page_size to 20",
+			req:          ListRequest{},
+			wantPage:     1,
+			wantPageSize: DefaultListPageSize,
+			wantOffset:   0,
+		},
+		{
+			name:         "page_size clamped to the max, not trusted from the caller",
+			req:          ListRequest{Page: 3, PageSize: 100000},
+			wantPage:     3,
+			wantPageSize: MaxListPageSize,
+			wantOffset:   2 * MaxListPageSize,
+		},
+		{
+			name:         "negative page treated as 1",
+			req:          ListRequest{Page: -5},
+			wantPage:     1,
+			wantPageSize: DefaultListPageSize,
+			wantOffset:   0,
+		},
+		{
+			name:         "zero/negative page_size falls back to the default",
+			req:          ListRequest{PageSize: -1},
+			wantPage:     1,
+			wantPageSize: DefaultListPageSize,
+		},
+		{
+			name:    "unknown category rejected",
+			req:     ListRequest{Category: "bogus"},
+			wantErr: true,
+		},
+		{
+			name:    "unknown status rejected",
+			req:     ListRequest{Status: "bogus"},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{}
+			svc := New(repo)
+			_, page, pageSize, err := svc.List(context.Background(), tt.req)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("List() error = nil, want error")
+				}
+				if !errors.Is(err, sharederrors.ErrInvalidInput) {
+					t.Errorf("List() error = %v, want wrapping ErrInvalidInput", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("List() unexpected error: %v", err)
+			}
+			if page != tt.wantPage || pageSize != tt.wantPageSize {
+				t.Errorf("List() page/pageSize = %d/%d, want %d/%d", page, pageSize, tt.wantPage, tt.wantPageSize)
+			}
+			if repo.gotListFilter.Offset != tt.wantOffset || repo.gotListFilter.Limit != tt.wantPageSize {
+				t.Errorf("repo filter limit/offset = %d/%d, want %d/%d", repo.gotListFilter.Limit, repo.gotListFilter.Offset, tt.wantPageSize, tt.wantOffset)
+			}
+		})
+	}
+}
+
+func TestActivities_GetByID(t *testing.T) {
+	t.Run("passes through repo result", func(t *testing.T) {
+		repo := &fakeRepo{getOut: activitiessvc.Activity{ID: "1", Title: "Kayaking"}}
+		svc := New(repo)
+		got, err := svc.GetByID(context.Background(), "1")
+		if err != nil {
+			t.Fatalf("GetByID() unexpected error: %v", err)
+		}
+		if got.ID != "1" || repo.gotGetID != "1" {
+			t.Errorf("GetByID() = %+v, repo got id %q", got, repo.gotGetID)
+		}
+	})
+	t.Run("not found propagates the sentinel", func(t *testing.T) {
+		repo := &fakeRepo{getErr: sharederrors.ErrNotFound}
+		svc := New(repo)
+		_, err := svc.GetByID(context.Background(), "missing")
+		if !errors.Is(err, sharederrors.ErrNotFound) {
+			t.Errorf("GetByID() error = %v, want wrapping ErrNotFound", err)
+		}
+	})
+}
+
+func TestActivities_Create(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         activitiessvc.NewActivity
+		wantErr    bool
+		wantStatus activitiessvc.Status
+	}{
+		{
+			name:    "blank title rejected",
+			in:      activitiessvc.NewActivity{Title: "   ", Category: activitiessvc.CategorySport},
+			wantErr: true,
+		},
+		{
+			name:    "missing category rejected",
+			in:      activitiessvc.NewActivity{Title: "New Activity"},
+			wantErr: true,
+		},
+		{
+			name:    "unknown status rejected",
+			in:      activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategorySport, Status: "bogus"},
+			wantErr: true,
+		},
+		{
+			name:    "details not matching category rejected",
+			in:      activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategorySport, Details: json.RawMessage(`{"cuisine":"Italian"}`)},
+			wantErr: true,
+		},
+		{
+			name:       "status defaults to draft when omitted",
+			in:         activitiessvc.NewActivity{Title: "  New Activity  ", Category: activitiessvc.CategorySport},
+			wantStatus: activitiessvc.StatusDraft,
+		},
+		{
+			name:       "explicit status is honored",
+			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusPending},
+			wantStatus: activitiessvc.StatusPending,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{}
+			svc := New(repo)
+			_, err := svc.Create(context.Background(), tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Create() error = nil, want error")
+				}
+				if !errors.Is(err, sharederrors.ErrInvalidInput) {
+					t.Errorf("Create() error = %v, want wrapping ErrInvalidInput", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Create() unexpected error: %v", err)
+			}
+			if repo.gotCreate.Status != tt.wantStatus {
+				t.Errorf("repo received status = %q, want %q", repo.gotCreate.Status, tt.wantStatus)
+			}
+			if repo.gotCreate.Title != "New Activity" {
+				t.Errorf("repo received title = %q, want trimmed %q", repo.gotCreate.Title, "New Activity")
+			}
+		})
+	}
+
+	t.Run("empty details is normalized to {}", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		if _, err := svc.Create(context.Background(), activitiessvc.NewActivity{Title: "X", Category: activitiessvc.CategorySport}); err != nil {
+			t.Fatalf("Create() unexpected error: %v", err)
+		}
+		if string(repo.gotCreate.Details) != "{}" {
+			t.Errorf("repo received details = %q, want {}", repo.gotCreate.Details)
+		}
+	})
+}
+
+func TestActivities_Update(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+	catPtr := func(c activitiessvc.Category) *activitiessvc.Category { return &c }
+	statusPtr := func(s activitiessvc.Status) *activitiessvc.Status { return &s }
+	rawPtr := func(s string) *json.RawMessage { r := json.RawMessage(s); return &r }
+
+	t.Run("unknown status rejected before hitting the repo", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Status: statusPtr("bogus")})
+		if !errors.Is(err, sharederrors.ErrInvalidInput) {
+			t.Errorf("Update() error = %v, want wrapping ErrInvalidInput", err)
+		}
+		if repo.gotUpdateID != "" {
+			t.Error("Update() must not call the repo when validation fails")
+		}
+	})
+
+	t.Run("unknown category rejected before hitting the repo", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Category: catPtr("bogus")})
+		if !errors.Is(err, sharederrors.ErrInvalidInput) {
+			t.Errorf("Update() error = %v, want wrapping ErrInvalidInput", err)
+		}
+	})
+
+	t.Run("omitted fields are left nil, untouched, in the repo patch", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Title: strPtr("New Title")})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotUpdatePatch.Title == nil || *repo.gotUpdatePatch.Title != "New Title" {
+			t.Errorf("repo patch title = %v, want New Title", repo.gotUpdatePatch.Title)
+		}
+		if repo.gotUpdatePatch.Status != nil || repo.gotUpdatePatch.City != nil || repo.gotUpdatePatch.Category != nil {
+			t.Errorf("repo patch = %+v, want every other field nil (untouched)", repo.gotUpdatePatch)
+		}
+	})
+
+	t.Run("details validated against the patch's own new category when both are set", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{
+			Category: catPtr(activitiessvc.CategorySport),
+			Details:  rawPtr(`{"cuisine":"Italian"}`), // restaurant-only field on the new (sport) category
+		})
+		if !errors.Is(err, sharederrors.ErrInvalidInput) {
+			t.Errorf("Update() error = %v, want wrapping ErrInvalidInput (details don't match the new category)", err)
+		}
+		if repo.gotUpdateID != "" {
+			t.Error("Update() must not call the repo when details validation fails")
+		}
+	})
+
+	t.Run("details validated against the current category when the patch doesn't change category", func(t *testing.T) {
+		repo := &fakeRepo{getOut: activitiessvc.Activity{Category: activitiessvc.CategoryRestaurants}}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{
+			Details: rawPtr(`{"cuisine":"Italian"}`),
+		})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotGetID != "1" {
+			t.Error("Update() should fetch the current activity to resolve its category for details validation")
+		}
+	})
+
+	t.Run("category resolution is skipped (no extra GetByID) when details isn't set", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		if _, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Title: strPtr("New Title")}); err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotGetID != "" {
+			t.Error("Update() should not fetch the current activity when details isn't part of the patch")
+		}
+	})
+
+	t.Run("not found propagates the sentinel", func(t *testing.T) {
+		repo := &fakeRepo{updateErr: sharederrors.ErrNotFound}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "missing", activitiessvc.UpdatePatch{Title: strPtr("X")})
+		if !errors.Is(err, sharederrors.ErrNotFound) {
+			t.Errorf("Update() error = %v, want wrapping ErrNotFound", err)
+		}
+	})
+
+	t.Run("empty details is normalized to {} before validation and the repo patch", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{
+			Category: catPtr(activitiessvc.CategorySport),
+			Details:  rawPtr(""),
+		})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotUpdatePatch.Details == nil || string(*repo.gotUpdatePatch.Details) != "{}" {
+			t.Errorf("repo patch details = %v, want {}", repo.gotUpdatePatch.Details)
+		}
+	})
 }

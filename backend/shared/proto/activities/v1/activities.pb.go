@@ -784,6 +784,546 @@ func (x *SuggestCitiesResponse) GetSuggestions() []*CitySuggestion {
 	return nil
 }
 
+// ListActivitiesRequest is the admin list query (T2). All filters are
+// optional and combined as AND; UNSPECIFIED enum values / empty strings mean
+// "no filter on this field" — unlike QueryActivitiesRequest, this list is
+// never restricted to published-only (the admin needs to see drafts and
+// pending rows).
+type ListActivitiesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Q             string                 `protobuf:"bytes,1,opt,name=q,proto3" json:"q,omitempty"`                                              // case-insensitive substring match on title
+	Category      Category               `protobuf:"varint,2,opt,name=category,proto3,enum=activities.v1.Category" json:"category,omitempty"`   // CATEGORY_UNSPECIFIED = no filter
+	City          string                 `protobuf:"bytes,3,opt,name=city,proto3" json:"city,omitempty"`                                        // "" = no filter
+	Status        ActivityStatus         `protobuf:"varint,4,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"` // ACTIVITY_STATUS_UNSPECIFIED = no filter
+	Page          int32                  `protobuf:"varint,5,opt,name=page,proto3" json:"page,omitempty"`                                       // <= 0 treated as 1
+	PageSize      int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`               // <= 0 treated as the service default; always clamped to [1, 100] server-side
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActivitiesRequest) Reset() {
+	*x = ListActivitiesRequest{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActivitiesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActivitiesRequest) ProtoMessage() {}
+
+func (x *ListActivitiesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActivitiesRequest.ProtoReflect.Descriptor instead.
+func (*ListActivitiesRequest) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ListActivitiesRequest) GetQ() string {
+	if x != nil {
+		return x.Q
+	}
+	return ""
+}
+
+func (x *ListActivitiesRequest) GetCategory() Category {
+	if x != nil {
+		return x.Category
+	}
+	return Category_CATEGORY_UNSPECIFIED
+}
+
+func (x *ListActivitiesRequest) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *ListActivitiesRequest) GetStatus() ActivityStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED
+}
+
+func (x *ListActivitiesRequest) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListActivitiesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+// ListActivitiesStats counts the whole catalog, ignoring ListActivitiesRequest's
+// filters — it backs the admin panel's global stat cards.
+type ListActivitiesStats struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Total         int32                  `protobuf:"varint,1,opt,name=total,proto3" json:"total,omitempty"`
+	Published     int32                  `protobuf:"varint,2,opt,name=published,proto3" json:"published,omitempty"`
+	Draft         int32                  `protobuf:"varint,3,opt,name=draft,proto3" json:"draft,omitempty"`
+	Pending       int32                  `protobuf:"varint,4,opt,name=pending,proto3" json:"pending,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActivitiesStats) Reset() {
+	*x = ListActivitiesStats{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActivitiesStats) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActivitiesStats) ProtoMessage() {}
+
+func (x *ListActivitiesStats) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActivitiesStats.ProtoReflect.Descriptor instead.
+func (*ListActivitiesStats) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListActivitiesStats) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ListActivitiesStats) GetPublished() int32 {
+	if x != nil {
+		return x.Published
+	}
+	return 0
+}
+
+func (x *ListActivitiesStats) GetDraft() int32 {
+	if x != nil {
+		return x.Draft
+	}
+	return 0
+}
+
+func (x *ListActivitiesStats) GetPending() int32 {
+	if x != nil {
+		return x.Pending
+	}
+	return 0
+}
+
+type ListActivitiesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Activities    []*Activity            `protobuf:"bytes,1,rep,name=activities,proto3" json:"activities,omitempty"`
+	Total         int32                  `protobuf:"varint,2,opt,name=total,proto3" json:"total,omitempty"` // count matching the request's filters (for pagination)
+	Page          int32                  `protobuf:"varint,3,opt,name=page,proto3" json:"page,omitempty"`
+	PageSize      int32                  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	Stats         *ListActivitiesStats   `protobuf:"bytes,5,opt,name=stats,proto3" json:"stats,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListActivitiesResponse) Reset() {
+	*x = ListActivitiesResponse{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListActivitiesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListActivitiesResponse) ProtoMessage() {}
+
+func (x *ListActivitiesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListActivitiesResponse.ProtoReflect.Descriptor instead.
+func (*ListActivitiesResponse) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListActivitiesResponse) GetActivities() []*Activity {
+	if x != nil {
+		return x.Activities
+	}
+	return nil
+}
+
+func (x *ListActivitiesResponse) GetTotal() int32 {
+	if x != nil {
+		return x.Total
+	}
+	return 0
+}
+
+func (x *ListActivitiesResponse) GetPage() int32 {
+	if x != nil {
+		return x.Page
+	}
+	return 0
+}
+
+func (x *ListActivitiesResponse) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListActivitiesResponse) GetStats() *ListActivitiesStats {
+	if x != nil {
+		return x.Stats
+	}
+	return nil
+}
+
+type GetActivityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActivityRequest) Reset() {
+	*x = GetActivityRequest{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActivityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActivityRequest) ProtoMessage() {}
+
+func (x *GetActivityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActivityRequest.ProtoReflect.Descriptor instead.
+func (*GetActivityRequest) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetActivityRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type CreateActivityRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Title       string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Category    Category               `protobuf:"varint,2,opt,name=category,proto3,enum=activities.v1.Category" json:"category,omitempty"`
+	Description string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	City        string                 `protobuf:"bytes,4,opt,name=city,proto3" json:"city,omitempty"`
+	Address     string                 `protobuf:"bytes,5,opt,name=address,proto3" json:"address,omitempty"`
+	// ACTIVITY_STATUS_UNSPECIFIED defaults to ACTIVITY_STATUS_DRAFT.
+	Status        ActivityStatus `protobuf:"varint,6,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"`
+	Details       string         `protobuf:"bytes,7,opt,name=details,proto3" json:"details,omitempty"` // JSON string, "" = no detail data
+	Photos        []*Photo       `protobuf:"bytes,8,rep,name=photos,proto3" json:"photos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateActivityRequest) Reset() {
+	*x = CreateActivityRequest{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateActivityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateActivityRequest) ProtoMessage() {}
+
+func (x *CreateActivityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateActivityRequest.ProtoReflect.Descriptor instead.
+func (*CreateActivityRequest) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *CreateActivityRequest) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetCategory() Category {
+	if x != nil {
+		return x.Category
+	}
+	return Category_CATEGORY_UNSPECIFIED
+}
+
+func (x *CreateActivityRequest) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetCity() string {
+	if x != nil {
+		return x.City
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetStatus() ActivityStatus {
+	if x != nil {
+		return x.Status
+	}
+	return ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED
+}
+
+func (x *CreateActivityRequest) GetDetails() string {
+	if x != nil {
+		return x.Details
+	}
+	return ""
+}
+
+func (x *CreateActivityRequest) GetPhotos() []*Photo {
+	if x != nil {
+		return x.Photos
+	}
+	return nil
+}
+
+// PhotoList wraps the one repeated field UpdateActivityRequest needs
+// optional (proto3 doesn't allow the `optional` keyword on repeated fields);
+// a nil PhotoList means "leave photos untouched", a non-nil one (even with
+// zero photos) means "replace with this list".
+type PhotoList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Photos        []*Photo               `protobuf:"bytes,1,rep,name=photos,proto3" json:"photos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PhotoList) Reset() {
+	*x = PhotoList{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PhotoList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PhotoList) ProtoMessage() {}
+
+func (x *PhotoList) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PhotoList.ProtoReflect.Descriptor instead.
+func (*PhotoList) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PhotoList) GetPhotos() []*Photo {
+	if x != nil {
+		return x.Photos
+	}
+	return nil
+}
+
+// UpdateActivityRequest is a partial update (T2): every field below is
+// `optional`, so the generated Has*() accessor distinguishes "absent, leave
+// untouched" from "present" (including present-and-empty-string) the same
+// way proxy-service's JSON pointer fields do on the HTTP side.
+type UpdateActivityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title         *string                `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	Description   *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	Category      *Category              `protobuf:"varint,4,opt,name=category,proto3,enum=activities.v1.Category,oneof" json:"category,omitempty"`
+	City          *string                `protobuf:"bytes,5,opt,name=city,proto3,oneof" json:"city,omitempty"`
+	Address       *string                `protobuf:"bytes,6,opt,name=address,proto3,oneof" json:"address,omitempty"`
+	Status        *ActivityStatus        `protobuf:"varint,7,opt,name=status,proto3,enum=activities.v1.ActivityStatus,oneof" json:"status,omitempty"`
+	Details       *string                `protobuf:"bytes,8,opt,name=details,proto3,oneof" json:"details,omitempty"`
+	Photos        *PhotoList             `protobuf:"bytes,9,opt,name=photos,proto3" json:"photos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateActivityRequest) Reset() {
+	*x = UpdateActivityRequest{}
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateActivityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateActivityRequest) ProtoMessage() {}
+
+func (x *UpdateActivityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_activities_v1_activities_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateActivityRequest.ProtoReflect.Descriptor instead.
+func (*UpdateActivityRequest) Descriptor() ([]byte, []int) {
+	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *UpdateActivityRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *UpdateActivityRequest) GetTitle() string {
+	if x != nil && x.Title != nil {
+		return *x.Title
+	}
+	return ""
+}
+
+func (x *UpdateActivityRequest) GetDescription() string {
+	if x != nil && x.Description != nil {
+		return *x.Description
+	}
+	return ""
+}
+
+func (x *UpdateActivityRequest) GetCategory() Category {
+	if x != nil && x.Category != nil {
+		return *x.Category
+	}
+	return Category_CATEGORY_UNSPECIFIED
+}
+
+func (x *UpdateActivityRequest) GetCity() string {
+	if x != nil && x.City != nil {
+		return *x.City
+	}
+	return ""
+}
+
+func (x *UpdateActivityRequest) GetAddress() string {
+	if x != nil && x.Address != nil {
+		return *x.Address
+	}
+	return ""
+}
+
+func (x *UpdateActivityRequest) GetStatus() ActivityStatus {
+	if x != nil && x.Status != nil {
+		return *x.Status
+	}
+	return ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED
+}
+
+func (x *UpdateActivityRequest) GetDetails() string {
+	if x != nil && x.Details != nil {
+		return *x.Details
+	}
+	return ""
+}
+
+func (x *UpdateActivityRequest) GetPhotos() *PhotoList {
+	if x != nil {
+		return x.Photos
+	}
+	return nil
+}
+
 var File_proto_activities_v1_activities_proto protoreflect.FileDescriptor
 
 const file_proto_activities_v1_activities_proto_rawDesc = "" +
@@ -837,7 +1377,59 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\acountry\x18\x02 \x01(\tR\acountry\x123\n" +
 	"\bcentroid\x18\x03 \x01(\v2\x17.activities.v1.LocationR\bcentroid\"X\n" +
 	"\x15SuggestCitiesResponse\x12?\n" +
-	"\vsuggestions\x18\x01 \x03(\v2\x1d.activities.v1.CitySuggestionR\vsuggestions*s\n" +
+	"\vsuggestions\x18\x01 \x03(\v2\x1d.activities.v1.CitySuggestionR\vsuggestions\"\xd6\x01\n" +
+	"\x15ListActivitiesRequest\x12\f\n" +
+	"\x01q\x18\x01 \x01(\tR\x01q\x123\n" +
+	"\bcategory\x18\x02 \x01(\x0e2\x17.activities.v1.CategoryR\bcategory\x12\x12\n" +
+	"\x04city\x18\x03 \x01(\tR\x04city\x125\n" +
+	"\x06status\x18\x04 \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06status\x12\x12\n" +
+	"\x04page\x18\x05 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x06 \x01(\x05R\bpageSize\"y\n" +
+	"\x13ListActivitiesStats\x12\x14\n" +
+	"\x05total\x18\x01 \x01(\x05R\x05total\x12\x1c\n" +
+	"\tpublished\x18\x02 \x01(\x05R\tpublished\x12\x14\n" +
+	"\x05draft\x18\x03 \x01(\x05R\x05draft\x12\x18\n" +
+	"\apending\x18\x04 \x01(\x05R\apending\"\xd2\x01\n" +
+	"\x16ListActivitiesResponse\x127\n" +
+	"\n" +
+	"activities\x18\x01 \x03(\v2\x17.activities.v1.ActivityR\n" +
+	"activities\x12\x14\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\x12\x12\n" +
+	"\x04page\x18\x03 \x01(\x05R\x04page\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x128\n" +
+	"\x05stats\x18\x05 \x01(\v2\".activities.v1.ListActivitiesStatsR\x05stats\"$\n" +
+	"\x12GetActivityRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xb1\x02\n" +
+	"\x15CreateActivityRequest\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x123\n" +
+	"\bcategory\x18\x02 \x01(\x0e2\x17.activities.v1.CategoryR\bcategory\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x12\n" +
+	"\x04city\x18\x04 \x01(\tR\x04city\x12\x18\n" +
+	"\aaddress\x18\x05 \x01(\tR\aaddress\x125\n" +
+	"\x06status\x18\x06 \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06status\x12\x18\n" +
+	"\adetails\x18\a \x01(\tR\adetails\x12,\n" +
+	"\x06photos\x18\b \x03(\v2\x14.activities.v1.PhotoR\x06photos\"9\n" +
+	"\tPhotoList\x12,\n" +
+	"\x06photos\x18\x01 \x03(\v2\x14.activities.v1.PhotoR\x06photos\"\xbb\x03\n" +
+	"\x15UpdateActivityRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\x05title\x18\x02 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
+	"\vdescription\x18\x03 \x01(\tH\x01R\vdescription\x88\x01\x01\x128\n" +
+	"\bcategory\x18\x04 \x01(\x0e2\x17.activities.v1.CategoryH\x02R\bcategory\x88\x01\x01\x12\x17\n" +
+	"\x04city\x18\x05 \x01(\tH\x03R\x04city\x88\x01\x01\x12\x1d\n" +
+	"\aaddress\x18\x06 \x01(\tH\x04R\aaddress\x88\x01\x01\x12:\n" +
+	"\x06status\x18\a \x01(\x0e2\x1d.activities.v1.ActivityStatusH\x05R\x06status\x88\x01\x01\x12\x1d\n" +
+	"\adetails\x18\b \x01(\tH\x06R\adetails\x88\x01\x01\x120\n" +
+	"\x06photos\x18\t \x01(\v2\x18.activities.v1.PhotoListR\x06photosB\b\n" +
+	"\x06_titleB\x0e\n" +
+	"\f_descriptionB\v\n" +
+	"\t_categoryB\a\n" +
+	"\x05_cityB\n" +
+	"\n" +
+	"\b_addressB\t\n" +
+	"\a_statusB\n" +
+	"\n" +
+	"\b_details*s\n" +
 	"\x05Scope\x12\x15\n" +
 	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fSCOPE_NEARBY\x10\x02\x12\x12\n" +
@@ -862,10 +1454,14 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x1bACTIVITY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19ACTIVITY_STATUS_PUBLISHED\x10\x01\x12\x19\n" +
 	"\x15ACTIVITY_STATUS_DRAFT\x10\x02\x12\x1b\n" +
-	"\x17ACTIVITY_STATUS_PENDING\x10\x032\xd1\x01\n" +
+	"\x17ACTIVITY_STATUS_PENDING\x10\x032\x9d\x04\n" +
 	"\x11ActivitiesService\x12`\n" +
 	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponse\x12Z\n" +
-	"\rSuggestCities\x12#.activities.v1.SuggestCitiesRequest\x1a$.activities.v1.SuggestCitiesResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
+	"\rSuggestCities\x12#.activities.v1.SuggestCitiesRequest\x1a$.activities.v1.SuggestCitiesResponse\x12]\n" +
+	"\x0eListActivities\x12$.activities.v1.ListActivitiesRequest\x1a%.activities.v1.ListActivitiesResponse\x12I\n" +
+	"\vGetActivity\x12!.activities.v1.GetActivityRequest\x1a\x17.activities.v1.Activity\x12O\n" +
+	"\x0eCreateActivity\x12$.activities.v1.CreateActivityRequest\x1a\x17.activities.v1.Activity\x12O\n" +
+	"\x0eUpdateActivity\x12$.activities.v1.UpdateActivityRequest\x1a\x17.activities.v1.ActivityB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
 
 var (
 	file_proto_activities_v1_activities_proto_rawDescOnce sync.Once
@@ -880,7 +1476,7 @@ func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(Scope)(0),                      // 0: activities.v1.Scope
 	(Category)(0),                   // 1: activities.v1.Category
@@ -893,6 +1489,13 @@ var file_proto_activities_v1_activities_proto_goTypes = []any{
 	(*SuggestCitiesRequest)(nil),    // 8: activities.v1.SuggestCitiesRequest
 	(*CitySuggestion)(nil),          // 9: activities.v1.CitySuggestion
 	(*SuggestCitiesResponse)(nil),   // 10: activities.v1.SuggestCitiesResponse
+	(*ListActivitiesRequest)(nil),   // 11: activities.v1.ListActivitiesRequest
+	(*ListActivitiesStats)(nil),     // 12: activities.v1.ListActivitiesStats
+	(*ListActivitiesResponse)(nil),  // 13: activities.v1.ListActivitiesResponse
+	(*GetActivityRequest)(nil),      // 14: activities.v1.GetActivityRequest
+	(*CreateActivityRequest)(nil),   // 15: activities.v1.CreateActivityRequest
+	(*PhotoList)(nil),               // 16: activities.v1.PhotoList
+	(*UpdateActivityRequest)(nil),   // 17: activities.v1.UpdateActivityRequest
 }
 var file_proto_activities_v1_activities_proto_depIdxs = []int32{
 	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
@@ -906,15 +1509,34 @@ var file_proto_activities_v1_activities_proto_depIdxs = []int32{
 	6,  // 8: activities.v1.QueryActivitiesResponse.activities:type_name -> activities.v1.Activity
 	3,  // 9: activities.v1.CitySuggestion.centroid:type_name -> activities.v1.Location
 	9,  // 10: activities.v1.SuggestCitiesResponse.suggestions:type_name -> activities.v1.CitySuggestion
-	5,  // 11: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	8,  // 12: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
-	7,  // 13: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	10, // 14: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
-	13, // [13:15] is the sub-list for method output_type
-	11, // [11:13] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	1,  // 11: activities.v1.ListActivitiesRequest.category:type_name -> activities.v1.Category
+	2,  // 12: activities.v1.ListActivitiesRequest.status:type_name -> activities.v1.ActivityStatus
+	6,  // 13: activities.v1.ListActivitiesResponse.activities:type_name -> activities.v1.Activity
+	12, // 14: activities.v1.ListActivitiesResponse.stats:type_name -> activities.v1.ListActivitiesStats
+	1,  // 15: activities.v1.CreateActivityRequest.category:type_name -> activities.v1.Category
+	2,  // 16: activities.v1.CreateActivityRequest.status:type_name -> activities.v1.ActivityStatus
+	4,  // 17: activities.v1.CreateActivityRequest.photos:type_name -> activities.v1.Photo
+	4,  // 18: activities.v1.PhotoList.photos:type_name -> activities.v1.Photo
+	1,  // 19: activities.v1.UpdateActivityRequest.category:type_name -> activities.v1.Category
+	2,  // 20: activities.v1.UpdateActivityRequest.status:type_name -> activities.v1.ActivityStatus
+	16, // 21: activities.v1.UpdateActivityRequest.photos:type_name -> activities.v1.PhotoList
+	5,  // 22: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	8,  // 23: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
+	11, // 24: activities.v1.ActivitiesService.ListActivities:input_type -> activities.v1.ListActivitiesRequest
+	14, // 25: activities.v1.ActivitiesService.GetActivity:input_type -> activities.v1.GetActivityRequest
+	15, // 26: activities.v1.ActivitiesService.CreateActivity:input_type -> activities.v1.CreateActivityRequest
+	17, // 27: activities.v1.ActivitiesService.UpdateActivity:input_type -> activities.v1.UpdateActivityRequest
+	7,  // 28: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	10, // 29: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
+	13, // 30: activities.v1.ActivitiesService.ListActivities:output_type -> activities.v1.ListActivitiesResponse
+	6,  // 31: activities.v1.ActivitiesService.GetActivity:output_type -> activities.v1.Activity
+	6,  // 32: activities.v1.ActivitiesService.CreateActivity:output_type -> activities.v1.Activity
+	6,  // 33: activities.v1.ActivitiesService.UpdateActivity:output_type -> activities.v1.Activity
+	28, // [28:34] is the sub-list for method output_type
+	22, // [22:28] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_proto_activities_v1_activities_proto_init() }
@@ -922,13 +1544,14 @@ func file_proto_activities_v1_activities_proto_init() {
 	if File_proto_activities_v1_activities_proto != nil {
 		return
 	}
+	file_proto_activities_v1_activities_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   8,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
