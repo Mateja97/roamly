@@ -47,6 +47,42 @@ export function ActivitiesPage() {
     };
   }, []);
 
+  // Keeps the pagination shell rendered through every loading transition
+  // (design-spec requirement) — stale-while-loading: the last successful
+  // page/total keeps showing, visually muted, while a refetch is in
+  // flight, rather than the footer popping in only once the very first
+  // request resolves.
+  const [lastPage, setLastPage] = useState<{
+    page: number;
+    pageSize: number;
+    total: number;
+  } | null>(null);
+  useEffect(() => {
+    if (result.status === 'success') {
+      setLastPage({
+        page: result.data.page,
+        pageSize: result.data.page_size,
+        total: result.data.total,
+      });
+    }
+  }, [result]);
+
+  const isLoading = result.status === 'loading';
+  // Error/403 results intentionally fall back to nothing here (not
+  // `lastPage`) — the table's banner/blocking panel already owns
+  // communicating the failure; stale, clickable pagination next to it
+  // would be a second, inconsistent source of truth.
+  const paginationData =
+    result.status === 'success' && result.data.total > 0
+      ? {
+          page: result.data.page,
+          pageSize: result.data.page_size,
+          total: result.data.total,
+        }
+      : isLoading
+        ? lastPage
+        : null;
+
   return (
     <div className="admin-page">
       <header className="admin-top-bar">
@@ -94,13 +130,32 @@ export function ActivitiesPage() {
       <ActivitiesTable result={result} onClearFilters={clearFilters} />
 
       <div className="admin-pagination-footer">
-        {result.status === 'success' && result.data.total > 0 && (
+        {paginationData && paginationData.total > 0 && (
           <Pagination
-            page={result.data.page}
-            pageSize={result.data.page_size}
-            total={result.data.total}
+            page={paginationData.page}
+            pageSize={paginationData.pageSize}
+            total={paginationData.total}
             onPageChange={setPage}
+            disabled={isLoading}
           />
+        )}
+        {!paginationData && isLoading && (
+          <div className="admin-pagination-skeleton" aria-hidden="true">
+            <span
+              className="admin-skeleton admin-text-skeleton"
+              style={{ width: '160px' }}
+            />
+            <div className="admin-pagination-controls">
+              <span
+                className="admin-skeleton"
+                style={{ width: 44, height: 44, borderRadius: 'var(--radius)' }}
+              />
+              <span
+                className="admin-skeleton"
+                style={{ width: 44, height: 44, borderRadius: 'var(--radius)' }}
+              />
+            </div>
+          </div>
         )}
       </div>
     </div>

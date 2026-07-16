@@ -48,4 +48,24 @@ describe('Pagination', () => {
     await user.click(screen.getByRole('button', { name: 'Next page' }));
     expect(onPageChange).toHaveBeenCalledWith(3);
   });
+
+  it('disables every control and marks aria-busy when disabled (stale-while-loading)', () => {
+    render(
+      <Pagination
+        page={2}
+        pageSize={20}
+        total={45}
+        onPageChange={vi.fn()}
+        disabled
+      />,
+    );
+    expect(
+      screen.getByRole('navigation', { name: 'Pagination' }),
+    ).toHaveAttribute('aria-busy', 'true');
+    expect(
+      screen.getByRole('button', { name: 'Previous page' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '2' })).toBeDisabled();
+  });
 });

@@ -3,7 +3,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ActivitiesPage } from './ActivitiesPage';
-import { listAdminActivities } from '../../../api/adminActivities';
+import {
+  listAdminActivities,
+  type AdminApiResult,
+  type ListAdminActivitiesResponse,
+} from '../../../api/adminActivities';
 import { suggestCities } from '../../../api/cities';
 
 vi.mock('../../../api/adminActivities', () => ({
@@ -112,5 +116,69 @@ describe('ActivitiesPage', () => {
     expect(
       await screen.findByText('Admin access rejected'),
     ).toBeInTheDocument();
+  });
+
+  it('shows a pagination skeleton shell before the very first request resolves', async () => {
+    let resolveFirst!: (
+      value: AdminApiResult<ListAdminActivitiesResponse>,
+    ) => void;
+    mockedList.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const { container } = renderPage();
+
+    expect(
+      container.querySelector('.admin-pagination-skeleton'),
+    ).toBeInTheDocument();
+
+    resolveFirst(successResponse());
+    await screen.findByText('National Museum');
+    expect(
+      container.querySelector('.admin-pagination-skeleton'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the pagination shell rendered (stale numbers, disabled) during a refetch instead of popping out', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('National Museum');
+    const nav = screen.getByRole('navigation', { name: 'Pagination' });
+    expect(nav).toHaveAttribute('aria-busy', 'false');
+
+    let resolveNext!: (
+      value: AdminApiResult<ListAdminActivitiesResponse>,
+    ) => void;
+    mockedList.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveNext = resolve;
+        }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
+
+    // Same bar, same last-known numbers, now marked busy — never removed.
+    expect(
+      screen.getByRole('navigation', { name: 'Pagination' }),
+    ).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByText('Showing 1–20 of 45')).toBeInTheDocument();
+
+    resolveNext({
+      status: 'success',
+      data: {
+        activities: [activity],
+        total: 45,
+        page: 2,
+        page_size: 20,
+        stats: { total: 45, published: 40, draft: 3, pending: 2 },
+      },
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('navigation', { name: 'Pagination' }),
+      ).toHaveAttribute('aria-busy', 'false'),
+    );
   });
 });

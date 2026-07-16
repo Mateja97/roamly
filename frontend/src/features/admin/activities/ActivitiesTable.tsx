@@ -57,29 +57,44 @@ export function ActivitiesTable({
 
   return (
     <div className="admin-table-container">
-      {isBannerError && !dismissed && (
-        <div className="admin-error-banner" role="alert">
-          <AlertCircle size={16} aria-hidden="true" />
-          <span>{result.message}</span>
-          <button
-            type="button"
-            className="admin-banner-dismiss"
-            aria-label="Dismiss"
-            onClick={() => setDismissed(true)}
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
+      {isBannerError && (
+        // Slot itself always mounts for the lifetime of an error result
+        // (min-height reserved in CSS) — only the banner *inside* it toggles
+        // on dismiss, so dismissing never shifts the table below it.
+        <div className="admin-error-slot">
+          {!dismissed && (
+            <div className="admin-error-banner" role="alert">
+              <AlertCircle size={16} aria-hidden="true" />
+              <span>{result.message}</span>
+              <button
+                type="button"
+                className="admin-banner-dismiss"
+                aria-label="Dismiss"
+                onClick={() => setDismissed(true)}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
       <table className="admin-table">
+        {/* Edit column is a real 76px (44px button + 2x --space-3 td
+            padding), not a %, so it can never be squeezed below the
+            button's touch target. The other five columns split
+            `100% - 76px` by the design spec's fr-ratio (2.6:1.2:1:1:0.9,
+            sum 6.7) — calc() keeps that reservation exact at any table
+            width, unlike five flat %s that summed to 100% *plus* a fixed
+            column (the previous bug: table rendered 76px wider than its
+            container, clipping the Edit button). */}
         <colgroup>
-          <col style={{ width: '39%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '15%' }} />
-          <col style={{ width: '15%' }} />
-          <col style={{ width: '13%' }} />
-          <col style={{ width: '44px' }} />
+          <col style={{ width: 'calc((100% - 76px) * 0.388)' }} />
+          <col style={{ width: 'calc((100% - 76px) * 0.179)' }} />
+          <col style={{ width: 'calc((100% - 76px) * 0.149)' }} />
+          <col style={{ width: 'calc((100% - 76px) * 0.149)' }} />
+          <col style={{ width: 'calc((100% - 76px) * 0.135)' }} />
+          <col style={{ width: '76px' }} />
         </colgroup>
         <thead>
           <tr>

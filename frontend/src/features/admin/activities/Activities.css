@@ -419,11 +419,26 @@
 
 /* ---- Error banner / blocked panel ---- */
 
+/* Reserves the banner's footprint (measured ~94px: 44px dismiss button +
+   2x --space-3 banner padding + border, + 2x --space-3 slot padding, 96px
+   with a little headroom) for the whole time the result is an error, so
+   dismissing the banner inside never shifts the table below it — only the
+   appear/dismiss of the banner *content* toggles. */
+.admin-error-slot {
+  /* box-sizing/padding here (not a margin on the banner) is deliberate —
+     a margin on the banner would collapse through this padding-less slot,
+     making its effective footprint 12px shorter once the banner (and its
+     margin) is gone, shifting the table on dismiss anyway despite the
+     min-height. Padding can't collapse, so the reservation is exact. */
+  box-sizing: border-box;
+  min-height: 96px;
+  padding: var(--space-3);
+}
+
 .admin-error-banner {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: var(--space-3);
   padding: var(--space-3);
   border: 1px solid var(--admin-error);
   border-radius: var(--radius);
@@ -582,4 +597,19 @@
 
 .admin-page-button-current:focus-visible {
   outline: 2px solid var(--primary);
+}
+
+/* Stale-while-loading: a refetch is in flight, keep showing the last known
+   summary/pages but visually mute them (buttons are also `disabled`). */
+.admin-pagination-busy {
+  opacity: 0.6;
+}
+
+.admin-pagination-skeleton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--admin-surface-alt);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-6);
 }

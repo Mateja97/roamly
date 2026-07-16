@@ -5,6 +5,9 @@ export interface PaginationProps {
   pageSize: number;
   total: number;
   onPageChange: (page: number) => void;
+  /** A new page/filter request is in flight — keep showing the last known
+   * numbers (stale-while-loading) but disable navigation until it resolves. */
+  disabled?: boolean;
 }
 
 // ponytail: a plain window of up-to-5 numbered pages around the current
@@ -18,6 +21,7 @@ export function Pagination({
   pageSize,
   total,
   onPageChange,
+  disabled = false,
 }: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -33,7 +37,11 @@ export function Pagination({
   }
 
   return (
-    <nav className="admin-pagination" aria-label="Pagination">
+    <nav
+      className={`admin-pagination ${disabled ? 'admin-pagination-busy' : ''}`}
+      aria-label="Pagination"
+      aria-busy={disabled}
+    >
       <span className="admin-pagination-summary">
         Showing {start}–{end} of {total}
       </span>
@@ -42,8 +50,8 @@ export function Pagination({
           type="button"
           className="admin-page-button"
           aria-label="Previous page"
-          disabled={page <= 1}
-          aria-disabled={page <= 1}
+          disabled={disabled || page <= 1}
+          aria-disabled={disabled || page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
           <ChevronLeft size={16} aria-hidden="true" />
@@ -54,6 +62,7 @@ export function Pagination({
             type="button"
             className={`admin-page-button ${p === page ? 'admin-page-button-current' : ''}`}
             aria-current={p === page ? 'page' : undefined}
+            disabled={disabled}
             onClick={() => onPageChange(p)}
           >
             {p}
@@ -63,8 +72,8 @@ export function Pagination({
           type="button"
           className="admin-page-button"
           aria-label="Next page"
-          disabled={page >= totalPages}
-          aria-disabled={page >= totalPages}
+          disabled={disabled || page >= totalPages}
+          aria-disabled={disabled || page >= totalPages}
           onClick={() => onPageChange(page + 1)}
         >
           <ChevronRight size={16} aria-hidden="true" />

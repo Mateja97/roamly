@@ -97,6 +97,20 @@ describe('ActivitiesTable', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('keeps the error slot mounted after dismiss so the table below it does not shift', async () => {
+    const user = userEvent.setup();
+    const { container } = renderTable({
+      status: 500,
+      message: 'internal error',
+    });
+    expect(container.querySelector('.admin-error-slot')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    // The slot itself (which reserves the banner's footprint in CSS) stays
+    // in the DOM — only the alert content inside it is gone.
+    expect(container.querySelector('.admin-error-slot')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('renders the blocking 403 panel instead of the table, with no dismiss', () => {
     renderTable({ status: 403, message: 'invalid or missing admin token' });
     expect(screen.getByText('Admin access rejected')).toBeInTheDocument();
