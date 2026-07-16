@@ -36,9 +36,34 @@
   --space-16: 64px;
 
   --radius: 8px;
+  --radius-lg: 16px;
   --radius-full: 999px;
+
+  --font-display: 'Marcellus', serif;
 
   --card-highlight: #383e26;
   --glow: rgba(138, 154, 91, 0.15);
   --surface-gradient: linear-gradient(180deg, #1d2016 0%, #1b1e14 100%);
+
+  /* Admin surface (light) — scoped to frontend/src/features/admin, see
+     DESIGN_STANDARDS.md's "Admin surface (light)" section. Never consumed
+     by the app's dark theme. */
+  --admin-bg: #fbf6ee;
+  --admin-card: #ffffff;
+  --admin-surface-alt: #f2e8da;
+  --admin-border: #ece0cf;
+  --admin-border-strong: #e4d6c4;
+  --admin-ink: #2a1416;
+  --admin-ink-muted: #5c4536;
+  --admin-ink-subtle: #8a6a57;
+  --admin-placeholder: #b08968;
+  --admin-sidebar: #7d2027;
+  --admin-sidebar-text: #f5ebdd;
+  --admin-accent-hover: #6e1c22;
+  --admin-sidebar-active: rgba(206, 144, 66, 0.18);
+  --admin-focus: #7d2027;
+  --admin-error: #a11d1a;
+  --admin-status-published: #17703d;
+  --admin-status-draft: #7a5a3c;
+  --admin-status-pending: #8a5a12;
 }

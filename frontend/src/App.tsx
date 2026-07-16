@@ -1,25 +1,23 @@
-import { useEffect, useState } from 'react';
-import { fetchHealth } from './api/health';
-
-type Status = 'checking' | 'ok' | 'error';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { AdminShell } from './features/admin/AdminShell';
+import { ActivitiesPage } from './features/admin/activities/ActivitiesPage';
+import { EditActivityPlaceholder } from './features/admin/EditActivityPlaceholder';
 
 function App() {
-  const [status, setStatus] = useState<Status>('checking');
-
-  useEffect(() => {
-    fetchHealth()
-      .then(() => setStatus('ok'))
-      .catch(() => setStatus('error'));
-  }, []);
-
-  const label =
-    status === 'checking' ? 'checking…' : status === 'ok' ? 'healthy' : 'unreachable';
-
   return (
-    <main>
-      <h1>claude-workspace-template</h1>
-      <p>proxy-service: {label}</p>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AdminShell />}>
+          <Route index element={<Navigate to="/activities" replace />} />
+          <Route path="/activities" element={<ActivitiesPage />} />
+          <Route path="/activities/new" element={<EditActivityPlaceholder />} />
+          <Route
+            path="/activities/:id/edit"
+            element={<EditActivityPlaceholder />}
+          />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
 
