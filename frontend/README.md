@@ -3,8 +3,9 @@
 The platform's web client — React + TypeScript, built with Vite. Talks to
 the backend only through `proxy-service`'s public HTTP API.
 
-**Status:** scaffolded — renders `proxy-service`'s `/healthz` status, proving
-the wiring works. Build real features on top via `/run-pipeline`.
+**Status:** the Roamly Admin panel (T3) — an admin shell (sidebar + top bar)
+and the Activities overview screen, gated behind `X-Admin-Token`. Routes:
+`/activities` (list), `/activities/new` and `/activities/:id/edit` (T4).
 
 ## Run locally
 
@@ -22,11 +23,16 @@ Or via the full stack: `docker compose up` from the repo root brings up
 
 ## What's here
 
-- `src/api/health.ts` — typed client calling `proxy-service`'s `/healthz`;
-  the only place `fetch` is called. Add new endpoints here as `src/api/*.ts`
-  files, never call `fetch` from a component directly.
+- `src/api/` — typed clients calling `proxy-service`; the only place `fetch`
+  is called. `health.ts` (`/healthz`), `adminActivities.ts` (`/admin/*`,
+  sends `X-Admin-Token` from `VITE_ADMIN_TOKEN`), `cities.ts` (public
+  `/cities/suggest`, used to populate the admin city filter). Add new
+  endpoints here, never call `fetch` from a component directly.
+- `src/features/admin/` — the admin panel: `AdminShell` (sidebar/top-bar
+  chrome) + `activities/` (the Activities overview: stat cards, filters,
+  table, pagination).
 - `src/styles/tokens.css` — the `DESIGN_STANDARDS.md` design tokens (colors,
-  spacing, type scale).
+  spacing, type scale), including the admin light-surface `--admin-*` set.
 
 ## Responsibilities
 

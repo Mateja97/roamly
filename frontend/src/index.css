@@ -14,3 +14,19 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+
+/* Visually-hidden but screen-reader-accessible label text.
+   ponytail: no `position: absolute` — without a positioned ancestor it
+   would use the document root as its containing block and could paint
+   off-screen inside a wide, clipped/scrollable ancestor (e.g. a table
+   cell inside an overflow:auto table), inflating the whole page's
+   scrollable width. Collapsing to 1x1px in normal flow avoids that. */
+.sr-only {
+  display: inline-block;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+}

@@ -810,6 +810,102 @@ the palette:
   `--surface-gradient` and `--glow` into `tokens.ts`. Use them there; still
   don't reach for them speculatively on other app surfaces.
 
+## Admin surface (light) — scoped to the admin panel
+
+The back-office admin panel (`frontend/src/features/admin/…`) is a **deliberate
+light-surface departure** from the app's dark wine theme: a data-dense catalog
+tool reads better on a cream page than on wine, on the **same wine/gold brand**
+(wine `#7D2027` and gold `#CE9042` stay the anchors — the wine moves to the
+sidebar and the filled actions, gold stays the mark/accent). These tokens are
+**additive and scoped to the admin panel only** — they do **not** change the
+app's dark theme (`--bg`/`--surface`/`--text`/… are untouched; the app never
+consumes an `--admin-*` token, and the admin panel never renders on `--bg`).
+Mirror them into `frontend/src/styles/tokens.css` (the admin panel is
+`area: frontend` only — no `tokens.ts` change).
+
+Because the surface flips light, three brand reflexes invert here and are
+baked into the tokens below, not left to each spec:
+1. **Filled actions are wine, not gold.** Gold on cream is only 2.5:1 — a gold
+   button fails on this surface. The primary admin action is a **wine fill with
+   a cream label** (`--admin-sidebar` bg + `--admin-sidebar-text`, 8.5:1). Gold
+   stays the wordmark, the active-nav accent, and decorative icons only.
+2. **The focus ring is wine, not gold, on the light surface.** Gold as a focus
+   outline on cream is 2.5:1 (fails the 3:1 UI bar). `--admin-focus` (wine) is
+   9.3:1 on cream / 10:1 on white. On the **wine** sidebar and on wine-filled
+   controls, focus flips back to gold `--primary` (3.65:1 on wine ✓) since wine
+   on wine is invisible.
+3. **Status colors are darkened for AA.** The mock's bright Published `#1F8A4C`
+   / Draft `#B08968` / Pending `#CE9042` fail as normal text on the light pill
+   tint (3.2–3.9:1), and bright gold Pending fails even the 3:1 large-text bar
+   for the stat number. The tokens below are the AA-safe darkenings, in the same
+   hues, used for **both** the stat-card number and the pill text/tint.
+
+| Token | Hex / value | Use | Contrast (computed) |
+|---|---|---|---|
+| `--admin-bg` | `#FBF6EE` | admin page/body + top-bar background (cream) | — (surface) |
+| `--admin-card` | `#FFFFFF` | cards, table, inputs, filled-control rest | — (surface) |
+| `--admin-surface-alt` | `#F2E8DA` | table head, pagination footer, row hover, thumb/skeleton placeholder, chip tint | — (surface) |
+| `--admin-border` | `#ECE0CF` | card/table/section borders, row hairlines | decorative hairline |
+| `--admin-border-strong` | `#E4D6C4` | control/input/chip/button borders | supplementary (see note) |
+| `--admin-ink` | `#2A1416` | primary text/headings | 16.1:1 on `--admin-bg`, 17.4:1 on `--admin-card` ✓ |
+| `--admin-ink-muted` | `#5C4536` | labels, table cells, chip text, table-head | 8.3:1 bg / 8.9:1 card / 7.3:1 surface-alt ✓ |
+| `--admin-ink-subtle` | `#8A6A57` | subtitle, captions, stat-card labels, "Showing X of N" | 4.56:1 bg / 4.9:1 card ✓ — **card/bg only** (4.2:1 on `--admin-surface-alt` fails; use `--admin-ink-muted` on tinted rows/head) |
+| `--admin-placeholder` | `#B08968` | placeholder/hint text, low-emphasis icons (search, chevron, prev/next arrow) | 3.2:1 on card — placeholder-hint / UI-icon (3:1) only, never body text |
+| `--admin-sidebar` | `#7D2027` | sidebar bg, filled primary-action bg, active chip / current-page bg (= brand wine) | pairs with `--admin-sidebar-text` |
+| `--admin-sidebar-text` | `#F5EBDD` | cream label on wine (= brand `--text`) | 8.5:1 on `--admin-sidebar` ✓ |
+| `--admin-accent-hover` | `#6E1C22` | hover/press for wine-filled controls (darker wine) | cream label ≥9:1 ✓ |
+| `--admin-sidebar-active` | `rgba(206,144,66,0.18)` | gold-tint bg of the active sidebar nav item (over wine) | cream label ≥8:1 over the tint ✓ |
+| `--admin-focus` | `#7D2027` | 2px focus ring for controls on the light surface (= wine) | 9.3:1 bg / 10:1 card (UI, clears 3:1) ✓ |
+| `--admin-error` | `#A11D1A` | error-banner text/icon + outline on the light surface (a true red, distinct from the wine actions) | 7.8:1 card / 7.2:1 bg / 6.4:1 surface-alt ✓ |
+| `--admin-status-published` | `#17703D` | Published stat number, pill text + pill tint | 6.1:1 on card, 5.3:1 on its 12% pill tint ✓ |
+| `--admin-status-draft` | `#7A5A3C` | Draft stat number, pill text + pill tint | 6.3:1 on card, 5.5:1 on its 12% pill tint ✓ |
+| `--admin-status-pending` | `#8A5A12` | Pending stat number, pill text + pill tint | 5.9:1 on card, 5.2:1 on its 12% pill tint ✓ |
+
+**Light-surface component deltas** (everything else reuses the existing
+recipes, radii — cards `--radius-lg`, controls `--radius`, pills
+`--radius-full` — spacing, and type scale unchanged; interactive controls still
+obey the 44×44 floor and `--space-2` gaps even though the mock draws them at
+32–40px):
+
+- **Primary action button (admin):** `--admin-sidebar` (wine) fill,
+  `--admin-sidebar-text` (cream) label + optional 16px icon (`currentColor`,
+  cream). Hover/press → `--admin-accent-hover`. Focus → 2px gold `--primary`
+  ring, offset (wine ring would vanish on the wine fill). In-flight follows the
+  base Buttons rule (keep live colors, progressive label + inline Spinner,
+  disabled for the request). This is the light-surface stand-in for the gold
+  Primary button — one per view.
+- **Secondary / control button (admin):** `--admin-card` (white) fill, 1px
+  `--admin-border-strong`, `--admin-ink-muted` label/icon. Hover →
+  `--admin-surface-alt` bg. Focus → 2px `--admin-focus` (wine) ring, offset.
+- **Error banner (admin):** the Error banner/toast recipe recolored for light —
+  the standards' `--error` coral is defined for the dark surface and fails on
+  cream, so the admin banner uses `--admin-card` bg, `--admin-error` (dark red)
+  for the text/leading alert icon and a 1px `--admin-error` outline, `--radius`,
+  `--space-3` padding, in a space-reserved slot. `--admin-error` is a true red,
+  visibly distinct from the wine actions/focus, so an error never reads as a
+  button. Dismiss control + message-from-server rules are unchanged from the base
+  recipe.
+- **Status pill (admin):** the Badge/pill recipe recolored for light — pill text
+  = the status token, pill fill = the **same token at ~12% alpha** over the
+  card, plus a 6px leading dot in the same token (the non-color redundancy is
+  the text label; the dot is decorative reinforcement). No border.
+- **Focus ring rule:** controls on `--admin-bg`/`--admin-card` use a 2px
+  `--admin-focus` (wine) outline with a ~2px offset; controls on the wine
+  sidebar or with a wine fill use a 2px gold `--primary` outline. Never a
+  gold ring on cream (2.5:1) and never a wine ring on wine.
+- **Supplementary borders:** `--admin-border`/`--admin-border-strong` are soft
+  low-contrast hairlines (~1.4:1 on white) — by design of the cream aesthetic.
+  They are decorative container edges, **not** the sole identifier of a control:
+  every admin control is identified by its icon + label (+ the AA focus ring on
+  interaction), so the low border contrast does not gate operability. A form
+  field that would rely on the border alone (T4's inputs) must carry a visible
+  label and the wine focus ring, per Forms.
+- **Disabled sidebar items** (Categories/Cities/Reviews/Settings, out of scope):
+  rendered non-interactive — `--admin-sidebar-text` at reduced emphasis (muted
+  tan, e.g. `--text-muted`), `cursor: default`, no hover/press/focus,
+  `aria-disabled`; disabled controls are contrast-exempt. Only the active item
+  gets the `--admin-sidebar-active` gold-tint fill + gold icon.
+
 ## Delivery mechanics
 
 - Tokens are CSS custom properties in `frontend/src/styles/tokens.css`,

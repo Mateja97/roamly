@@ -4,7 +4,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ARG VITE_PROXY_URL
+ARG VITE_ADMIN_TOKEN
 ENV VITE_PROXY_URL=${VITE_PROXY_URL}
+ENV VITE_ADMIN_TOKEN=${VITE_ADMIN_TOKEN}
 RUN npm run build
 
 FROM node:22-alpine

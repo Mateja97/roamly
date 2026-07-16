@@ -1,0 +1,615 @@
+.admin-page {
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---- Top bar ---- */
+
+.admin-top-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.admin-top-bar-title {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-page-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  color: var(--admin-ink);
+}
+
+.admin-page-subtitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-subtle);
+}
+
+.admin-top-bar-spacer {
+  flex: 1;
+}
+
+.admin-search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 280px;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border-strong);
+  border-radius: var(--radius);
+}
+
+.admin-search-box:focus-within {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-search-icon {
+  color: var(--admin-placeholder);
+  flex-shrink: 0;
+}
+
+.admin-search-input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--font-size-md);
+  color: var(--admin-ink);
+  width: 100%;
+}
+
+.admin-search-input::placeholder {
+  color: var(--admin-placeholder);
+}
+
+.admin-primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--admin-sidebar);
+  color: var(--admin-sidebar-text);
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 150ms;
+}
+
+.admin-primary-button:hover {
+  background: var(--admin-accent-hover);
+}
+
+.admin-primary-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ---- Stat cards ---- */
+
+.admin-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.admin-stat-card {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.admin-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--admin-ink-subtle);
+}
+
+.admin-stat-value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-stat-value-total {
+  color: var(--admin-ink);
+}
+.admin-stat-value-published {
+  color: var(--admin-status-published);
+}
+.admin-stat-value-draft {
+  color: var(--admin-status-draft);
+}
+.admin-stat-value-pending {
+  color: var(--admin-status-pending);
+}
+.admin-stat-value-error {
+  color: var(--admin-ink-muted);
+}
+
+.admin-stat-skeleton {
+  height: 2.5em;
+  width: 60%;
+}
+
+/* ---- Skeleton ---- */
+
+.admin-skeleton {
+  display: inline-block;
+  background: var(--admin-surface-alt);
+  border-radius: var(--radius);
+  animation: admin-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-skeleton {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+@keyframes admin-skeleton-pulse {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---- Filter row ---- */
+
+.admin-filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.admin-status-chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.admin-filter-spacer {
+  flex: 1;
+}
+
+.admin-chip {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--admin-border-strong);
+  background: var(--admin-card);
+  color: var(--admin-ink-muted);
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+
+.admin-chip:hover {
+  background: var(--admin-surface-alt);
+}
+
+.admin-chip:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-chip-active {
+  background: var(--admin-sidebar);
+  border-color: var(--admin-sidebar);
+  color: var(--admin-sidebar-text);
+}
+
+.admin-chip-active:hover {
+  background: var(--admin-sidebar);
+}
+
+.admin-chip-active:focus-visible {
+  outline: 2px solid var(--primary);
+}
+
+.admin-select-label {
+  display: block;
+}
+
+.admin-select {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--admin-border-strong);
+  background: var(--admin-card);
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.admin-select:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Table ---- */
+
+.admin-table-container {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+  min-height: 420px;
+}
+
+.admin-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.admin-table thead {
+  background: var(--admin-surface-alt);
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.admin-table th {
+  text-align: left;
+  padding: var(--space-3);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--admin-ink-muted);
+}
+
+.admin-table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--admin-border);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: var(--admin-surface-alt);
+}
+
+.admin-row-activity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.admin-thumb {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  background: var(--admin-surface-alt);
+}
+
+.admin-thumb-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--admin-ink-muted);
+}
+
+.admin-thumb-skeleton {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+}
+
+.admin-row-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--admin-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-text-skeleton {
+  height: 1em;
+}
+
+.admin-row-muted {
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-muted);
+}
+
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+
+.admin-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.admin-pill-published {
+  color: var(--admin-status-published);
+  background: color-mix(
+    in srgb,
+    var(--admin-status-published) 12%,
+    transparent
+  );
+}
+.admin-pill-draft {
+  color: var(--admin-status-draft);
+  background: color-mix(in srgb, var(--admin-status-draft) 12%, transparent);
+}
+.admin-pill-pending {
+  color: var(--admin-status-pending);
+  background: color-mix(in srgb, var(--admin-status-pending) 12%, transparent);
+}
+
+.admin-pill-skeleton {
+  width: 70px;
+  height: 1.5em;
+  border-radius: var(--radius-full);
+}
+
+.admin-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.admin-rating .admin-row-muted {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-rating-star {
+  color: var(--primary);
+}
+
+.admin-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  border: 1px solid var(--admin-border-strong);
+  background: var(--admin-card);
+  color: var(--admin-ink-muted);
+  text-decoration: none;
+  transition: background-color 150ms;
+}
+
+.admin-icon-button:hover {
+  background: var(--admin-surface-alt);
+}
+
+.admin-icon-button:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Error banner / blocked panel ---- */
+
+/* Reserves the banner's footprint (measured ~94px: 44px dismiss button +
+   2x --space-3 banner padding + border, + 2x --space-3 slot padding, 96px
+   with a little headroom) for the whole time the result is an error, so
+   dismissing the banner inside never shifts the table below it — only the
+   appear/dismiss of the banner *content* toggles. */
+.admin-error-slot {
+  /* box-sizing/padding here (not a margin on the banner) is deliberate —
+     a margin on the banner would collapse through this padding-less slot,
+     making its effective footprint 12px shorter once the banner (and its
+     margin) is gone, shifting the table on dismiss anyway despite the
+     min-height. Padding can't collapse, so the reservation is exact. */
+  box-sizing: border-box;
+  min-height: 96px;
+  padding: var(--space-3);
+}
+
+.admin-error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--admin-error);
+  border-radius: var(--radius);
+  color: var(--admin-error);
+  font-size: var(--font-size-sm);
+}
+
+.admin-error-banner span {
+  flex: 1;
+}
+
+.admin-banner-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--admin-error);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.admin-banner-dismiss:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-blocked-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-12);
+  text-align: center;
+  color: var(--admin-error);
+}
+
+.admin-blocked-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--admin-ink);
+  font-weight: 600;
+}
+
+.admin-blocked-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-muted);
+  max-width: 40ch;
+}
+
+/* ---- Empty state ---- */
+
+.admin-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-12) 0;
+  color: var(--admin-ink-muted);
+  text-align: center;
+}
+
+.admin-empty-title {
+  margin: 0;
+  font-size: var(--font-size-md);
+  color: var(--admin-ink);
+}
+
+.admin-empty-hint {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-muted);
+}
+
+.admin-control-button {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border-strong);
+  border-radius: var(--radius);
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.admin-control-button:hover {
+  background: var(--admin-surface-alt);
+}
+
+.admin-control-button:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Pagination ---- */
+
+.admin-pagination-footer {
+  min-height: 60px;
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--admin-surface-alt);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-6);
+}
+
+.admin-pagination-summary {
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-pagination-controls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.admin-page-button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--admin-border-strong);
+  background: var(--admin-card);
+  color: var(--admin-ink-muted);
+  cursor: pointer;
+}
+
+.admin-page-button:hover:not(:disabled) {
+  background: var(--admin-surface-alt);
+}
+
+.admin-page-button:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-page-button:disabled {
+  color: var(--admin-placeholder);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.admin-page-button-current {
+  background: var(--admin-sidebar);
+  border-color: var(--admin-sidebar);
+  color: var(--admin-sidebar-text);
+}
+
+.admin-page-button-current:focus-visible {
+  outline: 2px solid var(--primary);
+}
+
+/* Stale-while-loading: a refetch is in flight, keep showing the last known
+   summary/pages but visually mute them (buttons are also `disabled`). */
+.admin-pagination-busy {
+  opacity: 0.6;
+}
+
+.admin-pagination-skeleton {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--admin-surface-alt);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-6);
+}
