@@ -40,6 +40,14 @@ func main() {
 	mux.HandleFunc("POST /activities/query", api.NewQueryActivitiesHandler(activitiesClient, logger).Handle)
 	mux.HandleFunc("GET /cities/suggest", api.NewSuggestCitiesHandler(activitiesClient, logger).Handle)
 
+	// Admin surface (T2): fail closed. An unset/empty ADMIN_API_TOKEN means
+	// these routes are never registered at all — never "everything
+	// allowed" — so an accidental deployment without the token simply has
+	// no /admin/* surface (a 404, same as any other unmatched path).
+	if !api.RegisterAdminRoutes(mux, activitiesClient, os.Getenv("ADMIN_API_TOKEN"), logger) {
+		logger.Warn("ADMIN_API_TOKEN not set: /admin routes are disabled")
+	}
+
 	srv := &http.Server{Addr: addr, Handler: middleware.CORS(mux)}
 
 	serveErr := make(chan error, 1)

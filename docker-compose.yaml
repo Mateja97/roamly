@@ -49,6 +49,11 @@ services:
     environment:
       HTTP_ADDR: ":8080"
       ACTIVITIES_SERVICE_ADDR: "activities-service:9090"
+      # Admin surface (T2): gates /admin/*. Empty by default so the stack
+      # comes up with those routes disabled (fail closed) rather than
+      # requiring every dev to set a token just to run `docker compose up`;
+      # set this in the shell env to enable the admin panel.
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
     ports:
       - "8080:8080"
     depends_on:

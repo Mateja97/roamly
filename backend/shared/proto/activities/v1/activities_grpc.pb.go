@@ -21,6 +21,10 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ActivitiesService_QueryActivities_FullMethodName = "/activities.v1.ActivitiesService/QueryActivities"
 	ActivitiesService_SuggestCities_FullMethodName   = "/activities.v1.ActivitiesService/SuggestCities"
+	ActivitiesService_ListActivities_FullMethodName  = "/activities.v1.ActivitiesService/ListActivities"
+	ActivitiesService_GetActivity_FullMethodName     = "/activities.v1.ActivitiesService/GetActivity"
+	ActivitiesService_CreateActivity_FullMethodName  = "/activities.v1.ActivitiesService/CreateActivity"
+	ActivitiesService_UpdateActivity_FullMethodName  = "/activities.v1.ActivitiesService/UpdateActivity"
 )
 
 // ActivitiesServiceClient is the client API for ActivitiesService service.
@@ -35,6 +39,14 @@ type ActivitiesServiceClient interface {
 	// SuggestCities powers the Anywhere city typeahead: a prefix match over
 	// the catalog's own cities (T1's city column), not a live geocoding call.
 	SuggestCities(ctx context.Context, in *SuggestCitiesRequest, opts ...grpc.CallOption) (*SuggestCitiesResponse, error)
+	// Admin surface (T2): full read/write access over the catalog, including
+	// draft/pending rows. No RPC-level auth here — this traffic never leaves
+	// the compose/cluster network; proxy-service's admin-token middleware is
+	// the gate, same as every other proxy->activities-service call.
+	ListActivities(ctx context.Context, in *ListActivitiesRequest, opts ...grpc.CallOption) (*ListActivitiesResponse, error)
+	GetActivity(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*Activity, error)
+	CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*Activity, error)
+	UpdateActivity(ctx context.Context, in *UpdateActivityRequest, opts ...grpc.CallOption) (*Activity, error)
 }
 
 type activitiesServiceClient struct {
@@ -65,6 +77,46 @@ func (c *activitiesServiceClient) SuggestCities(ctx context.Context, in *Suggest
 	return out, nil
 }
 
+func (c *activitiesServiceClient) ListActivities(ctx context.Context, in *ListActivitiesRequest, opts ...grpc.CallOption) (*ListActivitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListActivitiesResponse)
+	err := c.cc.Invoke(ctx, ActivitiesService_ListActivities_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *activitiesServiceClient) GetActivity(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*Activity, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Activity)
+	err := c.cc.Invoke(ctx, ActivitiesService_GetActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *activitiesServiceClient) CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*Activity, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Activity)
+	err := c.cc.Invoke(ctx, ActivitiesService_CreateActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *activitiesServiceClient) UpdateActivity(ctx context.Context, in *UpdateActivityRequest, opts ...grpc.CallOption) (*Activity, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Activity)
+	err := c.cc.Invoke(ctx, ActivitiesService_UpdateActivity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ActivitiesServiceServer is the server API for ActivitiesService service.
 // All implementations must embed UnimplementedActivitiesServiceServer
 // for forward compatibility.
@@ -77,6 +129,14 @@ type ActivitiesServiceServer interface {
 	// SuggestCities powers the Anywhere city typeahead: a prefix match over
 	// the catalog's own cities (T1's city column), not a live geocoding call.
 	SuggestCities(context.Context, *SuggestCitiesRequest) (*SuggestCitiesResponse, error)
+	// Admin surface (T2): full read/write access over the catalog, including
+	// draft/pending rows. No RPC-level auth here — this traffic never leaves
+	// the compose/cluster network; proxy-service's admin-token middleware is
+	// the gate, same as every other proxy->activities-service call.
+	ListActivities(context.Context, *ListActivitiesRequest) (*ListActivitiesResponse, error)
+	GetActivity(context.Context, *GetActivityRequest) (*Activity, error)
+	CreateActivity(context.Context, *CreateActivityRequest) (*Activity, error)
+	UpdateActivity(context.Context, *UpdateActivityRequest) (*Activity, error)
 	mustEmbedUnimplementedActivitiesServiceServer()
 }
 
@@ -92,6 +152,18 @@ func (UnimplementedActivitiesServiceServer) QueryActivities(context.Context, *Qu
 }
 func (UnimplementedActivitiesServiceServer) SuggestCities(context.Context, *SuggestCitiesRequest) (*SuggestCitiesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SuggestCities not implemented")
+}
+func (UnimplementedActivitiesServiceServer) ListActivities(context.Context, *ListActivitiesRequest) (*ListActivitiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListActivities not implemented")
+}
+func (UnimplementedActivitiesServiceServer) GetActivity(context.Context, *GetActivityRequest) (*Activity, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetActivity not implemented")
+}
+func (UnimplementedActivitiesServiceServer) CreateActivity(context.Context, *CreateActivityRequest) (*Activity, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateActivity not implemented")
+}
+func (UnimplementedActivitiesServiceServer) UpdateActivity(context.Context, *UpdateActivityRequest) (*Activity, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateActivity not implemented")
 }
 func (UnimplementedActivitiesServiceServer) mustEmbedUnimplementedActivitiesServiceServer() {}
 func (UnimplementedActivitiesServiceServer) testEmbeddedByValue()                           {}
@@ -150,6 +222,78 @@ func _ActivitiesService_SuggestCities_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ActivitiesService_ListActivities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListActivitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).ListActivities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_ListActivities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).ListActivities(ctx, req.(*ListActivitiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ActivitiesService_GetActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).GetActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_GetActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).GetActivity(ctx, req.(*GetActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ActivitiesService_CreateActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).CreateActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_CreateActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).CreateActivity(ctx, req.(*CreateActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ActivitiesService_UpdateActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).UpdateActivity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_UpdateActivity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).UpdateActivity(ctx, req.(*UpdateActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ActivitiesService_ServiceDesc is the grpc.ServiceDesc for ActivitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -164,6 +308,22 @@ var ActivitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SuggestCities",
 			Handler:    _ActivitiesService_SuggestCities_Handler,
+		},
+		{
+			MethodName: "ListActivities",
+			Handler:    _ActivitiesService_ListActivities_Handler,
+		},
+		{
+			MethodName: "GetActivity",
+			Handler:    _ActivitiesService_GetActivity_Handler,
+		},
+		{
+			MethodName: "CreateActivity",
+			Handler:    _ActivitiesService_CreateActivity_Handler,
+		},
+		{
+			MethodName: "UpdateActivity",
+			Handler:    _ActivitiesService_UpdateActivity_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

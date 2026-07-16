@@ -172,3 +172,74 @@ func TestBuildQuery_AlwaysFiltersToPublished(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildListQuery(t *testing.T) {
+	tests := []struct {
+		name       string
+		filter     activitiessvc.ListFilter
+		wantSQL    []string
+		notWantSQL []string
+		wantArgs   []any
+	}{
+		{
+			name:       "no filters yields no WHERE clause at all — the admin list is not published-only",
+			filter:     activitiessvc.ListFilter{},
+			notWantSQL: []string{"WHERE"},
+		},
+		{
+			name:     "q filters with a case-insensitive substring match",
+			filter:   activitiessvc.ListFilter{Q: "kayak"},
+			wantSQL:  []string{"title ILIKE"},
+			wantArgs: []any{"%kayak%"},
+		},
+		{
+			name:     "category filters exactly",
+			filter:   activitiessvc.ListFilter{Category: activitiessvc.CategorySport},
+			wantSQL:  []string{"category ="},
+			wantArgs: []any{"sport"},
+		},
+		{
+			name:     "city filters exactly",
+			filter:   activitiessvc.ListFilter{City: "Belgrade"},
+			wantSQL:  []string{"city ="},
+			wantArgs: []any{"Belgrade"},
+		},
+		{
+			name:     "status filters exactly, and is not restricted to published like the public query",
+			filter:   activitiessvc.ListFilter{Status: activitiessvc.StatusDraft},
+			wantSQL:  []string{"status ="},
+			wantArgs: []any{"draft"},
+		},
+		{
+			name:     "combined filters AND together",
+			filter:   activitiessvc.ListFilter{Category: activitiessvc.CategorySport, Status: activitiessvc.StatusPending},
+			wantSQL:  []string{"category =", "status =", " AND "},
+			wantArgs: []any{"sport", "pending"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			whereClause, args := buildListQuery(tt.filter)
+			for _, want := range tt.wantSQL {
+				if !strings.Contains(whereClause, want) {
+					t.Errorf("buildListQuery() = %q, want substring %q", whereClause, want)
+				}
+			}
+			for _, notWant := range tt.notWantSQL {
+				if strings.Contains(whereClause, notWant) {
+					t.Errorf("buildListQuery() = %q, must not contain %q", whereClause, notWant)
+				}
+			}
+			if tt.wantArgs != nil {
+				if len(args) != len(tt.wantArgs) {
+					t.Fatalf("args = %v, want %v", args, tt.wantArgs)
+				}
+				for i, want := range tt.wantArgs {
+					if args[i] != want {
+						t.Errorf("args[%d] = %v, want %v", i, args[i], want)
+					}
+				}
+			}
+		})
+	}
+}

@@ -32,11 +32,32 @@ specifically so a resource conflict (`ErrConflict` → `codes.AlreadyExists`,
 see GO_STANDARDS.md's Errors section) stays distinguishable from a genuine
 internal failure.
 
+## Admin authentication (T2)
+
+Every `/admin/*` route (the admin panel's read/write activity endpoints)
+requires an `X-Admin-Token` header matching `ADMIN_API_TOKEN`, checked with
+`crypto/subtle.ConstantTimeCompare` against timing attacks. **If
+`ADMIN_API_TOKEN` is unset or empty, `/admin/*` is not registered on the
+mux at all** — a missing token means the routes don't exist (a 404), never
+"everything allowed". A present-but-wrong token gets a 403.
+
+**Security note — read before assuming this is real auth.** This is a
+single static token shared by every admin session, delivered to a browser
+app (the frontend's `VITE_ADMIN_TOKEN`). Anyone with the panel's JS bundle
+can read it. It exists to keep the mutation API off the open internet, not
+to authenticate individuals or distinguish one admin from another — there
+is no login, no session, no per-user audit trail. See
+`product-tasks.md`'s Roadmap for the real auth-service this is standing in
+for.
+
 ## Configuration
 
 Environment variables, read once at startup in `main.go`:
 
 - `HTTP_ADDR` — HTTP listen address, defaults to `:8080`.
+- `ADMIN_API_TOKEN` — shared token gating `/admin/*` (T2). Unset/empty
+  disables the admin routes entirely (fail closed) rather than serving them
+  open.
 
 See [ARCHITECTURE.md](../../ARCHITECTURE.md) and
 [GO_STANDARDS.md](../../GO_STANDARDS.md).

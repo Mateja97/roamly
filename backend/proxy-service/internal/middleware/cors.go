@@ -14,8 +14,10 @@ func CORS(next http.Handler) http.Handler {
 			w.Header().Set("Vary", "Origin")
 		}
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			// PATCH and X-Admin-Token (T2) support the admin panel's write
+			// endpoints; every other route ignores both.
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

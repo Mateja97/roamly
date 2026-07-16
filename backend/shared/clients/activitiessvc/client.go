@@ -39,3 +39,21 @@ func (c *Client) QueryActivities(ctx context.Context, req *activitiesv1.QueryAct
 func (c *Client) SuggestCities(ctx context.Context, req *activitiesv1.SuggestCitiesRequest) (*activitiesv1.SuggestCitiesResponse, error) {
 	return c.rpc.SuggestCities(ctx, req)
 }
+
+// Admin surface (T2): pass-through wrappers, same shape as the two above.
+
+func (c *Client) ListActivities(ctx context.Context, req *activitiesv1.ListActivitiesRequest) (*activitiesv1.ListActivitiesResponse, error) {
+	return c.rpc.ListActivities(ctx, req)
+}
+
+func (c *Client) GetActivity(ctx context.Context, req *activitiesv1.GetActivityRequest) (*activitiesv1.Activity, error) {
+	return c.rpc.GetActivity(ctx, req)
+}
+
+func (c *Client) CreateActivity(ctx context.Context, req *activitiesv1.CreateActivityRequest) (*activitiesv1.Activity, error) {
+	return c.rpc.CreateActivity(ctx, req)
+}
+
+func (c *Client) UpdateActivity(ctx context.Context, req *activitiesv1.UpdateActivityRequest) (*activitiesv1.Activity, error) {
+	return c.rpc.UpdateActivity(ctx, req)
+}

@@ -12,6 +12,15 @@ service ActivitiesService {
   // SuggestCities powers the Anywhere city typeahead: a prefix match over
   // the catalog's own cities (T1's city column), not a live geocoding call.
   rpc SuggestCities(SuggestCitiesRequest) returns (SuggestCitiesResponse);
+
+  // Admin surface (T2): full read/write access over the catalog, including
+  // draft/pending rows. No RPC-level auth here — this traffic never leaves
+  // the compose/cluster network; proxy-service's admin-token middleware is
+  // the gate, same as every other proxy->activities-service call.
+  rpc ListActivities(ListActivitiesRequest) returns (ListActivitiesResponse);
+  rpc GetActivity(GetActivityRequest) returns (Activity);
+  rpc CreateActivity(CreateActivityRequest) returns (Activity);
+  rpc UpdateActivity(UpdateActivityRequest) returns (Activity);
 }
 
 enum Scope {
@@ -156,4 +165,75 @@ message CitySuggestion {
 
 message SuggestCitiesResponse {
   repeated CitySuggestion suggestions = 1;
+}
+
+// ListActivitiesRequest is the admin list query (T2). All filters are
+// optional and combined as AND; UNSPECIFIED enum values / empty strings mean
+// "no filter on this field" — unlike QueryActivitiesRequest, this list is
+// never restricted to published-only (the admin needs to see drafts and
+// pending rows).
+message ListActivitiesRequest {
+  string q = 1;              // case-insensitive substring match on title
+  Category category = 2;     // CATEGORY_UNSPECIFIED = no filter
+  string city = 3;            // "" = no filter
+  ActivityStatus status = 4; // ACTIVITY_STATUS_UNSPECIFIED = no filter
+  int32 page = 5;             // <= 0 treated as 1
+  int32 page_size = 6;        // <= 0 treated as the service default; always clamped to [1, 100] server-side
+}
+
+// ListActivitiesStats counts the whole catalog, ignoring ListActivitiesRequest's
+// filters — it backs the admin panel's global stat cards.
+message ListActivitiesStats {
+  int32 total = 1;
+  int32 published = 2;
+  int32 draft = 3;
+  int32 pending = 4;
+}
+
+message ListActivitiesResponse {
+  repeated Activity activities = 1;
+  int32 total = 2; // count matching the request's filters (for pagination)
+  int32 page = 3;
+  int32 page_size = 4;
+  ListActivitiesStats stats = 5;
+}
+
+message GetActivityRequest {
+  string id = 1;
+}
+
+message CreateActivityRequest {
+  string title = 1;
+  Category category = 2;
+  string description = 3;
+  string city = 4;
+  string address = 5;
+  // ACTIVITY_STATUS_UNSPECIFIED defaults to ACTIVITY_STATUS_DRAFT.
+  ActivityStatus status = 6;
+  string details = 7; // JSON string, "" = no detail data
+  repeated Photo photos = 8;
+}
+
+// PhotoList wraps the one repeated field UpdateActivityRequest needs
+// optional (proto3 doesn't allow the `optional` keyword on repeated fields);
+// a nil PhotoList means "leave photos untouched", a non-nil one (even with
+// zero photos) means "replace with this list".
+message PhotoList {
+  repeated Photo photos = 1;
+}
+
+// UpdateActivityRequest is a partial update (T2): every field below is
+// `optional`, so the generated Has*() accessor distinguishes "absent, leave
+// untouched" from "present" (including present-and-empty-string) the same
+// way proxy-service's JSON pointer fields do on the HTTP side.
+message UpdateActivityRequest {
+  string id = 1;
+  optional string title = 2;
+  optional string description = 3;
+  optional Category category = 4;
+  optional string city = 5;
+  optional string address = 6;
+  optional ActivityStatus status = 7;
+  optional string details = 8;
+  PhotoList photos = 9;
 }

@@ -21,6 +21,12 @@ import (
 type queryService interface {
 	Query(ctx context.Context, req service.Request) ([]activitiessvc.Activity, error)
 	SuggestCities(ctx context.Context, query string) ([]activitiessvc.CitySuggestion, error)
+
+	// Admin surface (T2).
+	List(ctx context.Context, req service.ListRequest) (activitiessvc.ListResult, int, int, error)
+	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
+	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
+	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
 }
 
 type Server struct {
