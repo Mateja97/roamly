@@ -889,6 +889,92 @@ obey the 44×44 floor and `--space-2` gaps even though the mock draws them at
   = the status token, pill fill = the **same token at ~12% alpha** over the
   card, plus a 6px leading dot in the same token (the non-color redundancy is
   the text label; the dot is decorative reinforcement). No border.
+- **Form field (admin) — text input / textarea / select:** the base Text input
+  recipe recolored for the light surface (the base recipe's `--surface-hover`
+  bg / `--border` / `--text` are dark-only). Rest: `--admin-card` (white) fill,
+  1px `--admin-border-strong`, `--radius`, `--font-size-md` `--admin-ink` value
+  (17.4:1 ✓), placeholder/hint `--admin-placeholder` (3.2:1 — hint only, never
+  the label), `min-height: 44px` (mock draws 42px — upsize). Label always
+  visible above, `--font-size-sm` weight 600 `--admin-ink-muted` (8.9:1 ✓),
+  `--space-2` gap, programmatically associated with its field. **Textarea:**
+  same, `min-height` grown (~84px), top-aligned padding, vertically resizable.
+  **Select:** same, with a trailing 16px chevron in `--admin-placeholder`
+  (3:1 UI ✓); a native `<select>` is the intended control (keyboard + AT for
+  free) — the mock's custom chevron is a visual, not a reason to hand-build a
+  listbox. States:
+  - *Focus:* 2px `--admin-focus` (wine) ring, ~2px offset (10:1 on card ✓).
+  - *Invalid* (validated on **blur**, never per-keystroke): 1.5px `--admin-error`
+    border + an `--admin-error` message line below (`--font-size-sm`, 7.8:1 on
+    card ✓), tied to the field (`aria-describedby`), `aria-invalid` set. The
+    message slot is **space-reserved** so the field doesn't shift when it
+    appears/clears.
+  - *Disabled:* `--admin-surface-alt` bg, `--admin-ink-subtle` value, 1px
+    `--admin-border`, inert (contrast-exempt).
+- **Radio group (admin):** a vertical stack of option rows (no existing recipe).
+  Selection is never color-only — the filled ring plus the option label carry
+  it. Each row: `--space-3` padding, `--radius`, `--font-size-md` label,
+  `min-height: 44px`, `--space-2` between rows; the group is one tab stop, arrow
+  keys move the selection (native `<input type=radio>` gives this for free).
+  - *Unselected:* 1px `--admin-border-strong` row border, `--admin-ink-muted`
+    label, a 16px hollow ring in 2px `--admin-placeholder` (3.2:1 UI ✓ — not the
+    ~1.4:1 hairline).
+  - *Selected:* 1.5px `--admin-focus` (wine) row border + a faint wine tint fill
+    (`--admin-sidebar` at ~8% alpha over the card — the same tint-over-card
+    device the Status pill uses, no new token), `--admin-ink` label, and a 16px
+    **filled wine ring** (thick `--admin-focus` ring with the card showing
+    through the centre — the classic filled radio, 10:1 UI ✓). Filled-vs-hollow
+    is the redundant non-color cue.
+  - *Focus (keyboard):* 2px `--admin-focus` ring on the focused option, offset.
+- **Removable chip (admin):** the Filter chip recipe's Removable variant
+  recolored for light, for editing an array-of-strings value (e.g. one category
+  detail's tag list) — a **reusable pattern, not a fixed set of fields.**
+  `--admin-surface-alt` fill, `--admin-ink-muted` label (7.3:1 on surface-alt
+  ✓), trailing 16px `X` in `--admin-placeholder`, `--radius-full`,
+  `min-height: 44px`, ≥`--space-2` apart. The chip's × is one 44×44 remove
+  control, `aria-label` "Remove <value>", keyboard-operable, focus → 2px
+  `--admin-focus` ring. **Add affordance:** a trailing dashed-border chip (1px
+  dashed `--admin-border-strong`, `--admin-ink-muted` label + leading 16px `+`)
+  that becomes an inline text input on activate — Enter commits a new value, Esc
+  cancels. (Editing `details` is in scope — this is data, distinct from the
+  out-of-scope image-upload "+" tile.)
+- **Repeatable line-item editor (admin):** for an **array-of-objects** detail
+  value (e.g. a dishes/lineup/treatments/shows list where each entry is a record
+  of 2–3 sub-fields). A labeled group (group label = the field name,
+  `--font-size-sm` weight 600 `--admin-ink-muted`). Each existing item is a
+  **row** of its 2–3 sub-fields, each a Form field (admin) input with its own
+  label/placeholder, laid out inline (`--space-3` gap) and wrapping/stacking on
+  narrow width; a trailing **remove-row** control (44×44, `X`/trash icon in
+  `--admin-placeholder`, `aria-label` "Remove <item>", focus → 2px `--admin-focus`
+  ring) sits at the row end. Rows `--space-2` apart. **Add-row affordance:** a
+  full-width dashed control-button "+ Add <singular>" (1px dashed
+  `--admin-border-strong`, `--admin-ink-muted` label + leading 16px `+`) below
+  the rows; activating appends a blank row and moves focus to its first
+  sub-field. **Empty state** (no items): the group label + a single
+  `--admin-ink-muted` hint ("No <items> yet") + the Add button — no empty rows
+  drawn. Per-subfield states are the Form field states (default / focus /
+  invalid-on-blur for a required sub-field / disabled); each row's invalid
+  message is reserved so the row doesn't shift. Every sub-field, add, and remove
+  control is keyboard-reachable and labelled. No new token.
+- **Nested single-object field group (admin):** for a **nullable single-object**
+  detail value (a pointer that may be null — e.g. a now-showing / artwork /
+  exhibition block of 2–3 text sub-fields). A labeled group holding the object's
+  sub-fields as stacked Form field inputs (a mini-section). Because the object is
+  nullable, present-vs-absent is **explicit**:
+  - *Absent (null):* the group label + an `--admin-ink-muted` "Not set" hint + a
+    control-button "Add <group>" that reveals the empty fields. No empty object
+    is sent as if it were data.
+  - *Present:* the sub-fields render, plus a "Remove <group>" control-button that
+    clears the group back to null (empties the fields and drops the object).
+  - A required sub-field (e.g. a banner title) is validated on blur **only while
+    the group is present**. Per-field default/focus/invalid/disabled as Form
+    field. Add/Remove keyboard-operable and labelled. No new token.
+- **Boolean toggle (admin):** for a single `bool` detail value (e.g.
+  `open_tonight`). A native checkbox styled light: unchecked = 1px
+  `--admin-border-strong` box on `--admin-card`; checked = `--admin-focus`
+  (wine) fill + a cream `--admin-sidebar-text` check glyph (8.5:1 ✓ — the check
+  glyph is the redundant non-color cue, checked is never color-only); label to
+  the right in `--admin-ink`, `--font-size-md`. 44×44 target, focus → 2px
+  `--admin-focus` ring. No new token.
 - **Focus ring rule:** controls on `--admin-bg`/`--admin-card` use a 2px
   `--admin-focus` (wine) outline with a ~2px offset; controls on the wine
   sidebar or with a wine fill use a 2px gold `--primary` outline. Never a
