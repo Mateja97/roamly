@@ -68,6 +68,29 @@ describe('queryActivities', () => {
     });
   });
 
+  it('resolves admin-uploaded relative photo paths against PROXY_URL', async () => {
+    mockFetchOnce(200, {
+      activities: [
+        {
+          id: '1',
+          image_refs: [{ uri: '/photos/1/a.jpg', thumb_url: '/photos/1/a_t.jpg' }],
+        },
+      ],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result).toEqual({
+      status: 'success',
+      activities: [
+        {
+          id: '1',
+          image_refs: [
+            { uri: 'http://localhost:8080/photos/1/a.jpg', thumb_url: 'http://localhost:8080/photos/1/a_t.jpg' },
+          ],
+        },
+      ],
+    });
+  });
+
   it('resolves a 400 with the server message', async () => {
     mockFetchOnce(400, { error: 'unknown scope: galaxy' });
     const result = await queryActivities({ scope: 'nearby' });

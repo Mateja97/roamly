@@ -181,11 +181,27 @@ function attachCategory(
   return { ...details, category } as ActivityDetails;
 }
 
+// Admin-uploaded photos come back as paths relative to proxy-service
+// (e.g. "/photos/<id>/<file>.jpg"); Google-sourced photos are already
+// absolute https:// URLs. <Image> can't resolve a relative path on a
+// device, so every uri/thumb_url must be resolved against PROXY_URL here,
+// once, for every screen that renders a photo.
+function resolveUri(uri: string): string {
+  return /^https?:\/\//.test(uri) ? uri : `${PROXY_URL}${uri}`;
+}
+
 function toActivity(raw: RawActivity): Activity {
   return {
     ...raw,
     details: attachCategory(raw.details, raw.category),
-    image_refs: (raw.image_refs ?? []).map((ref) => (typeof ref === 'string' ? { uri: ref } : ref)),
+    image_refs: (raw.image_refs ?? []).map((ref) => {
+      const photo = typeof ref === 'string' ? { uri: ref } : ref;
+      return {
+        ...photo,
+        uri: resolveUri(photo.uri),
+        ...(photo.thumb_url ? { thumb_url: resolveUri(photo.thumb_url) } : {}),
+      };
+    }),
   };
 }
 
