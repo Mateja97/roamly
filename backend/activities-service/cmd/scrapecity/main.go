@@ -221,7 +221,7 @@ func (c *client) doJSON(req *http.Request, dst any) error {
 		return fmt.Errorf("reading response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%s: status %d: %s", req.URL.Path, resp.StatusCode, truncate(string(data), 300))
+		return fmt.Errorf("%s: status %d: %s", req.URL.Path, resp.StatusCode, truncate(string(data), 800))
 	}
 	if err := json.Unmarshal(data, dst); err != nil {
 		return fmt.Errorf("decoding response: %w", err)
