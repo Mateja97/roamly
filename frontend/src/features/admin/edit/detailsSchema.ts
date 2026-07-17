@@ -13,7 +13,6 @@ export type ControlKind =
   | 'chips'
   | 'line-items'
   | 'object-group'
-  | 'toggle'
   | 'opening-hours';
 
 export interface SubFieldOption {
@@ -95,9 +94,15 @@ export const OPENING_HOURS_PERIOD_FIELDS: SubField[] = [
   },
 ];
 
-/** The structured weekly-hours group (T2) — one entry, spliced right after
- * the free-text hours field in each of the seven in-scope categories'
- * schemas below. */
+/** The structured weekly-hours group (T2) — the only hours input in each of
+ * the seven in-scope categories' schemas below. The old free-text hours /
+ * opens_time / open_status / open_tonight fields were dropped from the
+ * editor (T5): admins can only author the new structured shape going
+ * forward. Existing activities that still carry the legacy keys keep them
+ * untouched in `details` — the editor never explicitly deletes a key it
+ * doesn't render a field for — and the app's fallback display for
+ * unconverted rows (e.g. bars/nightlife, which have no reliable close time
+ * to convert) is unaffected. */
 const OPENING_HOURS_FIELD: DetailField = {
   key: 'opening_hours',
   label: 'Opening hours',
@@ -110,8 +115,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   restaurants: [
     { key: 'cuisine', label: 'Cuisine', control: 'text' },
     { key: 'price_tier', label: 'Price tier', control: 'text' },
-    { key: 'hours', label: 'Hours', control: 'text' },
-    { key: 'open_status', label: 'Open status', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'popular_dishes',
@@ -125,7 +128,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   cafes: [
     { key: 'known_for_brew', label: 'Known for brew', control: 'text' },
     { key: 'wifi_quality', label: 'Wifi quality', control: 'text' },
-    { key: 'hours', label: 'Hours', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'on_the_bar',
@@ -138,7 +140,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   bars: [
     { key: 'vibe', label: 'Vibe', control: 'text' },
     { key: 'happy_hour_window', label: 'Happy hour window', control: 'text' },
-    { key: 'opens_time', label: 'Opens', control: 'text' },
     OPENING_HOURS_FIELD,
     { key: 'signature_pours', label: 'Signature pours', control: 'chips' },
     { key: 'action_url', label: 'Booking website', control: 'url' },
@@ -146,8 +147,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   nightlife: [
     { key: 'entry_price', label: 'Entry price', control: 'text' },
     { key: 'dress_code', label: 'Dress code', control: 'text' },
-    { key: 'opens_time', label: 'Opens', control: 'text' },
-    { key: 'open_tonight', label: 'Open tonight', control: 'toggle' },
     OPENING_HOURS_FIELD,
     {
       key: 'lineup',
@@ -185,7 +184,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   culture: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'ticket_price', label: 'Ticket price', control: 'text' },
-    { key: 'hours', label: 'Hours', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'now_showing',
@@ -198,7 +196,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   art: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'ticket_price', label: 'Ticket price', control: 'text' },
-    { key: 'hours', label: 'Hours', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'artwork',
@@ -242,7 +239,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   shopping: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'best_day', label: 'Best day', control: 'text' },
-    { key: 'hours', label: 'Hours', control: 'text' },
     OPENING_HOURS_FIELD,
     { key: 'what_youll_find', label: "What you'll find", control: 'chips' },
   ],
