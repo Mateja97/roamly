@@ -13,16 +13,13 @@ describe('DetailsSection', () => {
     expect(screen.getByLabelText('External booking note')).toBeInTheDocument();
   });
 
-  it('nightlife renders the boolean toggle and the lineup line-items', () => {
+  it('nightlife renders the lineup line-items and no legacy free-text hours fields', () => {
     render(
-      <DetailsSection
-        category="nightlife"
-        details={{ open_tonight: true }}
-        onChange={vi.fn()}
-      />,
+      <DetailsSection category="nightlife" details={{}} onChange={vi.fn()} />,
     );
-    expect(screen.getByLabelText('Open tonight')).toBeChecked();
     expect(screen.getByText('Lineup')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Opens')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Open tonight')).not.toBeInTheDocument();
   });
 
   it('art renders two nested object-groups (artwork, current_exhibition)', () => {

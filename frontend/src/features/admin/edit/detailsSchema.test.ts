@@ -10,7 +10,6 @@ const VALID_CONTROLS: ControlKind[] = [
   'chips',
   'line-items',
   'object-group',
-  'toggle',
   'opening-hours',
 ];
 

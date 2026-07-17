@@ -5,7 +5,6 @@ import { TextareaField } from './controls/TextareaField';
 import { RemovableChipList } from './controls/RemovableChipList';
 import { LineItemsEditor } from './controls/LineItemsEditor';
 import { ObjectGroupField } from './controls/ObjectGroupField';
-import { BooleanToggle } from './controls/BooleanToggle';
 import {
   OpeningHoursField,
   type OpeningHoursFieldHandle,
@@ -102,13 +101,6 @@ export function DetailsSection({
     const next = { ...details };
     if (value === null) delete next[key];
     else next[key] = value;
-    onChange(next);
-  }
-
-  function setBoolean(key: string, checked: boolean) {
-    const next = { ...details };
-    if (!checked) delete next[key];
-    else next[key] = true;
     onChange(next);
   }
 
@@ -211,16 +203,6 @@ export function DetailsSection({
                   fields={field.itemFields ?? []}
                   value={asObjectOrNull(details[field.key])}
                   onChange={(obj) => setObjectOrNull(field.key, obj)}
-                  disabled={disabled}
-                />
-              );
-            case 'toggle':
-              return (
-                <BooleanToggle
-                  key={field.key}
-                  label={field.label}
-                  checked={Boolean(details[field.key])}
-                  onChange={(checked) => setBoolean(field.key, checked)}
                   disabled={disabled}
                 />
               );
