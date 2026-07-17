@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AlertCircle, X } from 'lucide-react';
 import {
   createAdminActivity,
@@ -98,7 +98,12 @@ type LoadState =
 export function EditActivityPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const routerLocation = useLocation();
   const isCreate = id === undefined;
+  // routerLocation.key is "default" when there's no prior in-app history
+  // entry (direct URL load, bookmark) — navigate(-1) would no-op or leave the app.
+  const goBack = () =>
+    routerLocation.key === 'default' ? navigate('/activities') : navigate(-1);
 
   const [loadState, setLoadState] = useState<LoadState>(
     isCreate ? { kind: 'loaded' } : { kind: 'loading' },
@@ -184,7 +189,7 @@ export function EditActivityPage() {
     setSaving(false);
 
     if (result.status === 'success') {
-      navigate(-1);
+      goBack();
       return;
     }
     if (result.status === 403) {
@@ -235,7 +240,7 @@ export function EditActivityPage() {
         activityTitle={form.title}
         status={form.status}
         saving={saving}
-        onCancel={() => navigate(-1)}
+        onCancel={goBack}
         onSave={handleSave}
       />
 
