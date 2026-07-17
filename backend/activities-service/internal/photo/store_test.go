@@ -93,3 +93,70 @@ func TestSave_RejectsTraversalInActivityID(t *testing.T) {
 		})
 	}
 }
+
+// writeFile creates path (and its parent dir) with arbitrary content —
+// Unlink only cares that the file existed, not what's in it.
+func writeFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("creating %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatalf("writing %s: %v", path, err)
+	}
+}
+
+func exists(t *testing.T, path string) bool {
+	t.Helper()
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	t.Fatalf("stat %s: %v", path, err)
+	return false
+}
+
+func TestUnlink(t *testing.T) {
+	tests := []struct {
+		name       string
+		url        string
+		skipCreate bool // don't pre-create filePath, to prove an already-gone file isn't an error
+		wantErr    bool
+		wantExists bool // whether the file at filePath still exists after Unlink
+	}{
+		{name: "removes a photo url under root", url: "/photos/act1/photo.jpg", wantExists: false},
+		{name: "already-gone file is not an error", url: "/photos/act1/photo.jpg", skipCreate: true, wantExists: false},
+		{name: "google url is left untouched", url: "https://maps.googleapis.com/photo.jpg", wantExists: true},
+		{name: "traversal url is rejected, not followed", url: "/photos/../escape.jpg", wantErr: true, wantExists: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			// filePath is where the guarded case ("removes...") expects the
+			// file; the traversal case deliberately plants its decoy one
+			// level above root, which "/photos/../escape.jpg" resolves to.
+			filePath := filepath.Join(root, "act1", "photo.jpg")
+			if tt.url == "/photos/../escape.jpg" {
+				filePath = filepath.Join(root, "..", "escape.jpg")
+			}
+			if !tt.skipCreate {
+				writeFile(t, filePath)
+			}
+
+			s := NewStore(root)
+			err := s.Unlink(tt.url)
+			if tt.wantErr && err == nil {
+				t.Fatal("Unlink() error = nil, want error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("Unlink() error = %v, want nil", err)
+			}
+			if got := exists(t, filePath); got != tt.wantExists {
+				t.Errorf("file exists = %v, want %v", got, tt.wantExists)
+			}
+		})
+	}
+}
