@@ -21,6 +21,11 @@ export const colors = {
   cardHighlight: 'rgba(206,144,66,0.5)',
   scrim: 'rgba(42,14,17,0.72)',
 
+  // T4: fullscreen photo viewer's opaque near-black backdrop — DESIGN_STANDARDS.md's
+  // --photo-viewer-bg, distinct from wine --bg/--scrim/--ink so photos are the only
+  // color on that one surface.
+  photoViewerBg: '#0F0405',
+
   // Scope ticket's --surface-gradient (top-lit body) and --glow (one
   // per-screen radial accent, approximated as a linear fade — see
   // ScopeTicket.tsx). Welcome screen is the one area:app surface that

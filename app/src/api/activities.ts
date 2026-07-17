@@ -10,7 +10,16 @@ export type Location = { lat: number; lng: number };
 // wires real Google Places photos through the backend.
 export type PhotoAttribution = { author: string; link?: string };
 
-export type ActivityPhoto = { uri: string; attribution?: PhotoAttribution };
+// T4: thumb_url/caption are T1 backend additions, optional/absent for
+// every pre-existing Google-sourced photo. thumb_url feeds the fullscreen
+// viewer's thumbnail strip; caption is independent of `attribution` and
+// must never suppress it (PhotoViewerModal stacks the two).
+export type ActivityPhoto = {
+  uri: string;
+  thumb_url?: string;
+  caption?: string;
+  attribution?: PhotoAttribution;
+};
 
 // T3: name/price pair — Restaurants' popular dishes and Cafés' on-the-bar
 // items share this shape (mirrors backend's ItemPrice).

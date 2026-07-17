@@ -42,7 +42,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 			Location: &activitiesv1.Location{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
 			Rating: 4.8,
 			Photos: []*activitiesv1.Photo{
-				{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane"},
+				{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane", ThumbUrl: "img1_t", Caption: "Sunset view"},
 				{Url: "img2"}, // unresolved: no author, attribution must be omitted
 			},
 			Tags: []string{"sports"}, DistanceKm: 3.2,
@@ -68,6 +68,9 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 	photos := got.Activities[0].ImageRefs
 	if len(photos) != 2 || photos[0].URI != "img1" || photos[0].Attribution == nil || photos[0].Attribution.Author != "Jane Doe" {
 		t.Errorf("unexpected resolved photo: %+v", photos)
+	}
+	if photos[0].ThumbURL != "img1_t" || photos[0].Caption != "Sunset view" {
+		t.Errorf("thumb_url/caption must round-trip through the public query endpoint (T4): %+v", photos[0])
 	}
 	if photos[1].URI != "img2" || photos[1].Attribution != nil {
 		t.Errorf("unresolved photo must omit attribution: %+v", photos[1])

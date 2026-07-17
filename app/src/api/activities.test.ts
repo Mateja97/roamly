@@ -43,6 +43,31 @@ describe('queryActivities', () => {
     });
   });
 
+  it('passes through thumb_url and caption unchanged (T4)', async () => {
+    mockFetchOnce(200, {
+      activities: [
+        {
+          id: '1',
+          image_refs: [
+            { uri: 'https://example.com/img.jpg', thumb_url: 'https://example.com/img_t.jpg', caption: 'Sunset view' },
+          ],
+        },
+      ],
+    });
+    const result = await queryActivities({ scope: 'nearby' });
+    expect(result).toEqual({
+      status: 'success',
+      activities: [
+        {
+          id: '1',
+          image_refs: [
+            { uri: 'https://example.com/img.jpg', thumb_url: 'https://example.com/img_t.jpg', caption: 'Sunset view' },
+          ],
+        },
+      ],
+    });
+  });
+
   it('resolves a 400 with the server message', async () => {
     mockFetchOnce(400, { error: 'unknown scope: galaxy' });
     const result = await queryActivities({ scope: 'nearby' });

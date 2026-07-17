@@ -408,6 +408,42 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
+  describe('photo gallery pill + viewer (T4)', () => {
+    const withTwoPhotos: Activity = {
+      ...activity,
+      image_refs: [
+        { uri: 'https://example.com/1.jpg', thumb_url: 'https://example.com/1_t.jpg' },
+        { uri: 'https://example.com/2.jpg', thumb_url: 'https://example.com/2_t.jpg' },
+      ],
+    };
+
+    it('hides the "Photos N" pill when the activity has fewer than 2 photos', () => {
+      render(
+        <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
+    });
+
+    it('shows the "Photos N" pill with the live count when the activity has 2+ photos', () => {
+      render(
+        <ActivityDetailScreen activity={withTwoPhotos} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByLabelText('View 2 photos')).toBeTruthy();
+      expect(screen.getByText('Photos 2')).toBeTruthy();
+    });
+
+    it('opens the fullscreen viewer at the hero photo (index 0) when the pill is pressed, and closes it', () => {
+      render(
+        <ActivityDetailScreen activity={withTwoPhotos} showDistance onBack={jest.fn()} />,
+      );
+      fireEvent.press(screen.getByLabelText('View 2 photos'));
+      expect(screen.getByText('1 / 2')).toBeTruthy();
+
+      fireEvent.press(screen.getByLabelText('Close photos'));
+      expect(screen.queryByText('1 / 2')).toBeNull();
+    });
+  });
+
   describe('design-fidelity fixes across categories (T8)', () => {
     it('opens the external action_url for a non-directions category (Sport) and is never disabled once the URL exists', async () => {
       const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
