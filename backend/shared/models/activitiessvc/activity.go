@@ -41,6 +41,18 @@ const (
 	CategoryEntertainment Category = "entertainment"
 )
 
+// Valid reports whether c is one of the 12 taxonomy categories
+// (BUSINESS_STANDARDS.md). Used at ingestion trust boundaries.
+func (c Category) Valid() bool {
+	switch c {
+	case CategoryRestaurants, CategoryCafes, CategoryBars, CategoryNightlife,
+		CategoryNature, CategorySport, CategoryKids, CategoryCulture,
+		CategoryArt, CategoryWellness, CategoryShopping, CategoryEntertainment:
+		return true
+	}
+	return false
+}
+
 // Point is a WGS84 coordinate pair.
 type Point struct {
 	Lat float64
@@ -389,6 +401,28 @@ type NewActivity struct {
 	Photos      []Photo
 }
 
+// IngestActivity is one activity from the ingestion pipeline (cmd/importcity).
+// Unlike NewActivity (the admin create surface, which has no geocoding), this
+// carries real coordinates, country, and rating from the scrape, plus the
+// source identity used to dedupe on re-runs.
+type IngestActivity struct {
+	Title       string
+	Description string
+	Category    Category
+	Lat         float64
+	Lng         float64
+	Country     string
+	City        string
+	Address     string
+	Rating      float64
+	Status      Status
+	Details     json.RawMessage
+	Photos      []Photo
+	Source      string
+	SourceURL   string
+	Raw         json.RawMessage
+}
+
 // UpdatePatch is a partial update (T2): a nil field is left untouched, a
 // non-nil one (even pointing at an empty string) is set to that value. The
 // same pointer-presence convention flows end to end — proxy-service's JSON
@@ -403,4 +437,5 @@ type UpdatePatch struct {
 	Status      *Status
 	Details     *json.RawMessage
 	Photos      *[]Photo
+	Tags        *[]string
 }

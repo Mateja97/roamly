@@ -70,6 +70,36 @@ func startTestPostgres(t *testing.T) *pgxpool.Pool {
 	return db
 }
 
+func TestMigration0012IngestionColumns(t *testing.T) {
+	ctx := context.Background()
+	pool := startTestPostgres(t)
+
+	// description is nullable
+	var isNullable string
+	err := pool.QueryRow(ctx, `SELECT is_nullable FROM information_schema.columns
+		WHERE table_name='activities' AND column_name='description'`).Scan(&isNullable)
+	if err != nil {
+		t.Fatalf("querying description column: %v", err)
+	}
+	if isNullable != "YES" {
+		t.Fatalf("description is_nullable = %q, want YES", isNullable)
+	}
+
+	// source_url unique index rejects duplicates
+	_, err = pool.Exec(ctx, `INSERT INTO activities
+		(title, description, category, location, country, rating, source_url)
+		VALUES ('A','d','cafes', ST_SetSRID(ST_MakePoint(0,0),4326)::geography, 'X', 0, 'http://x/1')`)
+	if err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO activities
+		(title, description, category, location, country, rating, source_url)
+		VALUES ('B','d','cafes', ST_SetSRID(ST_MakePoint(0,0),4326)::geography, 'X', 0, 'http://x/1')`)
+	if err == nil {
+		t.Fatal("duplicate source_url insert succeeded, want unique-violation error")
+	}
+}
+
 func TestActivities_Query_Integration(t *testing.T) {
 	db := startTestPostgres(t)
 	repo := New(db)
@@ -742,4 +772,87 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestUpsertThenUpdateTagsPersistsNeedsPhotos(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	in := activitiessvc.IngestActivity{
+		Title: "Tag Fixture", Description: "cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
+		Rating: 4.3, Status: activitiessvc.StatusPending,
+		Source: "firecrawl", SourceURL: "http://example/tag-fixture",
+	}
+	created, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("Upsert() error: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+	tags := []string{"needs-photos"}
+	if _, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{Tags: &tags}); err != nil {
+		t.Fatalf("Update() error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	found := false
+	for _, tag := range got.Tags {
+		if tag == "needs-photos" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("GetByID() tags = %v, want to contain needs-photos", got.Tags)
+	}
+}
+
+func TestUpsertIdempotentBySourceURL(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	in := activitiessvc.IngestActivity{
+		Title: "Koffein", Description: "cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
+		Rating: 4.3, Status: activitiessvc.StatusPending,
+		Source: "firecrawl", SourceURL: "http://example/koffein",
+	}
+	first, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, first.ID) })
+
+	// Simulate admin-owned state that a re-import must not clobber: a
+	// published status and a downloaded photo, set out-of-band via Update
+	// (the same path the importer's photo pipeline and the admin surface use)
+	// rather than through Upsert itself.
+	publishedStatus := activitiessvc.StatusPublished
+	photos := []activitiessvc.Photo{{URL: "/photos/x/a.jpg", ThumbURL: "/photos/x/a_t.jpg"}}
+	if _, err := repo.Update(ctx, first.ID, activitiessvc.UpdatePatch{Status: &publishedStatus, Photos: &photos}); err != nil {
+		t.Fatalf("seeding published status + photo: %v", err)
+	}
+
+	in.Rating = 4.9 // same source_url, changed field
+	second, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("second upsert: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("upsert created a new row (%s != %s), want update in place", first.ID, second.ID)
+	}
+	if second.Rating != 4.9 {
+		t.Fatalf("rating = %v, want 4.9 (updated)", second.Rating)
+	}
+	if second.Status != activitiessvc.StatusPublished {
+		t.Errorf("status = %q, want published preserved (re-import must not un-publish an admin-approved row)", second.Status)
+	}
+	if len(second.Photos) != 1 || second.Photos[0].URL != "/photos/x/a.jpg" {
+		t.Errorf("photos = %+v, want the pre-existing photo preserved (photos excluded from the conflict update)", second.Photos)
+	}
 }

@@ -389,6 +389,16 @@ func nonNilPhotos(photos []activitiessvc.Photo) []activitiessvc.Photo {
 	return photos
 }
 
+// nonNilTags mirrors nonNilPhotos: pgx's array codec sends a nil slice as SQL
+// NULL, which the tags column's NOT NULL DEFAULT '{}' constraint rejects —
+// clearing a stale tag means setting an empty array, never NULL.
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
 // nonEmptyDetailsBytes is the []byte the details column's bind arg always
 // uses: pgx's JSONB codec sends a nil/empty []byte as SQL NULL, which the
 // NOT NULL constraint rejects. The service layer already normalizes empty
@@ -417,6 +427,47 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	))
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("creating activity: %w", err)
+	}
+	return a, nil
+}
+
+// Upsert inserts an ingested activity or, when a row with the same source_url
+// already exists, updates it in place (idempotent re-runs). Coordinates are
+// real (unlike admin Create's 0,0 sentinel). Both photos and status are
+// intentionally NOT in the DO UPDATE set: photos because the importer manages
+// them separately once bytes are downloaded, so a re-run must not clobber
+// already-downloaded photos; status because it's admin-owned state once a
+// human has published/rejected a row — a re-import always builds its INSERT
+// values with StatusPending, and applying that on conflict would silently
+// un-publish activities an admin already approved. New rows still insert with
+// their given (pending) status via the INSERT VALUES; only the conflict path
+// leaves status alone.
+func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
+	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
+		INSERT INTO activities
+			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, raw)
+		VALUES
+			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (source_url) WHERE source_url IS NOT NULL DO UPDATE SET
+			title = EXCLUDED.title,
+			description = EXCLUDED.description,
+			category = EXCLUDED.category,
+			location = EXCLUDED.location,
+			country = EXCLUDED.country,
+			rating = EXCLUDED.rating,
+			city = EXCLUDED.city,
+			address = EXCLUDED.address,
+			details = EXCLUDED.details,
+			source = EXCLUDED.source,
+			raw = EXCLUDED.raw
+		RETURNING `+adminColumns,
+		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
+		in.Country, in.Rating, in.City, in.Address, string(in.Status),
+		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
+		in.Source, in.SourceURL, nonEmptyDetailsBytes(in.Raw),
+	))
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", in.SourceURL, err)
 	}
 	return a, nil
 }
@@ -453,6 +504,9 @@ func (r *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 	}
 	if patch.Photos != nil {
 		sets = append(sets, "photos = "+arg(nonNilPhotos(*patch.Photos)))
+	}
+	if patch.Tags != nil {
+		sets = append(sets, "tags = "+arg(nonNilTags(*patch.Tags)))
 	}
 
 	if len(sets) == 0 {
