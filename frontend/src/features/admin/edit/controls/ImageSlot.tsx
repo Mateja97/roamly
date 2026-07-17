@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 
 export interface ImageSlotProps {
@@ -24,10 +24,28 @@ export function ImageSlot({
 }: ImageSlotProps) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
-  useEffect(() => {
-    setLoaded(false);
-    setFailed(false);
+  // One effect, not two: an already-cached image (or a data: URI, which
+  // decodes synchronously) can finish loading before React attaches the
+  // onLoad listener below — the browser never re-fires `load` for an
+  // already-complete <img> — so this has to both reset state for a new
+  // `src` *and* catch up on an already-complete one in the same pass. A
+  // separate plain `useEffect` that only reset on `src` change used to
+  // run after this one and stomp its synchronous result back to false on
+  // every mount (including the already-loaded case).
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img?.complete && img.naturalWidth > 0) {
+      setLoaded(true);
+      setFailed(false);
+    } else if (img?.complete) {
+      setLoaded(false);
+      setFailed(true);
+    } else {
+      setLoaded(false);
+      setFailed(false);
+    }
   }, [src]);
 
   if (!src) {
@@ -56,6 +74,7 @@ export function ImageSlot({
         />
       )}
       <img
+        ref={imgRef}
         src={src}
         alt={alt}
         className="admin-image-img"
