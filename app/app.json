@@ -24,7 +24,8 @@
     },
     "plugins": [
       "expo-asset",
-      "expo-image"
+      "expo-image",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
