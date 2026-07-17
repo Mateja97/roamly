@@ -828,6 +828,16 @@ func TestUpsertIdempotentBySourceURL(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, first.ID) })
 
+	// Simulate admin-owned state that a re-import must not clobber: a
+	// published status and a downloaded photo, set out-of-band via Update
+	// (the same path the importer's photo pipeline and the admin surface use)
+	// rather than through Upsert itself.
+	publishedStatus := activitiessvc.StatusPublished
+	photos := []activitiessvc.Photo{{URL: "/photos/x/a.jpg", ThumbURL: "/photos/x/a_t.jpg"}}
+	if _, err := repo.Update(ctx, first.ID, activitiessvc.UpdatePatch{Status: &publishedStatus, Photos: &photos}); err != nil {
+		t.Fatalf("seeding published status + photo: %v", err)
+	}
+
 	in.Rating = 4.9 // same source_url, changed field
 	second, err := repo.Upsert(ctx, in)
 	if err != nil {
@@ -838,5 +848,11 @@ func TestUpsertIdempotentBySourceURL(t *testing.T) {
 	}
 	if second.Rating != 4.9 {
 		t.Fatalf("rating = %v, want 4.9 (updated)", second.Rating)
+	}
+	if second.Status != activitiessvc.StatusPublished {
+		t.Errorf("status = %q, want published preserved (re-import must not un-publish an admin-approved row)", second.Status)
+	}
+	if len(second.Photos) != 1 || second.Photos[0].URL != "/photos/x/a.jpg" {
+		t.Errorf("photos = %+v, want the pre-existing photo preserved (photos excluded from the conflict update)", second.Photos)
 	}
 }

@@ -433,9 +433,15 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 
 // Upsert inserts an ingested activity or, when a row with the same source_url
 // already exists, updates it in place (idempotent re-runs). Coordinates are
-// real (unlike admin Create's 0,0 sentinel). photos is intentionally NOT in
-// the DO UPDATE set — the importer manages photos separately once bytes are
-// downloaded, so a re-run must not clobber already-downloaded photos.
+// real (unlike admin Create's 0,0 sentinel). Both photos and status are
+// intentionally NOT in the DO UPDATE set: photos because the importer manages
+// them separately once bytes are downloaded, so a re-run must not clobber
+// already-downloaded photos; status because it's admin-owned state once a
+// human has published/rejected a row — a re-import always builds its INSERT
+// values with StatusPending, and applying that on conflict would silently
+// un-publish activities an admin already approved. New rows still insert with
+// their given (pending) status via the INSERT VALUES; only the conflict path
+// leaves status alone.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
@@ -451,7 +457,6 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			rating = EXCLUDED.rating,
 			city = EXCLUDED.city,
 			address = EXCLUDED.address,
-			status = EXCLUDED.status,
 			details = EXCLUDED.details,
 			source = EXCLUDED.source,
 			raw = EXCLUDED.raw

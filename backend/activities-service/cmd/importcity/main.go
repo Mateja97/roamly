@@ -103,7 +103,7 @@ func importRow(ctx context.Context, repo *repository.Activities, r inputRow) (st
 		Raw:         r.Raw,
 	})
 	if err != nil {
-		return "", fmt.Errorf("upserting %q: %w", r.SourceURL, err)
+		return "", fmt.Errorf("importing row %q: %w", r.SourceURL, err)
 	}
 	return a.ID, nil
 }
@@ -128,9 +128,19 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 }
 
 // ensurePhotos guarantees id has >=minPhotos photos: it skips entirely when
-// the existing row already has enough (cheap re-runs), else downloads
-// r.PhotoURLs, backfills a single Google Places photo when still short, and
-// persists whatever was collected.
+// the existing row already has enough (cheap re-runs), else backfills a
+// single Google Places photo when still short, and persists whatever was
+// collected.
+//
+// The scraped-URL download loop only runs when the row has zero existing
+// photos. store.Save mints a fresh filename on every call, so re-running it
+// against a row that already has 1-2 photos (the needs-photos population an
+// operator re-imports to fix) would re-download and re-append every
+// r.PhotoURLs on top of what's already stored, duplicating them. The Google
+// backfill has no such duplication risk (it's a single best-effort lookup,
+// see below), so it still runs on every re-run while the row is short — an
+// operator who adds GOOGLE_MAPS_API_KEY after the fact and re-imports a
+// 1-2-photo row still gets topped up.
 //
 // googlephotos.FirstPhoto resolves the single best photo for a text query —
 // calling it again for the same query would just return the same photo, not
@@ -147,18 +157,20 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 	}
 
 	photos := existing.Photos
-	for _, u := range r.PhotoURLs {
-		data, err := download(ctx, client, u)
-		if err != nil {
-			slog.Warn("skipping photo download failure", "url", u, "error", err)
-			continue
+	if len(existing.Photos) == 0 {
+		for _, u := range r.PhotoURLs {
+			data, err := download(ctx, client, u)
+			if err != nil {
+				slog.Warn("skipping photo download failure", "url", u, "error", err)
+				continue
+			}
+			url, thumbURL, err := store.Save(id, data)
+			if err != nil {
+				slog.Warn("skipping unsaveable photo", "url", u, "error", err)
+				continue
+			}
+			photos = append(photos, activitiessvc.Photo{URL: url, ThumbURL: thumbURL})
 		}
-		url, thumbURL, err := store.Save(id, data)
-		if err != nil {
-			slog.Warn("skipping unsaveable photo", "url", u, "error", err)
-			continue
-		}
-		photos = append(photos, activitiessvc.Photo{URL: url, ThumbURL: thumbURL})
 	}
 
 	if len(photos) < minPhotos && googleKey != "" {
