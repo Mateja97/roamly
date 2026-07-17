@@ -21,6 +21,8 @@ services:
       POSTGRES_USER: activities
       POSTGRES_PASSWORD: activities
       POSTGRES_DB: activities
+    ports:
+      - "5432:5432"
     volumes:
       - activities-db-data:/var/lib/postgresql/data
     healthcheck:
