@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -128,35 +129,54 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 }
 
 // ensurePhotos guarantees id has >=minPhotos photos: it skips entirely when
-// the existing row already has enough (cheap re-runs), else backfills a
-// single Google Places photo when still short, and persists whatever was
-// collected.
+// the existing row already has enough (cheap re-runs, but still clears a
+// stale needs-photos tag if one was left over from a prior short run), else
+// backfills a single Google Places photo when still short, and persists
+// whatever was collected.
 //
 // The scraped-URL download loop only runs when the row has zero existing
 // photos. store.Save mints a fresh filename on every call, so re-running it
 // against a row that already has 1-2 photos (the needs-photos population an
 // operator re-imports to fix) would re-download and re-append every
-// r.PhotoURLs on top of what's already stored, duplicating them. The Google
-// backfill has no such duplication risk (it's a single best-effort lookup,
-// see below), so it still runs on every re-run while the row is short — an
-// operator who adds GOOGLE_MAPS_API_KEY after the fact and re-imports a
-// 1-2-photo row still gets topped up.
+// r.PhotoURLs on top of what's already stored, duplicating them.
 //
-// googlephotos.FirstPhoto resolves the single best photo for a text query —
-// calling it again for the same query would just return the same photo, not
-// a new one — so backfill is a single best-effort attempt, not a loop; a row
-// still short after that stays flagged needs-photos rather than padded with
-// duplicate photos.
-func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo.Store, client *http.Client, googleKey, id string, r inputRow) (rowStatus, error) {
+// Every append (scraped download or Google backfill) goes through
+// appendPhoto, which is a no-op if the URL is already present. That makes
+// the backfill path idempotent too: googlephotos.FirstPhoto deterministically
+// resolves the same photo for the same query, and `photos` starts seeded
+// from existing.Photos, so without the dedupe a re-run would re-append the
+// prior run's backfilled URL every time. The Google backfill still runs on
+// every re-run while the row is short — an operator who adds
+// GOOGLE_MAPS_API_KEY after the fact and re-imports a 1-2-photo row still
+// gets topped up, just never with a duplicate.
+func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo.Store, client *http.Client, backfill func(context.Context, string) (activitiessvc.Photo, error), id string, r inputRow) (rowStatus, error) {
 	existing, err := repo.GetByID(ctx, id)
 	if err != nil {
 		return rowStatus{}, fmt.Errorf("loading activity %s: %w", id, err)
 	}
 	if len(existing.Photos) >= minPhotos {
-		return statusAndTags(len(existing.Photos)), nil
+		rs := statusAndTags(len(existing.Photos))
+		if slices.Contains(existing.Tags, "needs-photos") {
+			if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Tags: &rs.tags}); err != nil {
+				return rowStatus{}, fmt.Errorf("clearing stale needs-photos tag for %s: %w", id, err)
+			}
+		}
+		return rs, nil
 	}
 
 	photos := existing.Photos
+	seen := make(map[string]bool, len(photos))
+	for _, p := range photos {
+		seen[p.URL] = true
+	}
+	appendPhoto := func(p activitiessvc.Photo) {
+		if seen[p.URL] {
+			return
+		}
+		seen[p.URL] = true
+		photos = append(photos, p)
+	}
+
 	if len(existing.Photos) == 0 {
 		for _, u := range r.PhotoURLs {
 			data, err := download(ctx, client, u)
@@ -169,16 +189,16 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 				slog.Warn("skipping unsaveable photo", "url", u, "error", err)
 				continue
 			}
-			photos = append(photos, activitiessvc.Photo{URL: url, ThumbURL: thumbURL})
+			appendPhoto(activitiessvc.Photo{URL: url, ThumbURL: thumbURL})
 		}
 	}
 
-	if len(photos) < minPhotos && googleKey != "" {
+	if len(photos) < minPhotos && backfill != nil {
 		query := r.Title + ", " + r.City + ", " + r.Country
-		if p, err := googlephotos.FirstPhoto(ctx, client, googleKey, query); err != nil {
+		if p, err := backfill(ctx, query); err != nil {
 			slog.Warn("google photo backfill found nothing", "title", r.Title, "error", err)
 		} else {
-			photos = append(photos, p)
+			appendPhoto(p)
 		}
 	}
 
@@ -248,19 +268,26 @@ func main() {
 	store := photo.NewStore(config.OrDefault("PHOTOS_DIR", "/data/photos"))
 	httpClient := &http.Client{Timeout: 15 * time.Second}
 	googleKey := os.Getenv("GOOGLE_MAPS_API_KEY")
+	var backfill func(context.Context, string) (activitiessvc.Photo, error)
+	if googleKey != "" {
+		backfill = func(ctx context.Context, query string) (activitiessvc.Photo, error) {
+			return googlephotos.FirstPhoto(ctx, httpClient, googleKey, query)
+		}
+	}
 
 	imported := 0
+	failedImport := 0
 	flaggedNeedsPhotos := 0
 	for _, r := range valid {
 		id, err := importRow(ctx, repo, r)
 		if err != nil {
 			logger.Warn("skipping row on import failure", "title", r.Title, "error", err)
-			skippedInvalid++
+			failedImport++
 			continue
 		}
 		imported++
 
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, googleKey, id, r)
+		rs, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, r)
 		if err != nil {
 			logger.Warn("photo pipeline failed", "title", r.Title, "id", id, "error", err)
 			continue
@@ -271,5 +298,5 @@ func main() {
 		}
 	}
 
-	logger.Info("import complete", "imported", imported, "skipped_invalid", skippedInvalid, "flagged_needs_photos", flaggedNeedsPhotos)
+	logger.Info("import complete", "imported", imported, "skipped_invalid", skippedInvalid, "failed_import", failedImport, "flagged_needs_photos", flaggedNeedsPhotos)
 }

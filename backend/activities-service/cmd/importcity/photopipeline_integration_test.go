@@ -15,6 +15,7 @@ import (
 	"context"
 	"image"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"activities-service/internal/googlephotos"
 	"activities-service/internal/photo"
 	"activities-service/internal/repository"
 
@@ -118,7 +120,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		id := insert(t, "http://example/needs-photos")
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
 
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, "", id, row)
+		rs, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() first run error: %v", err)
 		}
@@ -137,7 +139,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 
 		// Regression guard for the duplicate-photos fix: running the SAME
 		// row through ensurePhotos a second time must not change len(photos).
-		rs2, err := ensurePhotos(ctx, repo, store, httpClient, "", id, row)
+		rs2, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() second run error: %v", err)
 		}
@@ -165,7 +167,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		}
 
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
-		if _, err := ensurePhotos(ctx, repo, store, httpClient, "", id, row); err != nil {
+		if _, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row); err != nil {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
 
@@ -189,7 +191,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 
 		hitsBefore := hits
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, "", id, row)
+		rs, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
@@ -206,6 +208,90 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		}
 		if len(got.Photos) != 3 {
 			t.Errorf("photos = %d, want unchanged at 3", len(got.Photos))
+		}
+	})
+
+	t.Run("row that already has >=3 photos and a stale needs-photos tag gets the tag cleared", func(t *testing.T) {
+		id := insert(t, "http://example/already-full-stale-tag")
+		existingPhotos := []activitiessvc.Photo{
+			{URL: "/photos/x/a.jpg"}, {URL: "/photos/x/b.jpg"}, {URL: "/photos/x/c.jpg"},
+		}
+		staleTags := []string{"needs-photos"}
+		if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &existingPhotos, Tags: &staleTags}); err != nil {
+			t.Fatalf("seeding 3 photos + stale tag: %v", err)
+		}
+
+		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"}
+		rs, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		if err != nil {
+			t.Fatalf("ensurePhotos() error: %v", err)
+		}
+		if contains(rs.tags, "needs-photos") {
+			t.Errorf("tags = %v, want needs-photos cleared (row already has 3 photos)", rs.tags)
+		}
+
+		got, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID() error: %v", err)
+		}
+		if contains(got.Tags, "needs-photos") {
+			t.Errorf("persisted tags = %v, want needs-photos cleared", got.Tags)
+		}
+	})
+
+	// Regression test for the Google-backfill duplicate-photos bug: FirstPhoto
+	// deterministically resolves the same photo for the same query, and
+	// `photos` starts seeded from existing.Photos (which already holds the
+	// prior run's backfilled photo on a re-run) — without URL-dedupe, this
+	// grows [X] -> [X,X] -> [X,X,X] on every re-import. Must FAIL before the
+	// dedupe fix and PASS after.
+	t.Run("row with zero photo_urls backfills via Google and a re-run does not duplicate", func(t *testing.T) {
+		id := insert(t, "http://example/zero-urls-backfill")
+		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"} // no PhotoURLs at all
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/v1/places:searchText", func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"places":[{"photos":[{"name":"places/X/photos/Y",
+				"authorAttributions":[{"displayName":"Jane","uri":"http://author/jane"}]}]}]}`)
+		})
+		mux.HandleFunc("/v1/places/X/photos/Y/media", func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"photoUri":"http://img/backfilled.jpg"}`)
+		})
+		placesServer := httptest.NewServer(mux)
+		t.Cleanup(placesServer.Close)
+		backfill := func(ctx context.Context, query string) (activitiessvc.Photo, error) {
+			return googlephotos.FirstPhotoWithBase(ctx, placesServer.Client(), "k", query, placesServer.URL)
+		}
+
+		rs, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, row)
+		if err != nil {
+			t.Fatalf("ensurePhotos() first run error: %v", err)
+		}
+		if !contains(rs.tags, "needs-photos") {
+			t.Fatalf("first run tags = %v, want needs-photos (only 1 backfilled photo, under minPhotos)", rs.tags)
+		}
+
+		got, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID() after first run: %v", err)
+		}
+		if len(got.Photos) != 1 {
+			t.Fatalf("photos after first run = %d, want 1", len(got.Photos))
+		}
+
+		if _, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, row); err != nil {
+			t.Fatalf("ensurePhotos() second run error: %v", err)
+		}
+
+		got2, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID() after second run: %v", err)
+		}
+		if len(got2.Photos) != 1 {
+			t.Fatalf("photos after second run = %d, want unchanged at 1 (re-run must not duplicate the backfilled photo)", len(got2.Photos))
+		}
+		if got2.Photos[0].URL != "http://img/backfilled.jpg" {
+			t.Errorf("photo URL = %q, want the backfilled URL", got2.Photos[0].URL)
 		}
 	})
 }
