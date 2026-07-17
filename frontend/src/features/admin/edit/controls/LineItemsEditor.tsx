@@ -92,15 +92,23 @@ export function LineItemsEditor({
                 </div>
               );
             })}
-            <button
-              type="button"
-              className="admin-line-item-remove"
-              aria-label={`Remove ${itemLabel}`}
-              disabled={disabled}
-              onClick={() => removeRow(index)}
-            >
-              <X size={16} aria-hidden="true" />
-            </button>
+            <div className="admin-line-item-remove-wrap">
+              <span
+                className="admin-field-label admin-line-item-remove-label"
+                aria-hidden="true"
+              >
+                &nbsp;
+              </span>
+              <button
+                type="button"
+                className="admin-line-item-remove"
+                aria-label={`Remove ${itemLabel}`}
+                disabled={disabled}
+                onClick={() => removeRow(index)}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
           </div>
         ))}
         <button
