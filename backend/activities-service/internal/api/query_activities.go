@@ -30,9 +30,10 @@ type queryService interface {
 }
 
 // photoStore is the subset of internal/photo.Store the UploadPhoto RPC (T1)
-// needs.
+// and UpdateActivity's delete-on-remove (T2) need.
 type photoStore interface {
 	Save(activityID string, data []byte) (url, thumbURL string, err error)
+	Unlink(url string) error
 }
 
 type Server struct {

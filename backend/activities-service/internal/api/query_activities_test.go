@@ -50,6 +50,9 @@ type fakeQueryService struct {
 	saveErr               error
 	gotSaveActivityID     string
 	gotSaveData           []byte
+
+	unlinkErr   error
+	gotUnlinked []string
 }
 
 func (f *fakeQueryService) Query(_ context.Context, req service.Request) ([]activitiessvc.Activity, error) {
@@ -92,10 +95,27 @@ func (f *fakeQueryService) Save(activityID string, data []byte) (string, string,
 	return f.saveURL, f.saveThumbURL, f.saveErr
 }
 
+// Unlink implements photoStore alongside Save, so a fakeQueryService can
+// keep serving as both dialServer dependencies for every test in this
+// package — only update_activity_test.go's T2 cases care about calls
+// reaching a real store, and those use dialServerWithPhotos instead.
+func (f *fakeQueryService) Unlink(url string) error {
+	f.gotUnlinked = append(f.gotUnlinked, url)
+	return f.unlinkErr
+}
+
 func dialServer(t *testing.T, svc queryService) activitiesv1.ActivitiesServiceClient {
 	t.Helper()
-	lis := bufconn.Listen(1024 * 1024)
 	photos, _ := svc.(photoStore)
+	return dialServerWithPhotos(t, svc, photos)
+}
+
+// dialServerWithPhotos is dialServer with an explicit photoStore, for tests
+// that need a real filesystem-backed store (T2's on-disk unlink
+// assertions) rather than fakeQueryService's call-tracking stub.
+func dialServerWithPhotos(t *testing.T, svc queryService, photos photoStore) activitiesv1.ActivitiesServiceClient {
+	t.Helper()
+	lis := bufconn.Listen(1024 * 1024)
 	srv := NewGRPCServer(svc, photos, slog.New(slog.DiscardHandler))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
