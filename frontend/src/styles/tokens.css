@@ -1,23 +1,24 @@
 :root {
   color-scheme: dark;
 
-  --bg: #14160f;
-  --surface: #1b1e14;
-  --surface-hover: #242819;
-  --border: #2e331f;
+  --bg: #7D2027;
+  --surface: #8A2C35;
+  --surface-hover: #97363F;
+  --border: #5C171C;
 
-  --primary: #8a9a5b;
-  --primary-hover: #a4b378;
-  --primary-active: #6e7c46;
+  --primary: #CE9042;
+  --primary-hover: #DCA35A;
+  --primary-active: #B67C34;
+  --ink: #2A0E11;
 
-  --text: #edefe6;
-  --text-muted: #9ba08c;
-  --text-disabled: #5c6152;
+  --text: #F5EBDD;
+  --text-muted: #E0C9AE;
+  --text-disabled: #B0857A;
 
-  --success: #7fa65b;
-  --warning: #c9a227;
-  --error: #cc7350;
-  --error-hover: #d98963;
+  --success: #A3D18E;
+  --warning: #E8C572;
+  --error: #F5B79B;
+  --error-hover: #F0A588;
 
   --font-size-xs: 12px;
   --font-size-sm: 14px;
@@ -41,9 +42,9 @@
 
   --font-display: 'Marcellus', serif;
 
-  --card-highlight: #383e26;
-  --glow: rgba(138, 154, 91, 0.15);
-  --surface-gradient: linear-gradient(180deg, #1d2016 0%, #1b1e14 100%);
+  --card-highlight: rgba(206, 144, 66, 0.5);
+  --glow: rgba(206, 144, 66, 0.15);
+  --surface-gradient: linear-gradient(180deg, #93313A 0%, #8A2C35 100%);
 
   /* Admin surface (light) — scoped to frontend/src/features/admin, see
      DESIGN_STANDARDS.md's "Admin surface (light)" section. Never consumed
