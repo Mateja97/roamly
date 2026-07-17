@@ -25,6 +25,28 @@ export type ActivityPhoto = {
 // items share this shape (mirrors backend's ItemPrice).
 export type ItemPrice = { name: string; price: string };
 
+// T3 (opening-hours initiative): structured weekly hours, mirrors backend's
+// `activitiessvc.OpeningHours`/`Period`. `timezone` is a plain IANA name
+// (e.g. "Europe/Berlin") the app resolves against, never the device's own
+// zone. A close time earlier than open rolls past midnight (backend-validated,
+// never rejected here).
+export type DayOfWeek =
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
+
+export type OpeningHoursPeriod = { day: DayOfWeek; open: string; close: string };
+
+export type OpeningHours = {
+  timezone: string;
+  always_open?: boolean;
+  periods?: OpeningHoursPeriod[];
+};
+
 // T3: single-block callout — Culture's "now showing" and Art's "current
 // exhibition" unique sections share this shape (mirrors backend's Banner).
 export type DetailBanner = { title: string; description?: string };
@@ -44,6 +66,9 @@ export type ActivityDetails =
       popular_dishes?: ItemPrice[];
       // T7: primary CTA's external link ("Book a table").
       action_url?: string;
+      // opening-hours T3: structured alternative to `open_status` above —
+      // when present, supersedes it in the meta-row status slot.
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'bars';
@@ -53,6 +78,7 @@ export type ActivityDetails =
       signature_pours?: string[];
       // T7: primary CTA's external link ("See menu").
       action_url?: string;
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'cafes';
@@ -60,6 +86,7 @@ export type ActivityDetails =
       wifi_quality?: string;
       hours?: string;
       on_the_bar?: ItemPrice[];
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'nightlife';
@@ -72,6 +99,9 @@ export type ActivityDetails =
       action_url?: string;
       // T8: badge subtype qualifier, e.g. "Club".
       venue_type?: string;
+      // opening-hours T3: structured alternative to `open_tonight` above —
+      // when present, supersedes it in the meta-row status slot.
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'nature';
@@ -105,6 +135,7 @@ export type ActivityDetails =
       now_showing?: DetailBanner;
       // T7: primary CTA's external link ("Get tickets").
       action_url?: string;
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'art';
@@ -117,6 +148,7 @@ export type ActivityDetails =
       action_url?: string;
       // T7: current exhibition's artwork year, e.g. 2019.
       year?: number;
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'wellness';
@@ -141,6 +173,7 @@ export type ActivityDetails =
       best_day?: string;
       hours?: string;
       what_youll_find?: string[];
+      opening_hours?: OpeningHours;
     };
 
 export type Activity = {
