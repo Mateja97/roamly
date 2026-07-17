@@ -157,6 +157,27 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("re-importing a published under-3-photo row does not reset its status", func(t *testing.T) {
+		id := insert(t, "http://example/published-needs-photos")
+		published := activitiessvc.StatusPublished
+		if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Status: &published}); err != nil {
+			t.Fatalf("publishing fixture row: %v", err)
+		}
+
+		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
+		if _, err := ensurePhotos(ctx, repo, store, httpClient, "", id, row); err != nil {
+			t.Fatalf("ensurePhotos() error: %v", err)
+		}
+
+		got, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID() error: %v", err)
+		}
+		if got.Status != activitiessvc.StatusPublished {
+			t.Errorf("status after re-import = %q, want still %q (approval must survive an under-3-photo re-import)", got.Status, activitiessvc.StatusPublished)
+		}
+	})
+
 	t.Run("row that already has >=3 photos is left untouched, no new downloads", func(t *testing.T) {
 		id := insert(t, "http://example/already-full")
 		existingPhotos := []activitiessvc.Photo{

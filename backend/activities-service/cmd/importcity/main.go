@@ -182,8 +182,12 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 		}
 	}
 
+	// Status is deliberately excluded from this patch: it's set correctly at
+	// insert time by Upsert and must never be overwritten by a re-import,
+	// same reasoning as Upsert's DO UPDATE excluding status (an admin may
+	// have since published this row).
 	rs := statusAndTags(len(photos))
-	if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &photos, Status: &rs.status, Tags: &rs.tags}); err != nil {
+	if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &photos, Tags: &rs.tags}); err != nil {
 		return rowStatus{}, fmt.Errorf("updating photos for %s: %w", id, err)
 	}
 	return rs, nil
