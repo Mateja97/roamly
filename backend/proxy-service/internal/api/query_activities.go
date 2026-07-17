@@ -228,7 +228,7 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		Country:     a.GetCountry(),
 		Rating:      a.GetRating(),
 		ImageRefs:   toPhotoDTOs(a.GetPhotos()),
-		Tags:        a.GetTags(),
+		Tags:        nonNilTags(a.GetTags()),
 		DistanceKM:  a.GetDistanceKm(),
 		Details:     detailsJSON(a.GetDetails()),
 		City:        a.GetCity(),
@@ -263,6 +263,17 @@ func detailsJSON(details string) json.RawMessage {
 		return json.RawMessage("{}")
 	}
 	return json.RawMessage(details)
+}
+
+// nonNilTags guards against proto3's repeated-field getters returning nil
+// for an unset field: the DTO has no `omitempty`, so a nil slice would
+// serialize as JSON null instead of [] and crash clients that assume tags
+// is always an array (see ActivityDetailScreen.tsx's `activity.tags.length`).
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
 }
 
 func toPhotoDTOs(photos []*activitiesv1.Photo) []photoDTO {

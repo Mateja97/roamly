@@ -294,6 +294,15 @@ func TestDetailsJSON(t *testing.T) {
 	}
 }
 
+func TestNonNilTags(t *testing.T) {
+	if got := nonNilTags(nil); got == nil || len(got) != 0 {
+		t.Errorf("nonNilTags(nil) = %#v, want non-nil empty slice", got)
+	}
+	if got := nonNilTags([]string{"a"}); len(got) != 1 || got[0] != "a" {
+		t.Errorf("nonNilTags([a]) = %#v, want [a]", got)
+	}
+}
+
 func TestQueryActivitiesHandler_GRPCInternalMapsTo500(t *testing.T) {
 	fake := &fakeActivitiesClient{err: status.Error(codes.Internal, "internal error")}
 	h := NewQueryActivitiesHandler(fake, slog.New(slog.DiscardHandler))
