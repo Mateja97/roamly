@@ -171,7 +171,7 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 	}
 
 	rs := statusAndTags(len(photos))
-	if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &photos, Status: &rs.status}); err != nil {
+	if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &photos, Status: &rs.status, Tags: &rs.tags}); err != nil {
 		return rowStatus{}, fmt.Errorf("updating photos for %s: %w", id, err)
 	}
 	return rs, nil
@@ -251,8 +251,6 @@ func main() {
 		}
 		if len(rs.tags) > 0 {
 			flaggedNeedsPhotos++
-			// rs.tags is not persisted: UpdatePatch has no Tags field (see
-			// task-5-report.md) — logging is the only durable record today.
 			logger.Warn("activity flagged needs-photos", "title", r.Title, "id", id, "tags", rs.tags)
 		}
 	}

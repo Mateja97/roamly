@@ -774,6 +774,43 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 	})
 }
 
+func TestUpsertThenUpdateTagsPersistsNeedsPhotos(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	in := activitiessvc.IngestActivity{
+		Title: "Tag Fixture", Description: "cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
+		Rating: 4.3, Status: activitiessvc.StatusPending,
+		Source: "firecrawl", SourceURL: "http://example/tag-fixture",
+	}
+	created, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("Upsert() error: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+	tags := []string{"needs-photos"}
+	if _, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{Tags: &tags}); err != nil {
+		t.Fatalf("Update() error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	found := false
+	for _, tag := range got.Tags {
+		if tag == "needs-photos" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("GetByID() tags = %v, want to contain needs-photos", got.Tags)
+	}
+}
+
 func TestUpsertIdempotentBySourceURL(t *testing.T) {
 	ctx := context.Background()
 	db := startTestPostgres(t)

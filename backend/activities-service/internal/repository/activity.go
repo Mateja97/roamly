@@ -389,6 +389,16 @@ func nonNilPhotos(photos []activitiessvc.Photo) []activitiessvc.Photo {
 	return photos
 }
 
+// nonNilTags mirrors nonNilPhotos: pgx's array codec sends a nil slice as SQL
+// NULL, which the tags column's NOT NULL DEFAULT '{}' constraint rejects —
+// clearing a stale tag means setting an empty array, never NULL.
+func nonNilTags(tags []string) []string {
+	if tags == nil {
+		return []string{}
+	}
+	return tags
+}
+
 // nonEmptyDetailsBytes is the []byte the details column's bind arg always
 // uses: pgx's JSONB codec sends a nil/empty []byte as SQL NULL, which the
 // NOT NULL constraint rejects. The service layer already normalizes empty
@@ -489,6 +499,9 @@ func (r *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 	}
 	if patch.Photos != nil {
 		sets = append(sets, "photos = "+arg(nonNilPhotos(*patch.Photos)))
+	}
+	if patch.Tags != nil {
+		sets = append(sets, "tags = "+arg(nonNilTags(*patch.Tags)))
 	}
 
 	if len(sets) == 0 {

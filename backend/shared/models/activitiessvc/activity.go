@@ -437,4 +437,5 @@ type UpdatePatch struct {
 	Status      *Status
 	Details     *json.RawMessage
 	Photos      *[]Photo
+	Tags        *[]string
 }
