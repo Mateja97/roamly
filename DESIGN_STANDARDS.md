@@ -49,6 +49,7 @@ puts the gold brand into the structure, not only the text.
 | `--glow` | `rgba(206,144,66,0.15)` | radial gold accent behind ONE focal element per screen |
 | `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
 | `--scrim` | `rgba(42,14,17,0.72)` | modal dim behind bottom sheets/overlays (wine-black tint) |
+| `--photo-viewer-bg` | `#0F0405` | opaque near-black backdrop for the fullscreen photo viewer — photos pop against it; the app renders no other body UI on this surface |
 | `--radius-full` | `999px` | pills/badges |
 
 ## Accessibility
@@ -77,6 +78,10 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
   5.3:1 ✓ · `--primary` on `--surface` 3.1:1 (large/UI only) · `--success` on
   `--surface` 4.84:1 ✓ · `--warning` on `--surface` 5.08:1 ✓ · `--error` on
   `--surface` 4.86:1 ✓ · `--ink` on `--error` (destructive label) 10.4:1 ✓.
+  On `--photo-viewer-bg` (`#0F0405`): `--text` 17:1 ✓ · `--text-muted` 12.6:1 ✓
+  · `--primary` 7.4:1 ✓ — gold clears even the 4.5:1 normal-text bar on this
+  near-black surface (unlike on wine, where it's 3.65:1 / large-UI only),
+  though it stays reserved for accents (dots, active thumbnail border).
 - When a task's design-spec introduces a new text/background pairing (not
   just the ones listed above), the `designer` agent must compute its
   contrast ratio before using it, and pick an existing token combination (or
@@ -615,6 +620,112 @@ Pre-computed pairings: `--text-muted` author on `--surface` 5.3:1 ✓ / on
 `--bg` 6.2:1 ✓ · `--text` link on `--surface` 7.1:1 ✓ / on `--bg` 8.5:1 ✓ ·
 `--primary` focus outline on `--surface` 3.1:1 / on `--bg` 3.65:1 (UI element,
 clears 3:1). No new color tokens.
+
+### Fullscreen photo viewer (+ hero photo-count pill)
+
+An immersive, paged gallery for an activity's photos, opened from a count pill on
+the hero. A near-black backdrop so the photography is the only bright thing; the
+app renders no other body UI on this surface. `area: app` recipe (mirror the new
+token into `tokens.ts`); the pill also applies to any future web gallery.
+
+**Hero photo-count pill:** a bottom-right overlay pill on the hero image — the
+same overlay-pill device as the Activity card's category/rating pills:
+`--scrim` fill (`--text` ≥6.1:1 over any photo, pre-computed in the Activity card
+recipe), `--radius-full`, `--space-1`/`--space-2` padding, a 16px `Images` icon
+(`--text` cream, decorative `aria-hidden`) + label "Photos N" `--font-size-sm`
+`--text` (`tabular-nums`). The whole pill is one 44×44 control that opens the
+viewer, `accessibilityLabel` "View N photos", ≥`--space-2` from the hero edges;
+press → brief `opacity` dip, focus → 2px `--primary` outline. A native `BlurView`
+behind the pill is an optional enhancement that only strengthens legibility — the
+`--scrim` fill alone already clears AA, so the pill is correct without it.
+**Hidden entirely when fewer than 2 photos** — a single-photo pill opening a
+one-slide viewer is noise; the hero still shows `photos[0]`.
+*(Reconciled from the source draft's `rgba(23,9,11,0.6)`+blur to `--scrim` — the
+already-AA-vetted overlay-pill fill, so the label stays legible over any hero
+photo instead of depending on an untested alpha; blur kept as enhancement only.)*
+
+**Viewer backdrop:** full-screen `--photo-viewer-bg` (`#0F0405`) inside a
+safe-area container. Photos are `contain`-fit (letterboxed on the near-black),
+never cropped; attribution is never overlaid on the image (Photo attribution
+recipe), so the caption/attribution sits on the backdrop **below** the photo.
+
+**Top bar** (clears the top safe-area inset): close (left) · `N / M` counter
+(centre) · share (right). Each ≥44×44, ≥`--space-2` apart.
+- Close: `X` icon `--text` cream (17:1), `aria-label` "Close photos". Close, the
+  platform back gesture, and Android hardware back all dismiss the viewer (not
+  the screen/app).
+- Counter: `--font-size-sm` `--text` cream, `tabular-nums` so its width doesn't
+  shift as you page.
+- Share: `Share`/`Share2` icon `--text` cream, `aria-label` "Share this photo";
+  shares the current photo. In-flight = the OS share sheet is the feedback; a
+  handoff failure surfaces the Error banner recipe inside the viewer
+  (space-reserved, dismissible) — never a silent no-op.
+
+**Paged photo area:** one photo per page, horizontal paged swipe (native
+`FlatList` paging). Prev/next **chevrons** overlaid at the vertical centre,
+left/right: 44×44, `ChevronLeft`/`ChevronRight` `--text` cream, `aria-label`
+"Previous photo"/"Next photo". The prev chevron is **hidden on the first photo**
+and the next chevron **on the last** (no dead/disabled control). Swipe, chevrons,
+and the thumbnail strip are three redundant ways to move — never swipe-only, so
+AT users have the chevrons + strip.
+- Loading (per photo): the Skeleton pulse at the photo box, backdrop behind.
+- Broken/missing: the existing missing-image state — a centred 20px `--text-muted`
+  `ImageOff` on the backdrop; never a broken glyph, never a collapsed page.
+- Main photo uses `url`; the thumbnail strip uses `thumb_url`.
+
+**Caption + attribution block** (below the photo, on the backdrop, above the
+dots). **Caption and attribution stack and render independently — a caption
+never suppresses attribution:**
+- Caption line (when the photo has one): `--font-size-sm` `--text` cream (17:1),
+  horizontal inset matched to the attribution strip, wraps rather than ellipses.
+- Attribution line (when present): the existing **`PhotoAttributionCaption`**
+  component, unchanged — it renders "Photo by {author}" (muted prefix +
+  underlined `--text` link) and **renders nothing when attribution is absent**.
+  Reused as-is for the attribution role; the caption is a separate line above it,
+  so the two are independent by construction (caption-only → only the caption; a
+  captioned Google photo → both; neither → the band is empty).
+- Because paging swaps this block per photo, the block **reserves a consistent
+  vertical band** (one caption line + one attribution line) so the dots and
+  thumbnail strip don't shift while swiping between photos with differing
+  caption/attribution presence — the swipe-context application of "no layout
+  jump". (Distinct from the single-photo Photo attribution recipe's
+  collapse-when-absent, which still governs the static hero/card.)
+
+**Dots (pagination):** a centred row under the caption block. Active dot 20×7
+`--primary` gold (`--radius-full`); inactive dots 7×7 `--text` cream at **40%
+opacity** — element opacity, not a new color (`#F5EBDD` @ 0.4 =
+`rgba(245,235,221,0.4)`); `--space-1` apart. Decorative echo of the counter (the
+`N / M` counter is the precise, non-decorative position source); active↔inactive
+animates `opacity`/color only, ≤150ms, `prefers-reduced-motion` → instant. For
+large M the row condenses rather than overflowing.
+
+**Thumbnail strip:** a horizontally-scrolling row above the bottom safe-area
+inset — 64px-tall thumbnails (`thumb_url`), `--space-2` apart, `--radius`. The
+active thumbnail carries a **2px `--primary` gold border** (3.65:1 UI ✓);
+inactive thumbnails render at **60% opacity** (element opacity on the image, not
+a new token). The strip auto-scrolls to keep the active thumbnail in view; each
+thumbnail is a ≥44×44 tap target (the 64px art clears it) that jumps the pager to
+its photo, `aria-label` "Photo N". Active = border + full opacity (never
+opacity-only — the 2px gold border is the redundant non-color cue).
+- Thumbnail loading: `--surface-hover` block at the 64px box; broken: the same
+  block with a small `--text-muted` `ImageOff`.
+
+**Layout & safe areas** (`area: app`): the viewer is a full-screen overlay (a
+`Modal` / local state in the detail screen — no router yet). The top bar clears
+the top inset; the thumbnail strip clears the bottom inset via the bottom-anchored
+inset formula (its `--space-6` breathing gap plus `insets.bottom`).
+
+**Motion:** paging is native `transform` paging; dot/thumbnail active changes and
+the strip auto-scroll animate `opacity`/`transform` only, within 150ms;
+`prefers-reduced-motion` → instant, no auto-scroll animation. No size/scale
+animation anywhere.
+
+Composes from `--photo-viewer-bg`, `--scrim`, `--primary`, `--text`,
+`--text-muted`, `--border`, `--surface-hover`, `--radius`, `--radius-full`,
+`--space-1`/`--space-2`/`--space-6`, and reuses the Skeleton, Error banner, and
+`PhotoAttributionCaption` recipes. One new token (`--photo-viewer-bg`); mirror it
+into `app/src/theme/tokens.ts`. Pre-computed pairings on `--photo-viewer-bg`:
+`--text` 17:1 ✓ · `--text-muted` 12.6:1 ✓ · `--primary` 7.4:1 ✓.
 
 ### Filter chip (selectable / removable)
 

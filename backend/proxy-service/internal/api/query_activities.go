@@ -76,10 +76,14 @@ type attributionDTO struct {
 
 // photoDTO is one activity photo. Attribution is nil (and therefore
 // omitted) for an unresolved photo — the app's existing normalizer treats
-// that identically to today's plain-string wire format.
+// that identically to today's plain-string wire format. ThumbURL/Caption
+// are T1 additions (mirrors adminPhotoDTO in admin_translate.go) — T4 is
+// the first reader that needs them off this public query endpoint.
 type photoDTO struct {
 	URI         string          `json:"uri"`
 	Attribution *attributionDTO `json:"attribution,omitempty"`
+	ThumbURL    string          `json:"thumb_url,omitempty"`
+	Caption     string          `json:"caption,omitempty"`
 }
 
 // activityDTO carries every field the app's activity card needs to render.
@@ -279,7 +283,7 @@ func nonNilTags(tags []string) []string {
 func toPhotoDTOs(photos []*activitiesv1.Photo) []photoDTO {
 	out := make([]photoDTO, len(photos))
 	for i, p := range photos {
-		dto := photoDTO{URI: p.GetUrl()}
+		dto := photoDTO{URI: p.GetUrl(), ThumbURL: p.GetThumbUrl(), Caption: p.GetCaption()}
 		if p.GetAuthor() != "" {
 			dto.Attribution = &attributionDTO{Author: p.GetAuthor(), Link: p.GetAuthorLink()}
 		}

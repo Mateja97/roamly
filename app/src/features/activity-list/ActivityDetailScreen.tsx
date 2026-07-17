@@ -16,6 +16,7 @@ import {
 } from 'react-native-safe-area-context';
 import {
   ChevronLeft,
+  Images,
   ImageOff,
   Info,
   MapPin,
@@ -56,6 +57,7 @@ import {
 } from './activityDetailConfig';
 import { DifficultyMeter } from './DifficultyMeter';
 import { FactStrip } from './FactStrip';
+import { PhotoViewerModal } from './PhotoViewerModal';
 import { UniqueSection } from './UniqueSection';
 
 // design-spec.md's T4 "Shared base layout" section: header back control,
@@ -84,6 +86,7 @@ export function ActivityDetailScreen({
   const genericFocus = useFocusable();
   const primaryFocus = useFocusable();
   const mapFocus = useFocusable();
+  const photosFocus = useFocusable();
   const insets = useSafeAreaInsets();
   const [heroState, setHeroState] = useState<'loading' | 'loaded' | 'broken'>(
     'loading',
@@ -93,6 +96,10 @@ export function ActivityDetailScreen({
   );
   const [ctaBusy, setCtaBusy] = useState(false);
   const [ctaError, setCtaError] = useState<string | null>(null);
+  // T4: fewer than 2 photos hides the pill entirely (driven by the photo
+  // count, not the hero's own loading/broken state) — a single-photo pill
+  // opening a one-slide viewer is noise, per design-spec.md.
+  const [viewerOpen, setViewerOpen] = useState(false);
   const heroPhoto = activity.image_refs[0];
   const heroUri = heroPhoto?.uri;
   const metaText = showDistance
@@ -230,6 +237,24 @@ export function ActivityDetailScreen({
           )}
           {heroUri && heroState === 'loading' && (
             <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />
+          )}
+          {activity.image_refs.length >= 2 && (
+            <Pressable
+              onPress={() => setViewerOpen(true)}
+              onFocus={photosFocus.onFocus}
+              onBlur={photosFocus.onBlur}
+              accessibilityRole="button"
+              accessibilityLabel={`View ${activity.image_refs.length} photos`}
+              style={[
+                styles.photosPill,
+                photosFocus.focused && styles.photosPillFocused,
+              ]}
+            >
+              <Images size={16} color={colors.text} strokeWidth={1.75} />
+              <Text style={styles.photosPillLabel}>
+                {`Photos ${activity.image_refs.length}`}
+              </Text>
+            </Pressable>
           )}
         </View>
 
@@ -451,6 +476,14 @@ export function ActivityDetailScreen({
         </Pressable>
         </View>
       </View>
+
+      {viewerOpen && (
+        <PhotoViewerModal
+          photos={activity.image_refs}
+          activityTitle={activity.title}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -524,6 +557,30 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+  },
+  photosPill: {
+    position: 'absolute',
+    right: space[3],
+    bottom: space[3],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    minHeight: 44,
+    backgroundColor: colors.scrim,
+    borderRadius: radius.full,
+    paddingVertical: space[1],
+    paddingHorizontal: space[2],
+    outlineStyle: 'solid',
+    outlineWidth: 0,
+  },
+  photosPillFocused: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  photosPillLabel: {
+    fontSize: fontSize.sm,
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
   },
   titleBlock: {
     paddingHorizontal: space[6],
