@@ -565,8 +565,9 @@ function BlockedPanel({
 
 function PhotosSkeleton() {
   return (
-    <div className="admin-page" aria-hidden="true">
-      <div className="admin-top-bar">
+    <div className="admin-page" aria-busy="true">
+      <span className="sr-only">Loading photos…</span>
+      <div className="admin-top-bar" aria-hidden="true">
         <div className="admin-top-bar-title">
           <span
             className="admin-skeleton admin-text-skeleton"
@@ -574,7 +575,7 @@ function PhotosSkeleton() {
           />
         </div>
       </div>
-      <div className="admin-photos-grid">
+      <div className="admin-photos-grid" aria-hidden="true">
         {[0, 1, 2, 3].map((i) => (
           <span
             key={i}
