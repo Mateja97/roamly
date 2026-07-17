@@ -63,7 +63,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_PROXY_URL: http://localhost:8080
+        VITE_PROXY_URL: ${VITE_PROXY_URL:-http://localhost:8080}
         # Admin panel (T3): must match proxy-service's ADMIN_API_TOKEN above.
         # Empty by default, same fail-closed-by-default posture — the admin
         # screens build and serve either way, they just show the "admin
