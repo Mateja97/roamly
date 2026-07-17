@@ -92,10 +92,10 @@ export function PhotoTile({
       </div>
 
       <div className="admin-photo-tile-footer">
-        <span
+        <button
+          type="button"
           className="admin-photo-handle"
-          role="button"
-          tabIndex={disabled ? -1 : 0}
+          disabled={disabled}
           aria-label={`Reorder photo ${n}`}
           aria-pressed={pickedUp}
           draggable={!disabled}
@@ -105,7 +105,7 @@ export function PhotoTile({
         >
           <GripVertical size={16} aria-hidden="true" />
           <span className="admin-photo-n">Photo {n}</span>
-        </span>
+        </button>
         {isCover ? (
           <span className="admin-photo-cover-check">
             <Check size={16} aria-hidden="true" />
