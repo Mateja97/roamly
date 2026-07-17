@@ -421,6 +421,42 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	return a, nil
 }
 
+// Upsert inserts an ingested activity or, when a row with the same source_url
+// already exists, updates it in place (idempotent re-runs). Coordinates are
+// real (unlike admin Create's 0,0 sentinel). photos is intentionally NOT in
+// the DO UPDATE set — the importer manages photos separately once bytes are
+// downloaded, so a re-run must not clobber already-downloaded photos.
+func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
+	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
+		INSERT INTO activities
+			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, raw)
+		VALUES
+			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		ON CONFLICT (source_url) WHERE source_url IS NOT NULL DO UPDATE SET
+			title = EXCLUDED.title,
+			description = EXCLUDED.description,
+			category = EXCLUDED.category,
+			location = EXCLUDED.location,
+			country = EXCLUDED.country,
+			rating = EXCLUDED.rating,
+			city = EXCLUDED.city,
+			address = EXCLUDED.address,
+			status = EXCLUDED.status,
+			details = EXCLUDED.details,
+			source = EXCLUDED.source,
+			raw = EXCLUDED.raw
+		RETURNING `+adminColumns,
+		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
+		in.Country, in.Rating, in.City, in.Address, string(in.Status),
+		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
+		in.Source, in.SourceURL, nonEmptyDetailsBytes(in.Raw),
+	))
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", in.SourceURL, err)
+	}
+	return a, nil
+}
+
 // Update applies a partial update (T2): only patch's non-nil fields appear
 // in the SQL SET list, same arg-closure pattern as buildQuery. A patch with
 // every field nil is a no-op read (still 404s via GetByID if id doesn't

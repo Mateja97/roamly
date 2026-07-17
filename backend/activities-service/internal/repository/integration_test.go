@@ -773,3 +773,33 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 		})
 	})
 }
+
+func TestUpsertIdempotentBySourceURL(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	in := activitiessvc.IngestActivity{
+		Title: "Koffein", Description: "cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
+		Rating: 4.3, Status: activitiessvc.StatusPending,
+		Source: "firecrawl", SourceURL: "http://example/koffein",
+	}
+	first, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, first.ID) })
+
+	in.Rating = 4.9 // same source_url, changed field
+	second, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("second upsert: %v", err)
+	}
+	if first.ID != second.ID {
+		t.Fatalf("upsert created a new row (%s != %s), want update in place", first.ID, second.ID)
+	}
+	if second.Rating != 4.9 {
+		t.Fatalf("rating = %v, want 4.9 (updated)", second.Rating)
+	}
+}
