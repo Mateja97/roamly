@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // ponytail: alpine runtime has no /usr/share/zoneinfo; bundle IANA DB into binary instead of apk-installing tzdata
 
 	sharedconfig "backend/shared/config"
 	shareddb "backend/shared/db"

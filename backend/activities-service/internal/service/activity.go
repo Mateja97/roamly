@@ -194,28 +194,49 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) e
 
 // validateExtraFields runs semantic checks the strict decode above can't
 // express structurally: action_url (T7, 8 categories) must be an absolute
-// http(s) URL, and Art's year must be a plausible 4-digit year.
+// http(s) URL, Art's year must be a plausible 4-digit year, and opening_hours
+// (T1, the 7 categories that already show an hours chip) must be a
+// well-formed weekly schedule.
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
-		return validateActionURL(t.ActionURL)
+		if err := validateActionURL(t.ActionURL); err != nil {
+			return err
+		}
+		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.BarDetails:
-		return validateActionURL(t.ActionURL)
+		if err := validateActionURL(t.ActionURL); err != nil {
+			return err
+		}
+		return validateOpeningHours(t.OpeningHours)
+	case *activitiessvc.CafeDetails:
+		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.NightlifeDetails:
-		return validateActionURL(t.ActionURL)
+		if err := validateActionURL(t.ActionURL); err != nil {
+			return err
+		}
+		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.SportDetails:
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.CultureDetails:
-		return validateActionURL(t.ActionURL)
+		if err := validateActionURL(t.ActionURL); err != nil {
+			return err
+		}
+		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.ArtDetails:
 		if err := validateActionURL(t.ActionURL); err != nil {
 			return err
 		}
-		return validateYear(t.Year)
+		if err := validateYear(t.Year); err != nil {
+			return err
+		}
+		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.WellnessDetails:
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.EntertainmentDetails:
 		return validateActionURL(t.ActionURL)
+	case *activitiessvc.ShoppingDetails:
+		return validateOpeningHours(t.OpeningHours)
 	default:
 		return nil
 	}
@@ -244,6 +265,64 @@ func validateYear(year *int) error {
 		return fmt.Errorf("%w: year %d is not a plausible year", sharederrors.ErrInvalidInput, *year)
 	}
 	return nil
+}
+
+// validateOpeningHours rejects a non-nil OpeningHours whose timezone isn't a
+// valid IANA zone, whose periods contain an invalid day-of-week or a time
+// not in 24h "HH:MM" form, or that has always_open false with no periods at
+// all (nothing would tell a caller when the venue is open). A nil value
+// (field absent) is always valid. A period's close time earlier than its
+// open time is not rejected — see Period's doc, it means the window rolls
+// past midnight.
+func validateOpeningHours(oh *activitiessvc.OpeningHours) error {
+	if oh == nil {
+		return nil
+	}
+	// "Local" is time.LoadLocation's sentinel for the system's local zone,
+	// not a real IANA name, and LoadLocation("") silently succeeds as UTC —
+	// both must be rejected explicitly rather than let through as valid.
+	if oh.Timezone == "" || strings.EqualFold(oh.Timezone, "Local") {
+		return fmt.Errorf("%w: opening_hours.timezone %q is not a valid IANA zone", sharederrors.ErrInvalidInput, oh.Timezone)
+	}
+	if _, err := time.LoadLocation(oh.Timezone); err != nil {
+		return fmt.Errorf("%w: opening_hours.timezone %q is not a valid IANA zone", sharederrors.ErrInvalidInput, oh.Timezone)
+	}
+	if !oh.AlwaysOpen && len(oh.Periods) == 0 {
+		return fmt.Errorf("%w: opening_hours.periods must not be empty when always_open is false", sharederrors.ErrInvalidInput)
+	}
+	for i, p := range oh.Periods {
+		if !validDayOfWeek(p.Day) {
+			return fmt.Errorf("%w: opening_hours.periods[%d].day %q is not a valid day of week", sharederrors.ErrInvalidInput, i, p.Day)
+		}
+		if !isHHMM(p.Open) {
+			return fmt.Errorf("%w: opening_hours.periods[%d].open %q is not in 24h HH:MM form", sharederrors.ErrInvalidInput, i, p.Open)
+		}
+		if !isHHMM(p.Close) {
+			return fmt.Errorf("%w: opening_hours.periods[%d].close %q is not in 24h HH:MM form", sharederrors.ErrInvalidInput, i, p.Close)
+		}
+	}
+	return nil
+}
+
+// isHHMM reports whether s is a strict zero-padded 24h "HH:MM" time.
+// time.Parse("15:04", s) alone accepts non-padded hours like "9:00", so the
+// length is checked first to reject those before parsing catches out-of-range
+// values (hour > 23, minute > 59).
+func isHHMM(s string) bool {
+	if len(s) != 5 {
+		return false
+	}
+	_, err := time.Parse("15:04", s)
+	return err == nil
+}
+
+func validDayOfWeek(d activitiessvc.DayOfWeek) bool {
+	switch d {
+	case activitiessvc.Monday, activitiessvc.Tuesday, activitiessvc.Wednesday, activitiessvc.Thursday,
+		activitiessvc.Friday, activitiessvc.Saturday, activitiessvc.Sunday:
+		return true
+	}
+	return false
 }
 
 // detailsTarget returns a fresh, addressable instance of category's detail

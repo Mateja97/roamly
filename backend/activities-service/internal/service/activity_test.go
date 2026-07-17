@@ -374,6 +374,61 @@ func TestValidateDetails(t *testing.T) {
 	}
 }
 
+func TestValidateDetails_OpeningHours(t *testing.T) {
+	tests := []struct {
+		name    string
+		cat     activitiessvc.Category
+		details string
+		wantErr bool
+	}{
+		{"valid weekly periods accepted", activitiessvc.CategoryRestaurants,
+			`{"opening_hours":{"timezone":"Europe/Belgrade","periods":[{"day":"monday","open":"09:00","close":"17:00"}]}}`, false},
+		{"always_open true with no periods accepted", activitiessvc.CategoryCafes,
+			`{"opening_hours":{"timezone":"UTC","always_open":true}}`, false},
+		{"past-midnight close before open accepted", activitiessvc.CategoryBars,
+			`{"opening_hours":{"timezone":"America/New_York","periods":[{"day":"friday","open":"20:00","close":"02:00"}]}}`, false},
+		{"missing timezone rejected", activitiessvc.CategoryShopping,
+			`{"opening_hours":{"periods":[{"day":"monday","open":"09:00","close":"17:00"}]}}`, true},
+		{"Local sentinel rejected as not a real IANA zone", activitiessvc.CategoryShopping,
+			`{"opening_hours":{"timezone":"Local","always_open":true}}`, true},
+		{"bogus timezone rejected", activitiessvc.CategoryNightlife,
+			`{"opening_hours":{"timezone":"Bogus/Nowhere","always_open":true}}`, true},
+		{"invalid day-of-week rejected", activitiessvc.CategoryCulture,
+			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"someday","open":"09:00","close":"17:00"}]}}`, true},
+		{"open time not HH:MM rejected", activitiessvc.CategoryArt,
+			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"monday","open":"9am","close":"17:00"}]}}`, true},
+		{"close time not HH:MM rejected", activitiessvc.CategoryArt,
+			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"monday","open":"09:00","close":"5pm"}]}}`, true},
+		{"non-zero-padded hour rejected", activitiessvc.CategoryArt,
+			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"monday","open":"9:00","close":"17:00"}]}}`, true},
+		{"always_open false with no periods rejected as malformed", activitiessvc.CategoryRestaurants,
+			`{"opening_hours":{"timezone":"UTC","always_open":false}}`, true},
+		{"unknown key inside opening_hours still rejected by strict decode", activitiessvc.CategoryRestaurants,
+			`{"opening_hours":{"timezone":"UTC","always_open":true,"holiday_note":"closed Dec 25"}}`, true},
+		{"opening_hours on a category with no hours chip rejected as unknown field", activitiessvc.CategorySport,
+			`{"opening_hours":{"timezone":"UTC","always_open":true}}`, true},
+		{"activity with opening_hours plus existing free-text hours field accepted", activitiessvc.CategoryRestaurants,
+			`{"hours":"Mon-Fri 9-5","opening_hours":{"timezone":"UTC","always_open":true}}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDetails(tt.cat, json.RawMessage(tt.details))
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ValidateDetails() error = nil, want error")
+				}
+				if !errors.Is(err, sharederrors.ErrInvalidInput) {
+					t.Errorf("ValidateDetails() error = %v, want wrapping ErrInvalidInput", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateDetails() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestActivities_SuggestCities(t *testing.T) {
 	tests := []struct {
 		name    string
