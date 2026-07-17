@@ -152,6 +152,24 @@ async function adminRequest<T>(
   return { status: 'success', data: (await res.json()) as T };
 }
 
+// Admin-uploaded photos come back as paths relative to proxy-service
+// (e.g. "/photos/<id>/<file>.jpg"); Google-sourced seed photos are already
+// absolute https:// URLs. <img src> can't resolve a relative path unless
+// the page happens to share proxy-service's origin, so every url/thumb_url
+// coming off the wire is resolved against PROXY_URL here, once, rather
+// than in each component that renders a photo.
+function resolvePhotoUrl(url: string): string {
+  return /^https?:\/\//.test(url) ? url : new URL(url, PROXY_URL).toString();
+}
+
+function resolvePhotos(photos: AdminActivityPhoto[]): AdminActivityPhoto[] {
+  return photos.map((p) => ({
+    ...p,
+    url: resolvePhotoUrl(p.url),
+    ...(p.thumb_url ? { thumb_url: resolvePhotoUrl(p.thumb_url) } : {}),
+  }));
+}
+
 export async function listAdminActivities(
   params: ListAdminActivitiesParams,
 ): Promise<AdminApiResult<ListAdminActivitiesResponse>> {
@@ -164,14 +182,27 @@ export async function listAdminActivities(
   if (params.page_size)
     url.searchParams.set('page_size', String(params.page_size));
 
-  return adminRequest<ListAdminActivitiesResponse>(url);
+  const res = await adminRequest<ListAdminActivitiesResponse>(url);
+  if (res.status !== 'success') return res;
+  return {
+    ...res,
+    data: {
+      ...res.data,
+      activities: res.data.activities.map((a) => ({
+        ...a,
+        photos: resolvePhotos(a.photos),
+      })),
+    },
+  };
 }
 
 export async function getAdminActivity(
   id: string,
 ): Promise<AdminApiResult<AdminActivityDetail>> {
   const url = new URL(`/admin/activities/${encodeURIComponent(id)}`, PROXY_URL);
-  return adminRequest<AdminActivityDetail>(url);
+  const res = await adminRequest<AdminActivityDetail>(url);
+  if (res.status !== 'success') return res;
+  return { ...res, data: { ...res.data, photos: resolvePhotos(res.data.photos) } };
 }
 
 export async function patchAdminActivity(
@@ -179,11 +210,13 @@ export async function patchAdminActivity(
   payload: PatchAdminActivityPayload,
 ): Promise<AdminApiResult<AdminActivityDetail>> {
   const url = new URL(`/admin/activities/${encodeURIComponent(id)}`, PROXY_URL);
-  return adminRequest<AdminActivityDetail>(url, {
+  const res = await adminRequest<AdminActivityDetail>(url, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (res.status !== 'success') return res;
+  return { ...res, data: { ...res.data, photos: resolvePhotos(res.data.photos) } };
 }
 
 export interface UploadPhotoResponse {
@@ -205,16 +238,23 @@ export async function uploadAdminActivityPhoto(
   );
   const body = new FormData();
   body.append('file', file);
-  return adminRequest<UploadPhotoResponse>(url, { method: 'POST', body });
+  const res = await adminRequest<UploadPhotoResponse>(url, { method: 'POST', body });
+  if (res.status !== 'success') return res;
+  return {
+    ...res,
+    data: { url: resolvePhotoUrl(res.data.url), thumb_url: resolvePhotoUrl(res.data.thumb_url) },
+  };
 }
 
 export async function createAdminActivity(
   payload: CreateAdminActivityPayload,
 ): Promise<AdminApiResult<AdminActivityDetail>> {
   const url = new URL('/admin/activities', PROXY_URL);
-  return adminRequest<AdminActivityDetail>(url, {
+  const res = await adminRequest<AdminActivityDetail>(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (res.status !== 'success') return res;
+  return { ...res, data: { ...res.data, photos: resolvePhotos(res.data.photos) } };
 }

@@ -184,6 +184,38 @@ describe('getAdminActivity', () => {
       message: 'invalid or missing admin token',
     });
   });
+
+  it('resolves admin-uploaded relative photo paths against PROXY_URL, leaves absolute URLs untouched', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          ...ACTIVITY,
+          photos: [
+            { url: '/photos/a1/x.jpg', thumb_url: '/photos/a1/x_t.jpg', caption: 'Lobby' },
+            { url: 'https://example.com/seed.jpg' },
+          ],
+        }),
+      ),
+    );
+
+    const result = await getAdminActivity('a1');
+
+    expect(result).toEqual({
+      status: 'success',
+      data: {
+        ...ACTIVITY,
+        photos: [
+          {
+            url: 'http://localhost:8080/photos/a1/x.jpg',
+            thumb_url: 'http://localhost:8080/photos/a1/x_t.jpg',
+            caption: 'Lobby',
+          },
+          { url: 'https://example.com/seed.jpg' },
+        ],
+      },
+    });
+  });
 });
 
 describe('patchAdminActivity', () => {
