@@ -13,6 +13,7 @@ import {
 } from '../../../api/adminActivities';
 import { BasicsSection } from './BasicsSection';
 import { DetailsSection } from './DetailsSection';
+import type { OpeningHoursFieldHandle } from './controls/OpeningHoursField';
 import { LocationSection } from './LocationSection';
 import { PhotosSection } from './PhotosSection';
 import { StatusSection } from './StatusSection';
@@ -139,6 +140,7 @@ export function EditActivityPage() {
   const [categoryError, setCategoryError] = useState<string>();
   const nameRef = useRef<HTMLInputElement>(null);
   const categoryRef = useRef<HTMLSelectElement>(null);
+  const openingHoursRef = useRef<OpeningHoursFieldHandle>(null);
 
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string>();
@@ -165,6 +167,12 @@ export function EditActivityPage() {
     }
     if (!categoryValid) {
       categoryRef.current?.focus();
+      return;
+    }
+    // Not rendered for out-of-scope categories (ref stays null) — nothing
+    // to block on, so default to valid.
+    const hoursValid = openingHoursRef.current?.validate() ?? true;
+    if (!hoursValid) {
       return;
     }
 
@@ -289,6 +297,7 @@ export function EditActivityPage() {
             details={form.details}
             onChange={(details) => setForm((f) => ({ ...f, details }))}
             disabled={saving}
+            openingHoursRef={openingHoursRef}
           />
           <LocationSection
             address={form.address}

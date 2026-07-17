@@ -64,6 +64,19 @@ describe('DetailsSection', () => {
     expect(lastCall).not.toHaveProperty('action_url');
   });
 
+  it('restaurants renders the Opening hours group after the free-text hours field', () => {
+    render(
+      <DetailsSection category="restaurants" details={{}} onChange={vi.fn()} />,
+    );
+    expect(screen.getByText('Opening hours')).toBeInTheDocument();
+    expect(screen.getByLabelText('Open 24/7')).toBeInTheDocument();
+  });
+
+  it('nature (out-of-scope category) renders no Opening hours group', () => {
+    render(<DetailsSection category="nature" details={{}} onChange={vi.fn()} />);
+    expect(screen.queryByText('Opening hours')).toBeNull();
+  });
+
   it('nature.good_to_know renders chips, not a textarea (addendum correction)', () => {
     render(
       <DetailsSection

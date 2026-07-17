@@ -10,11 +10,22 @@ export interface LineItemsEditorProps {
   value: Record<string, string>[];
   onChange: (value: Record<string, string>[]) => void;
   disabled?: boolean;
+  /** Overrides the generic "No <item>s yet" empty-state copy. */
+  emptyHint?: string;
+  /** Overrides the generic "Remove <item>" button aria-label — e.g. a
+   * numbered "Remove hours row N" when rows can look identical. */
+  removeLabel?: (index: number) => string;
+  /** Shows every required sub-field's error regardless of blur — set once
+   * a Save attempt has been blocked, so the admin sees every problem, not
+   * just the one they last touched. */
+  forceErrors?: boolean;
 }
 
 /** Repeatable line-item editor (admin) — an array-of-objects `details`
- * value (dishes/lineup/treatments/shows). Each row is its sub-fields as
- * Form field inputs; required sub-fields validate on blur. */
+ * value (dishes/lineup/treatments/shows/opening-hours periods). Each row is
+ * its sub-fields as Form field inputs (text by default; a sub-field can ask
+ * for a native `select` or `time` control instead); required sub-fields
+ * validate on blur. */
 export function LineItemsEditor({
   label,
   itemLabel,
@@ -22,6 +33,9 @@ export function LineItemsEditor({
   value,
   onChange,
   disabled,
+  emptyHint,
+  removeLabel,
+  forceErrors,
 }: LineItemsEditorProps) {
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,7 +46,9 @@ export function LineItemsEditor({
       const rows = containerRef.current?.querySelectorAll<HTMLElement>(
         '.admin-line-item-row',
       );
-      rows?.[rows.length - 1]?.querySelector('input')?.focus();
+      rows?.[rows.length - 1]
+        ?.querySelector<HTMLElement>('select, input')
+        ?.focus();
     }
     prevLength.current = value.length;
   }, [value.length]);
@@ -50,7 +66,11 @@ export function LineItemsEditor({
   }
 
   function addRow() {
-    onChange([...value, {}]);
+    const row: Record<string, string> = {};
+    fields.forEach((f) => {
+      if (f.defaultValue) row[f.key] = f.defaultValue;
+    });
+    onChange([...value, row]);
   }
 
   return (
@@ -60,34 +80,58 @@ export function LineItemsEditor({
       </span>
       <div role="group" aria-labelledby={`${label}-items-label`}>
         {value.length === 0 && (
-          <p className="admin-line-items-hint">No {itemLabel}s yet</p>
+          <p className="admin-line-items-hint">
+            {emptyHint ?? `No ${itemLabel}s yet`}
+          </p>
         )}
         {value.map((row, index) => (
           <div className="admin-line-item-row" key={index}>
             {fields.map((f) => {
               const touchKey = `${index}-${f.key}`;
               const isEmpty = !(row[f.key] ?? '').trim();
-              const error =
-                f.required && touched.has(touchKey) && isEmpty
-                  ? `${f.label} is required`
-                  : undefined;
+              const showError =
+                f.required && isEmpty && (touched.has(touchKey) || forceErrors);
+              const error = showError
+                ? (f.requiredMessage ?? `${f.label} is required`)
+                : undefined;
+              const inputId = `${label}-${index}-${f.key}`;
               return (
                 <div className="admin-field" key={f.key}>
-                  <label
-                    className="admin-field-label"
-                    htmlFor={`${label}-${index}-${f.key}`}
-                  >
+                  <label className="admin-field-label" htmlFor={inputId}>
                     {f.label}
                   </label>
-                  <input
-                    id={`${label}-${index}-${f.key}`}
-                    className={`admin-field-input ${error ? 'admin-field-input-invalid' : ''}`}
-                    value={row[f.key] ?? ''}
-                    disabled={disabled}
-                    aria-invalid={Boolean(error)}
-                    onChange={(e) => updateRow(index, f.key, e.target.value)}
-                    onBlur={() => setTouched((s) => new Set(s).add(touchKey))}
-                  />
+                  {f.control === 'select' ? (
+                    <select
+                      id={inputId}
+                      className={`admin-field-select ${error ? 'admin-field-input-invalid' : ''}`}
+                      value={row[f.key] ?? ''}
+                      disabled={disabled}
+                      aria-invalid={Boolean(error)}
+                      onChange={(e) => updateRow(index, f.key, e.target.value)}
+                      onBlur={() =>
+                        setTouched((s) => new Set(s).add(touchKey))
+                      }
+                    >
+                      {(f.options ?? []).map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id={inputId}
+                      type={f.control === 'time' ? 'time' : 'text'}
+                      className={`admin-field-input ${error ? 'admin-field-input-invalid' : ''}`}
+                      value={row[f.key] ?? ''}
+                      disabled={disabled}
+                      aria-invalid={Boolean(error)}
+                      onChange={(e) => updateRow(index, f.key, e.target.value)}
+                      onBlur={() =>
+                        setTouched((s) => new Set(s).add(touchKey))
+                      }
+                    />
+                  )}
                   <span className="admin-field-error">{error ?? ''}</span>
                 </div>
               );
@@ -102,7 +146,7 @@ export function LineItemsEditor({
               <button
                 type="button"
                 className="admin-line-item-remove"
-                aria-label={`Remove ${itemLabel}`}
+                aria-label={removeLabel ? removeLabel(index) : `Remove ${itemLabel}`}
                 disabled={disabled}
                 onClick={() => removeRow(index)}
               >

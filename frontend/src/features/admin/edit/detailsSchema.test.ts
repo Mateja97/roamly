@@ -11,6 +11,7 @@ const VALID_CONTROLS: ControlKind[] = [
   'line-items',
   'object-group',
   'toggle',
+  'opening-hours',
 ];
 
 describe('DETAILS_SCHEMA', () => {

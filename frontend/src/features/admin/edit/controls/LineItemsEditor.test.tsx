@@ -90,4 +90,98 @@ describe('LineItemsEditor', () => {
     await user.tab();
     expect(screen.getByText('Name is required')).toBeInTheDocument();
   });
+
+  const HOURS_FIELDS = [
+    {
+      key: 'day',
+      label: 'Day',
+      control: 'select' as const,
+      options: [
+        { value: 'monday', label: 'Monday' },
+        { value: 'tuesday', label: 'Tuesday' },
+      ],
+      defaultValue: 'monday',
+    },
+    {
+      key: 'open',
+      label: 'Opens',
+      control: 'time' as const,
+      required: true,
+      requiredMessage: 'Enter a time',
+    },
+  ];
+
+  it('a "select" sub-field renders a native <select> with its options', () => {
+    render(
+      <LineItemsEditor
+        label="Weekly hours"
+        itemLabel="day"
+        fields={HOURS_FIELDS}
+        value={[{ day: 'tuesday', open: '09:00' }]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Day').tagName).toBe('SELECT');
+    expect(screen.getByLabelText('Day')).toHaveValue('tuesday');
+  });
+
+  it('a "time" sub-field renders a native time input', () => {
+    render(
+      <LineItemsEditor
+        label="Weekly hours"
+        itemLabel="day"
+        fields={HOURS_FIELDS}
+        value={[{ day: 'monday', open: '09:00' }]}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Opens')).toHaveAttribute('type', 'time');
+  });
+
+  it('a fresh row seeds each sub-field default (Day defaults to Monday)', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <LineItemsEditor
+        label="Weekly hours"
+        itemLabel="day"
+        fields={HOURS_FIELDS}
+        value={[]}
+        onChange={onChange}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /Add day/ }));
+    expect(onChange).toHaveBeenCalledWith([{ day: 'monday' }]);
+  });
+
+  it('emptyHint and removeLabel override the generic copy when provided', () => {
+    render(
+      <LineItemsEditor
+        label="Weekly hours"
+        itemLabel="day"
+        fields={HOURS_FIELDS}
+        value={[{ day: 'monday', open: '09:00' }]}
+        onChange={vi.fn()}
+        emptyHint="No hours yet"
+        removeLabel={(i) => `Remove hours row ${i + 1}`}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Remove hours row 1' }),
+    ).toBeInTheDocument();
+  });
+
+  it('forceErrors shows a required error before any blur', () => {
+    render(
+      <LineItemsEditor
+        label="Weekly hours"
+        itemLabel="day"
+        fields={HOURS_FIELDS}
+        value={[{ day: 'monday', open: '' }]}
+        onChange={vi.fn()}
+        forceErrors
+      />,
+    );
+    expect(screen.getByText('Enter a time')).toBeInTheDocument();
+  });
 });
