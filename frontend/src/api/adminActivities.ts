@@ -5,6 +5,8 @@ export type ActivityStatus = 'published' | 'draft' | 'pending';
 
 export interface AdminActivityPhoto {
   url: string;
+  thumb_url?: string;
+  caption?: string;
 }
 
 export interface AdminActivitySummary {
@@ -182,6 +184,28 @@ export async function patchAdminActivity(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+}
+
+export interface UploadPhotoResponse {
+  url: string;
+  thumb_url: string;
+}
+
+/** `POST /admin/activities/{id}/photos` — one file per call (the "Manage
+ * photos" page's Save gallery posts each staged file in turn, then issues
+ * one PATCH). Body is `FormData`; no `Content-Type` header is set so the
+ * browser attaches the multipart boundary itself. */
+export async function uploadAdminActivityPhoto(
+  id: string,
+  file: File,
+): Promise<AdminApiResult<UploadPhotoResponse>> {
+  const url = new URL(
+    `/admin/activities/${encodeURIComponent(id)}/photos`,
+    PROXY_URL,
+  );
+  const body = new FormData();
+  body.append('file', file);
+  return adminRequest<UploadPhotoResponse>(url, { method: 'POST', body });
 }
 
 export async function createAdminActivity(

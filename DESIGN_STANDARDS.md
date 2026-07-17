@@ -994,6 +994,78 @@ obey the 44×44 floor and `--space-2` gaps even though the mock draws them at
   tan, e.g. `--text-muted`), `cursor: default`, no hover/press/focus,
   `aria-disabled`; disabled controls are contrast-exempt. Only the active item
   gets the `--admin-sidebar-active` gold-tint fill + gold icon.
+- **Photo manager (admin):** the drag-to-reorder photo gallery editor for the
+  Manage-photos page (`/activities/:id/photos`) — the admin has no existing
+  file-upload or draggable-grid component. Composes existing admin recipes;
+  **no new token.** Parts:
+  - *Dropzone:* a full-width drop area, `--admin-card` bg, 2px **dashed**
+    `--admin-border-strong`, `--radius-lg`, `--space-8` padding. Centered stack:
+    20px upload icon (`--admin-placeholder`, 3:1 UI ✓) → a "Browse files"
+    control-button → hint `--font-size-sm` `--admin-ink-subtle` (4.9:1 on card
+    ✓). *Drag-over:* border → 2px **solid** `--admin-focus` (wine, 10:1 UI ✓) +
+    a wine tint fill (`--admin-sidebar` at ~8% alpha over the card — the
+    tint-over-card device the Radio group / Status pill already use). *Focus*
+    (on the Browse control): 2px `--admin-focus` ring, offset. The zone is
+    drag-drop; **Browse files** is the keyboard/click path (never drag-only).
+    A client-side reject (wrong type / >8 MB) surfaces inline under the hint as
+    an `--admin-error` line (7.8:1 on card ✓), space-reserved.
+  - *Reorder grid:* 4 columns at full width, `--space-3` gap, collapsing to 2
+    then 1 column on narrow widths; a trailing dashed **Add-photo tile** always
+    closes the grid.
+  - *Photo tile:* `--admin-card` bg, 1px `--admin-border`, `--radius`. Stacked
+    image box → footer → caption row.
+    - *Image box* reuses the ImageSlot loading-skeleton / broken-`ImageOff`
+      treatment (staged local previews render identically). Two overlays, each
+      with guaranteed contrast over any photo: **Cover pill** (top-left, cover
+      tile only) — opaque `--admin-sidebar` wine fill, `--admin-sidebar-text`
+      cream label (8.5:1 ✓), `--font-size-xs` uppercase, `--radius-full` (opaque
+      wine, not a translucent scrim, so a text pill stays AA over any image);
+      **Remove control** (top-right) — 44×44 circular, `--admin-sidebar` wine
+      fill, cream `X`, `aria-label` "Remove photo N", hover/press
+      `--admin-accent-hover`, focus 2px gold `--primary` ring (wine-on-wine
+      vanishes — the sidebar focus rule), ≥`--space-2` from the cover pill.
+    - *Footer* (`--space-2` padding): left — **drag handle** (44×44,
+      `GripVertical` `--admin-ink-muted`, `aria-label` "Reorder photo N") +
+      **"Photo N"** (`--font-size-sm` `--admin-ink-muted`, `tabular-nums`);
+      right — either the **Cover check** (cover tile: 16px `Check` in
+      `--admin-status-published` green + "Cover" text `--admin-ink-muted` — the
+      word "Cover" carries the meaning, the green is decorative reinforcement, so
+      reusing the published-green token here is a UI-icon reuse, not a status
+      claim; 6.1:1 on card ✓) or a **"Set as cover"** control-button (44×44) that
+      moves the tile to index 0.
+    - *Caption row:* an always-visible compact single-line Form field (admin) —
+      visible micro-label "Caption" (`--font-size-xs` weight 600
+      `--admin-ink-muted`, marked optional), placeholder "Add a caption"
+      (`--admin-placeholder`), `min-height: 44px`, accessible name "Caption for
+      photo N". Free text, no validation / no invalid state. Independent of
+      attribution — never a substitute for a Google author credit.
+  - *Add-photo tile:* same footprint, `--admin-card` bg, 2px **dashed**
+    `--admin-border-strong`, centered 20px `+` (`--admin-ink-muted`) + "Add
+    photo"; a 44×44 keyboard-operable button opening the same picker as Browse.
+  - *Reorder interaction & keyboard path:* pointer drag reorders via the handle;
+    tiles reflow by `transform` only, the drop-target shows the wine ~8% tint,
+    motion ≤300ms ease-out, `prefers-reduced-motion` → instant. **Never
+    drag-only:** the handle is focusable — Space/Enter picks up, arrow keys move
+    among positions, Enter drops, Esc cancels. "Set as cover" is the
+    pointer-and-keyboard shortcut for the most common reorder (to index 0).
+  - *Staged / upload states* (upload-on-save — nothing is written on drop):
+    *Staged* — tile previews the local object URL identically to a saved tile;
+    the pending state is the whole page's unsaved edit, carried by the live
+    **Save gallery** button. *Saving* — each pending tile dims (`opacity`) with a
+    centered inline Spinner + "Uploading…", layout reserved/unchanged; Save
+    follows the in-flight Button rule. *Upload failed (per tile)* — a 1.5px
+    `--admin-error` outline + a "Retry" control-button, plus the page Error
+    banner (admin); the staged gallery is **never dropped**, it stays editable
+    and Save re-enables. *Empty* (no photos) — only the dropzone renders as the
+    focal element (no grid, no add tile); its hint doubles as empty-state
+    guidance.
+  - Composes from `--admin-card`, `--admin-surface-alt`, `--admin-border`,
+    `--admin-border-strong`, `--admin-ink-muted`, `--admin-ink-subtle`,
+    `--admin-placeholder`, `--admin-sidebar`, `--admin-sidebar-text`,
+    `--admin-accent-hover`, `--admin-focus`, `--admin-error`,
+    `--admin-status-published`, `--primary`, `--radius`/`--radius-lg`/
+    `--radius-full`, and the Form field / control-button / Spinner / Error
+    banner / ImageSlot recipes. No new token.
 
 ## Delivery mechanics
 
