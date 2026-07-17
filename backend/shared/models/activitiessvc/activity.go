@@ -101,6 +101,44 @@ type ItemPrice struct {
 	Price string `json:"price"`
 }
 
+// DayOfWeek is one of the seven weekday names an OpeningHours Period
+// recurs on.
+type DayOfWeek string
+
+const (
+	Monday    DayOfWeek = "monday"
+	Tuesday   DayOfWeek = "tuesday"
+	Wednesday DayOfWeek = "wednesday"
+	Thursday  DayOfWeek = "thursday"
+	Friday    DayOfWeek = "friday"
+	Saturday  DayOfWeek = "saturday"
+	Sunday    DayOfWeek = "sunday"
+)
+
+// Period is one weekly recurring opening window, both times 24h "HH:MM" in
+// the parent OpeningHours' Timezone. Close earlier than Open means the
+// window rolls past midnight (e.g. Open "20:00", Close "02:00" is open from
+// 8pm to 2am the following day).
+type Period struct {
+	Day   DayOfWeek `json:"day"`
+	Open  string    `json:"open"`
+	Close string    `json:"close"`
+}
+
+// OpeningHours is the shared structured weekly-hours shape (T1), added
+// under the "opening_hours" key of the details payload of the seven venue
+// categories that already show an hours chip today (restaurants, cafes,
+// bars, nightlife, culture, art, shopping). Timezone is the venue's IANA
+// zone Periods are evaluated against; AlwaysOpen true means Periods may be
+// empty (the venue never closes). A nil pointer (field absent) is always
+// valid — it's optional end to end, alongside each category's pre-existing
+// free-text hours field, which it does not replace.
+type OpeningHours struct {
+	Timezone   string   `json:"timezone"`
+	AlwaysOpen bool     `json:"always_open,omitempty"`
+	Periods    []Period `json:"periods,omitempty"`
+}
+
 // RestaurantDetails is CategoryRestaurants' detail payload.
 type RestaurantDetails struct {
 	Cuisine       string      `json:"cuisine,omitempty"`
@@ -111,6 +149,9 @@ type RestaurantDetails struct {
 	// ActionURL (T7) is the primary CTA's external link ("Book a table"),
 	// validated as an absolute http(s) URL when present.
 	ActionURL *string `json:"action_url,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text Hours field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // BarDetails is CategoryBars' detail payload.
@@ -121,6 +162,9 @@ type BarDetails struct {
 	SignaturePours  []string `json:"signature_pours,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("See menu").
 	ActionURL *string `json:"action_url,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text OpensTime field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // CafeDetails is CategoryCafes' detail payload.
@@ -129,6 +173,9 @@ type CafeDetails struct {
 	WifiQuality  string      `json:"wifi_quality,omitempty"`
 	Hours        string      `json:"hours,omitempty"`
 	OnTheBar     []ItemPrice `json:"on_the_bar,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text Hours field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // LineupItem is one entry in Nightlife's tonight lineup.
@@ -149,6 +196,9 @@ type NightlifeDetails struct {
 	ActionURL *string `json:"action_url,omitempty"`
 	// VenueType (T8) is the badge subtype qualifier, e.g. "Club".
 	VenueType string `json:"venue_type,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text OpensTime field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // NatureDetails is CategoryNature's detail payload.
@@ -193,6 +243,9 @@ type CultureDetails struct {
 	NowShowing  *Banner `json:"now_showing,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
 	ActionURL *string `json:"action_url,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text Hours field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // ArtworkAttribution is Art's artist/work/medium extra property.
@@ -213,6 +266,9 @@ type ArtDetails struct {
 	ActionURL *string `json:"action_url,omitempty"`
 	// Year (T7) is the current exhibition's artwork year, e.g. 2019.
 	Year *int `json:"year,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text Hours field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // Treatment is one entry in Wellness' treatments list.
@@ -255,6 +311,9 @@ type ShoppingDetails struct {
 	BestDay       string   `json:"best_day,omitempty"`
 	Hours         string   `json:"hours,omitempty"`
 	WhatYoullFind []string `json:"what_youll_find,omitempty"`
+	// OpeningHours (T1) is the structured weekly-hours alternative to the
+	// free-text Hours field above; both may coexist.
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // CitySuggestion is one typeahead result: a catalog city (T1) plus the
