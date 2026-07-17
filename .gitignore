@@ -1,3 +1,6 @@
+# Local docker-compose overrides (ADMIN_API_TOKEN, etc.) — machine-local
+.env
+
 # OS
 .DS_Store
 
