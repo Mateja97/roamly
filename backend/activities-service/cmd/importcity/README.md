@@ -101,29 +101,42 @@ exposes for the `raw` field.
 - The 12 details shapes (`backend/shared/models/activitiessvc/activity.go`),
   by category:
   - `restaurants` → `RestaurantDetails` (cuisine, price_tier, hours,
-    open_status, popular_dishes []{name, price}, action_url)
+    open_status, popular_dishes []{name, price}, action_url, opening_hours*)
   - `cafes` → `CafeDetails` (known_for_brew, wifi_quality, hours, on_the_bar
-    []{name, price})
+    []{name, price}, opening_hours*)
   - `bars` → `BarDetails` (vibe, happy_hour_window, opens_time,
-    signature_pours []string, action_url)
+    signature_pours []string, action_url, opening_hours*)
   - `nightlife` → `NightlifeDetails` (entry_price, dress_code, opens_time,
-    open_tonight, lineup []{time, act, stage}, action_url, venue_type)
+    open_tonight, lineup []{time, act, stage}, action_url, venue_type,
+    opening_hours*)
   - `nature` → `NatureDetails` (time_to_spend, best_time, cost, good_to_know
     []string)
   - `sport` → `SportDetails` (difficulty, effort_level, duration, gear,
     what_to_bring []string, action_url, discipline)
   - `kids` → `KidsDetails` (age_range, facilities []string)
   - `culture` → `CultureDetails` (venue_type, ticket_price, hours,
-    now_showing {title, description}, action_url)
+    now_showing {title, description}, action_url, opening_hours*)
   - `art` → `ArtDetails` (venue_type, ticket_price, hours, artwork {artist,
     work, medium}, current_exhibition {title, description}, action_url,
-    year)
+    year, opening_hours*)
   - `wellness` → `WellnessDetails` (treatments []{item, duration, price},
     external_booking_note, action_url, venue_type)
   - `shopping` → `ShoppingDetails` (venue_type, best_day, hours,
-    what_youll_find []string)
+    what_youll_find []string, opening_hours*)
   - `entertainment` → `EntertainmentDetails` (genre, neighborhood,
     upcoming_shows []{date, title, time_or_price}, action_url)
+
+  \* `opening_hours` (7 categories: restaurants, cafes, bars, nightlife,
+  culture, art, shopping) is the optional **structured** weekly-hours shape,
+  distinct from and coexisting with the free-text `hours`/`opens_time` field:
+  `{"timezone": "<IANA zone, e.g. Europe/Belgrade>", "always_open": false,
+  "periods": [{"day": "monday", "open": "09:00", "close": "23:00"}, ...]}`.
+  Populate it only when the page shows a real weekly schedule you can map to
+  zero-padded 24h `HH:MM` per weekday (a close earlier than open means the
+  window rolls past midnight). Times must be zero-padded (`09:00`, not
+  `9:00`) and `timezone` a valid IANA zone, or the admin surface rejects it
+  on edit — when unsure, omit `opening_hours` and keep only free-text
+  `hours`.
 
 **d. Collect photos.** Pull `photo_urls` from the page's own gallery/images
 (direct image URLs only). Target ≥3 per activity — Stage B still imports
