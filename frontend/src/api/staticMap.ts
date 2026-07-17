@@ -13,7 +13,7 @@ export function hasMapsKey(): boolean {
 export function hasValidCoordinates(
   location: Location | undefined,
 ): location is Location {
-  return Boolean(location) && (location.lat !== 0 || location.lng !== 0);
+  return location !== undefined && (location.lat !== 0 || location.lng !== 0);
 }
 
 export function staticMapUrl(
