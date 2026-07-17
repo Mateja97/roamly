@@ -27,6 +27,8 @@ import (
 	"strings"
 	"time"
 
+	"activities-service/internal/placesmap"
+
 	"backend/shared/models/activitiessvc"
 )
 
@@ -72,75 +74,16 @@ type outputRow struct {
 	Raw         json.RawMessage `json:"raw"`
 }
 
-// place is the subset of a Places API (New) place the pipeline consumes.
-type place struct {
-	ID          string `json:"id"`
-	DisplayName struct {
-		Text string `json:"text"`
-	} `json:"displayName"`
-	Location struct {
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
-	} `json:"location"`
-	FormattedAddress string  `json:"formattedAddress"`
-	Rating           float64 `json:"rating"`
-	UserRatingCount  int     `json:"userRatingCount"`
-	PriceLevel       string  `json:"priceLevel"`
-	GoogleMapsURI    string  `json:"googleMapsUri"`
-	Photos           []struct {
-		Name string `json:"name"`
-	} `json:"photos"`
-	RegularOpeningHours struct {
-		WeekdayDescriptions []string `json:"weekdayDescriptions"`
-	} `json:"regularOpeningHours"`
-}
-
 type searchTextResponse struct {
-	Places        []place `json:"places"`
-	NextPageToken string  `json:"nextPageToken"`
+	Places        []placesmap.Place `json:"places"`
+	NextPageToken string            `json:"nextPageToken"`
 }
 
 // passesFilter is the "high confidence + relevant" gate: a venue must clear
 // both the rating floor and the review-count floor. Review count matters as
 // much as rating — a 5.0 with 3 reviews is noise, not signal.
-func passesFilter(p place, minRating float64, minReviews int) bool {
+func passesFilter(p placesmap.Place, minRating float64, minReviews int) bool {
 	return p.Rating >= minRating && p.UserRatingCount >= minReviews
-}
-
-// priceTier maps the Places priceLevel enum onto the $/$$/$$$ tiers the
-// food/drink detail shapes use; unknown/absent → "".
-func priceTier(level string) string {
-	switch level {
-	case "PRICE_LEVEL_INEXPENSIVE":
-		return "$"
-	case "PRICE_LEVEL_MODERATE":
-		return "$$"
-	case "PRICE_LEVEL_EXPENSIVE", "PRICE_LEVEL_VERY_EXPENSIVE":
-		return "$$$"
-	}
-	return ""
-}
-
-// buildDetails assembles the minimal, honest details payload from what Places
-// actually returns: free-text hours (never fabricated) and, for the
-// food/drink categories, a price tier. Structured opening_hours is left for a
-// later enrichment pass — it needs an IANA timezone Places doesn't hand back.
-func buildDetails(cat activitiessvc.Category, p place) json.RawMessage {
-	d := map[string]any{}
-	if len(p.RegularOpeningHours.WeekdayDescriptions) > 0 {
-		d["hours"] = strings.Join(p.RegularOpeningHours.WeekdayDescriptions, "; ")
-	}
-	switch cat {
-	case activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars:
-		if t := priceTier(p.PriceLevel); t != "" {
-			d["price_tier"] = t
-		}
-	}
-	b, err := json.Marshal(d)
-	if err != nil {
-		return json.RawMessage("{}")
-	}
-	return b
 }
 
 // client wraps the two Places calls scrapecity needs, holding the api key and
@@ -172,7 +115,7 @@ func (c *client) searchText(ctx context.Context, query, pageToken string) (searc
 		"places.id", "places.displayName", "places.location",
 		"places.formattedAddress", "places.rating", "places.userRatingCount",
 		"places.priceLevel", "places.googleMapsUri", "places.photos",
-		"places.regularOpeningHours", "nextPageToken",
+		"places.regularOpeningHours", "places.primaryTypeDisplayName", "nextPageToken",
 	}, ","))
 
 	var parsed searchTextResponse
@@ -300,7 +243,7 @@ func main() {
 					City:      *city,
 					Address:   p.FormattedAddress,
 					Rating:    p.Rating,
-					Details:   buildDetails(cq.category, p),
+					Details:   placesmap.BuildDetails(cq.category, p),
 					PhotoURLs: c.photoURIs(ctx, photoNames(p), *photos),
 					SourceURL: p.GoogleMapsURI,
 					Raw:       raw,
@@ -331,7 +274,7 @@ func main() {
 }
 
 // photoNames flattens a place's photo resource names for resolution.
-func photoNames(p place) []string {
+func photoNames(p placesmap.Place) []string {
 	names := make([]string, 0, len(p.Photos))
 	for _, ph := range p.Photos {
 		names = append(names, ph.Name)
