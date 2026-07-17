@@ -70,6 +70,36 @@ func startTestPostgres(t *testing.T) *pgxpool.Pool {
 	return db
 }
 
+func TestMigration0012IngestionColumns(t *testing.T) {
+	ctx := context.Background()
+	pool := startTestPostgres(t)
+
+	// description is nullable
+	var isNullable string
+	err := pool.QueryRow(ctx, `SELECT is_nullable FROM information_schema.columns
+		WHERE table_name='activities' AND column_name='description'`).Scan(&isNullable)
+	if err != nil {
+		t.Fatalf("querying description column: %v", err)
+	}
+	if isNullable != "YES" {
+		t.Fatalf("description is_nullable = %q, want YES", isNullable)
+	}
+
+	// source_url unique index rejects duplicates
+	_, err = pool.Exec(ctx, `INSERT INTO activities
+		(title, description, category, location, country, rating, source_url)
+		VALUES ('A','d','cafes', ST_SetSRID(ST_MakePoint(0,0),4326)::geography, 'X', 0, 'http://x/1')`)
+	if err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	_, err = pool.Exec(ctx, `INSERT INTO activities
+		(title, description, category, location, country, rating, source_url)
+		VALUES ('B','d','cafes', ST_SetSRID(ST_MakePoint(0,0),4326)::geography, 'X', 0, 'http://x/1')`)
+	if err == nil {
+		t.Fatal("duplicate source_url insert succeeded, want unique-violation error")
+	}
+}
+
 func TestActivities_Query_Integration(t *testing.T) {
 	db := startTestPostgres(t)
 	repo := New(db)
