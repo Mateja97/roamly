@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AdminShell } from './features/admin/AdminShell';
 import { ActivitiesPage } from './features/admin/activities/ActivitiesPage';
-import { EditActivityPlaceholder } from './features/admin/EditActivityPlaceholder';
+import { EditActivityPage } from './features/admin/edit/EditActivityPage';
 
 function App() {
   return (
@@ -10,11 +10,8 @@ function App() {
         <Route element={<AdminShell />}>
           <Route index element={<Navigate to="/activities" replace />} />
           <Route path="/activities" element={<ActivitiesPage />} />
-          <Route path="/activities/new" element={<EditActivityPlaceholder />} />
-          <Route
-            path="/activities/:id/edit"
-            element={<EditActivityPlaceholder />}
-          />
+          <Route path="/activities/new" element={<EditActivityPage />} />
+          <Route path="/activities/:id/edit" element={<EditActivityPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

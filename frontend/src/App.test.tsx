@@ -39,13 +39,13 @@ describe('App', () => {
     expect(window.location.pathname).toBe('/activities');
   });
 
-  it('routes /activities/new to the T4 placeholder', async () => {
+  it('routes /activities/new to the T4 create form', async () => {
     vi.mocked(suggestCities).mockResolvedValue([]);
     window.history.pushState({}, '', '/activities/new');
 
     render(<App />);
 
     expect(await screen.findByText('New activity')).toBeInTheDocument();
-    expect(screen.getByText('Coming in T4.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Activity name')).toBeInTheDocument();
   });
 });

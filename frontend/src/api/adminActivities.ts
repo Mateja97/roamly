@@ -41,6 +41,55 @@ export interface ListAdminActivitiesParams {
   page_size?: number;
 }
 
+export interface Location {
+  lat: number;
+  lng: number;
+}
+
+/** The full activity (`GET /admin/activities/{id}` and the create/patch
+ * responses). `location`/`created_at` are typed optional: the current
+ * merged backend's `adminActivityDTO` doesn't carry either (see T4's
+ * engineering notes) even though the dispatched contract named them, so
+ * they read as genuinely absent today — this widens to real data with no
+ * frontend change the day a backend task wires them in. */
+export interface AdminActivityDetail {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  city: string;
+  address: string;
+  status: ActivityStatus;
+  rating: number;
+  details: Record<string, unknown>;
+  photos: AdminActivityPhoto[];
+  location?: Location;
+  created_at?: string;
+}
+
+/** Any subset of these — omitted keys stay untouched server-side. */
+export interface PatchAdminActivityPayload {
+  title?: string;
+  description?: string;
+  category?: string;
+  city?: string;
+  address?: string;
+  status?: string;
+  details?: Record<string, unknown>;
+  photos?: AdminActivityPhoto[];
+}
+
+export interface CreateAdminActivityPayload {
+  title: string;
+  category: string;
+  description?: string;
+  city?: string;
+  address?: string;
+  status?: string;
+  details?: Record<string, unknown>;
+  photos?: AdminActivityPhoto[];
+}
+
 /**
  * Discriminated result union `FRONTEND_STANDARDS.md` mandates for every
  * `src/api/` call — never an opaque throw. Every call site must handle
@@ -74,6 +123,33 @@ async function toErrorResult(res: Response): Promise<AdminApiResult<never>> {
   return { status, message };
 }
 
+/** Shared fetch + result-union wrapper for every `/admin/*` call — the
+ * network-failure catch and the error-branch translation were identical
+ * across list/get/patch/create; this is the one place that logic lives. */
+async function adminRequest<T>(
+  url: string | URL,
+  init?: RequestInit,
+): Promise<AdminApiResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: { ...init?.headers, 'X-Admin-Token': ADMIN_TOKEN },
+    });
+  } catch {
+    // A network-level failure (proxy-service unreachable, DNS, CORS) never
+    // reaches an HTTP status — surface it as the generic 500 branch rather
+    // than an unhandled rejection that leaves the caller stuck on "loading".
+    return {
+      status: 500,
+      message:
+        'Could not reach the server. Check your connection and try again.',
+    };
+  }
+  if (!res.ok) return toErrorResult(res);
+  return { status: 'success', data: (await res.json()) as T };
+}
+
 export async function listAdminActivities(
   params: ListAdminActivitiesParams,
 ): Promise<AdminApiResult<ListAdminActivitiesResponse>> {
@@ -86,22 +162,35 @@ export async function listAdminActivities(
   if (params.page_size)
     url.searchParams.set('page_size', String(params.page_size));
 
-  let res: Response;
-  try {
-    res = await fetch(url, { headers: { 'X-Admin-Token': ADMIN_TOKEN } });
-  } catch {
-    // A network-level failure (proxy-service unreachable, DNS, CORS) never
-    // reaches an HTTP status — surface it as the generic 500 branch rather
-    // than an unhandled rejection that leaves the caller stuck on "loading".
-    return {
-      status: 500,
-      message:
-        'Could not reach the server. Check your connection and try again.',
-    };
-  }
-  if (!res.ok) return toErrorResult(res);
-  return {
-    status: 'success',
-    data: (await res.json()) as ListAdminActivitiesResponse,
-  };
+  return adminRequest<ListAdminActivitiesResponse>(url);
+}
+
+export async function getAdminActivity(
+  id: string,
+): Promise<AdminApiResult<AdminActivityDetail>> {
+  const url = new URL(`/admin/activities/${encodeURIComponent(id)}`, PROXY_URL);
+  return adminRequest<AdminActivityDetail>(url);
+}
+
+export async function patchAdminActivity(
+  id: string,
+  payload: PatchAdminActivityPayload,
+): Promise<AdminApiResult<AdminActivityDetail>> {
+  const url = new URL(`/admin/activities/${encodeURIComponent(id)}`, PROXY_URL);
+  return adminRequest<AdminActivityDetail>(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createAdminActivity(
+  payload: CreateAdminActivityPayload,
+): Promise<AdminApiResult<AdminActivityDetail>> {
+  const url = new URL('/admin/activities', PROXY_URL);
+  return adminRequest<AdminActivityDetail>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }

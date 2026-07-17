@@ -1,0 +1,540 @@
+/* ---- Page layout ---- */
+
+.admin-edit-header {
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.admin-breadcrumb {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-subtle);
+}
+
+.admin-breadcrumb-link {
+  color: var(--admin-ink-subtle);
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.admin-breadcrumb-link:hover {
+  text-decoration: underline;
+}
+
+.admin-breadcrumb-link:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-breadcrumb [aria-current='page'] {
+  color: var(--admin-ink);
+}
+
+.admin-edit-title {
+  max-width: 60ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-error-icon {
+  color: var(--admin-error);
+}
+
+.admin-spin {
+  animation: admin-spin 800ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-spin {
+    animation: none;
+  }
+}
+
+@keyframes admin-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.admin-edit-columns {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .admin-edit-columns {
+    grid-template-columns: 1fr;
+  }
+  .admin-edit-column-side {
+    order: 2;
+  }
+  .admin-edit-column-main {
+    order: 1;
+  }
+}
+
+.admin-edit-column-main,
+.admin-edit-column-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.admin-section {
+  background: var(--admin-card);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.admin-section-heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--admin-ink);
+}
+
+/* ---- Form field (admin) ---- */
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.admin-field-full {
+  grid-column: 1 / -1;
+}
+
+.admin-field-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--admin-ink-muted);
+}
+
+.admin-field-input,
+.admin-field-textarea,
+.admin-field-select {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--admin-border-strong);
+  background: var(--admin-card);
+  color: var(--admin-ink);
+  font-size: var(--font-size-md);
+  font-family: inherit;
+}
+
+.admin-field-textarea {
+  min-height: 84px;
+  padding: var(--space-3);
+  resize: vertical;
+}
+
+.admin-field-input::placeholder,
+.admin-field-textarea::placeholder {
+  color: var(--admin-placeholder);
+}
+
+.admin-field-input:focus-visible,
+.admin-field-textarea:focus-visible,
+.admin-field-select:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-field-input-invalid {
+  border-width: 1.5px;
+  border-color: var(--admin-error);
+}
+
+.admin-field-input:disabled,
+.admin-field-textarea:disabled,
+.admin-field-select:disabled {
+  background: var(--admin-surface-alt);
+  color: var(--admin-ink-subtle);
+  border-color: var(--admin-border);
+}
+
+.admin-field-error {
+  min-height: 1.2em;
+  font-size: var(--font-size-sm);
+  color: var(--admin-error);
+}
+
+.admin-basics-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.admin-basics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .admin-basics-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-4);
+}
+
+@media (max-width: 640px) {
+  .admin-details-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-details-empty-hint {
+  margin: 0;
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ---- Removable chip (admin) ---- */
+
+.admin-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.admin-editable-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--admin-surface-alt);
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.admin-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--admin-placeholder);
+  cursor: pointer;
+}
+
+.admin-chip-remove:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-chip-add,
+.admin-line-item-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-full);
+  border: 1px dashed var(--admin-border-strong);
+  background: transparent;
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.admin-line-item-add {
+  border-radius: var(--radius);
+  width: 100%;
+  justify-content: center;
+}
+
+.admin-chip-add:focus-visible,
+.admin-line-item-add:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-chip-add-input {
+  min-height: 44px;
+  min-width: 120px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--admin-border-strong);
+  background: var(--admin-card);
+  color: var(--admin-ink);
+  font-size: var(--font-size-sm);
+}
+
+.admin-chip-add-input:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Repeatable line-item editor (admin) ---- */
+
+.admin-line-items-hint {
+  margin: 0 0 var(--space-2);
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+.admin-line-item-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.admin-line-item-row .admin-field {
+  flex: 1;
+  min-width: 120px;
+}
+
+.admin-line-item-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-top: 22px;
+  border: 1px solid var(--admin-border-strong);
+  border-radius: var(--radius);
+  background: var(--admin-card);
+  color: var(--admin-placeholder);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.admin-line-item-remove:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Nested single-object field group (admin) ---- */
+
+.admin-object-group {
+  border: 1px solid var(--admin-border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  gap: var(--space-3);
+}
+
+.admin-object-group-hint {
+  margin: 0;
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* ---- Boolean toggle (admin) ---- */
+
+.admin-boolean-toggle {
+  flex-direction: row;
+}
+
+.admin-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--admin-ink);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+.admin-toggle-box {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+
+.admin-toggle-input {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--admin-border-strong);
+  border-radius: 4px;
+  background: var(--admin-card);
+  margin: 0;
+  cursor: pointer;
+}
+
+.admin-toggle-input:checked {
+  background: var(--admin-focus);
+  border-color: var(--admin-focus);
+}
+
+.admin-toggle-input:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-toggle-check {
+  position: absolute;
+  color: var(--admin-sidebar-text);
+  pointer-events: none;
+}
+
+/* ---- Image slot (cover / gallery / map) ---- */
+
+.admin-image-slot,
+.admin-image-placeholder {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--admin-surface-alt);
+  border-radius: var(--radius);
+  border: 1px solid var(--admin-border-strong);
+  color: var(--admin-ink-muted);
+  overflow: hidden;
+}
+
+.admin-image-placeholder {
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.admin-image-hint {
+  font-size: var(--font-size-sm);
+  color: var(--admin-ink-muted);
+}
+
+.admin-image-skeleton {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+}
+
+.admin-image-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.admin-cover-box {
+  width: 100%;
+  height: 150px;
+}
+
+.admin-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.admin-thumb-box {
+  width: 100%;
+  height: 60px;
+}
+
+/* ---- Location / static map ---- */
+
+.admin-map-wrapper {
+  position: relative;
+}
+
+.admin-map-box {
+  width: 100%;
+  height: 130px;
+}
+
+.admin-map-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  color: var(--admin-sidebar);
+  stroke: var(--admin-card);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+}
+
+/* ---- Radio group (admin) ---- */
+
+.admin-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.admin-radio-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--admin-border-strong);
+  color: var(--admin-ink-muted);
+  font-size: var(--font-size-md);
+  cursor: pointer;
+}
+
+/* A native radio (keyboard + arrow-key group nav for free), custom-drawn
+   to match the spec's hollow-vs-filled ring rather than the browser
+   default dot: unselected is a thin 2px --admin-placeholder ring around
+   a card-colored center; selected grows the border to a thick wine ring
+   with the card still showing through the middle ("filled ring"). */
+.admin-radio-row input {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--admin-placeholder);
+  background: var(--admin-card);
+}
+
+.admin-radio-row input:checked {
+  border: 5px solid var(--admin-focus);
+}
+
+.admin-radio-row:has(input:focus-visible) {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+
+.admin-radio-row-selected {
+  border: 1.5px solid var(--admin-focus);
+  background: color-mix(in srgb, var(--admin-sidebar) 8%, var(--admin-card));
+  color: var(--admin-ink);
+}
+
+.admin-created-line {
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--admin-border);
+  font-size: var(--font-size-sm);
+}
+
+.admin-created-label {
+  color: var(--admin-ink-subtle);
+}
+
+.admin-created-value {
+  color: var(--admin-ink-muted);
+}

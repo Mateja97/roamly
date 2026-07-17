@@ -1,5 +1,10 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { listAdminActivities } from './adminActivities';
+import {
+  listAdminActivities,
+  getAdminActivity,
+  patchAdminActivity,
+  createAdminActivity,
+} from './adminActivities';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {
@@ -120,5 +125,129 @@ describe('listAdminActivities', () => {
     const result = await listAdminActivities({});
 
     expect(result.status).toBe(500);
+  });
+});
+
+const ACTIVITY = {
+  id: 'a1',
+  title: 'Test',
+  description: '',
+  category: 'nature',
+  city: 'Belgrade',
+  address: '',
+  status: 'draft',
+  rating: 0,
+  details: {},
+  photos: [],
+};
+
+describe('getAdminActivity', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('sends the token and GETs /admin/activities/{id}', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(ACTIVITY));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getAdminActivity('a1');
+
+    expect(result).toEqual({ status: 'success', data: ACTIVITY });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toContain('/admin/activities/a1');
+    expect(init.method).toBeUndefined();
+  });
+
+  it('resolves 404 for a missing activity', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse({ error: 'not found' }, 404)),
+    );
+
+    const result = await getAdminActivity('missing');
+
+    expect(result).toEqual({ status: 404, message: 'not found' });
+  });
+
+  it('resolves 403 (admin token rejected)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: 'invalid or missing admin token' }, 403),
+        ),
+    );
+
+    const result = await getAdminActivity('a1');
+
+    expect(result).toEqual({
+      status: 403,
+      message: 'invalid or missing admin token',
+    });
+  });
+});
+
+describe('patchAdminActivity', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('PATCHes only the given fields as JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(ACTIVITY));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await patchAdminActivity('a1', { title: 'New title' });
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toContain('/admin/activities/a1');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ title: 'New title' });
+  });
+
+  it('resolves 400 on an invalid category/status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: 'unknown status: bogus' }, 400),
+        ),
+    );
+
+    const result = await patchAdminActivity('a1', { status: 'bogus' });
+
+    expect(result).toEqual({ status: 400, message: 'unknown status: bogus' });
+  });
+});
+
+describe('createAdminActivity', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('POSTs the payload as JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(ACTIVITY));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createAdminActivity({ title: 'New activity', category: 'nature' });
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toContain('/admin/activities');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({
+      title: 'New activity',
+      category: 'nature',
+    });
+  });
+
+  it('resolves 400 when title is missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ error: 'title is required' }, 400)),
+    );
+
+    const result = await createAdminActivity({
+      title: '',
+      category: 'nature',
+    });
+
+    expect(result).toEqual({ status: 400, message: 'title is required' });
   });
 });

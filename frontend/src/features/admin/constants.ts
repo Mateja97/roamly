@@ -24,4 +24,15 @@ export const STATUS_CHIPS: { value: ActivityStatus | ''; label: string }[] = [
   { value: 'pending', label: 'Pending' },
 ];
 
+/** Shared status-pill label + CSS class per status — used by the
+ * activities table row and the edit form header's read-out pill. */
+export const STATUS_PILL: Record<
+  ActivityStatus,
+  { label: string; className: string }
+> = {
+  published: { label: 'Published', className: 'admin-pill-published' },
+  draft: { label: 'Draft', className: 'admin-pill-draft' },
+  pending: { label: 'Pending', className: 'admin-pill-pending' },
+};
+
 export const DEFAULT_PAGE_SIZE = 20;
