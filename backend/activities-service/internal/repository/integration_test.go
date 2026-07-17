@@ -286,7 +286,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
 		wantCounts := map[string]int{
-			"Belgrade":  13, // 7 from 0002_seed.sql + 6 new demo activities from 0008
+			"Belgrade":  131, // 7 from 0002_seed.sql + 6 demo from 0008 + 118 from 0011_import_belgrade_listings
 			"Rome":      1,
 			"Paris":     1,
 			"Tokyo":     1,
