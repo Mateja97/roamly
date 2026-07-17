@@ -135,6 +135,25 @@ describe('EditActivityPage', () => {
     });
   });
 
+  it('switching category clears details (avoids mixing old/new category keys, which the backend 400s on)', async () => {
+    const user = userEvent.setup();
+    getAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });
+    patchAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });
+    renderEditPage('/activities/a1/edit');
+
+    await screen.findByDisplayValue('Kalemegdan Park');
+    expect(screen.getByDisplayValue('2 hours')).toBeInTheDocument(); // nature.time_to_spend
+    await user.selectOptions(screen.getByLabelText('Category'), 'sport');
+    expect(screen.queryByDisplayValue('2 hours')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /Save changes/ }));
+    await waitFor(() => expect(patchAdminActivity).toHaveBeenCalled());
+    expect(patchAdminActivity).toHaveBeenCalledWith('a1', {
+      category: 'sport',
+      details: {},
+    });
+  });
+
   it('validation blocks submit and focuses the first invalid field', async () => {
     const user = userEvent.setup();
     getAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });

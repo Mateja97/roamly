@@ -494,10 +494,23 @@
   cursor: pointer;
 }
 
+/* A native radio (keyboard + arrow-key group nav for free), custom-drawn
+   to match the spec's hollow-vs-filled ring rather than the browser
+   default dot: unselected is a thin 2px --admin-placeholder ring around
+   a card-colored center; selected grows the border to a thick wine ring
+   with the card still showing through the middle ("filled ring"). */
 .admin-radio-row input {
+  appearance: none;
   width: 16px;
   height: 16px;
-  accent-color: var(--admin-focus);
+  margin: 0;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--admin-placeholder);
+  background: var(--admin-card);
+}
+
+.admin-radio-row input:checked {
+  border: 5px solid var(--admin-focus);
 }
 
 .admin-radio-row:has(input:focus-visible) {

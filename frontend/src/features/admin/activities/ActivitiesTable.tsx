@@ -3,14 +3,9 @@ import { Link } from 'react-router-dom';
 import { AlertCircle, ImageOff, Inbox, Pencil, Star, X } from 'lucide-react';
 import type { AdminActivitySummary } from '../../../api/adminActivities';
 import type { ActivitiesQueryState } from '../hooks/useAdminActivities';
+import { STATUS_PILL } from '../constants';
 
 const SKELETON_ROWS = 7;
-
-const STATUS_PILL: Record<string, { label: string; className: string }> = {
-  published: { label: 'Published', className: 'admin-pill-published' },
-  draft: { label: 'Draft', className: 'admin-pill-draft' },
-  pending: { label: 'Pending', className: 'admin-pill-pending' },
-};
 
 export interface ActivitiesTableProps {
   result: ActivitiesQueryState;

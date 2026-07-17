@@ -258,15 +258,20 @@ export function EditActivityPage() {
             nameInputRef={nameRef}
             category={form.category}
             onCategoryChange={(category) =>
-              // ponytail: switching category doesn't wipe `details` — a
-              // key that belonged to the old category's shape just stops
-              // being shown (DetailsSection only reads the new category's
-              // schema keys); design-spec.md's T4 section calls this out
-              // explicitly ("the engineer preserves untouched keys in the
-              // PATCH payload"). The backend's per-category validator
-              // decodes into a typed struct and ignores unknown JSON
-              // keys, so a leftover old-category key is inert, not a 400.
-              setForm((f) => ({ ...f, category }))
+              // Category switch clears `details`: the backend's per-
+              // category validator (activity.go's ValidateDetails) uses
+              // `json.Decoder.DisallowUnknownFields`, a *strict* decode —
+              // a leftover key from the old category's shape mixed into a
+              // save that also touches Details would 400 ("details do
+              // not match category"), not silently ignore it. Design-
+              // spec.md's T4 section says switching category "preserves
+              // untouched keys in the PATCH payload", which doesn't hold
+              // against that strict decode; clearing on switch is the
+              // corrected, save-safe behavior (data belonging to the old
+              // shape is already expected to be lost per the same spec
+              // text — this only drops the one clause that would break
+              // Save).
+              setForm((f) => ({ ...f, category, details: {} }))
             }
             onCategoryBlur={() => validateCategory()}
             categoryError={categoryError}

@@ -1,15 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ChevronRight, Check, Loader2 } from 'lucide-react';
 import type { ActivityStatus } from '../../../api/adminActivities';
-
-const STATUS_PILL: Record<
-  ActivityStatus,
-  { label: string; className: string }
-> = {
-  published: { label: 'Published', className: 'admin-pill-published' },
-  draft: { label: 'Draft', className: 'admin-pill-draft' },
-  pending: { label: 'Pending', className: 'admin-pill-pending' },
-};
+import { STATUS_PILL } from '../constants';
 
 export interface EditActivityHeaderProps {
   isCreate: boolean;
