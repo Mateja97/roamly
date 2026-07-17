@@ -294,14 +294,26 @@ func validateOpeningHours(oh *activitiessvc.OpeningHours) error {
 		if !validDayOfWeek(p.Day) {
 			return fmt.Errorf("%w: opening_hours.periods[%d].day %q is not a valid day of week", sharederrors.ErrInvalidInput, i, p.Day)
 		}
-		if _, err := time.Parse("15:04", p.Open); err != nil {
+		if !isHHMM(p.Open) {
 			return fmt.Errorf("%w: opening_hours.periods[%d].open %q is not in 24h HH:MM form", sharederrors.ErrInvalidInput, i, p.Open)
 		}
-		if _, err := time.Parse("15:04", p.Close); err != nil {
+		if !isHHMM(p.Close) {
 			return fmt.Errorf("%w: opening_hours.periods[%d].close %q is not in 24h HH:MM form", sharederrors.ErrInvalidInput, i, p.Close)
 		}
 	}
 	return nil
+}
+
+// isHHMM reports whether s is a strict zero-padded 24h "HH:MM" time.
+// time.Parse("15:04", s) alone accepts non-padded hours like "9:00", so the
+// length is checked first to reject those before parsing catches out-of-range
+// values (hour > 23, minute > 59).
+func isHHMM(s string) bool {
+	if len(s) != 5 {
+		return false
+	}
+	_, err := time.Parse("15:04", s)
+	return err == nil
 }
 
 func validDayOfWeek(d activitiessvc.DayOfWeek) bool {

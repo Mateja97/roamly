@@ -399,6 +399,8 @@ func TestValidateDetails_OpeningHours(t *testing.T) {
 			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"monday","open":"9am","close":"17:00"}]}}`, true},
 		{"close time not HH:MM rejected", activitiessvc.CategoryArt,
 			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"monday","open":"09:00","close":"5pm"}]}}`, true},
+		{"non-zero-padded hour rejected", activitiessvc.CategoryArt,
+			`{"opening_hours":{"timezone":"UTC","periods":[{"day":"monday","open":"9:00","close":"17:00"}]}}`, true},
 		{"always_open false with no periods rejected as malformed", activitiessvc.CategoryRestaurants,
 			`{"opening_hours":{"timezone":"UTC","always_open":false}}`, true},
 		{"unknown key inside opening_hours still rejected by strict decode", activitiessvc.CategoryRestaurants,
