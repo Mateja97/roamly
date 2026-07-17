@@ -28,6 +28,10 @@ type fakeAdminActivitiesClient struct {
 	updateOut *activitiesv1.Activity
 	updateErr error
 	gotUpdate *activitiesv1.UpdateActivityRequest
+
+	uploadOut *activitiesv1.UploadPhotoResponse
+	uploadErr error
+	gotUpload *activitiesv1.UploadPhotoRequest
 }
 
 func (f *fakeAdminActivitiesClient) ListActivities(_ context.Context, req *activitiesv1.ListActivitiesRequest) (*activitiesv1.ListActivitiesResponse, error) {
@@ -48,6 +52,11 @@ func (f *fakeAdminActivitiesClient) CreateActivity(_ context.Context, req *activ
 func (f *fakeAdminActivitiesClient) UpdateActivity(_ context.Context, req *activitiesv1.UpdateActivityRequest) (*activitiesv1.Activity, error) {
 	f.gotUpdate = req
 	return f.updateOut, f.updateErr
+}
+
+func (f *fakeAdminActivitiesClient) UploadPhoto(_ context.Context, req *activitiesv1.UploadPhotoRequest) (*activitiesv1.UploadPhotoResponse, error) {
+	f.gotUpload = req
+	return f.uploadOut, f.uploadErr
 }
 
 // TestRegisterAdminRoutes_TokenUnsetLeavesRoutesEntirelyAbsent proves the
@@ -91,6 +100,7 @@ func TestRegisterAdminRoutes_TokenSetRegistersEveryRoute(t *testing.T) {
 		{http.MethodGet, "/admin/activities/1"},
 		{http.MethodPatch, "/admin/activities/1"},
 		{http.MethodPost, "/admin/activities"},
+		{http.MethodPost, "/admin/activities/1/photos"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -117,6 +127,7 @@ func TestRegisterAdminRoutes_WrongTokenIsRejectedOnEveryRoute(t *testing.T) {
 		{http.MethodGet, "/admin/activities/1"},
 		{http.MethodPatch, "/admin/activities/1"},
 		{http.MethodPost, "/admin/activities"},
+		{http.MethodPost, "/admin/activities/1/photos"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {

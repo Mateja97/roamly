@@ -38,6 +38,10 @@ services:
       GRPC_ADDR: ":9090"
     ports:
       - "9090:9090"
+    volumes:
+      # T1: sole writer of uploaded photos; proxy-service mounts the same
+      # volume read-only to serve them over HTTP.
+      - photo-data:/data/photos
     depends_on:
       activities-db:
         condition: service_healthy
@@ -56,6 +60,10 @@ services:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
     ports:
       - "8080:8080"
+    volumes:
+      # T1: read-only — activities-service is the sole writer, proxy-service
+      # only serves GET /photos/... off the same files.
+      - photo-data:/data/photos:ro
     depends_on:
       - activities-service
 
@@ -97,3 +105,4 @@ services:
 volumes:
   postgres-data:
   activities-db-data:
+  photo-data:

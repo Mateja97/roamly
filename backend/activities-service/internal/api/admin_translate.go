@@ -24,7 +24,10 @@ func toDomainStatus(s activitiesv1.ActivityStatus) activitiessvc.Status {
 func toDomainPhotos(photos []*activitiesv1.Photo) []activitiessvc.Photo {
 	out := make([]activitiessvc.Photo, len(photos))
 	for i, p := range photos {
-		out[i] = activitiessvc.Photo{URL: p.GetUrl(), Author: p.GetAuthor(), AuthorLink: p.GetAuthorLink()}
+		out[i] = activitiessvc.Photo{
+			URL: p.GetUrl(), Author: p.GetAuthor(), AuthorLink: p.GetAuthorLink(),
+			ThumbURL: p.GetThumbUrl(), Caption: p.GetCaption(),
+		}
 	}
 	return out
 }

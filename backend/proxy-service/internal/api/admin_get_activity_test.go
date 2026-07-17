@@ -18,7 +18,7 @@ func TestAdminGetActivity_HappyPath(t *testing.T) {
 		Id: "1", Title: "Kayaking", Description: "fun", Category: activitiesv1.Category_CATEGORY_SPORT,
 		City: "Belgrade", Address: "Ada Ciganlija bb", Status: activitiesv1.ActivityStatus_ACTIVITY_STATUS_DRAFT,
 		Rating: 4.5, Details: `{"difficulty":3}`,
-		Photos: []*activitiesv1.Photo{{Url: "https://example.com/x.jpg"}},
+		Photos: []*activitiesv1.Photo{{Url: "https://example.com/x.jpg", ThumbUrl: "https://example.com/x_t.jpg", Caption: "Sunset"}},
 	}}
 	h := NewAdminGetActivityHandler(fake, slog.New(slog.DiscardHandler))
 
@@ -39,6 +39,9 @@ func TestAdminGetActivity_HappyPath(t *testing.T) {
 	}
 	if got.ID != "1" || got.Description != "fun" || got.Address != "Ada Ciganlija bb" || got.Status != "draft" {
 		t.Errorf("unexpected activity: %+v", got)
+	}
+	if len(got.Photos) != 1 || got.Photos[0].ThumbURL != "https://example.com/x_t.jpg" || got.Photos[0].Caption != "Sunset" {
+		t.Errorf("unexpected photo translation: %+v", got.Photos)
 	}
 	if string(got.Details) != `{"difficulty":3}` {
 		t.Errorf("details = %s, want passthrough", got.Details)

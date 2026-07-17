@@ -89,12 +89,15 @@ func TestAdminPatchActivity_PhotosReplacement(t *testing.T) {
 	fake := &fakeAdminActivitiesClient{updateOut: &activitiesv1.Activity{Id: "1"}}
 	h := NewAdminPatchActivityHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doAdminPatchRequest(t, h, "1", `{"photos":[{"url":"https://example.com/a.jpg"}]}`)
+	rec := doAdminPatchRequest(t, h, "1", `{"photos":[{"url":"https://example.com/a.jpg","thumb_url":"https://example.com/a_t.jpg","caption":"Sunset"}]}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
 	if fake.gotUpdate.Photos == nil || len(fake.gotUpdate.Photos.GetPhotos()) != 1 || fake.gotUpdate.Photos.GetPhotos()[0].GetUrl() != "https://example.com/a.jpg" {
 		t.Errorf("Photos = %v, want the one submitted photo", fake.gotUpdate.Photos)
+	}
+	if got := fake.gotUpdate.Photos.GetPhotos()[0]; got.GetThumbUrl() != "https://example.com/a_t.jpg" || got.GetCaption() != "Sunset" {
+		t.Errorf("Photos[0] = %+v, want thumb_url/caption translated", got)
 	}
 }
 

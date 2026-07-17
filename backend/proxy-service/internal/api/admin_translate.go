@@ -20,13 +20,16 @@ type adminActivitiesClient interface {
 	GetActivity(ctx context.Context, req *activitiesv1.GetActivityRequest) (*activitiesv1.Activity, error)
 	CreateActivity(ctx context.Context, req *activitiesv1.CreateActivityRequest) (*activitiesv1.Activity, error)
 	UpdateActivity(ctx context.Context, req *activitiesv1.UpdateActivityRequest) (*activitiesv1.Activity, error)
+	UploadPhoto(ctx context.Context, req *activitiesv1.UploadPhotoRequest) (*activitiesv1.UploadPhotoResponse, error)
 }
 
-// adminPhotoDTO is the admin surface's photo shape: just the url — no
-// attribution wrapper, that's the public app card's concern, per
-// product-tasks.md's T2 response shape.
+// adminPhotoDTO is the admin surface's photo shape: url plus the T1
+// additions thumb_url/caption — no attribution wrapper, that's the public
+// app card's concern, per product-tasks.md's T2 response shape.
 type adminPhotoDTO struct {
-	URL string `json:"url"`
+	URL      string `json:"url"`
+	ThumbURL string `json:"thumb_url,omitempty"`
+	Caption  string `json:"caption,omitempty"`
 }
 
 type adminStatsDTO struct {
@@ -74,7 +77,7 @@ type listActivitiesResponseDTO struct {
 func toAdminPhotoDTOs(photos []*activitiesv1.Photo) []adminPhotoDTO {
 	out := make([]adminPhotoDTO, len(photos))
 	for i, p := range photos {
-		out[i] = adminPhotoDTO{URL: p.GetUrl()}
+		out[i] = adminPhotoDTO{URL: p.GetUrl(), ThumbURL: p.GetThumbUrl(), Caption: p.GetCaption()}
 	}
 	return out
 }
@@ -82,7 +85,7 @@ func toAdminPhotoDTOs(photos []*activitiesv1.Photo) []adminPhotoDTO {
 func toProtoPhotoList(photos []adminPhotoDTO) []*activitiesv1.Photo {
 	out := make([]*activitiesv1.Photo, len(photos))
 	for i, p := range photos {
-		out[i] = &activitiesv1.Photo{Url: p.URL}
+		out[i] = &activitiesv1.Photo{Url: p.URL, ThumbUrl: p.ThumbURL, Caption: p.Caption}
 	}
 	return out
 }

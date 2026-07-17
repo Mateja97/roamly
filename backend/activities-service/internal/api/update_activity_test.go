@@ -49,14 +49,19 @@ func TestUpdateActivity_PhotosPresenceUnwrapsThePhotoListWrapper(t *testing.T) {
 	client := dialServer(t, fake)
 
 	_, err := client.UpdateActivity(context.Background(), &activitiesv1.UpdateActivityRequest{
-		Id:     "1",
-		Photos: &activitiesv1.PhotoList{Photos: []*activitiesv1.Photo{{Url: "https://example.com/x.jpg"}}},
+		Id: "1",
+		Photos: &activitiesv1.PhotoList{Photos: []*activitiesv1.Photo{
+			{Url: "https://example.com/x.jpg", ThumbUrl: "https://example.com/x_t.jpg", Caption: "Sunset"},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("UpdateActivity() error: %v", err)
 	}
 	if fake.gotUpdatePtch.Photos == nil || len(*fake.gotUpdatePtch.Photos) != 1 || (*fake.gotUpdatePtch.Photos)[0].URL != "https://example.com/x.jpg" {
 		t.Errorf("patch.Photos = %v, want the one submitted photo", fake.gotUpdatePtch.Photos)
+	}
+	if (*fake.gotUpdatePtch.Photos)[0].ThumbURL != "https://example.com/x_t.jpg" || (*fake.gotUpdatePtch.Photos)[0].Caption != "Sunset" {
+		t.Errorf("patch.Photos = %+v, want thumb_url/caption translated", (*fake.gotUpdatePtch.Photos)[0])
 	}
 }
 

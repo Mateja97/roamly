@@ -12,6 +12,11 @@ import (
 	activitiesv1 "backend/shared/proto/activities/v1"
 )
 
+// maxPhotoMsgBytes is 12MB (T1): matches activities-service's own
+// MaxRecvMsgSize/MaxSendMsgSize, headroom above the 8MB proxy-service caps
+// its admin upload at.
+const maxPhotoMsgBytes = 12 << 20
+
 type Client struct {
 	conn *grpc.ClientConn
 	rpc  activitiesv1.ActivitiesServiceClient
@@ -21,7 +26,13 @@ type Client struct {
 // is not TLS-secured: all traffic stays inside the compose/cluster network,
 // matching activities-service's own server setup (no TLS configured there).
 func Dial(addr string) (*Client, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(maxPhotoMsgBytes),
+			grpc.MaxCallSendMsgSize(maxPhotoMsgBytes),
+		),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -56,4 +67,9 @@ func (c *Client) CreateActivity(ctx context.Context, req *activitiesv1.CreateAct
 
 func (c *Client) UpdateActivity(ctx context.Context, req *activitiesv1.UpdateActivityRequest) (*activitiesv1.Activity, error) {
 	return c.rpc.UpdateActivity(ctx, req)
+}
+
+// UploadPhoto (T1): a pass-through wrapper, same shape as the above.
+func (c *Client) UploadPhoto(ctx context.Context, req *activitiesv1.UploadPhotoRequest) (*activitiesv1.UploadPhotoResponse, error) {
+	return c.rpc.UploadPhoto(ctx, req)
 }

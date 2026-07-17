@@ -21,5 +21,6 @@ func RegisterAdminRoutes(mux *http.ServeMux, client adminActivitiesClient, admin
 	mux.Handle("GET /admin/activities/{id}", adminAuth(http.HandlerFunc(NewAdminGetActivityHandler(client, logger).Handle)))
 	mux.Handle("PATCH /admin/activities/{id}", adminAuth(http.HandlerFunc(NewAdminPatchActivityHandler(client, logger).Handle)))
 	mux.Handle("POST /admin/activities", adminAuth(http.HandlerFunc(NewAdminCreateActivityHandler(client, logger).Handle)))
+	mux.Handle("POST /admin/activities/{id}/photos", adminAuth(http.HandlerFunc(NewAdminUploadPhotoHandler(client, logger).Handle)))
 	return true
 }

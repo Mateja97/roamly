@@ -25,6 +25,7 @@ const (
 	ActivitiesService_GetActivity_FullMethodName     = "/activities.v1.ActivitiesService/GetActivity"
 	ActivitiesService_CreateActivity_FullMethodName  = "/activities.v1.ActivitiesService/CreateActivity"
 	ActivitiesService_UpdateActivity_FullMethodName  = "/activities.v1.ActivitiesService/UpdateActivity"
+	ActivitiesService_UploadPhoto_FullMethodName     = "/activities.v1.ActivitiesService/UploadPhoto"
 )
 
 // ActivitiesServiceClient is the client API for ActivitiesService service.
@@ -47,6 +48,14 @@ type ActivitiesServiceClient interface {
 	GetActivity(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*Activity, error)
 	CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*Activity, error)
 	UpdateActivity(ctx context.Context, in *UpdateActivityRequest, opts ...grpc.CallOption) (*Activity, error)
+	// UploadPhoto (T1) is unary, not client-streaming: one admin, one <=8MB
+	// file, so the extra complexity of a streaming RPC buys nothing. The
+	// decode (image/jpeg or image/png) IS the content-type check — a decode
+	// failure is InvalidArgument, never a trust of the client's declared MIME
+	// type or file extension. activities-service is the sole writer of
+	// /data/photos, so the downscale + encode + write all happen here, not at
+	// proxy-service's HTTP edge.
+	UploadPhoto(ctx context.Context, in *UploadPhotoRequest, opts ...grpc.CallOption) (*UploadPhotoResponse, error)
 }
 
 type activitiesServiceClient struct {
@@ -117,6 +126,16 @@ func (c *activitiesServiceClient) UpdateActivity(ctx context.Context, in *Update
 	return out, nil
 }
 
+func (c *activitiesServiceClient) UploadPhoto(ctx context.Context, in *UploadPhotoRequest, opts ...grpc.CallOption) (*UploadPhotoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadPhotoResponse)
+	err := c.cc.Invoke(ctx, ActivitiesService_UploadPhoto_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ActivitiesServiceServer is the server API for ActivitiesService service.
 // All implementations must embed UnimplementedActivitiesServiceServer
 // for forward compatibility.
@@ -137,6 +156,14 @@ type ActivitiesServiceServer interface {
 	GetActivity(context.Context, *GetActivityRequest) (*Activity, error)
 	CreateActivity(context.Context, *CreateActivityRequest) (*Activity, error)
 	UpdateActivity(context.Context, *UpdateActivityRequest) (*Activity, error)
+	// UploadPhoto (T1) is unary, not client-streaming: one admin, one <=8MB
+	// file, so the extra complexity of a streaming RPC buys nothing. The
+	// decode (image/jpeg or image/png) IS the content-type check — a decode
+	// failure is InvalidArgument, never a trust of the client's declared MIME
+	// type or file extension. activities-service is the sole writer of
+	// /data/photos, so the downscale + encode + write all happen here, not at
+	// proxy-service's HTTP edge.
+	UploadPhoto(context.Context, *UploadPhotoRequest) (*UploadPhotoResponse, error)
 	mustEmbedUnimplementedActivitiesServiceServer()
 }
 
@@ -164,6 +191,9 @@ func (UnimplementedActivitiesServiceServer) CreateActivity(context.Context, *Cre
 }
 func (UnimplementedActivitiesServiceServer) UpdateActivity(context.Context, *UpdateActivityRequest) (*Activity, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateActivity not implemented")
+}
+func (UnimplementedActivitiesServiceServer) UploadPhoto(context.Context, *UploadPhotoRequest) (*UploadPhotoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadPhoto not implemented")
 }
 func (UnimplementedActivitiesServiceServer) mustEmbedUnimplementedActivitiesServiceServer() {}
 func (UnimplementedActivitiesServiceServer) testEmbeddedByValue()                           {}
@@ -294,6 +324,24 @@ func _ActivitiesService_UpdateActivity_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ActivitiesService_UploadPhoto_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadPhotoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).UploadPhoto(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_UploadPhoto_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).UploadPhoto(ctx, req.(*UploadPhotoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ActivitiesService_ServiceDesc is the grpc.ServiceDesc for ActivitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -324,6 +372,10 @@ var ActivitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateActivity",
 			Handler:    _ActivitiesService_UpdateActivity_Handler,
+		},
+		{
+			MethodName: "UploadPhoto",
+			Handler:    _ActivitiesService_UploadPhoto_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
