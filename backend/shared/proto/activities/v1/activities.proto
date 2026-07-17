@@ -21,6 +21,10 @@ service ActivitiesService {
   rpc GetActivity(GetActivityRequest) returns (Activity);
   rpc CreateActivity(CreateActivityRequest) returns (Activity);
   rpc UpdateActivity(UpdateActivityRequest) returns (Activity);
+  // ListAdminCities returns every distinct city with at least one activity,
+  // any status (unlike SuggestCities, which is published-only and requires
+  // a non-empty prefix) — backs the admin panel's city filter dropdown.
+  rpc ListAdminCities(ListAdminCitiesRequest) returns (ListAdminCitiesResponse);
 
   // UploadPhoto (T1) is unary, not client-streaming: one admin, one <=8MB
   // file, so the extra complexity of a streaming RPC buys nothing. The
@@ -215,6 +219,12 @@ message ListActivitiesResponse {
 
 message GetActivityRequest {
   string id = 1;
+}
+
+message ListAdminCitiesRequest {}
+
+message ListAdminCitiesResponse {
+  repeated string cities = 1; // sorted, distinct, never null (empty list, not an error, when the catalog has none)
 }
 
 // UploadPhotoRequest carries the raw, still-encoded (JPEG/PNG) bytes of one

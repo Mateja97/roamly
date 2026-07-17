@@ -23,6 +23,7 @@ type queryService interface {
 	SuggestCities(ctx context.Context, query string) ([]activitiessvc.CitySuggestion, error)
 
 	// Admin surface (T2).
+	AdminListCities(ctx context.Context) ([]string, error)
 	List(ctx context.Context, req service.ListRequest) (activitiessvc.ListResult, int, int, error)
 	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
 	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)

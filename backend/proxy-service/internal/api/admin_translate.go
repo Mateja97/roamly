@@ -21,6 +21,7 @@ type adminActivitiesClient interface {
 	CreateActivity(ctx context.Context, req *activitiesv1.CreateActivityRequest) (*activitiesv1.Activity, error)
 	UpdateActivity(ctx context.Context, req *activitiesv1.UpdateActivityRequest) (*activitiesv1.Activity, error)
 	UploadPhoto(ctx context.Context, req *activitiesv1.UploadPhotoRequest) (*activitiesv1.UploadPhotoResponse, error)
+	ListAdminCities(ctx context.Context, req *activitiesv1.ListAdminCitiesRequest) (*activitiesv1.ListAdminCitiesResponse, error)
 }
 
 // adminPhotoDTO is the admin surface's photo shape: url plus the T1

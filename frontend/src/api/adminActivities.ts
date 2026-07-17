@@ -170,6 +170,17 @@ function resolvePhotos(photos: AdminActivityPhoto[]): AdminActivityPhoto[] {
   }));
 }
 
+/** `GET /admin/cities` — every distinct city in the catalog, any status.
+ * Backs the activities filter's city dropdown; unlike `suggestCities`
+ * (`src/api/cities.ts`), this is admin-scoped (token-gated) and isn't
+ * restricted to published activities or a non-empty prefix. */
+export async function listAdminCities(): Promise<AdminApiResult<string[]>> {
+  const url = new URL('/admin/cities', PROXY_URL);
+  const res = await adminRequest<{ cities: string[] }>(url);
+  if (res.status !== 'success') return res;
+  return { status: 'success', data: res.data.cities };
+}
+
 export async function listAdminActivities(
   params: ListAdminActivitiesParams,
 ): Promise<AdminApiResult<ListAdminActivitiesResponse>> {

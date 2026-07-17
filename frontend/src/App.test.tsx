@@ -1,14 +1,11 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import App from './App';
-import { listAdminActivities } from './api/adminActivities';
-import { suggestCities } from './api/cities';
+import { listAdminActivities, listAdminCities } from './api/adminActivities';
 
 vi.mock('./api/adminActivities', () => ({
   listAdminActivities: vi.fn(),
-}));
-vi.mock('./api/cities', () => ({
-  suggestCities: vi.fn(),
+  listAdminCities: vi.fn(),
 }));
 
 describe('App', () => {
@@ -18,7 +15,7 @@ describe('App', () => {
   });
 
   it('redirects / to the Activities screen inside the admin shell', async () => {
-    vi.mocked(suggestCities).mockResolvedValue([]);
+    vi.mocked(listAdminCities).mockResolvedValue({ status: 'success', data: [] });
     vi.mocked(listAdminActivities).mockResolvedValue({
       status: 'success',
       data: {
@@ -40,7 +37,6 @@ describe('App', () => {
   });
 
   it('routes /activities/new to the T4 create form', async () => {
-    vi.mocked(suggestCities).mockResolvedValue([]);
     window.history.pushState({}, '', '/activities/new');
 
     render(<App />);

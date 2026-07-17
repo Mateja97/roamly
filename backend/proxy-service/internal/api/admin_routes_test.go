@@ -32,6 +32,9 @@ type fakeAdminActivitiesClient struct {
 	uploadOut *activitiesv1.UploadPhotoResponse
 	uploadErr error
 	gotUpload *activitiesv1.UploadPhotoRequest
+
+	citiesOut *activitiesv1.ListAdminCitiesResponse
+	citiesErr error
 }
 
 func (f *fakeAdminActivitiesClient) ListActivities(_ context.Context, req *activitiesv1.ListActivitiesRequest) (*activitiesv1.ListActivitiesResponse, error) {
@@ -57,6 +60,10 @@ func (f *fakeAdminActivitiesClient) UpdateActivity(_ context.Context, req *activ
 func (f *fakeAdminActivitiesClient) UploadPhoto(_ context.Context, req *activitiesv1.UploadPhotoRequest) (*activitiesv1.UploadPhotoResponse, error) {
 	f.gotUpload = req
 	return f.uploadOut, f.uploadErr
+}
+
+func (f *fakeAdminActivitiesClient) ListAdminCities(_ context.Context, _ *activitiesv1.ListAdminCitiesRequest) (*activitiesv1.ListAdminCitiesResponse, error) {
+	return f.citiesOut, f.citiesErr
 }
 
 // TestRegisterAdminRoutes_TokenUnsetLeavesRoutesEntirelyAbsent proves the
@@ -87,6 +94,7 @@ func TestRegisterAdminRoutes_TokenSetRegistersEveryRoute(t *testing.T) {
 		getOut:    &activitiesv1.Activity{},
 		createOut: &activitiesv1.Activity{},
 		updateOut: &activitiesv1.Activity{},
+		citiesOut: &activitiesv1.ListAdminCitiesResponse{},
 	}
 	if !RegisterAdminRoutes(mux, client, "secret", slog.New(slog.DiscardHandler)) {
 		t.Fatal("RegisterAdminRoutes() = false with a non-empty token, want true")
@@ -101,6 +109,7 @@ func TestRegisterAdminRoutes_TokenSetRegistersEveryRoute(t *testing.T) {
 		{http.MethodPatch, "/admin/activities/1"},
 		{http.MethodPost, "/admin/activities"},
 		{http.MethodPost, "/admin/activities/1/photos"},
+		{http.MethodGet, "/admin/cities"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
@@ -128,6 +137,7 @@ func TestRegisterAdminRoutes_WrongTokenIsRejectedOnEveryRoute(t *testing.T) {
 		{http.MethodPatch, "/admin/activities/1"},
 		{http.MethodPost, "/admin/activities"},
 		{http.MethodPost, "/admin/activities/1/photos"},
+		{http.MethodGet, "/admin/cities"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.method+" "+tt.path, func(t *testing.T) {

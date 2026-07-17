@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import {
   listAdminActivities,
+  listAdminCities,
   getAdminActivity,
   patchAdminActivity,
   createAdminActivity,
@@ -246,6 +247,47 @@ describe('patchAdminActivity', () => {
     const result = await patchAdminActivity('a1', { status: 'bogus' });
 
     expect(result).toEqual({ status: 400, message: 'unknown status: bogus' });
+  });
+});
+
+describe('listAdminCities', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('sends the X-Admin-Token header and resolves the city list', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ cities: ['Barcelona', 'Belgrade'] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await listAdminCities();
+
+    expect(result).toEqual({
+      status: 'success',
+      data: ['Barcelona', 'Belgrade'],
+    });
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toContain('/admin/cities');
+    expect(
+      (init.headers as Record<string, string>)['X-Admin-Token'],
+    ).toBeDefined();
+  });
+
+  it('resolves 403 when the admin token is rejected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: 'invalid or missing admin token' }, 403),
+        ),
+    );
+
+    const result = await listAdminCities();
+
+    expect(result).toEqual({
+      status: 403,
+      message: 'invalid or missing admin token',
+    });
   });
 });
 

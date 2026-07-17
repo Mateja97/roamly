@@ -371,6 +371,22 @@ func TestActivities_Query_Integration(t *testing.T) {
 		if len(got) != 0 {
 			t.Errorf("got %+v, want no suggestions (Zzzville only exists as a draft row)", got)
 		}
+
+		t.Run("AdminDistinctCities includes it (T2 has no published-only restriction)", func(t *testing.T) {
+			got, err := repo.AdminDistinctCities(ctx)
+			if err != nil {
+				t.Fatalf("AdminDistinctCities() error: %v", err)
+			}
+			found := false
+			for _, c := range got {
+				if c == "Zzzville" {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("got %v, want it to include the draft-only city Zzzville", got)
+			}
+		})
 	})
 
 	t.Run("SuggestCities non-matching prefix returns an empty list, not an error", func(t *testing.T) {

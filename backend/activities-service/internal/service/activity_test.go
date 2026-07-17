@@ -15,6 +15,9 @@ type fakeRepo struct {
 	out            []activitiessvc.Activity
 	citySuggestOut []activitiessvc.CitySuggestion
 
+	adminCitiesOut []string
+	adminCitiesErr error
+
 	gotListFilter activitiessvc.ListFilter
 	listOut       activitiessvc.ListResult
 	listErr       error
@@ -40,6 +43,10 @@ func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([
 
 func (f *fakeRepo) SuggestCities(_ context.Context, _ string) ([]activitiessvc.CitySuggestion, error) {
 	return f.citySuggestOut, nil
+}
+
+func (f *fakeRepo) AdminDistinctCities(_ context.Context) ([]string, error) {
+	return f.adminCitiesOut, f.adminCitiesErr
 }
 
 func (f *fakeRepo) List(_ context.Context, filter activitiessvc.ListFilter) (activitiessvc.ListResult, error) {
@@ -405,6 +412,28 @@ func TestActivities_SuggestCities(t *testing.T) {
 				t.Errorf("got %d suggestions, want %d", len(got), tt.wantLen)
 			}
 		})
+	}
+}
+
+func TestActivities_AdminListCities(t *testing.T) {
+	repo := &fakeRepo{adminCitiesOut: []string{"Barcelona", "Belgrade"}}
+	svc := New(repo)
+
+	got, err := svc.AdminListCities(context.Background())
+	if err != nil {
+		t.Fatalf("AdminListCities() unexpected error: %v", err)
+	}
+	if len(got) != 2 || got[0] != "Barcelona" || got[1] != "Belgrade" {
+		t.Errorf("got %v, want [Barcelona Belgrade]", got)
+	}
+}
+
+func TestActivities_AdminListCities_RepoErrorWraps(t *testing.T) {
+	repo := &fakeRepo{adminCitiesErr: errors.New("db exploded")}
+	svc := New(repo)
+
+	if _, err := svc.AdminListCities(context.Background()); err == nil {
+		t.Fatal("expected an error, got nil")
 	}
 }
 

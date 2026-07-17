@@ -20,6 +20,7 @@ import (
 type repository interface {
 	Query(ctx context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error)
 	SuggestCities(ctx context.Context, prefix string) ([]activitiessvc.CitySuggestion, error)
+	AdminDistinctCities(ctx context.Context) ([]string, error)
 	List(ctx context.Context, filter activitiessvc.ListFilter) (activitiessvc.ListResult, error)
 	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
 	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
@@ -80,6 +81,17 @@ func (a *Activities) SuggestCities(ctx context.Context, query string) ([]activit
 		return nil, fmt.Errorf("suggesting cities: %w", err)
 	}
 	return suggestions, nil
+}
+
+// AdminListCities returns every distinct city across the whole catalog
+// (T2) — no published-only restriction and no prefix filter, unlike
+// SuggestCities, since it backs a dropdown of every filterable value.
+func (a *Activities) AdminListCities(ctx context.Context) ([]string, error) {
+	cities, err := a.repo.AdminDistinctCities(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing admin cities: %w", err)
+	}
+	return cities, nil
 }
 
 func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {

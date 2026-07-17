@@ -5,20 +5,18 @@ import { MemoryRouter } from 'react-router-dom';
 import { ActivitiesPage } from './ActivitiesPage';
 import {
   listAdminActivities,
+  listAdminCities,
   type AdminApiResult,
   type ListAdminActivitiesResponse,
 } from '../../../api/adminActivities';
-import { suggestCities } from '../../../api/cities';
 
 vi.mock('../../../api/adminActivities', () => ({
   listAdminActivities: vi.fn(),
-}));
-vi.mock('../../../api/cities', () => ({
-  suggestCities: vi.fn(),
+  listAdminCities: vi.fn(),
 }));
 
 const mockedList = vi.mocked(listAdminActivities);
-const mockedCities = vi.mocked(suggestCities);
+const mockedCities = vi.mocked(listAdminCities);
 
 const activity = {
   id: 'a1',
@@ -53,7 +51,10 @@ function renderPage() {
 
 describe('ActivitiesPage', () => {
   beforeEach(() => {
-    mockedCities.mockResolvedValue(['Belgrade', 'Novi Sad']);
+    mockedCities.mockResolvedValue({
+      status: 'success',
+      data: ['Belgrade', 'Novi Sad'],
+    });
     mockedList.mockResolvedValue(successResponse());
   });
 

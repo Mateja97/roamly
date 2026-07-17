@@ -340,6 +340,30 @@ func (r *Activities) stats(ctx context.Context) (activitiessvc.Stats, error) {
 	return stats, nil
 }
 
+// AdminDistinctCities returns every distinct, non-empty city across all
+// statuses (T2's admin surface has no published-only restriction, unlike
+// SuggestCities) — backs the admin panel's city filter dropdown.
+func (r *Activities) AdminDistinctCities(ctx context.Context) ([]string, error) {
+	rows, err := r.db.Query(ctx, `SELECT DISTINCT city FROM activities WHERE city <> '' ORDER BY city ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("querying distinct cities: %w", err)
+	}
+	defer rows.Close()
+
+	cities := []string{}
+	for rows.Next() {
+		var city string
+		if err := rows.Scan(&city); err != nil {
+			return nil, fmt.Errorf("scanning city row: %w", err)
+		}
+		cities = append(cities, city)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating city rows: %w", err)
+	}
+	return cities, nil
+}
+
 // GetByID returns a single activity regardless of lifecycle state (T2's
 // admin surface has no published-only restriction, unlike Query).
 // sharederrors.ErrNotFound when the id doesn't exist.

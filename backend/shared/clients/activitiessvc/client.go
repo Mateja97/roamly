@@ -73,3 +73,7 @@ func (c *Client) UpdateActivity(ctx context.Context, req *activitiesv1.UpdateAct
 func (c *Client) UploadPhoto(ctx context.Context, req *activitiesv1.UploadPhotoRequest) (*activitiesv1.UploadPhotoResponse, error) {
 	return c.rpc.UploadPhoto(ctx, req)
 }
+
+func (c *Client) ListAdminCities(ctx context.Context, req *activitiesv1.ListAdminCitiesRequest) (*activitiesv1.ListAdminCitiesResponse, error) {
+	return c.rpc.ListAdminCities(ctx, req)
+}

@@ -30,6 +30,9 @@ type fakeQueryService struct {
 	citySuggestErr  error
 	gotCitySuggestQ string
 
+	adminCitiesOut []string
+	adminCitiesErr error
+
 	listOut       activitiessvc.ListResult
 	listPage      int
 	listPageSize  int
@@ -63,6 +66,10 @@ func (f *fakeQueryService) Query(_ context.Context, req service.Request) ([]acti
 func (f *fakeQueryService) SuggestCities(_ context.Context, query string) ([]activitiessvc.CitySuggestion, error) {
 	f.gotCitySuggestQ = query
 	return f.citySuggestOut, f.citySuggestErr
+}
+
+func (f *fakeQueryService) AdminListCities(_ context.Context) ([]string, error) {
+	return f.adminCitiesOut, f.adminCitiesErr
 }
 
 func (f *fakeQueryService) List(_ context.Context, req service.ListRequest) (activitiessvc.ListResult, int, int, error) {

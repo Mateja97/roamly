@@ -18,6 +18,7 @@ func RegisterAdminRoutes(mux *http.ServeMux, client adminActivitiesClient, admin
 	}
 	adminAuth := middleware.AdminAuth(adminToken, logger)
 	mux.Handle("GET /admin/activities", adminAuth(http.HandlerFunc(NewAdminListActivitiesHandler(client, logger).Handle)))
+	mux.Handle("GET /admin/cities", adminAuth(http.HandlerFunc(NewAdminListCitiesHandler(client, logger).Handle)))
 	mux.Handle("GET /admin/activities/{id}", adminAuth(http.HandlerFunc(NewAdminGetActivityHandler(client, logger).Handle)))
 	mux.Handle("PATCH /admin/activities/{id}", adminAuth(http.HandlerFunc(NewAdminPatchActivityHandler(client, logger).Handle)))
 	mux.Handle("POST /admin/activities", adminAuth(http.HandlerFunc(NewAdminCreateActivityHandler(client, logger).Handle)))

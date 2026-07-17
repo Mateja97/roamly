@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import { useAdminActivities } from '../hooks/useAdminActivities';
-import { suggestCities } from '../../../api/cities';
+import { listAdminCities } from '../../../api/adminActivities';
 import { StatCards, type StatCardsState } from './StatCards';
 import { FilterRow } from './FilterRow';
 import { ActivitiesTable } from './ActivitiesTable';
@@ -33,14 +33,16 @@ export function ActivitiesPage() {
     result,
   } = useAdminActivities();
 
-  // ponytail: no admin endpoint enumerates distinct cities (see
-  // src/api/cities.ts), so this reuses the public published-only
-  // typeahead once on mount, best-effort, for the city dropdown/subtitle.
+  // GET /admin/cities, once on mount — every distinct city across all
+  // statuses (unlike the public typeahead in src/api/cities.ts, which is
+  // published-only and needs a non-empty prefix). Best-effort: a failure
+  // just leaves the dropdown at "All cities", not a page-level error.
   const [cityOptions, setCityOptions] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
-    suggestCities().then((cities) => {
-      if (!cancelled) setCityOptions([...cities].sort());
+    listAdminCities().then((res) => {
+      if (cancelled) return;
+      if (res.status === 'success') setCityOptions(res.data);
     });
     return () => {
       cancelled = true;
