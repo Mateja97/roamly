@@ -18,6 +18,12 @@ func CORS(next http.Handler) http.Handler {
 			// endpoints; every other route ignores both.
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token")
+			// 0 = don't cache this preflight at all. Without an explicit
+			// value here, browsers fall back to their own default window,
+			// so a stale preflight (e.g. cached before a route/method
+			// change) can keep failing real requests long after the
+			// backend is fixed — as it did for T2's PATCH rollout.
+			w.Header().Set("Access-Control-Max-Age", "0")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
