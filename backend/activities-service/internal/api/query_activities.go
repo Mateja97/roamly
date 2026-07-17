@@ -29,14 +29,21 @@ type queryService interface {
 	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
 }
 
+// photoStore is the subset of internal/photo.Store the UploadPhoto RPC (T1)
+// needs.
+type photoStore interface {
+	Save(activityID string, data []byte) (url, thumbURL string, err error)
+}
+
 type Server struct {
 	activitiesv1.UnimplementedActivitiesServiceServer
 	svc    queryService
+	photos photoStore
 	logger *slog.Logger
 }
 
-func NewServer(svc queryService, logger *slog.Logger) *Server {
-	return &Server{svc: svc, logger: logger}
+func NewServer(svc queryService, photos photoStore, logger *slog.Logger) *Server {
+	return &Server{svc: svc, photos: photos, logger: logger}
 }
 
 func (s *Server) QueryActivities(ctx context.Context, req *activitiesv1.QueryActivitiesRequest) (*activitiesv1.QueryActivitiesResponse, error) {
@@ -173,7 +180,10 @@ func detailsJSON(details []byte) string {
 func toProtoPhotos(photos []activitiessvc.Photo) []*activitiesv1.Photo {
 	out := make([]*activitiesv1.Photo, len(photos))
 	for i, p := range photos {
-		out[i] = &activitiesv1.Photo{Url: p.URL, Author: p.Author, AuthorLink: p.AuthorLink}
+		out[i] = &activitiesv1.Photo{
+			Url: p.URL, Author: p.Author, AuthorLink: p.AuthorLink,
+			ThumbUrl: p.ThumbURL, Caption: p.Caption,
+		}
 	}
 	return out
 }

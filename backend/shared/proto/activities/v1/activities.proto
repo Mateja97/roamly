@@ -21,6 +21,15 @@ service ActivitiesService {
   rpc GetActivity(GetActivityRequest) returns (Activity);
   rpc CreateActivity(CreateActivityRequest) returns (Activity);
   rpc UpdateActivity(UpdateActivityRequest) returns (Activity);
+
+  // UploadPhoto (T1) is unary, not client-streaming: one admin, one <=8MB
+  // file, so the extra complexity of a streaming RPC buys nothing. The
+  // decode (image/jpeg or image/png) IS the content-type check — a decode
+  // failure is InvalidArgument, never a trust of the client's declared MIME
+  // type or file extension. activities-service is the sole writer of
+  // /data/photos, so the downscale + encode + write all happen here, not at
+  // proxy-service's HTTP edge.
+  rpc UploadPhoto(UploadPhotoRequest) returns (UploadPhotoResponse);
 }
 
 enum Scope {
@@ -77,6 +86,12 @@ message Photo {
   string url = 1;
   string author = 2;
   string author_link = 3;
+  // thumb_url and caption are T1 additions: an uploaded photo (as opposed to
+  // a Google-sourced one) gets a real 256px thumbnail at an explicit URL
+  // (never derived by a naming convention) and an optional caption,
+  // independent of attribution. Both are empty for a Google-sourced photo.
+  string thumb_url = 4;
+  string caption = 5;
 }
 
 message QueryActivitiesRequest {
@@ -200,6 +215,24 @@ message ListActivitiesResponse {
 
 message GetActivityRequest {
   string id = 1;
+}
+
+// UploadPhotoRequest carries the raw, still-encoded (JPEG/PNG) bytes of one
+// admin-uploaded photo (T1) — data is capped by proxy-service's
+// http.MaxBytesReader (8MB) before it ever reaches this RPC; server/client
+// MaxRecvMsgSize/MaxSendMsgSize are raised to 12MB (payload + headroom) to
+// carry it.
+message UploadPhotoRequest {
+  string activity_id = 1;
+  bytes data = 2;
+}
+
+// UploadPhotoResponse is the pair of URLs proxy-service's public
+// http.FileServer over /data/photos serves — the main downscaled photo
+// (2000px longest edge) and its thumbnail (256px longest edge).
+message UploadPhotoResponse {
+  string url = 1;
+  string thumb_url = 2;
 }
 
 message CreateActivityRequest {

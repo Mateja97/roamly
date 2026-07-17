@@ -45,6 +45,11 @@ type fakeQueryService struct {
 	updateErr     error
 	gotUpdateID   string
 	gotUpdatePtch activitiessvc.UpdatePatch
+
+	saveURL, saveThumbURL string
+	saveErr               error
+	gotSaveActivityID     string
+	gotSaveData           []byte
 }
 
 func (f *fakeQueryService) Query(_ context.Context, req service.Request) ([]activitiessvc.Activity, error) {
@@ -78,10 +83,20 @@ func (f *fakeQueryService) Update(_ context.Context, id string, patch activities
 	return f.updateOut, f.updateErr
 }
 
+// Save implements photoStore, so a fakeQueryService can serve as both
+// dialServer dependencies in every test in this package — only
+// upload_photo_test.go actually exercises it.
+func (f *fakeQueryService) Save(activityID string, data []byte) (string, string, error) {
+	f.gotSaveActivityID = activityID
+	f.gotSaveData = data
+	return f.saveURL, f.saveThumbURL, f.saveErr
+}
+
 func dialServer(t *testing.T, svc queryService) activitiesv1.ActivitiesServiceClient {
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
-	srv := NewGRPCServer(svc, slog.New(slog.DiscardHandler))
+	photos, _ := svc.(photoStore)
+	srv := NewGRPCServer(svc, photos, slog.New(slog.DiscardHandler))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 
@@ -106,7 +121,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 			ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySport,
 			Location: activitiessvc.Point{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
 			Rating: 4.8,
-			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com"}},
+			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com", ThumbURL: "img1_t", Caption: "Sunset"}},
 			Tags:   []string{"sports"}, DistanceKM: 3.2,
 			Details: []byte(`{"difficulty":3}`),
 			City:    "Belgrade", Address: "Ada Ciganlija bb", Status: activitiessvc.StatusPublished,
@@ -133,6 +148,9 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	}
 	if len(got.GetPhotos()) != 1 || got.GetPhotos()[0].GetUrl() != "img1" || got.GetPhotos()[0].GetAuthor() != "Jane Doe" {
 		t.Errorf("unexpected photo translation: %+v", got.GetPhotos())
+	}
+	if got.GetPhotos()[0].GetThumbUrl() != "img1_t" || got.GetPhotos()[0].GetCaption() != "Sunset" {
+		t.Errorf("unexpected thumb_url/caption translation: %+v", got.GetPhotos())
 	}
 	if got.GetDetails() != `{"difficulty":3}` {
 		t.Errorf("details = %q, want passthrough of the domain JSON", got.GetDetails())

@@ -15,6 +15,7 @@ import (
 	"backend/shared/logging"
 
 	"activities-service/internal/api"
+	"activities-service/internal/photo"
 	"activities-service/internal/repository"
 	"activities-service/internal/service"
 )
@@ -44,7 +45,8 @@ func main() {
 
 	repo := repository.New(db)
 	svc := service.New(repo)
-	grpcServer := api.NewGRPCServer(svc, logger)
+	photos := photo.NewStore(sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos"))
+	grpcServer := api.NewGRPCServer(svc, photos, logger)
 
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
