@@ -184,7 +184,7 @@ export function EditActivityPage() {
     setSaving(false);
 
     if (result.status === 'success') {
-      navigate('/activities');
+      navigate(-1);
       return;
     }
     if (result.status === 403) {
@@ -235,7 +235,7 @@ export function EditActivityPage() {
         activityTitle={form.title}
         status={form.status}
         saving={saving}
-        onCancel={() => navigate('/activities')}
+        onCancel={() => navigate(-1)}
         onSave={handleSave}
       />
 

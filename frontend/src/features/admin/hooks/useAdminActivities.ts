@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   listAdminActivities,
   type AdminApiResult,
@@ -22,6 +23,27 @@ const EMPTY_FILTERS: FiltersState = {
   status: '',
   page: 1,
 };
+
+function filtersFromParams(params: URLSearchParams): FiltersState {
+  const page = Number(params.get('page'));
+  return {
+    search: params.get('q') ?? '',
+    category: params.get('category') ?? '',
+    city: params.get('city') ?? '',
+    status: params.get('status') ?? '',
+    page: Number.isInteger(page) && page > 0 ? page : 1,
+  };
+}
+
+function paramsFromFilters(filters: FiltersState): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.search) params.set('q', filters.search);
+  if (filters.category) params.set('category', filters.category);
+  if (filters.city) params.set('city', filters.city);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.page > 1) params.set('page', String(filters.page));
+  return params;
+}
 
 export type ActivitiesQueryState =
   { status: 'loading' } | AdminApiResult<ListAdminActivitiesResponse>;
@@ -48,16 +70,29 @@ export interface UseAdminActivities {
  * update, so a filter change produces exactly one request at page 1 —
  * never a stale page-N request followed by a page-1 one. */
 export function useAdminActivities(): UseAdminActivities {
-  const [rawSearch, setRawSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialFilters = filtersFromParams(searchParams);
+  const [rawSearch, setRawSearch] = useState(initialFilters.search);
   const debouncedSearch = useDebouncedValue(rawSearch, 300);
-  const [filters, setFilters] = useState<FiltersState>(EMPTY_FILTERS);
+  const [filters, setFilters] = useState<FiltersState>(initialFilters);
   const [result, setResult] = useState<ActivitiesQueryState>({
     status: 'loading',
   });
 
+  // Keep the URL in sync so filters survive navigating away and back.
+  useEffect(() => {
+    setSearchParams(paramsFromFilters(filters), { replace: true });
+  }, [filters, setSearchParams]);
+
   // Only the debounced value reaches `filters`, and it resets the page in
   // the same update — this is the one point search touches `filters`.
+  // Skip the mount-triggered run: `filters.search` already holds the initial value.
+  const isMount = useRef(true);
   useEffect(() => {
+    if (isMount.current) {
+      isMount.current = false;
+      return;
+    }
     setFilters((f) => ({ ...f, search: debouncedSearch, page: 1 }));
   }, [debouncedSearch]);
 
