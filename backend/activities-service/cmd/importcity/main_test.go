@@ -1,10 +1,6 @@
 package main
 
-import (
-	"testing"
-
-	"backend/shared/models/activitiessvc"
-)
+import "testing"
 
 func TestValidateRow(t *testing.T) {
 	ok := inputRow{Title: "A", Category: "cafes", Lat: 1, Lng: 2, SourceURL: "http://x/1"}
@@ -25,12 +21,12 @@ func TestValidateRow(t *testing.T) {
 }
 
 func TestNeedsPhotosTag(t *testing.T) {
-	// <3 photos -> pending + needs-photos tag; >=3 -> pending, no tag.
-	if got := statusAndTags(2); got.status != activitiessvc.StatusPending || !contains(got.tags, "needs-photos") {
-		t.Fatalf("2 photos: got %+v", got)
+	// <3 photos -> needs-photos tag; >=3 -> no tag.
+	if !contains(statusAndTags(2), "needs-photos") {
+		t.Fatalf("2 photos: want needs-photos tag, got %v", statusAndTags(2))
 	}
-	if got := statusAndTags(3); contains(got.tags, "needs-photos") {
-		t.Fatalf("3 photos should not be flagged: %+v", got)
+	if contains(statusAndTags(3), "needs-photos") {
+		t.Fatalf("3 photos should not be flagged: got %v", statusAndTags(3))
 	}
 }
 

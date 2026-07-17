@@ -66,21 +66,14 @@ func validateRow(r inputRow) error {
 	return nil
 }
 
-// rowStatus is the lifecycle status plus any flag tags an imported row
-// should carry, keyed only off how many photos it ended up with.
-type rowStatus struct {
-	status activitiessvc.Status
-	tags   []string
-}
-
-// statusAndTags: everything lands pending; <3 photos gets the needs-photos
-// flag so a maintainer can find and backfill it later.
-func statusAndTags(photoCount int) rowStatus {
-	rs := rowStatus{status: activitiessvc.StatusPending}
+// statusAndTags: <3 photos gets the needs-photos flag so a maintainer can
+// find and backfill it later.
+func statusAndTags(photoCount int) []string {
+	var tags []string
 	if photoCount < minPhotos {
-		rs.tags = append(rs.tags, "needs-photos")
+		tags = append(tags, "needs-photos")
 	}
-	return rs
+	return tags
 }
 
 // importRow maps r onto an IngestActivity and upserts it (keyed on
@@ -149,19 +142,19 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 // every re-run while the row is short — an operator who adds
 // GOOGLE_MAPS_API_KEY after the fact and re-imports a 1-2-photo row still
 // gets topped up, just never with a duplicate.
-func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo.Store, client *http.Client, backfill func(context.Context, string) (activitiessvc.Photo, error), id string, r inputRow) (rowStatus, error) {
+func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo.Store, client *http.Client, backfill func(context.Context, string) (activitiessvc.Photo, error), id string, r inputRow) ([]string, error) {
 	existing, err := repo.GetByID(ctx, id)
 	if err != nil {
-		return rowStatus{}, fmt.Errorf("loading activity %s: %w", id, err)
+		return nil, fmt.Errorf("loading activity %s: %w", id, err)
 	}
 	if len(existing.Photos) >= minPhotos {
-		rs := statusAndTags(len(existing.Photos))
+		tags := statusAndTags(len(existing.Photos))
 		if slices.Contains(existing.Tags, "needs-photos") {
-			if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Tags: &rs.tags}); err != nil {
-				return rowStatus{}, fmt.Errorf("clearing stale needs-photos tag for %s: %w", id, err)
+			if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Tags: &tags}); err != nil {
+				return nil, fmt.Errorf("clearing stale needs-photos tag for %s: %w", id, err)
 			}
 		}
-		return rs, nil
+		return tags, nil
 	}
 
 	photos := existing.Photos
@@ -206,11 +199,11 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 	// insert time by Upsert and must never be overwritten by a re-import,
 	// same reasoning as Upsert's DO UPDATE excluding status (an admin may
 	// have since published this row).
-	rs := statusAndTags(len(photos))
-	if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &photos, Tags: &rs.tags}); err != nil {
-		return rowStatus{}, fmt.Errorf("updating photos for %s: %w", id, err)
+	tags := statusAndTags(len(photos))
+	if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &photos, Tags: &tags}); err != nil {
+		return nil, fmt.Errorf("updating photos for %s: %w", id, err)
 	}
-	return rs, nil
+	return tags, nil
 }
 
 func main() {
@@ -287,14 +280,14 @@ func main() {
 		}
 		imported++
 
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, r)
+		tags, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, r)
 		if err != nil {
 			logger.Warn("photo pipeline failed", "title", r.Title, "id", id, "error", err)
 			continue
 		}
-		if len(rs.tags) > 0 {
+		if len(tags) > 0 {
 			flaggedNeedsPhotos++
-			logger.Warn("activity flagged needs-photos", "title", r.Title, "id", id, "tags", rs.tags)
+			logger.Warn("activity flagged needs-photos", "title", r.Title, "id", id, "tags", tags)
 		}
 	}
 

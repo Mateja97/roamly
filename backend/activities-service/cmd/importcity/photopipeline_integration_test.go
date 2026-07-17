@@ -120,12 +120,12 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		id := insert(t, "http://example/needs-photos")
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
 
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		tags, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() first run error: %v", err)
 		}
-		if rs.status != activitiessvc.StatusPending || !contains(rs.tags, "needs-photos") {
-			t.Fatalf("first run status = %+v, want pending + needs-photos (only 1 photo, under minPhotos)", rs)
+		if !contains(tags, "needs-photos") {
+			t.Fatalf("first run tags = %v, want needs-photos (only 1 photo, under minPhotos)", tags)
 		}
 
 		got, err := repo.GetByID(ctx, id)
@@ -139,12 +139,12 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 
 		// Regression guard for the duplicate-photos fix: running the SAME
 		// row through ensurePhotos a second time must not change len(photos).
-		rs2, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		tags2, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() second run error: %v", err)
 		}
-		if !contains(rs2.tags, "needs-photos") {
-			t.Errorf("second run tags = %v, want still needs-photos (still under minPhotos)", rs2.tags)
+		if !contains(tags2, "needs-photos") {
+			t.Errorf("second run tags = %v, want still needs-photos (still under minPhotos)", tags2)
 		}
 
 		got2, err := repo.GetByID(ctx, id)
@@ -191,12 +191,12 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 
 		hitsBefore := hits
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		tags, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
-		if contains(rs.tags, "needs-photos") {
-			t.Errorf("tags = %v, want no needs-photos tag (already has 3 photos)", rs.tags)
+		if contains(tags, "needs-photos") {
+			t.Errorf("tags = %v, want no needs-photos tag (already has 3 photos)", tags)
 		}
 		if hits != hitsBefore {
 			t.Errorf("photo server got %d hits, want 0 (row with >=3 photos must skip entirely, no downloads)", hits-hitsBefore)
@@ -222,12 +222,12 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		}
 
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"}
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		tags, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
-		if contains(rs.tags, "needs-photos") {
-			t.Errorf("tags = %v, want needs-photos cleared (row already has 3 photos)", rs.tags)
+		if contains(tags, "needs-photos") {
+			t.Errorf("tags = %v, want needs-photos cleared (row already has 3 photos)", tags)
 		}
 
 		got, err := repo.GetByID(ctx, id)
@@ -263,12 +263,12 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 			return googlephotos.FirstPhotoWithBase(ctx, placesServer.Client(), "k", query, placesServer.URL)
 		}
 
-		rs, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, row)
+		tags, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() first run error: %v", err)
 		}
-		if !contains(rs.tags, "needs-photos") {
-			t.Fatalf("first run tags = %v, want needs-photos (only 1 backfilled photo, under minPhotos)", rs.tags)
+		if !contains(tags, "needs-photos") {
+			t.Fatalf("first run tags = %v, want needs-photos (only 1 backfilled photo, under minPhotos)", tags)
 		}
 
 		got, err := repo.GetByID(ctx, id)
