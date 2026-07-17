@@ -107,6 +107,20 @@
   color: var(--admin-ink);
 }
 
+.admin-section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.admin-section-heading-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  text-decoration: none;
+}
+
 /* ---- Form field (admin) ---- */
 
 .admin-field {

@@ -300,7 +300,11 @@ export function EditActivityPage() {
           />
         </div>
         <div className="admin-edit-column-side">
-          <PhotosSection title={form.title} photos={photos} />
+          <PhotosSection
+            title={form.title}
+            photos={photos}
+            activityId={isCreate ? undefined : id}
+          />
           <StatusSection
             status={form.status}
             onStatusChange={(status) => setForm((f) => ({ ...f, status }))}
