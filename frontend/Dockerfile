@@ -1,3 +1,9 @@
+# check=skip=SecretsUsedInArgOrEnv
+# ponytail: VITE_ADMIN_TOKEN / VITE_GOOGLE_MAPS_API_KEY trip Docker's
+# SecretsUsedInArgOrEnv check, but Vite bakes them into the public JS bundle
+# at build time regardless (see adminActivities.ts) — they're already
+# client-visible, so hiding them from `docker history` via BuildKit
+# --mount=type=secret buys nothing. Dev-scoped values only.
 FROM node:22-alpine AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
