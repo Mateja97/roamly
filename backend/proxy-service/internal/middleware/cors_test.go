@@ -28,6 +28,12 @@ func TestCORS_PreflightShortCircuits(t *testing.T) {
 	if got := rec.Header().Get("Access-Control-Allow-Methods"); got == "" {
 		t.Fatal("Access-Control-Allow-Methods missing on preflight response")
 	}
+	// Bounded, not disabled (0 would force a preflight round-trip before
+	// every single POST /activities/query on the public app's hot path,
+	// forever) — see cors.go's comment for the tradeoff.
+	if got := rec.Header().Get("Access-Control-Max-Age"); got != "300" {
+		t.Errorf("Access-Control-Max-Age = %q, want \"300\"", got)
+	}
 }
 
 func TestCORS_RealRequestPassesThroughWithOriginHeader(t *testing.T) {

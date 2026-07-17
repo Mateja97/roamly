@@ -35,14 +35,19 @@ export function ActivitiesPage() {
 
   // GET /admin/cities, once on mount — every distinct city across all
   // statuses (unlike the public typeahead in src/api/cities.ts, which is
-  // published-only and needs a non-empty prefix). Best-effort: a failure
-  // just leaves the dropdown at "All cities", not a page-level error.
+  // published-only and needs a non-empty prefix).
   const [cityOptions, setCityOptions] = useState<string[]>([]);
   useEffect(() => {
     let cancelled = false;
     listAdminCities().then((res) => {
       if (cancelled) return;
-      if (res.status === 'success') setCityOptions(res.data);
+      // Every branch handled per FRONTEND_STANDARDS.md, deliberately: this
+      // is a secondary, non-blocking filter (unlike the primary activities
+      // list, whose failure ActivitiesTable's own banner/blocking panel
+      // reports), so a failed fetch here just leaves the dropdown at "All
+      // cities" rather than surfacing a second banner for one filter input.
+      if (res.status !== 'success') return;
+      setCityOptions(res.data);
     });
     return () => {
       cancelled = true;

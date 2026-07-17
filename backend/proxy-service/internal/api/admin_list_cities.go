@@ -30,5 +30,13 @@ func (h *AdminListCitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		writeGRPCError(w, err, h.logger)
 		return
 	}
-	writeJSON(w, http.StatusOK, listAdminCitiesResponseDTO{Cities: resp.GetCities()}, h.logger)
+	// A repeated field with zero elements decodes off the gRPC wire as a nil
+	// slice regardless of whether the sender used nil or []string{} — an
+	// empty catalog would otherwise serialize as {"cities":null}, breaking
+	// the frontend's cityOptions.map(...) instead of rendering an empty list.
+	cities := resp.GetCities()
+	if cities == nil {
+		cities = []string{}
+	}
+	writeJSON(w, http.StatusOK, listAdminCitiesResponseDTO{Cities: cities}, h.logger)
 }

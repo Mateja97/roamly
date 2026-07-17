@@ -18,12 +18,15 @@ func CORS(next http.Handler) http.Handler {
 			// endpoints; every other route ignores both.
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Token")
-			// 0 = don't cache this preflight at all. Without an explicit
-			// value here, browsers fall back to their own default window,
-			// so a stale preflight (e.g. cached before a route/method
-			// change) can keep failing real requests long after the
-			// backend is fixed — as it did for T2's PATCH rollout.
-			w.Header().Set("Access-Control-Max-Age", "0")
+			// This is a global CORS wrapper, not admin-only — the public
+			// app's POST /activities/query also preflights (its JSON body
+			// isn't a "simple" content-type), so 0 would force an OPTIONS
+			// round-trip before every single query on that hot path
+			// forever. 300s bounds the window instead: short enough that a
+			// stale preflight (cached before a route/method change) can't
+			// outlive a redeploy in practice, as it did for T2's PATCH
+			// rollout, without giving up caching on the frequent path.
+			w.Header().Set("Access-Control-Max-Age", "300")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
