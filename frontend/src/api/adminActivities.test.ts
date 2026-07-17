@@ -240,9 +240,7 @@ describe('createAdminActivity', () => {
       'fetch',
       vi
         .fn()
-        .mockResolvedValue(
-          jsonResponse({ error: 'title is required' }, 400),
-        ),
+        .mockResolvedValue(jsonResponse({ error: 'title is required' }, 400)),
     );
 
     const result = await createAdminActivity({
