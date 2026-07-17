@@ -13,13 +13,29 @@ export type ControlKind =
   | 'chips'
   | 'line-items'
   | 'object-group'
-  | 'toggle';
+  | 'toggle'
+  | 'opening-hours';
+
+export interface SubFieldOption {
+  value: string;
+  label: string;
+}
 
 /** One sub-field of a line-item row or an object-group. */
 export interface SubField {
   key: string;
   label: string;
   required?: boolean;
+  /** The sub-field's own input — defaults to a plain text input. 'select'
+   * needs `options`; 'time' renders a native time input (opening_hours'
+   * day/open/close rows). */
+  control?: 'text' | 'select' | 'time';
+  options?: SubFieldOption[];
+  /** Overrides the generic "<Label> is required" blur message. */
+  requiredMessage?: string;
+  /** Value a freshly-added row starts with — Day defaults to Monday since
+   * a <select> can't represent a blank value the way a text input can. */
+  defaultValue?: string;
 }
 
 export interface DetailField {
@@ -43,12 +59,60 @@ const BANNER: SubField[] = [
   { key: 'description', label: 'Description' },
 ];
 
+const DAY_OPTIONS: SubFieldOption[] = [
+  { value: 'monday', label: 'Monday' },
+  { value: 'tuesday', label: 'Tuesday' },
+  { value: 'wednesday', label: 'Wednesday' },
+  { value: 'thursday', label: 'Thursday' },
+  { value: 'friday', label: 'Friday' },
+  { value: 'saturday', label: 'Saturday' },
+  { value: 'sunday', label: 'Sunday' },
+];
+
+/** One row of `opening_hours.periods` — day/open/close, matching
+ * `backend/shared/models/activitiessvc/activity.go`'s `Period` json tags. */
+export const OPENING_HOURS_PERIOD_FIELDS: SubField[] = [
+  {
+    key: 'day',
+    label: 'Day',
+    control: 'select',
+    options: DAY_OPTIONS,
+    defaultValue: 'monday',
+  },
+  {
+    key: 'open',
+    label: 'Opens',
+    control: 'time',
+    required: true,
+    requiredMessage: 'Enter a time',
+  },
+  {
+    key: 'close',
+    label: 'Closes',
+    control: 'time',
+    required: true,
+    requiredMessage: 'Enter a time',
+  },
+];
+
+/** The structured weekly-hours group (T2) — one entry, spliced right after
+ * the free-text hours field in each of the seven in-scope categories'
+ * schemas below. */
+const OPENING_HOURS_FIELD: DetailField = {
+  key: 'opening_hours',
+  label: 'Opening hours',
+  control: 'opening-hours',
+  itemFields: OPENING_HOURS_PERIOD_FIELDS,
+  itemLabel: 'day',
+};
+
 export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   restaurants: [
     { key: 'cuisine', label: 'Cuisine', control: 'text' },
     { key: 'price_tier', label: 'Price tier', control: 'text' },
     { key: 'hours', label: 'Hours', control: 'text' },
     { key: 'open_status', label: 'Open status', control: 'text' },
+    OPENING_HOURS_FIELD,
     {
       key: 'popular_dishes',
       label: 'Popular dishes',
@@ -62,6 +126,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'known_for_brew', label: 'Known for brew', control: 'text' },
     { key: 'wifi_quality', label: 'Wifi quality', control: 'text' },
     { key: 'hours', label: 'Hours', control: 'text' },
+    OPENING_HOURS_FIELD,
     {
       key: 'on_the_bar',
       label: 'On the bar',
@@ -74,6 +139,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'vibe', label: 'Vibe', control: 'text' },
     { key: 'happy_hour_window', label: 'Happy hour window', control: 'text' },
     { key: 'opens_time', label: 'Opens', control: 'text' },
+    OPENING_HOURS_FIELD,
     { key: 'signature_pours', label: 'Signature pours', control: 'chips' },
     { key: 'action_url', label: 'Booking website', control: 'url' },
   ],
@@ -82,6 +148,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'dress_code', label: 'Dress code', control: 'text' },
     { key: 'opens_time', label: 'Opens', control: 'text' },
     { key: 'open_tonight', label: 'Open tonight', control: 'toggle' },
+    OPENING_HOURS_FIELD,
     {
       key: 'lineup',
       label: 'Lineup',
@@ -119,6 +186,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'ticket_price', label: 'Ticket price', control: 'text' },
     { key: 'hours', label: 'Hours', control: 'text' },
+    OPENING_HOURS_FIELD,
     {
       key: 'now_showing',
       label: 'Now showing',
@@ -131,6 +199,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'ticket_price', label: 'Ticket price', control: 'text' },
     { key: 'hours', label: 'Hours', control: 'text' },
+    OPENING_HOURS_FIELD,
     {
       key: 'artwork',
       label: 'Artwork',
@@ -174,6 +243,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'best_day', label: 'Best day', control: 'text' },
     { key: 'hours', label: 'Hours', control: 'text' },
+    OPENING_HOURS_FIELD,
     { key: 'what_youll_find', label: "What you'll find", control: 'chips' },
   ],
   entertainment: [

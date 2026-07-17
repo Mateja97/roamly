@@ -228,4 +228,124 @@ describe('EditActivityPage', () => {
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(navigateSpy).toHaveBeenCalledWith('/activities');
   });
+
+  describe('opening hours (T2)', () => {
+    const RESTAURANT: AdminActivityDetail = {
+      ...ACTIVITY,
+      category: 'restaurants',
+      details: {
+        cuisine: 'Serbian',
+        opening_hours: {
+          timezone: 'Europe/Belgrade',
+          always_open: false,
+          periods: [{ day: 'monday', open: '09:00', close: '22:00' }],
+        },
+      },
+    };
+
+    it('renders a saved opening_hours object and round-trips it on Save', async () => {
+      const user = userEvent.setup();
+      getAdminActivity.mockResolvedValue({
+        status: 'success',
+        data: RESTAURANT,
+      });
+      patchAdminActivity.mockResolvedValue({
+        status: 'success',
+        data: RESTAURANT,
+      });
+      renderEditPage('/activities/a1/edit');
+
+      await screen.findByDisplayValue('Kalemegdan Park');
+      expect(screen.getByLabelText('Timezone')).toHaveValue('Europe/Belgrade');
+      expect(screen.getByLabelText('Day')).toHaveValue('monday');
+      expect(screen.getByLabelText('Opens')).toHaveValue('09:00');
+      expect(screen.getByLabelText('Closes')).toHaveValue('22:00');
+
+      // Change something so the PATCH actually carries `details` (the page
+      // only sends fields that changed vs. the loaded snapshot).
+      const closes = screen.getByLabelText('Closes');
+      await user.clear(closes);
+      await user.type(closes, '23:00');
+
+      await user.click(screen.getByRole('button', { name: /Save changes/ }));
+      await waitFor(() => expect(patchAdminActivity).toHaveBeenCalled());
+      expect(patchAdminActivity).toHaveBeenCalledWith(
+        'a1',
+        expect.objectContaining({
+          details: expect.objectContaining({
+            opening_hours: {
+              timezone: 'Europe/Belgrade',
+              always_open: false,
+              periods: [{ day: 'monday', open: '09:00', close: '23:00' }],
+            },
+          }),
+        }),
+      );
+    });
+
+    it('blocks Save on a missing timezone and shows the field error, no PATCH sent', async () => {
+      const user = userEvent.setup();
+      const noTimezone: AdminActivityDetail = {
+        ...RESTAURANT,
+        details: {
+          ...RESTAURANT.details,
+          opening_hours: {
+            timezone: '',
+            always_open: false,
+            periods: [{ day: 'monday', open: '09:00', close: '22:00' }],
+          },
+        },
+      };
+      getAdminActivity.mockResolvedValue({
+        status: 'success',
+        data: noTimezone,
+      });
+      renderEditPage('/activities/a1/edit');
+
+      await screen.findByDisplayValue('Kalemegdan Park');
+      await user.click(screen.getByRole('button', { name: /Save changes/ }));
+
+      expect(
+        await screen.findByText("Add the venue's timezone"),
+      ).toBeInTheDocument();
+      expect(patchAdminActivity).not.toHaveBeenCalled();
+    });
+
+    it('a backend opening_hours rejection surfaces in the error banner', async () => {
+      const user = userEvent.setup();
+      getAdminActivity.mockResolvedValue({
+        status: 'success',
+        data: RESTAURANT,
+      });
+      patchAdminActivity.mockResolvedValue({
+        status: 400,
+        message: 'opening_hours.timezone "Bogus/Zone" is not a valid IANA zone',
+      });
+      renderEditPage('/activities/a1/edit');
+
+      await screen.findByDisplayValue('Kalemegdan Park');
+      await user.click(screen.getByRole('button', { name: /Save changes/ }));
+
+      expect(
+        await screen.findByText(
+          'opening_hours.timezone "Bogus/Zone" is not a valid IANA zone',
+        ),
+      ).toBeInTheDocument();
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
+
+    it('switching to an out-of-scope category clears opening_hours along with the rest of details', async () => {
+      const user = userEvent.setup();
+      getAdminActivity.mockResolvedValue({
+        status: 'success',
+        data: RESTAURANT,
+      });
+      renderEditPage('/activities/a1/edit');
+
+      await screen.findByDisplayValue('Kalemegdan Park');
+      expect(screen.getByText('Opening hours')).toBeInTheDocument();
+      await user.selectOptions(screen.getByLabelText('Category'), 'nature');
+      expect(screen.queryByText('Opening hours')).toBeNull();
+    });
+  });
 });

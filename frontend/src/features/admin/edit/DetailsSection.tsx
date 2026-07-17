@@ -1,3 +1,4 @@
+import type { Ref } from 'react';
 import { DETAILS_SCHEMA } from './detailsSchema';
 import { TextField } from './controls/TextField';
 import { TextareaField } from './controls/TextareaField';
@@ -5,12 +6,18 @@ import { RemovableChipList } from './controls/RemovableChipList';
 import { LineItemsEditor } from './controls/LineItemsEditor';
 import { ObjectGroupField } from './controls/ObjectGroupField';
 import { BooleanToggle } from './controls/BooleanToggle';
+import {
+  OpeningHoursField,
+  type OpeningHoursFieldHandle,
+  type OpeningHoursFormValue,
+} from './controls/OpeningHoursField';
 
 export interface DetailsSectionProps {
   category: string;
   details: Record<string, unknown>;
   onChange: (details: Record<string, unknown>) => void;
   disabled?: boolean;
+  openingHoursRef?: Ref<OpeningHoursFieldHandle>;
 }
 
 function asString(v: unknown): string {
@@ -47,6 +54,18 @@ function asObjectOrNull(v: unknown): Record<string, string> | null {
   );
 }
 
+function asOpeningHoursValue(v: unknown): OpeningHoursFormValue {
+  if (!v || typeof v !== 'object') {
+    return { timezone: '', alwaysOpen: false, periods: [] };
+  }
+  const obj = v as Record<string, unknown>;
+  return {
+    timezone: asString(obj.timezone),
+    alwaysOpen: Boolean(obj.always_open),
+    periods: asRecordArray(obj.periods),
+  };
+}
+
 /** Renders the selected category's actual `details` shape (per the T4
  * addendum's build-deterministic key -> control table), never the mock's
  * fixed five inputs. Every scalar edit either sets or (when cleared)
@@ -58,6 +77,7 @@ export function DetailsSection({
   details,
   onChange,
   disabled,
+  openingHoursRef,
 }: DetailsSectionProps) {
   const fields = DETAILS_SCHEMA[category] ?? [];
 
@@ -89,6 +109,22 @@ export function DetailsSection({
     const next = { ...details };
     if (!checked) delete next[key];
     else next[key] = true;
+    onChange(next);
+  }
+
+  function setOpeningHours(key: string, value: OpeningHoursFormValue) {
+    const next = { ...details };
+    const isEmpty =
+      !value.alwaysOpen && !value.timezone.trim() && value.periods.length === 0;
+    if (isEmpty) {
+      delete next[key];
+    } else {
+      next[key] = {
+        timezone: value.timezone,
+        always_open: value.alwaysOpen,
+        periods: value.periods,
+      };
+    }
     onChange(next);
   }
 
@@ -186,6 +222,18 @@ export function DetailsSection({
                   checked={Boolean(details[field.key])}
                   onChange={(checked) => setBoolean(field.key, checked)}
                   disabled={disabled}
+                />
+              );
+            case 'opening-hours':
+              return (
+                <OpeningHoursField
+                  key={field.key}
+                  label={field.label}
+                  periodFields={field.itemFields ?? []}
+                  value={asOpeningHoursValue(details[field.key])}
+                  onChange={(value) => setOpeningHours(field.key, value)}
+                  disabled={disabled}
+                  ref={openingHoursRef}
                 />
               );
             default:
