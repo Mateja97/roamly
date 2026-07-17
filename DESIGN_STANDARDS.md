@@ -358,8 +358,11 @@ segments plus a text readout.
 
 - **Label row:** name left — `--font-size-xs` (12px), uppercase,
   `letter-spacing: 0.05em`, `--text-muted` (6.2:1 on `--bg` ✓); current level
-  right — `--font-size-sm` `--text`, weight 600 (e.g. "Intermediate" / "3/5",
-  8.5:1 on `--bg` ✓). The text readout — never color alone — carries the value.
+  right — `--font-size-sm` `--text`, weight 600 — the **level label only**
+  (e.g. "Intermediate"), 8.5:1 on `--bg` ✓. The filled-segment count is the
+  numeric cue; the readout does **not** append a "N/M" suffix — that
+  duplicates the segments and diverges from the mock. The text readout — never
+  color alone — carries the value.
 - **Segments:** a full-width row of equal-flex bars, 6px tall, `--radius-full`,
   `--space-2` gap. Filled segments `--primary` gold (3.65:1 on `--bg` — UI
   element, clears 3:1 ✓); unfilled `--border` (decorative track). The
