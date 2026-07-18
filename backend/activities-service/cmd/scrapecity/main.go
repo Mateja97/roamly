@@ -14,25 +14,28 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
 
 	"backend/shared/models/activitiessvc"
 )
 
-const placesBase = "https://places.googleapis.com"
+// fieldMask selects the place fields scrapecity needs for its 12-category
+// scrape; other Places call sites (e.g. a photo-only lookup) ask for less.
+var fieldMask = strings.Join([]string{
+	"places.id", "places.displayName", "places.location",
+	"places.formattedAddress", "places.rating", "places.userRatingCount",
+	"places.priceLevel", "places.googleMapsUri", "places.photos",
+	"places.regularOpeningHours", "places.primaryTypeDisplayName", "nextPageToken",
+}, ",")
 
 // categoryQueries maps each of the 12 taxonomy categories to the Places Text
 // Search term used to discover its venues. One term per category keeps the
@@ -74,11 +77,6 @@ type outputRow struct {
 	Raw         json.RawMessage `json:"raw"`
 }
 
-type searchTextResponse struct {
-	Places        []placesmap.Place `json:"places"`
-	NextPageToken string            `json:"nextPageToken"`
-}
-
 // passesFilter is the "high confidence + relevant" gate: a venue must clear
 // both the rating floor and the review-count floor. Review count matters as
 // much as rating — a 5.0 with 3 reviews is noise, not signal.
@@ -86,97 +84,23 @@ func passesFilter(p placesmap.Place, minRating float64, minReviews int) bool {
 	return p.Rating >= minRating && p.UserRatingCount >= minReviews
 }
 
-// client wraps the two Places calls scrapecity needs, holding the api key and
-// http client so the call sites stay short.
-type client struct {
-	http *http.Client
-	key  string
-	base string
-}
-
-// searchText runs one page of a Places Text Search. pageToken is "" for the
-// first page; the returned token (if any) fetches the next.
-func (c *client) searchText(ctx context.Context, query, pageToken string) (searchTextResponse, error) {
-	reqBody := map[string]any{"textQuery": query, "pageSize": 20}
-	if pageToken != "" {
-		reqBody["pageToken"] = pageToken
-	}
-	body, err := json.Marshal(reqBody)
-	if err != nil {
-		return searchTextResponse{}, fmt.Errorf("encoding search body: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/v1/places:searchText", bytes.NewReader(body))
-	if err != nil {
-		return searchTextResponse{}, fmt.Errorf("building search request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Goog-Api-Key", c.key)
-	req.Header.Set("X-Goog-FieldMask", strings.Join([]string{
-		"places.id", "places.displayName", "places.location",
-		"places.formattedAddress", "places.rating", "places.userRatingCount",
-		"places.priceLevel", "places.googleMapsUri", "places.photos",
-		"places.regularOpeningHours", "places.primaryTypeDisplayName", "nextPageToken",
-	}, ","))
-
-	var parsed searchTextResponse
-	if err := c.doJSON(req, &parsed); err != nil {
-		return searchTextResponse{}, err
-	}
-	return parsed, nil
-}
-
 // photoURIs resolves up to max photo resource names into key-free, downloadable
-// photo URLs (skipHttpRedirect=true returns the final photoUri in the body,
-// never the keyed media URL — same rule as cmd/resolvephotos). Individual
-// failures are skipped, not fatal: a venue with fewer photos is still worth
-// importing (Stage B flags it needs-photos).
-func (c *client) photoURIs(ctx context.Context, names []string, max int) []string {
+// photo URLs (same rule as cmd/resolvephotos: skipHttpRedirect via
+// places.Client). Individual failures are skipped, not fatal: a venue with
+// fewer photos is still worth importing (Stage B flags it needs-photos).
+func photoURIs(ctx context.Context, c *places.Client, names []string, max int) []string {
 	var out []string
 	for _, name := range names {
 		if len(out) >= max {
 			break
 		}
-		u := fmt.Sprintf("%s/v1/%s/media?maxWidthPx=800&skipHttpRedirect=true&key=%s",
-			c.base, name, url.QueryEscape(c.key))
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		if err != nil {
+		uri, err := c.PhotoMediaURL(ctx, name)
+		if err != nil || uri == "" {
 			continue
 		}
-		var parsed struct {
-			PhotoURI string `json:"photoUri"`
-		}
-		if err := c.doJSON(req, &parsed); err != nil || parsed.PhotoURI == "" {
-			continue
-		}
-		out = append(out, parsed.PhotoURI)
+		out = append(out, uri)
 	}
 	return out
-}
-
-func (c *client) doJSON(req *http.Request, dst any) error {
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("calling %s: %w", req.URL.Path, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("reading response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%s: status %d: %s", req.URL.Path, resp.StatusCode, truncate(string(data), 800))
-	}
-	if err := json.Unmarshal(data, dst); err != nil {
-		return fmt.Errorf("decoding response: %w", err)
-	}
-	return nil
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }
 
 func main() {
@@ -196,13 +120,11 @@ func main() {
 		logger.Error("usage: scrapecity -city <city> -out <file.json> [-country <country>]")
 		os.Exit(1)
 	}
-	key := os.Getenv("GOOGLE_MAPS_API_KEY")
-	if key == "" {
-		logger.Error("GOOGLE_MAPS_API_KEY is required")
+	c, err := places.NewFromEnv()
+	if err != nil {
+		logger.Error("places client setup failed", "error", err)
 		os.Exit(1)
 	}
-
-	c := &client{http: &http.Client{Timeout: 20 * time.Second}, key: key, base: placesBase}
 	ctx := context.Background()
 
 	locality := *city
@@ -218,7 +140,7 @@ func main() {
 		query := cq.term + " in " + locality
 		token := ""
 		for page := 0; page < *pages; page++ {
-			resp, err := c.searchText(ctx, query, token)
+			resp, err := c.SearchText(ctx, query, token, fieldMask)
 			if err != nil {
 				logger.Warn("search page failed", "query", query, "page", page, "error", err)
 				break
@@ -244,7 +166,7 @@ func main() {
 					Address:   p.FormattedAddress,
 					Rating:    p.Rating,
 					Details:   placesmap.BuildDetails(cq.category, *city, p),
-					PhotoURLs: c.photoURIs(ctx, photoNames(p), *photos),
+					PhotoURLs: photoURIs(ctx, c, photoNames(p), *photos),
 					SourceURL: p.GoogleMapsURI,
 					Raw:       raw,
 				})
