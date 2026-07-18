@@ -478,14 +478,16 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 type BackfillRow struct {
 	ID       string
 	Category activitiessvc.Category
+	City     string
 	Raw      json.RawMessage
 }
 
-// RawRows returns (id, category, raw) for every activity, for one-off backfills
-// that re-derive the details payload from each row's stored Places raw. raw is
-// not part of adminColumns, so it needs its own read.
+// RawRows returns (id, category, city, raw) for every activity, for one-off
+// backfills that re-derive the details payload from each row's stored Places
+// raw. raw is not part of adminColumns, so it needs its own read; city drives
+// the opening_hours timezone.
 func (r *Activities) RawRows(ctx context.Context) ([]BackfillRow, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, category, COALESCE(raw, '{}'::jsonb) FROM activities`)
+	rows, err := r.db.Query(ctx, `SELECT id, category, COALESCE(city, ''), COALESCE(raw, '{}'::jsonb) FROM activities`)
 	if err != nil {
 		return nil, fmt.Errorf("querying raw rows: %w", err)
 	}
@@ -495,7 +497,7 @@ func (r *Activities) RawRows(ctx context.Context) ([]BackfillRow, error) {
 	for rows.Next() {
 		var b BackfillRow
 		var cat string
-		if err := rows.Scan(&b.ID, &cat, &b.Raw); err != nil {
+		if err := rows.Scan(&b.ID, &cat, &b.City, &b.Raw); err != nil {
 			return nil, fmt.Errorf("scanning raw row: %w", err)
 		}
 		b.Category = activitiessvc.Category(cat)
