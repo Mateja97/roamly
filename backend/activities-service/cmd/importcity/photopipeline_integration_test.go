@@ -25,8 +25,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"activities-service/internal/googlephotos"
 	"activities-service/internal/photo"
+	"activities-service/internal/places"
 	"activities-service/internal/repository"
 
 	shareddb "backend/shared/db"
@@ -259,9 +259,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		})
 		placesServer := httptest.NewServer(mux)
 		t.Cleanup(placesServer.Close)
-		backfill := func(ctx context.Context, query string) (activitiessvc.Photo, error) {
-			return googlephotos.FirstPhotoWithBase(ctx, placesServer.Client(), "k", query, placesServer.URL)
-		}
+		backfill := places.NewWithBase("k", placesServer.URL).FirstPhoto
 
 		tags, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, row)
 		if err != nil {

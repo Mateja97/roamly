@@ -2,6 +2,7 @@ package places_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -105,6 +106,61 @@ func TestNewFromEnv(t *testing.T) {
 	c, err := places.NewFromEnv()
 	if err != nil || c == nil {
 		t.Fatalf("NewFromEnv() = %v, %v, want a client, nil", c, err)
+	}
+}
+
+func TestFirstPhoto(t *testing.T) {
+	tests := []struct {
+		name       string
+		searchBody string
+		wantErr    bool
+		wantAuthor string
+	}{
+		{
+			name: "resolves photo and attribution",
+			searchBody: `{"places":[{"photos":[{"name":"places/X/photos/Y",
+				"authorAttributions":[{"displayName":"Jane","uri":"http://author/jane"}]}]}]}`,
+			wantAuthor: "Jane",
+		},
+		{
+			name:       "no places in result is ErrNoPhoto",
+			searchBody: `{"places":[]}`,
+			wantErr:    true,
+		},
+		{
+			name:       "place with no photos is ErrNoPhoto",
+			searchBody: `{"places":[{"photos":[]}]}`,
+			wantErr:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			mux.HandleFunc("/v1/places:searchText", func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, tt.searchBody)
+			})
+			mux.HandleFunc("/v1/places/X/photos/Y/media", func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, `{"photoUri":"http://img/final.jpg"}`)
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+
+			c := places.NewWithBase("k", srv.URL)
+			got, err := c.FirstPhoto(context.Background(), "Koffein Belgrade")
+			if tt.wantErr {
+				if !errors.Is(err, places.ErrNoPhoto) {
+					t.Fatalf("FirstPhoto() error = %v, want ErrNoPhoto", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("FirstPhoto(): %v", err)
+			}
+			if got.URL != "http://img/final.jpg" || got.Author != tt.wantAuthor {
+				t.Fatalf("got %+v", got)
+			}
+		})
 	}
 }
 

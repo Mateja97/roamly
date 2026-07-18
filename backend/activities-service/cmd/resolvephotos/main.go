@@ -14,12 +14,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 
-	"activities-service/internal/googlephotos"
+	"activities-service/internal/places"
 )
 
 // seedActivity is the subset of 0002_seed.sql's catalog this tool needs: a
@@ -57,16 +55,15 @@ type resolvedPhoto struct {
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	key := os.Getenv("GOOGLE_MAPS_API_KEY")
-	if key == "" {
-		logger.Error("startup failed", "error", "GOOGLE_MAPS_API_KEY is required")
+	client, err := places.NewFromEnv()
+	if err != nil {
+		logger.Error("startup failed", "error", err)
 		os.Exit(1)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
 	var resolved []resolvedPhoto
 	for _, a := range catalog {
-		photo, err := resolveOne(client, key, a)
+		photo, err := resolveOne(client, a)
 		if err != nil {
 			// An activity whose photo can't be resolved is skipped, not
 			// faked with a placeholder — same fallback rule the client
@@ -80,14 +77,14 @@ func main() {
 	fmt.Print(formatUpdateSQL(resolved))
 }
 
-// resolveOne does the two live Places API (New) calls via the googlephotos
-// package: Text Search for the place + its first photo's resource name and
+// resolveOne does the two live Places API (New) calls via the places client:
+// Text Search for the place + its first photo's resource name and
 // attribution, then the photo media endpoint with skipHttpRedirect=true to
 // get the final, key-free photoUri (never the keyed media URL itself — see
 // activities.proto's Photo doc comment on why the key must not end up in a
 // stored URL).
-func resolveOne(client *http.Client, key string, a seedActivity) (*resolvedPhoto, error) {
-	photo, err := googlephotos.FirstPhoto(context.Background(), client, key, a.query)
+func resolveOne(client *places.Client, a seedActivity) (*resolvedPhoto, error) {
+	photo, err := client.FirstPhoto(context.Background(), a.query)
 	if err != nil {
 		return nil, fmt.Errorf("resolving photo for %q: %w", a.query, err)
 	}
