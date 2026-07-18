@@ -17,6 +17,7 @@ import (
 
 	"activities-service/internal/api"
 	"activities-service/internal/photo"
+	"activities-service/internal/places"
 	"activities-service/internal/repository"
 	"activities-service/internal/service"
 )
@@ -46,6 +47,13 @@ func main() {
 
 	repo := repository.New(db)
 	svc := service.New(repo)
+	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
+	// fine, GetActivityPhotos just always answers from stored photos with no
+	// live Google call — same fallback behavior a configured client hits on
+	// error/timeout, so this is deliberately not a fail-fast Require.
+	if key := sharedconfig.OrDefault("GOOGLE_MAPS_API_KEY", ""); key != "" {
+		svc = svc.WithPlaces(places.New(key))
+	}
 	photos := photo.NewStore(sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos"))
 	grpcServer := api.NewGRPCServer(svc, photos, logger)
 

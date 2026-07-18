@@ -19,6 +19,14 @@ service ActivitiesService {
   // the gate, same as every other proxy->activities-service call.
   rpc ListActivities(ListActivitiesRequest) returns (ListActivitiesResponse);
   rpc GetActivity(GetActivityRequest) returns (Activity);
+  // GetActivityPhotos (T2) returns one activity's full photo set, resolving
+  // the rest of a venue's Google photos live (via internal/places, using the
+  // activity's own stored external_id, never exposed on this wire) the first
+  // time anyone asks and persisting them so every later call is cache-only.
+  // Never fails on a Places timeout/error — falls back to whatever is
+  // already stored, at minimum the provisional listing photo. Public
+  // surface (not admin-only): this is what the app's detail screen calls.
+  rpc GetActivityPhotos(GetActivityPhotosRequest) returns (GetActivityPhotosResponse);
   rpc CreateActivity(CreateActivityRequest) returns (Activity);
   rpc UpdateActivity(UpdateActivityRequest) returns (Activity);
   // ListAdminCities returns every distinct city with at least one activity,
@@ -81,7 +89,9 @@ message Location {
 }
 
 // Photo is a single activity photo, sourced from Google Places and resolved
-// once at seed/build time (never a live per-request Places call). Author
+// once — either at seed/build time, or live on first detail view via
+// GetActivityPhotos (T2), which persists the result so every later request
+// is cache-only. Author
 // attribution travels with the photo wherever it's shown, per Google's
 // mandatory attribution policy; author/author_link are empty for a photo
 // that hasn't been resolved yet (falls back to the missing-image state
@@ -219,6 +229,14 @@ message ListActivitiesResponse {
 
 message GetActivityRequest {
   string id = 1;
+}
+
+message GetActivityPhotosRequest {
+  string id = 1;
+}
+
+message GetActivityPhotosResponse {
+  repeated Photo photos = 1;
 }
 
 message ListAdminCitiesRequest {}

@@ -164,6 +164,71 @@ func TestFirstPhoto(t *testing.T) {
 	}
 }
 
+func TestResolvePhotos(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/places/place-1", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Goog-FieldMask") != "photos" {
+			t.Errorf("fieldMask = %q", r.Header.Get("X-Goog-FieldMask"))
+		}
+		io.WriteString(w, `{"photos":[
+			{"name":"places/place-1/photos/A","authorAttributions":[{"displayName":"Jane","uri":"http://author/jane"}]},
+			{"name":"places/place-1/photos/B"},
+			{"name":"places/place-1/photos/C"}
+		]}`)
+	})
+	mux.HandleFunc("/v1/places/place-1/photos/A/media", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"photoUri":"http://img/a.jpg"}`)
+	})
+	mux.HandleFunc("/v1/places/place-1/photos/B/media", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"photoUri":"http://img/b.jpg"}`)
+	})
+	mux.HandleFunc("/v1/places/place-1/photos/C/media", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest) // one bad photo, shouldn't sink the rest
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	got, err := c.ResolvePhotos(context.Background(), "place-1", 5)
+	if err != nil {
+		t.Fatalf("ResolvePhotos(): %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d photos, want 2 (one skipped on media error): %+v", len(got), got)
+	}
+	if got[0].URL != "http://img/a.jpg" || got[0].Author != "Jane" || got[0].AuthorLink != "http://author/jane" {
+		t.Errorf("photo[0] = %+v", got[0])
+	}
+	if got[1].URL != "http://img/b.jpg" {
+		t.Errorf("photo[1] = %+v", got[1])
+	}
+}
+
+func TestResolvePhotos_RespectsLimit(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/places/place-1", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"photos":[{"name":"places/place-1/photos/A"},{"name":"places/place-1/photos/B"}]}`)
+	})
+	mux.HandleFunc("/v1/places/place-1/photos/A/media", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"photoUri":"http://img/a.jpg"}`)
+	})
+	mux.HandleFunc("/v1/places/place-1/photos/B/media", func(w http.ResponseWriter, r *http.Request) {
+		t.Error("media call for photo B should not happen, limit is 1")
+		io.WriteString(w, `{"photoUri":"http://img/b.jpg"}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	got, err := c.ResolvePhotos(context.Background(), "place-1", 1)
+	if err != nil {
+		t.Fatalf("ResolvePhotos(): %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d photos, want 1", len(got))
+	}
+}
+
 func TestSearchText_NoRetryOnOther4xx(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
