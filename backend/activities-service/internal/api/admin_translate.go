@@ -27,6 +27,9 @@ func toDomainPhotos(photos []*activitiesv1.Photo) []activitiessvc.Photo {
 		out[i] = activitiessvc.Photo{
 			URL: p.GetUrl(), Author: p.GetAuthor(), AuthorLink: p.GetAuthorLink(),
 			ThumbURL: p.GetThumbUrl(), Caption: p.GetCaption(),
+			// Every photo reaching here comes through the admin
+			// create/update surface (T2) — the only way in is this path.
+			Provider: activitiessvc.ProviderAdmin,
 		}
 	}
 	return out

@@ -59,6 +59,19 @@ type Point struct {
 	Lng float64
 }
 
+// Provider identifies who/what produced a Photo (T2): distinguishes
+// admin-uploaded from Google-sourced photos for future attribution and safe
+// deletion rules.
+type Provider string
+
+const (
+	ProviderAdmin  Provider = "admin"
+	ProviderGoogle Provider = "google"
+	// ProviderUser is reserved for a future user-upload flow; no code path
+	// writes it yet.
+	ProviderUser Provider = "user"
+)
+
 // Photo is a single activity photo, either sourced from Google Places and
 // resolved once at seed/build time (never a live per-request Places call),
 // or uploaded through the admin surface (T1). Author/AuthorLink are empty
@@ -66,15 +79,18 @@ type Point struct {
 // missing-image state rather than a placeholder. ThumbURL/Caption are T1
 // additions: an uploaded photo carries a real thumbnail URL (never derived
 // by a `_t.jpg` naming convention) and an optional caption, independent of
-// attribution. JSON tags match the `photos` JSONB column shape; the column
-// needed no migration to add these — a pre-T1 row simply decodes both as
-// the empty string.
+// attribution. Provider (T2) is optional/omitempty so a pre-T2 row with no
+// "provider" key decodes as the empty Provider, not an error. JSON tags
+// match the `photos` JSONB column shape; the column needed no migration to
+// add these — a pre-T1/T2 row simply decodes the new fields as their zero
+// value.
 type Photo struct {
-	URL        string `json:"url"`
-	Author     string `json:"author,omitempty"`
-	AuthorLink string `json:"author_link,omitempty"`
-	ThumbURL   string `json:"thumb_url,omitempty"`
-	Caption    string `json:"caption,omitempty"`
+	URL        string   `json:"url"`
+	Author     string   `json:"author,omitempty"`
+	AuthorLink string   `json:"author_link,omitempty"`
+	ThumbURL   string   `json:"thumb_url,omitempty"`
+	Caption    string   `json:"caption,omitempty"`
+	Provider   Provider `json:"provider,omitempty"`
 }
 
 // Activity is the activities table row, plus a server-computed DistanceKM

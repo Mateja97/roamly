@@ -40,3 +40,48 @@ func TestPhoto_RoundTripsThumbURLAndCaption(t *testing.T) {
 		t.Errorf("round trip = %+v, want %+v", got, want)
 	}
 }
+
+// TestPhoto_RoundTripsProvider proves T2's Provider field round-trips for
+// every fixed enum value, and that a legacy row with no "provider" key
+// still decodes cleanly (empty/zero Provider, no error) — the field is
+// additive only, same precedent as ThumbURL/Caption.
+func TestPhoto_RoundTripsProvider(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider Provider
+	}{
+		{"admin", ProviderAdmin},
+		{"google", ProviderGoogle},
+		{"user", ProviderUser},
+		{"empty", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			want := Photo{URL: "https://example.com/x.jpg", Provider: tt.provider}
+
+			data, err := json.Marshal(want)
+			if err != nil {
+				t.Fatalf("Marshal() error: %v", err)
+			}
+			var got Photo
+			if err := json.Unmarshal(data, &got); err != nil {
+				t.Fatalf("Unmarshal() error: %v", err)
+			}
+			if got != want {
+				t.Errorf("round trip = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+func TestPhoto_LegacyRowWithNoProviderDecodesCleanly(t *testing.T) {
+	raw := `{"url":"https://example.com/x.jpg","author":"Jane Doe","author_link":"https://example.com"}`
+
+	var p Photo
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if p.Provider != "" {
+		t.Errorf("Provider = %q, want empty for a legacy row with no provider key", p.Provider)
+	}
+}

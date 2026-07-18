@@ -137,7 +137,7 @@ func (c *Client) FirstPhoto(ctx context.Context, query string) (activitiessvc.Ph
 	if err != nil {
 		return activitiessvc.Photo{}, err
 	}
-	return activitiessvc.Photo{URL: uri, Author: author, AuthorLink: authorLink}, nil
+	return activitiessvc.Photo{URL: uri, Author: author, AuthorLink: authorLink, Provider: activitiessvc.ProviderGoogle}, nil
 }
 
 // doJSON sends one request, retrying on 429/5xx with capped, jittered
