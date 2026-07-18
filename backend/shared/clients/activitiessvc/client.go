@@ -77,3 +77,8 @@ func (c *Client) UploadPhoto(ctx context.Context, req *activitiesv1.UploadPhotoR
 func (c *Client) ListAdminCities(ctx context.Context, req *activitiesv1.ListAdminCitiesRequest) (*activitiesv1.ListAdminCitiesResponse, error) {
 	return c.rpc.ListAdminCities(ctx, req)
 }
+
+// GetActivityPhotos (T3): a pass-through wrapper, same shape as the above.
+func (c *Client) GetActivityPhotos(ctx context.Context, req *activitiesv1.GetActivityPhotosRequest) (*activitiesv1.GetActivityPhotosResponse, error) {
+	return c.rpc.GetActivityPhotos(ctx, req)
+}
