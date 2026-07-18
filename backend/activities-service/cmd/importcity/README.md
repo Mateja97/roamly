@@ -3,10 +3,12 @@
 `cmd/importcity` is Stage B of the per-city ingestion pipeline: a Go CLI that
 reads a Stage-A `<city>.json` file and loads it into the live `activities`
 table as `status=pending`, guaranteeing every activity ends up with at least
-3 photos (downloaded to the shared photo volume, Google-backfilled when the
-scrape came up short). Stage A itself runs entirely in the Firecrawl/agent
-environment, not Go — there is no code to write for it, only the contract
-this document defines and the procedure an operator follows per city.
+1 provisional/listing photo (downloaded to the shared photo volume,
+Google-backfilled when the scrape came up short). The rest of a venue's
+photos, if any, resolve later on first detail view, not here. Stage A itself
+runs entirely in the Firecrawl/agent environment, not Go — there is no code
+to write for it, only the contract this document defines and the procedure
+an operator follows per city.
 
 This README is that contract. It has four parts:
 
@@ -36,7 +38,7 @@ a row that fails validation is logged and skipped, not aborting the batch.
 | `address` | string | optional | 1:1 copy to the `address` column. |
 | `rating` | number (float64) | optional | `0` means "no rating signal", not a real zero rating. |
 | `details` | object (JSON) | optional | Must already be the exact per-category details shape (see §3) — passed through to the `details` JSONB column as-is, unvalidated by the importer. |
-| `photo_urls` | array of strings | optional | Direct image URLs the importer downloads. Target ≥3 per activity (see §3); rows landing under 3 get tagged `needs-photos`, not rejected. |
+| `photo_urls` | array of strings | optional | Direct image URLs the importer downloads. Target ≥1 (the provisional/listing photo, see §3); rows landing at 0 get tagged `needs-photos`, not rejected. |
 | `source_url` | string | **required** | Non-empty after trimming. This is the upsert dedupe key — re-running the same city.json is idempotent because rows match on this field. |
 | `raw` | object (JSON) | optional | The original scraped payload, stored as-is for later debugging/re-processing. |
 
@@ -61,13 +63,13 @@ wellness, shopping, entertainment
 | `address` | `address` | 1:1 |
 | `rating` | `rating` | 1:1 (0 = no signal) |
 | `details` | `details` | 1:1 — already the exact per-category JSONB shape |
-| `photo_urls` | `photos` | importer downloads URLs → `/photos/...` refs (≥3) |
+| `photo_urls` | `photos` | importer downloads URLs → `/photos/...` refs (≥1) |
 | `source_url` | `source_url` | 1:1 (dedupe key) |
 | `place_id` | `external_id` | 1:1 (Google Places place_id, not the dedupe key) |
 | `raw` | `raw` | 1:1 |
 | — | `source` | importer sets `'google_places'` |
 | — | `status` | importer sets `'pending'` |
-| — | `tags` | importer sets `['needs-photos']` when <3 photos |
+| — | `tags` | importer sets `['needs-photos']` when <1 photo |
 
 Only `location` and `photos` transform; every other field is a direct column
 copy with a matching name.
@@ -140,9 +142,10 @@ exposes for the `raw` field.
   `hours`.
 
 **d. Collect photos.** Pull `photo_urls` from the page's own gallery/images
-(direct image URLs only). Target ≥3 per activity — Stage B still imports
-rows short of 3, but tags them `needs-photos` for manual follow-up, so the
-closer Stage A gets to 3, the less review work is left over.
+(direct image URLs only). Target ≥1 per activity (the provisional/listing
+photo) — Stage B still imports rows with none, but tags them `needs-photos`
+for manual follow-up. Stage B only downloads the first reachable one; extra
+`photo_urls` beyond that are not fetched.
 
 **e. Write out `<city>.json`** as a JSON array of these rows, ready for
 Stage B.
@@ -182,7 +185,7 @@ Notes:
   the fork-A photo caveat: the importer and `activities-service` must share
   the same volume, never write to two different photo stores.
 - `GOOGLE_MAPS_API_KEY` is only used for photo backfill when a row still has
-  <3 photos after downloading `photo_urls`; omit it and backfill is simply
+  0 photos after downloading `photo_urls`; omit it and backfill is simply
   skipped (rows stay tagged `needs-photos` instead).
 - `DATABASE_URL` and `PHOTOS_DIR` are already set by the service's
   `environment:`/`volumes:` blocks in `docker-compose.yaml` — no need to
@@ -208,7 +211,7 @@ panel:
 
 1. Filter the activities list by `status=pending`.
 2. Review each row, paying particular attention to any tagged
-   `needs-photos` (these came in under the 3-photo target and may need a
-   manual photo added before publishing).
+   `needs-photos` (these have zero photos and may need a manual photo added
+   before publishing).
 3. Approve each reviewed row to `status=published` (one at a time via the
    existing per-row status control — there is no bulk-approve action yet).

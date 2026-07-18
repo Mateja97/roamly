@@ -116,16 +116,22 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		return a.ID
 	}
 
-	t.Run("row with fewer than 3 reachable photos ends up pending + needs-photos, and a re-run does not duplicate", func(t *testing.T) {
-		id := insert(t, "http://example/needs-photos")
-		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
+	t.Run("row with one reachable photo becomes complete, and only one download is made even with multiple photo_urls", func(t *testing.T) {
+		id := insert(t, "http://example/provisional-complete")
+		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{
+			photoServer.URL + "/1", photoServer.URL + "/2", photoServer.URL + "/3",
+		}}
+		hitsBefore := hits
 
 		tags, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
 		if err != nil {
 			t.Fatalf("ensurePhotos() first run error: %v", err)
 		}
-		if !contains(tags, "needs-photos") {
-			t.Fatalf("first run tags = %v, want needs-photos (only 1 photo, under minPhotos)", tags)
+		if contains(tags, "needs-photos") {
+			t.Fatalf("first run tags = %v, want no needs-photos (1 photo meets minPhotos=1, the T1 provisional target)", tags)
+		}
+		if got := hits - hitsBefore; got != 1 {
+			t.Fatalf("download hits = %d, want exactly 1 (T1: cap to one provisional photo, not all 3 photo_urls)", got)
 		}
 
 		got, err := repo.GetByID(ctx, id)
@@ -143,8 +149,8 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ensurePhotos() second run error: %v", err)
 		}
-		if !contains(tags2, "needs-photos") {
-			t.Errorf("second run tags = %v, want still needs-photos (still under minPhotos)", tags2)
+		if contains(tags2, "needs-photos") {
+			t.Errorf("second run tags = %v, want still no needs-photos", tags2)
 		}
 
 		got2, err := repo.GetByID(ctx, id)
@@ -155,18 +161,47 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 			t.Errorf("photos after second run = %d, want unchanged at %d (re-run must not duplicate)", len(got2.Photos), len(got.Photos))
 		}
 		if hits != hitsAfterFirst {
-			t.Errorf("scraped-URL server got %d more hits on the re-run, want 0 (no existing photos == 0 required to re-download)", hits-hitsAfterFirst)
+			t.Errorf("scraped-URL server got %d more hits on the re-run, want 0 (row already complete, must skip entirely)", hits-hitsAfterFirst)
 		}
 	})
 
-	t.Run("re-importing a published under-3-photo row does not reset its status", func(t *testing.T) {
+	t.Run("row with zero reachable photos and no backfill ends up needs-photos, and a re-run does not duplicate", func(t *testing.T) {
+		id := insert(t, "http://example/needs-photos")
+		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"} // no PhotoURLs, no backfill
+
+		tags, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		if err != nil {
+			t.Fatalf("ensurePhotos() first run error: %v", err)
+		}
+		if !contains(tags, "needs-photos") {
+			t.Fatalf("first run tags = %v, want needs-photos (0 photos, under minPhotos=1)", tags)
+		}
+
+		got, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID() after first run: %v", err)
+		}
+		if len(got.Photos) != 0 {
+			t.Fatalf("photos after first run = %d, want 0", len(got.Photos))
+		}
+
+		tags2, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row)
+		if err != nil {
+			t.Fatalf("ensurePhotos() second run error: %v", err)
+		}
+		if !contains(tags2, "needs-photos") {
+			t.Errorf("second run tags = %v, want still needs-photos", tags2)
+		}
+	})
+
+	t.Run("re-importing a published needs-photos row does not reset its status", func(t *testing.T) {
 		id := insert(t, "http://example/published-needs-photos")
 		published := activitiessvc.StatusPublished
 		if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Status: &published}); err != nil {
 			t.Fatalf("publishing fixture row: %v", err)
 		}
 
-		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia", PhotoURLs: []string{photoServer.URL + "/1"}}
+		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"} // no PhotoURLs, no backfill
 		if _, err := ensurePhotos(ctx, repo, store, httpClient, nil, id, row); err != nil {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
@@ -176,17 +211,15 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 			t.Fatalf("GetByID() error: %v", err)
 		}
 		if got.Status != activitiessvc.StatusPublished {
-			t.Errorf("status after re-import = %q, want still %q (approval must survive an under-3-photo re-import)", got.Status, activitiessvc.StatusPublished)
+			t.Errorf("status after re-import = %q, want still %q (approval must survive a needs-photos re-import)", got.Status, activitiessvc.StatusPublished)
 		}
 	})
 
-	t.Run("row that already has >=3 photos is left untouched, no new downloads", func(t *testing.T) {
-		id := insert(t, "http://example/already-full")
-		existingPhotos := []activitiessvc.Photo{
-			{URL: "/photos/x/a.jpg"}, {URL: "/photos/x/b.jpg"}, {URL: "/photos/x/c.jpg"},
-		}
+	t.Run("row that already has a photo is left untouched, no new downloads", func(t *testing.T) {
+		id := insert(t, "http://example/already-complete")
+		existingPhotos := []activitiessvc.Photo{{URL: "/photos/x/a.jpg"}}
 		if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &existingPhotos}); err != nil {
-			t.Fatalf("seeding 3 photos: %v", err)
+			t.Fatalf("seeding 1 photo: %v", err)
 		}
 
 		hitsBefore := hits
@@ -196,29 +229,27 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
 		if contains(tags, "needs-photos") {
-			t.Errorf("tags = %v, want no needs-photos tag (already has 3 photos)", tags)
+			t.Errorf("tags = %v, want no needs-photos tag (already has 1 photo)", tags)
 		}
 		if hits != hitsBefore {
-			t.Errorf("photo server got %d hits, want 0 (row with >=3 photos must skip entirely, no downloads)", hits-hitsBefore)
+			t.Errorf("photo server got %d hits, want 0 (row with >=1 photo must skip entirely, no downloads)", hits-hitsBefore)
 		}
 
 		got, err := repo.GetByID(ctx, id)
 		if err != nil {
 			t.Fatalf("GetByID() error: %v", err)
 		}
-		if len(got.Photos) != 3 {
-			t.Errorf("photos = %d, want unchanged at 3", len(got.Photos))
+		if len(got.Photos) != 1 {
+			t.Errorf("photos = %d, want unchanged at 1", len(got.Photos))
 		}
 	})
 
-	t.Run("row that already has >=3 photos and a stale needs-photos tag gets the tag cleared", func(t *testing.T) {
-		id := insert(t, "http://example/already-full-stale-tag")
-		existingPhotos := []activitiessvc.Photo{
-			{URL: "/photos/x/a.jpg"}, {URL: "/photos/x/b.jpg"}, {URL: "/photos/x/c.jpg"},
-		}
+	t.Run("row that already has a photo and a stale needs-photos tag gets the tag cleared", func(t *testing.T) {
+		id := insert(t, "http://example/already-complete-stale-tag")
+		existingPhotos := []activitiessvc.Photo{{URL: "/photos/x/a.jpg"}}
 		staleTags := []string{"needs-photos"}
 		if _, err := repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &existingPhotos, Tags: &staleTags}); err != nil {
-			t.Fatalf("seeding 3 photos + stale tag: %v", err)
+			t.Fatalf("seeding 1 photo + stale tag: %v", err)
 		}
 
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"}
@@ -227,7 +258,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 			t.Fatalf("ensurePhotos() error: %v", err)
 		}
 		if contains(tags, "needs-photos") {
-			t.Errorf("tags = %v, want needs-photos cleared (row already has 3 photos)", tags)
+			t.Errorf("tags = %v, want needs-photos cleared (row already has 1 photo)", tags)
 		}
 
 		got, err := repo.GetByID(ctx, id)
@@ -245,16 +276,19 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 	// prior run's backfilled photo on a re-run) — without URL-dedupe, this
 	// grows [X] -> [X,X] -> [X,X,X] on every re-import. Must FAIL before the
 	// dedupe fix and PASS after.
-	t.Run("row with zero photo_urls backfills via Google and a re-run does not duplicate", func(t *testing.T) {
+	t.Run("row with zero photo_urls backfills via Google, completes with 1 photo, and a re-run makes zero further Google calls", func(t *testing.T) {
 		id := insert(t, "http://example/zero-urls-backfill")
 		row := inputRow{Title: "Fixture", City: "Belgrade", Country: "Serbia"} // no PhotoURLs at all
 
+		var placesHits int
 		mux := http.NewServeMux()
 		mux.HandleFunc("/v1/places:searchText", func(w http.ResponseWriter, r *http.Request) {
+			placesHits++
 			io.WriteString(w, `{"places":[{"photos":[{"name":"places/X/photos/Y",
 				"authorAttributions":[{"displayName":"Jane","uri":"http://author/jane"}]}]}]}`)
 		})
 		mux.HandleFunc("/v1/places/X/photos/Y/media", func(w http.ResponseWriter, r *http.Request) {
+			placesHits++
 			io.WriteString(w, `{"photoUri":"http://img/backfilled.jpg"}`)
 		})
 		placesServer := httptest.NewServer(mux)
@@ -265,8 +299,11 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ensurePhotos() first run error: %v", err)
 		}
-		if !contains(tags, "needs-photos") {
-			t.Fatalf("first run tags = %v, want needs-photos (only 1 backfilled photo, under minPhotos)", tags)
+		if contains(tags, "needs-photos") {
+			t.Fatalf("first run tags = %v, want no needs-photos (1 backfilled photo meets minPhotos=1)", tags)
+		}
+		if placesHits != 2 { // 1 searchText + 1 media call
+			t.Fatalf("places calls on first run = %d, want 2", placesHits)
 		}
 
 		got, err := repo.GetByID(ctx, id)
@@ -276,9 +313,13 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		if len(got.Photos) != 1 {
 			t.Fatalf("photos after first run = %d, want 1", len(got.Photos))
 		}
+		hitsAfterFirst := placesHits
 
 		if _, err := ensurePhotos(ctx, repo, store, httpClient, backfill, id, row); err != nil {
 			t.Fatalf("ensurePhotos() second run error: %v", err)
+		}
+		if placesHits != hitsAfterFirst {
+			t.Errorf("places calls on re-run = %d more, want 0 (row already complete, no metered call)", placesHits-hitsAfterFirst)
 		}
 
 		got2, err := repo.GetByID(ctx, id)

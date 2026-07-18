@@ -21,9 +21,13 @@ func TestValidateRow(t *testing.T) {
 }
 
 func TestNeedsPhotosTag(t *testing.T) {
-	// <3 photos -> needs-photos tag; >=3 -> no tag.
-	if !contains(statusAndTags(2), "needs-photos") {
-		t.Fatalf("2 photos: want needs-photos tag, got %v", statusAndTags(2))
+	// <minPhotos (1) -> needs-photos tag; >=1 -> no tag. A venue with exactly
+	// one (provisional) photo is complete, per T1.
+	if !contains(statusAndTags(0), "needs-photos") {
+		t.Fatalf("0 photos: want needs-photos tag, got %v", statusAndTags(0))
+	}
+	if contains(statusAndTags(1), "needs-photos") {
+		t.Fatalf("1 photo should not be flagged: got %v", statusAndTags(1))
 	}
 	if contains(statusAndTags(3), "needs-photos") {
 		t.Fatalf("3 photos should not be flagged: got %v", statusAndTags(3))
