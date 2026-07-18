@@ -1,8 +1,9 @@
 // Command importcity loads a Stage-A <city>.json into the live activities DB
-// as status=pending, guaranteeing >=3 photos per activity (downloaded to the
-// photo volume, Google-backfilled when short). Build/seed-time maintenance
-// tool; not wired into service startup. Requires DATABASE_URL, PHOTOS_DIR,
-// and (for backfill) GOOGLE_MAPS_API_KEY.
+// as status=pending, guaranteeing >=1 provisional photo per activity
+// (downloaded to the photo volume, Google-backfilled when missing). The full
+// photo set is resolved later, on first detail view (see T2). Build/seed-time
+// maintenance tool; not wired into service startup. Requires DATABASE_URL,
+// PHOTOS_DIR, and (for backfill) GOOGLE_MAPS_API_KEY.
 //
 // Usage: go run ./cmd/importcity [-dry-run] path/to/city.json
 package main
@@ -29,7 +30,10 @@ import (
 	"backend/shared/models/activitiessvc"
 )
 
-const minPhotos = 3
+// minPhotos is the provisional/listing photo target — a single Google photo
+// per venue at ingestion time. The remaining photos (if any) resolve
+// on-demand on first detail view, not here (see T2).
+const minPhotos = 1
 
 // inputRow is one Stage-A row: a scraped/geocoded activity, ready for
 // validation and ingestion (see cmd/importcity's Stage-A contract, Task 6).
@@ -67,7 +71,7 @@ func validateRow(r inputRow) error {
 	return nil
 }
 
-// statusAndTags: <3 photos gets the needs-photos flag so a maintainer can
+// statusAndTags: <minPhotos gets the needs-photos flag so a maintainer can
 // find and backfill it later.
 func statusAndTags(photoCount int) []string {
 	var tags []string
@@ -174,6 +178,9 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 
 	if len(existing.Photos) == 0 {
 		for _, u := range r.PhotoURLs {
+			if len(photos) >= minPhotos {
+				break // provisional target already met, stop spending downloads
+			}
 			data, err := download(ctx, client, u)
 			if err != nil {
 				slog.Warn("skipping photo download failure", "url", u, "error", err)

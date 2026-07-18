@@ -1,16 +1,17 @@
 // Command scrapecity is Stage A of the per-city ingestion pipeline: it
 // queries the Google Places API (New) across the 12 activity categories for a
 // city, keeps only high-confidence, relevant venues (rating + review-count
-// floor), resolves up to 3 photo URLs each, and writes a <city>.json in the
-// exact shape cmd/importcity reads. Build/seed-time maintenance tool; not
-// wired into service startup. Requires GOOGLE_MAPS_API_KEY (Places API New
-// enabled).
+// floor), resolves ONE provisional/listing photo URL each (the remaining
+// photos, if any, resolve later on first detail view — see T2), and writes a
+// <city>.json in the exact shape cmd/importcity reads. Build/seed-time
+// maintenance tool; not wired into service startup. Requires
+// GOOGLE_MAPS_API_KEY (Places API New enabled).
 //
 // Usage:
 //
 //	GOOGLE_MAPS_API_KEY=... go run ./cmd/scrapecity \
 //	  -city "Belgrade" -country "Serbia" -out belgrade.json \
-//	  [-min-rating 4.0] [-min-reviews 50] [-pages 3] [-photos 3]
+//	  [-min-rating 4.0] [-min-reviews 50] [-pages 3] [-photos 1]
 package main
 
 import (
@@ -116,7 +117,9 @@ func main() {
 	minRating := flag.Float64("min-rating", 4.0, "minimum Google rating to keep a venue")
 	minReviews := flag.Int("min-reviews", 50, "minimum review count to keep a venue")
 	pages := flag.Int("pages", 3, "Places result pages per category (20 venues each, max 3)")
-	photos := flag.Int("photos", 3, "photo URLs to resolve per venue")
+	// photos is the provisional/listing photo count, deliberately 1: the full
+	// set resolves on-demand on first detail view (T2), not at scrape time.
+	photos := flag.Int("photos", 1, "photo URLs to resolve per venue")
 	flag.Parse()
 
 	if *city == "" || *out == "" {
