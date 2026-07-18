@@ -243,7 +243,7 @@ func main() {
 					City:      *city,
 					Address:   p.FormattedAddress,
 					Rating:    p.Rating,
-					Details:   placesmap.BuildDetails(cq.category, p),
+					Details:   placesmap.BuildDetails(cq.category, *city, p),
 					PhotoURLs: c.photoURIs(ctx, photoNames(p), *photos),
 					SourceURL: p.GoogleMapsURI,
 					Raw:       raw,

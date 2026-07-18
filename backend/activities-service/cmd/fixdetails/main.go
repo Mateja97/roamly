@@ -52,15 +52,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	updated, failed := 0, 0
+	updated, skipped, failed := 0, 0, 0
 	for _, row := range rows {
-		var p placesmap.Place
-		if err := json.Unmarshal(row.Raw, &p); err != nil {
-			logger.Warn("skipping row with unparseable raw", "id", row.ID, "error", err)
-			failed++
+		details, ok := rowDetails(row)
+		if !ok {
+			skipped++
 			continue
 		}
-		details := placesmap.BuildDetails(row.Category, p)
 		if *dryRun {
 			logger.Info("would update", "id", row.ID, "category", row.Category, "details", string(details))
 			continue
@@ -72,5 +70,17 @@ func main() {
 		}
 		updated++
 	}
-	logger.Info("fixdetails complete", "rows", len(rows), "updated", updated, "failed", failed, "dry_run", *dryRun)
+	logger.Info("fixdetails complete", "rows", len(rows), "updated", updated, "skipped", skipped, "failed", failed, "dry_run", *dryRun)
+}
+
+// rowDetails recomputes a row's details from its stored Places raw, and whether
+// it should be updated. A row whose raw has no Places id is seed/hand-authored
+// data with no scrape to recompute from — return false so its details (cuisine,
+// dishes, opening_hours, action_url) are never overwritten with an empty payload.
+func rowDetails(row repository.BackfillRow) (json.RawMessage, bool) {
+	var p placesmap.Place
+	if err := json.Unmarshal(row.Raw, &p); err != nil || p.ID == "" {
+		return nil, false
+	}
+	return placesmap.BuildDetails(row.Category, row.City, p), true
 }

@@ -866,6 +866,7 @@ func TestRawRowsReturnsIDCategoryRaw(t *testing.T) {
 		Title:     "Raw Row Venue",
 		Category:  activitiessvc.CategoryRestaurants,
 		Lat:       44.8, Lng: 20.4,
+		City:      "Belgrade",
 		Status:    activitiessvc.StatusPending,
 		Source:    "firecrawl",
 		SourceURL: "https://example.com/rawrow",
@@ -886,6 +887,9 @@ func TestRawRowsReturnsIDCategoryRaw(t *testing.T) {
 			found = true
 			if row.Category != activitiessvc.CategoryRestaurants {
 				t.Errorf("category = %q, want restaurants", row.Category)
+			}
+			if row.City != "Belgrade" {
+				t.Errorf("city = %q, want Belgrade", row.City)
 			}
 			if string(row.Raw) == "" {
 				t.Error("raw is empty")
