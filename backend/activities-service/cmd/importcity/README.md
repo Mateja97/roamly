@@ -63,8 +63,9 @@ wellness, shopping, entertainment
 | `details` | `details` | 1:1 — already the exact per-category JSONB shape |
 | `photo_urls` | `photos` | importer downloads URLs → `/photos/...` refs (≥3) |
 | `source_url` | `source_url` | 1:1 (dedupe key) |
+| `place_id` | `external_id` | 1:1 (Google Places place_id, not the dedupe key) |
 | `raw` | `raw` | 1:1 |
-| — | `source` | importer sets `'firecrawl'` |
+| — | `source` | importer sets `'google_places'` |
 | — | `status` | importer sets `'pending'` |
 | — | `tags` | importer sets `['needs-photos']` when <3 photos |
 

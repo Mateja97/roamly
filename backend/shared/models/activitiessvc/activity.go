@@ -104,6 +104,9 @@ type Activity struct {
 	City    string
 	Address string
 	Status  Status
+	// ExternalID is the ingestion source's stable identifier (the Google
+	// Places place_id for scraped rows); empty for admin-created rows.
+	ExternalID string
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar
@@ -420,6 +423,7 @@ type IngestActivity struct {
 	Photos      []Photo
 	Source      string
 	SourceURL   string
+	ExternalID  string
 	Raw         json.RawMessage
 }
 

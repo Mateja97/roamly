@@ -46,6 +46,7 @@ type inputRow struct {
 	Details     json.RawMessage `json:"details"`
 	PhotoURLs   []string        `json:"photo_urls"`
 	SourceURL   string          `json:"source_url"`
+	PlaceID     string          `json:"place_id"`
 	Raw         json.RawMessage `json:"raw"`
 }
 
@@ -92,8 +93,9 @@ func importRow(ctx context.Context, repo *repository.Activities, r inputRow) (st
 		Rating:      r.Rating,
 		Status:      activitiessvc.StatusPending,
 		Details:     r.Details,
-		Source:      "firecrawl",
+		Source:      "google_places",
 		SourceURL:   r.SourceURL,
+		ExternalID:  r.PlaceID,
 		Raw:         r.Raw,
 	})
 	if err != nil {

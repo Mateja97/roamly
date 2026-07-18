@@ -107,7 +107,7 @@ func TestEnsurePhotos_Integration(t *testing.T) {
 		a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
 			Title: "Fixture", Description: "d", Category: activitiessvc.CategoryCafes,
 			Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
-			Rating: 4.0, Status: activitiessvc.StatusPending, Source: "firecrawl", SourceURL: sourceURL,
+			Rating: 4.0, Status: activitiessvc.StatusPending, Source: "google_places", SourceURL: sourceURL,
 		})
 		if err != nil {
 			t.Fatalf("seeding row: %v", err)

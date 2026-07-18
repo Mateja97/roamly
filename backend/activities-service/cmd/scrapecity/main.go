@@ -74,7 +74,10 @@ type outputRow struct {
 	Details     json.RawMessage `json:"details"`
 	PhotoURLs   []string        `json:"photo_urls"`
 	SourceURL   string          `json:"source_url"`
-	Raw         json.RawMessage `json:"raw"`
+	// PlaceID is the Places place_id (p.ID) — the stable identifier that
+	// becomes activities.external_id, distinct from SourceURL (the Maps URI).
+	PlaceID string          `json:"place_id"`
+	Raw     json.RawMessage `json:"raw"`
 }
 
 // passesFilter is the "high confidence + relevant" gate: a venue must clear
@@ -168,6 +171,7 @@ func main() {
 					Details:   placesmap.BuildDetails(cq.category, *city, p),
 					PhotoURLs: photoURIs(ctx, c, photoNames(p), *photos),
 					SourceURL: p.GoogleMapsURI,
+					PlaceID:   p.ID,
 					Raw:       raw,
 				})
 				kept++
