@@ -51,6 +51,7 @@ type resolvedPhoto struct {
 	url        string
 	author     string
 	authorLink string
+	provider   string
 }
 
 func main() {
@@ -88,7 +89,7 @@ func resolveOne(client *places.Client, a seedActivity) (*resolvedPhoto, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving photo for %q: %w", a.query, err)
 	}
-	return &resolvedPhoto{title: a.title, url: photo.URL, author: photo.Author, authorLink: photo.AuthorLink}, nil
+	return &resolvedPhoto{title: a.title, url: photo.URL, author: photo.Author, authorLink: photo.AuthorLink, provider: string(photo.Provider)}, nil
 }
 
 // formatUpdateSQL is the pure part of this tool: given resolved photos,
@@ -98,7 +99,7 @@ func resolveOne(client *places.Client, a seedActivity) (*resolvedPhoto, error) {
 func formatUpdateSQL(photos []resolvedPhoto) string {
 	var b strings.Builder
 	for _, p := range photos {
-		photoJSON, _ := json.Marshal([]map[string]string{{"url": p.url, "author": p.author, "author_link": p.authorLink}})
+		photoJSON, _ := json.Marshal([]map[string]string{{"url": p.url, "author": p.author, "author_link": p.authorLink, "provider": p.provider}})
 		fmt.Fprintf(&b, "UPDATE activities SET photos = %s WHERE title = %s;\n",
 			sqlQuote(string(photoJSON))+"::jsonb", sqlQuote(p.title))
 	}

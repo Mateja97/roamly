@@ -182,7 +182,7 @@ func ensurePhotos(ctx context.Context, repo *repository.Activities, store *photo
 				slog.Warn("skipping unsaveable photo", "url", u, "error", err)
 				continue
 			}
-			appendPhoto(activitiessvc.Photo{URL: url, ThumbURL: thumbURL})
+			appendPhoto(activitiessvc.Photo{URL: url, ThumbURL: thumbURL, Provider: activitiessvc.ProviderGoogle})
 		}
 	}
 
