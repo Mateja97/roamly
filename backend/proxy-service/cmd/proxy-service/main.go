@@ -38,6 +38,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health.Handler())
 	mux.HandleFunc("POST /activities/query", api.NewQueryActivitiesHandler(activitiesClient, logger).Handle)
+	mux.HandleFunc("GET /activities/{id}/photos", api.NewGetActivityPhotosHandler(activitiesClient, logger).Handle)
 	mux.HandleFunc("GET /cities/suggest", api.NewSuggestCitiesHandler(activitiesClient, logger).Handle)
 
 	// Public photo serving (T1): read-only off the shared volume
