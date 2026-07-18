@@ -783,7 +783,7 @@ func TestUpsertThenUpdateTagsPersistsNeedsPhotos(t *testing.T) {
 		Title: "Tag Fixture", Description: "cafe", Category: activitiessvc.CategoryCafes,
 		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
 		Rating: 4.3, Status: activitiessvc.StatusPending,
-		Source: "firecrawl", SourceURL: "http://example/tag-fixture",
+		Source: "google_places", SourceURL: "http://example/tag-fixture",
 	}
 	created, err := repo.Upsert(ctx, in)
 	if err != nil {
@@ -820,7 +820,7 @@ func TestUpsertIdempotentBySourceURL(t *testing.T) {
 		Title: "Koffein", Description: "cafe", Category: activitiessvc.CategoryCafes,
 		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
 		Rating: 4.3, Status: activitiessvc.StatusPending,
-		Source: "firecrawl", SourceURL: "http://example/koffein",
+		Source: "google_places", SourceURL: "http://example/koffein",
 	}
 	first, err := repo.Upsert(ctx, in)
 	if err != nil {
@@ -857,18 +857,61 @@ func TestUpsertIdempotentBySourceURL(t *testing.T) {
 	}
 }
 
+// TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource proves T1's
+// ingestion round trip: a known Places place_id lands verbatim in
+// external_id (not GoogleMapsURI, not the raw blob), and source reads
+// "google_places" — never the old hardcoded "firecrawl".
+func TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	const placeID = "ChIJp0lN2xVXWkcR1LFV3KHDbZ0"
+	a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "External ID Fixture", Description: "cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "https://maps.google.com/?cid=12345",
+		ExternalID: placeID,
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, a.ID) })
+
+	if a.ExternalID != placeID {
+		t.Errorf("external_id = %q, want %q", a.ExternalID, placeID)
+	}
+
+	got, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	if got.ExternalID != placeID {
+		t.Errorf("persisted external_id = %q, want %q", got.ExternalID, placeID)
+	}
+
+	var source string
+	if err := db.QueryRow(ctx, `SELECT source FROM activities WHERE id = $1`, a.ID).Scan(&source); err != nil {
+		t.Fatalf("querying source: %v", err)
+	}
+	if source != "google_places" {
+		t.Errorf("source = %q, want google_places", source)
+	}
+}
+
 func TestRawRowsReturnsIDCategoryRaw(t *testing.T) {
 	ctx := context.Background()
 	db := startTestPostgres(t)
 	repo := New(db)
 
 	a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
-		Title:     "Raw Row Venue",
-		Category:  activitiessvc.CategoryRestaurants,
-		Lat:       44.8, Lng: 20.4,
+		Title:    "Raw Row Venue",
+		Category: activitiessvc.CategoryRestaurants,
+		Lat:      44.8, Lng: 20.4,
 		City:      "Belgrade",
 		Status:    activitiessvc.StatusPending,
-		Source:    "firecrawl",
+		Source:    "google_places",
 		SourceURL: "https://example.com/rawrow",
 		Raw:       json.RawMessage(`{"priceLevel":"PRICE_LEVEL_MODERATE"}`),
 	})

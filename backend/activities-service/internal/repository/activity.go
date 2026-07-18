@@ -221,7 +221,7 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 // column order used by scanAdminActivity never drifts from what's selected.
 const adminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 	country, rating, photos, tags, details,
-	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status`
+	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id`
 
 func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 	var a activitiessvc.Activity
@@ -230,7 +230,7 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 		&a.Location.Lat, &a.Location.Lng,
 		&a.Country, &a.Rating,
 		&a.Photos, &a.Tags, &a.Details,
-		&a.City, &a.Address, &a.Status,
+		&a.City, &a.Address, &a.Status, &a.ExternalID,
 	)
 	return a, err
 }
@@ -446,9 +446,9 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
-			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, raw)
+			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw)
 		VALUES
-			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		ON CONFLICT (source_url) WHERE source_url IS NOT NULL DO UPDATE SET
 			title = EXCLUDED.title,
 			description = EXCLUDED.description,
@@ -460,12 +460,13 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			address = EXCLUDED.address,
 			details = EXCLUDED.details,
 			source = EXCLUDED.source,
+			external_id = EXCLUDED.external_id,
 			raw = EXCLUDED.raw
 		RETURNING `+adminColumns,
 		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
 		in.Country, in.Rating, in.City, in.Address, string(in.Status),
 		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
-		in.Source, in.SourceURL, nonEmptyDetailsBytes(in.Raw),
+		in.Source, in.SourceURL, in.ExternalID, nonEmptyDetailsBytes(in.Raw),
 	))
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", in.SourceURL, err)
