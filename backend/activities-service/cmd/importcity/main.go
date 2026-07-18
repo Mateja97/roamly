@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"activities-service/internal/googlephotos"
 	"activities-service/internal/photo"
+	"activities-service/internal/places"
 	"activities-service/internal/repository"
 
 	"backend/shared/config"
@@ -135,7 +135,7 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 //
 // Every append (scraped download or Google backfill) goes through
 // appendPhoto, which is a no-op if the URL is already present. That makes
-// the backfill path idempotent too: googlephotos.FirstPhoto deterministically
+// the backfill path idempotent too: places.Client.FirstPhoto deterministically
 // resolves the same photo for the same query, and `photos` starts seeded
 // from existing.Photos, so without the dedupe a re-run would re-append the
 // prior run's backfilled URL every time. The Google backfill still runs on
@@ -260,12 +260,14 @@ func main() {
 	repo := repository.New(pool)
 	store := photo.NewStore(config.OrDefault("PHOTOS_DIR", "/data/photos"))
 	httpClient := &http.Client{Timeout: 15 * time.Second}
-	googleKey := os.Getenv("GOOGLE_MAPS_API_KEY")
 	var backfill func(context.Context, string) (activitiessvc.Photo, error)
-	if googleKey != "" {
-		backfill = func(ctx context.Context, query string) (activitiessvc.Photo, error) {
-			return googlephotos.FirstPhoto(ctx, httpClient, googleKey, query)
-		}
+	// ponytail: backfill is opt-in (no GOOGLE_MAPS_API_KEY means no backfill,
+	// not a startup failure), so NewFromEnv's error is logged and swallowed
+	// rather than exiting like resolvephotos does.
+	if placesClient, err := places.NewFromEnv(); err != nil {
+		logger.Warn("google photo backfill disabled", "error", err)
+	} else {
+		backfill = placesClient.FirstPhoto
 	}
 
 	imported := 0

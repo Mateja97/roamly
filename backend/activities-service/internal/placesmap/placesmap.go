@@ -41,7 +41,11 @@ type Place struct {
 	PriceLevel       string  `json:"priceLevel"`
 	GoogleMapsURI    string  `json:"googleMapsUri"`
 	Photos           []struct {
-		Name string `json:"name"`
+		Name               string `json:"name"`
+		AuthorAttributions []struct {
+			DisplayName string `json:"displayName"`
+			URI         string `json:"uri"`
+		} `json:"authorAttributions"`
 	} `json:"photos"`
 	RegularOpeningHours struct {
 		WeekdayDescriptions []string      `json:"weekdayDescriptions"`

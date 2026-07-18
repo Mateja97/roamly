@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -19,7 +20,12 @@ import (
 	"activities-service/internal/placesmap"
 
 	"backend/shared/config"
+	"backend/shared/models/activitiessvc"
 )
+
+// ErrNoPhoto is returned by FirstPhoto when the Places Text Search result has
+// no place or no photo to resolve.
+var ErrNoPhoto = errors.New("no place/photo found")
 
 // defaultBase is the production Places API (New) host.
 const defaultBase = "https://places.googleapis.com"
@@ -108,6 +114,30 @@ func (c *Client) PhotoMediaURL(ctx context.Context, photoName string) (string, e
 		return "", fmt.Errorf("media response missing photoUri")
 	}
 	return parsed.PhotoURI, nil
+}
+
+// FirstPhoto resolves the first Google Places photo for query into a
+// key-free, stored-safe URL plus attribution. Returns ErrNoPhoto when the
+// place has no photo.
+func (c *Client) FirstPhoto(ctx context.Context, query string) (activitiessvc.Photo, error) {
+	res, err := c.SearchText(ctx, query, "", "places.photos")
+	if err != nil {
+		return activitiessvc.Photo{}, err
+	}
+	if len(res.Places) == 0 || len(res.Places[0].Photos) == 0 {
+		return activitiessvc.Photo{}, ErrNoPhoto
+	}
+	photo := res.Places[0].Photos[0]
+	var author, authorLink string
+	if len(photo.AuthorAttributions) > 0 {
+		author = photo.AuthorAttributions[0].DisplayName
+		authorLink = photo.AuthorAttributions[0].URI
+	}
+	uri, err := c.PhotoMediaURL(ctx, photo.Name)
+	if err != nil {
+		return activitiessvc.Photo{}, err
+	}
+	return activitiessvc.Photo{URL: uri, Author: author, AuthorLink: authorLink}, nil
 }
 
 // doJSON sends one request, retrying on 429/5xx with capped, jittered
