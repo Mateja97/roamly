@@ -38,6 +38,11 @@ services:
     environment:
       DATABASE_URL: "postgres://activities:activities@activities-db:5432/activities?sslmode=disable"
       GRPC_ADDR: ":9090"
+      # T2: optional. Unset, GetActivityPhotos still runs, it just always
+      # answers from stored photos (never resolves the rest of a venue's
+      # Google photos live) — so the stack comes up with this feature
+      # gracefully degraded rather than requiring a key.
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
     ports:
       - "9090:9090"
     volumes:

@@ -26,6 +26,10 @@ type queryService interface {
 	AdminListCities(ctx context.Context) ([]string, error)
 	List(ctx context.Context, req service.ListRequest) (activitiessvc.ListResult, int, int, error)
 	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
+	// GetPhotos (T2) is the public resolve-on-first-view-and-persist path —
+	// unlike the rest of this admin-focused interface's Get/Create/Update,
+	// it's called from the app-facing surface.
+	GetPhotos(ctx context.Context, id string) ([]activitiessvc.Photo, error)
 	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
 	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
 }

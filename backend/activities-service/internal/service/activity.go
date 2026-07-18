@@ -27,6 +27,14 @@ type repository interface {
 	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
 }
 
+// placesClient is the subset of internal/places.Client GetPhotos needs
+// (T2). Optional (see WithPlaces) — a server with none configured, or with
+// GOOGLE_MAPS_API_KEY unset, still serves stored photos, it just never
+// resolves a venue's rest-of-set live.
+type placesClient interface {
+	ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error)
+}
+
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
 // caller's raw filter value (0 = not set). ScopeNearby ignores it entirely
 // (fixed NearbyRadiusKM); ScopeAnywhere passes it through uncapped.
@@ -47,11 +55,22 @@ type Request struct {
 const NearbyRadiusKM = 10
 
 type Activities struct {
-	repo repository
+	repo   repository
+	places placesClient
 }
 
 func New(repo repository) *Activities {
 	return &Activities{repo: repo}
+}
+
+// WithPlaces attaches a live Places client for GetPhotos' on-demand
+// resolve-on-first-view path (T2). Optional: without it (nil, the
+// zero-value default), GetPhotos always returns the stored photo set with
+// no Google call — the same fallback behavior a configured client falls
+// back to on error/timeout. Returns itself so call sites can chain it onto New.
+func (a *Activities) WithPlaces(p placesClient) *Activities {
+	a.places = p
+	return a
 }
 
 func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Activity, error) {
@@ -425,6 +444,62 @@ func (a *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Acti
 		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
 	}
 	return activity, nil
+}
+
+// photoResolveTimeout bounds GetPhotos' live Places lookup (T2):
+// request-scoped and deliberately short — a detail-page load can't block on
+// a third-party call. Not internal/places' own http.Client timeout (20s,
+// sized for a seed-time batch tool), a separate, smaller value for this,
+// the first live per-request Places call in the codebase.
+const photoResolveTimeout = 4 * time.Second
+
+// maxResolvedPhotos caps how many Google photos GetPhotos resolves and
+// persists per venue on first view.
+const maxResolvedPhotos = 8
+
+// GetPhotos returns activity id's full photo set (T2): resolve-on-first-
+// view-and-persist. A stored photo count of <= 1 is the "provisional only,
+// never fully resolved" signal (see product-tasks.md's T2 note on this
+// heuristic) — GetPhotos then resolves the rest live via a.places using the
+// activity's own ExternalID and persists the result, so every later call
+// for the same activity returns the persisted set with no new Google call.
+// Returns the stored set with no Google call when: no places client is
+// configured, the activity has no ExternalID, or a resolve is already
+// unnecessary (count > 1). A live-resolve error, timeout, or empty result
+// also falls back to the stored set — this must never fail the request.
+//
+// ponytail: the <=1 heuristic misfires for a venue whose real Google photo
+// count is exactly 1 — every view re-attempts (harmless: same result,
+// bounded by photoResolveTimeout) rather than caching a "fully resolved"
+// state. Add a dedicated "photos_resolved" column if that traffic pattern
+// ever matters; product-tasks.md's T2 note explicitly defers this.
+func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.Photo, error) {
+	activity, err := a.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("getting activity %s: %w", id, err)
+	}
+	if a.places == nil || activity.ExternalID == "" || len(activity.Photos) > 1 {
+		return activity.Photos, nil
+	}
+
+	resolveCtx, cancel := context.WithTimeout(ctx, photoResolveTimeout)
+	defer cancel()
+	resolved, err := a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+	if err != nil || len(resolved) == 0 {
+		// Places failure/timeout/empty result: fall back to what's already
+		// stored (at minimum the provisional photo) rather than error or
+		// block the request.
+		return activity.Photos, nil
+	}
+
+	updated, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &resolved})
+	if err != nil {
+		// Resolved successfully but couldn't persist: still answer this
+		// call with what was resolved, just don't claim it's cached yet —
+		// the next call will simply retry the resolve.
+		return resolved, nil
+	}
+	return updated.Photos, nil
 }
 
 // Create validates and inserts a new activity (T2): title is required,

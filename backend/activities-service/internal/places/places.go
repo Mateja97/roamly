@@ -2,8 +2,12 @@
 // consolidating what used to be two copy-pasted HTTP clients
 // (internal/googlephotos and cmd/scrapecity's private client). It owns the
 // API key, the http.Client, the base URL, and the retry/backoff policy, so a
-// change to any of those happens once. Build/seed-time ingestion tooling
-// only — never called on the live gRPC path.
+// change to any of those happens once. Mostly build/seed-time ingestion
+// tooling; ResolvePhotos is the one deliberate exception — the live,
+// per-request call activities-service's GetActivityPhotos RPC makes (T2).
+// Callers on that path must wrap ctx with a short, request-scoped timeout of
+// their own; this package's http.Client timeout (below) is sized for a batch
+// tool, not a live request.
 package places
 
 import (
@@ -138,6 +142,54 @@ func (c *Client) FirstPhoto(ctx context.Context, query string) (activitiessvc.Ph
 		return activitiessvc.Photo{}, err
 	}
 	return activitiessvc.Photo{URL: uri, Author: author, AuthorLink: authorLink, Provider: activitiessvc.ProviderGoogle}, nil
+}
+
+// placePhotoRef is the subset of a Place Details response's photos[] entry
+// ResolvePhotos needs — same shape as placesmap.Place's inline Photos field,
+// duplicated here rather than imported to keep places' only dependency on
+// placesmap (photoURIs' domain-mapping package) one-directional and small.
+type placePhotoRef struct {
+	Name               string `json:"name"`
+	AuthorAttributions []struct {
+		DisplayName string `json:"displayName"`
+		URI         string `json:"uri"`
+	} `json:"authorAttributions"`
+}
+
+// ResolvePhotos resolves up to limit photos for a place already known by its
+// stable place_id: one Place Details call (fieldMask=photos, free) lists the
+// place's photo resource names, then one metered PhotoMediaURL call per
+// photo up to limit. Unlike FirstPhoto, this needs no Text Search — the
+// caller already has place_id from a prior scrape.
+func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error) {
+	url := fmt.Sprintf("%s/v1/places/%s", c.base, placeID)
+	var parsed struct {
+		Photos []placePhotoRef `json:"photos"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, url, nil, map[string]string{
+		"X-Goog-Api-Key":   c.key,
+		"X-Goog-FieldMask": "photos",
+	}, &parsed); err != nil {
+		return nil, fmt.Errorf("fetching place %s photos: %w", placeID, err)
+	}
+
+	out := make([]activitiessvc.Photo, 0, min(len(parsed.Photos), limit))
+	for _, ph := range parsed.Photos {
+		if len(out) >= limit {
+			break
+		}
+		uri, err := c.PhotoMediaURL(ctx, ph.Name)
+		if err != nil || uri == "" {
+			continue // one bad photo doesn't sink the rest, same rule as scrapecity's photoURIs
+		}
+		var author, authorLink string
+		if len(ph.AuthorAttributions) > 0 {
+			author = ph.AuthorAttributions[0].DisplayName
+			authorLink = ph.AuthorAttributions[0].URI
+		}
+		out = append(out, activitiessvc.Photo{URL: uri, Author: author, AuthorLink: authorLink, Provider: activitiessvc.ProviderGoogle})
+	}
+	return out, nil
 }
 
 // doJSON sends one request, retrying on 429/5xx with capped, jittered

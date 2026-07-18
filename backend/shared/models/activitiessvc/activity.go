@@ -72,9 +72,10 @@ const (
 	ProviderUser Provider = "user"
 )
 
-// Photo is a single activity photo, either sourced from Google Places and
-// resolved once at seed/build time (never a live per-request Places call),
-// or uploaded through the admin surface (T1). Author/AuthorLink are empty
+// Photo is a single activity photo, either sourced from Google Places
+// (resolved at seed/build time, or live on first detail view via
+// activities-service's GetActivityPhotos RPC, T2), or uploaded through the
+// admin surface (T1). Author/AuthorLink are empty
 // for a photo that hasn't been resolved yet — the client falls back to its
 // missing-image state rather than a placeholder. ThumbURL/Caption are T1
 // additions: an uploaded photo carries a real thumbnail URL (never derived

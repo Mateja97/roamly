@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.9
 // 	protoc        v6.32.1
-// source: proto/activities/v1/activities.proto
+// source: activities/v1/activities.proto
 
 package activitiesv1
 
@@ -58,11 +58,11 @@ func (x Scope) String() string {
 }
 
 func (Scope) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_activities_v1_activities_proto_enumTypes[0].Descriptor()
+	return file_activities_v1_activities_proto_enumTypes[0].Descriptor()
 }
 
 func (Scope) Type() protoreflect.EnumType {
-	return &file_proto_activities_v1_activities_proto_enumTypes[0]
+	return &file_activities_v1_activities_proto_enumTypes[0]
 }
 
 func (x Scope) Number() protoreflect.EnumNumber {
@@ -71,7 +71,7 @@ func (x Scope) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Scope.Descriptor instead.
 func (Scope) EnumDescriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{0}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{0}
 }
 
 type Category int32
@@ -137,11 +137,11 @@ func (x Category) String() string {
 }
 
 func (Category) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_activities_v1_activities_proto_enumTypes[1].Descriptor()
+	return file_activities_v1_activities_proto_enumTypes[1].Descriptor()
 }
 
 func (Category) Type() protoreflect.EnumType {
-	return &file_proto_activities_v1_activities_proto_enumTypes[1]
+	return &file_activities_v1_activities_proto_enumTypes[1]
 }
 
 func (x Category) Number() protoreflect.EnumNumber {
@@ -150,7 +150,7 @@ func (x Category) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Category.Descriptor instead.
 func (Category) EnumDescriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{1}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{1}
 }
 
 // ActivityStatus (T1) is an activity's catalog lifecycle state. Only
@@ -193,11 +193,11 @@ func (x ActivityStatus) String() string {
 }
 
 func (ActivityStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_activities_v1_activities_proto_enumTypes[2].Descriptor()
+	return file_activities_v1_activities_proto_enumTypes[2].Descriptor()
 }
 
 func (ActivityStatus) Type() protoreflect.EnumType {
-	return &file_proto_activities_v1_activities_proto_enumTypes[2]
+	return &file_activities_v1_activities_proto_enumTypes[2]
 }
 
 func (x ActivityStatus) Number() protoreflect.EnumNumber {
@@ -206,7 +206,7 @@ func (x ActivityStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActivityStatus.Descriptor instead.
 func (ActivityStatus) EnumDescriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{2}
 }
 
 type Location struct {
@@ -219,7 +219,7 @@ type Location struct {
 
 func (x *Location) Reset() {
 	*x = Location{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[0]
+	mi := &file_activities_v1_activities_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -231,7 +231,7 @@ func (x *Location) String() string {
 func (*Location) ProtoMessage() {}
 
 func (x *Location) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[0]
+	mi := &file_activities_v1_activities_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -244,7 +244,7 @@ func (x *Location) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Location.ProtoReflect.Descriptor instead.
 func (*Location) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{0}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Location) GetLat() float64 {
@@ -262,7 +262,9 @@ func (x *Location) GetLng() float64 {
 }
 
 // Photo is a single activity photo, sourced from Google Places and resolved
-// once at seed/build time (never a live per-request Places call). Author
+// once — either at seed/build time, or live on first detail view via
+// GetActivityPhotos (T2), which persists the result so every later request
+// is cache-only. Author
 // attribution travels with the photo wherever it's shown, per Google's
 // mandatory attribution policy; author/author_link are empty for a photo
 // that hasn't been resolved yet (falls back to the missing-image state
@@ -284,7 +286,7 @@ type Photo struct {
 
 func (x *Photo) Reset() {
 	*x = Photo{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[1]
+	mi := &file_activities_v1_activities_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +298,7 @@ func (x *Photo) String() string {
 func (*Photo) ProtoMessage() {}
 
 func (x *Photo) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[1]
+	mi := &file_activities_v1_activities_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -309,7 +311,7 @@ func (x *Photo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Photo.ProtoReflect.Descriptor instead.
 func (*Photo) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{1}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *Photo) GetUrl() string {
@@ -376,7 +378,7 @@ type QueryActivitiesRequest struct {
 
 func (x *QueryActivitiesRequest) Reset() {
 	*x = QueryActivitiesRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[2]
+	mi := &file_activities_v1_activities_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -388,7 +390,7 @@ func (x *QueryActivitiesRequest) String() string {
 func (*QueryActivitiesRequest) ProtoMessage() {}
 
 func (x *QueryActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[2]
+	mi := &file_activities_v1_activities_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -401,7 +403,7 @@ func (x *QueryActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*QueryActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{2}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *QueryActivitiesRequest) GetScope() Scope {
@@ -482,7 +484,7 @@ type Activity struct {
 
 func (x *Activity) Reset() {
 	*x = Activity{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[3]
+	mi := &file_activities_v1_activities_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -494,7 +496,7 @@ func (x *Activity) String() string {
 func (*Activity) ProtoMessage() {}
 
 func (x *Activity) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[3]
+	mi := &file_activities_v1_activities_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -507,7 +509,7 @@ func (x *Activity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Activity.ProtoReflect.Descriptor instead.
 func (*Activity) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{3}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Activity) GetId() string {
@@ -617,7 +619,7 @@ type QueryActivitiesResponse struct {
 
 func (x *QueryActivitiesResponse) Reset() {
 	*x = QueryActivitiesResponse{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[4]
+	mi := &file_activities_v1_activities_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -629,7 +631,7 @@ func (x *QueryActivitiesResponse) String() string {
 func (*QueryActivitiesResponse) ProtoMessage() {}
 
 func (x *QueryActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[4]
+	mi := &file_activities_v1_activities_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -642,7 +644,7 @@ func (x *QueryActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueryActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*QueryActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{4}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *QueryActivitiesResponse) GetActivities() []*Activity {
@@ -663,7 +665,7 @@ type SuggestCitiesRequest struct {
 
 func (x *SuggestCitiesRequest) Reset() {
 	*x = SuggestCitiesRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[5]
+	mi := &file_activities_v1_activities_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -675,7 +677,7 @@ func (x *SuggestCitiesRequest) String() string {
 func (*SuggestCitiesRequest) ProtoMessage() {}
 
 func (x *SuggestCitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[5]
+	mi := &file_activities_v1_activities_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -688,7 +690,7 @@ func (x *SuggestCitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestCitiesRequest.ProtoReflect.Descriptor instead.
 func (*SuggestCitiesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{5}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SuggestCitiesRequest) GetQuery() string {
@@ -711,7 +713,7 @@ type CitySuggestion struct {
 
 func (x *CitySuggestion) Reset() {
 	*x = CitySuggestion{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[6]
+	mi := &file_activities_v1_activities_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +725,7 @@ func (x *CitySuggestion) String() string {
 func (*CitySuggestion) ProtoMessage() {}
 
 func (x *CitySuggestion) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[6]
+	mi := &file_activities_v1_activities_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +738,7 @@ func (x *CitySuggestion) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CitySuggestion.ProtoReflect.Descriptor instead.
 func (*CitySuggestion) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{6}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CitySuggestion) GetCity() string {
@@ -769,7 +771,7 @@ type SuggestCitiesResponse struct {
 
 func (x *SuggestCitiesResponse) Reset() {
 	*x = SuggestCitiesResponse{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[7]
+	mi := &file_activities_v1_activities_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -781,7 +783,7 @@ func (x *SuggestCitiesResponse) String() string {
 func (*SuggestCitiesResponse) ProtoMessage() {}
 
 func (x *SuggestCitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[7]
+	mi := &file_activities_v1_activities_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -794,7 +796,7 @@ func (x *SuggestCitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuggestCitiesResponse.ProtoReflect.Descriptor instead.
 func (*SuggestCitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{7}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SuggestCitiesResponse) GetSuggestions() []*CitySuggestion {
@@ -823,7 +825,7 @@ type ListActivitiesRequest struct {
 
 func (x *ListActivitiesRequest) Reset() {
 	*x = ListActivitiesRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[8]
+	mi := &file_activities_v1_activities_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +837,7 @@ func (x *ListActivitiesRequest) String() string {
 func (*ListActivitiesRequest) ProtoMessage() {}
 
 func (x *ListActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[8]
+	mi := &file_activities_v1_activities_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +850,7 @@ func (x *ListActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*ListActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{8}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListActivitiesRequest) GetQ() string {
@@ -907,7 +909,7 @@ type ListActivitiesStats struct {
 
 func (x *ListActivitiesStats) Reset() {
 	*x = ListActivitiesStats{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[9]
+	mi := &file_activities_v1_activities_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -919,7 +921,7 @@ func (x *ListActivitiesStats) String() string {
 func (*ListActivitiesStats) ProtoMessage() {}
 
 func (x *ListActivitiesStats) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[9]
+	mi := &file_activities_v1_activities_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -932,7 +934,7 @@ func (x *ListActivitiesStats) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivitiesStats.ProtoReflect.Descriptor instead.
 func (*ListActivitiesStats) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{9}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListActivitiesStats) GetTotal() int32 {
@@ -976,7 +978,7 @@ type ListActivitiesResponse struct {
 
 func (x *ListActivitiesResponse) Reset() {
 	*x = ListActivitiesResponse{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[10]
+	mi := &file_activities_v1_activities_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -988,7 +990,7 @@ func (x *ListActivitiesResponse) String() string {
 func (*ListActivitiesResponse) ProtoMessage() {}
 
 func (x *ListActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[10]
+	mi := &file_activities_v1_activities_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1001,7 +1003,7 @@ func (x *ListActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*ListActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{10}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListActivitiesResponse) GetActivities() []*Activity {
@@ -1048,7 +1050,7 @@ type GetActivityRequest struct {
 
 func (x *GetActivityRequest) Reset() {
 	*x = GetActivityRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[11]
+	mi := &file_activities_v1_activities_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1062,7 @@ func (x *GetActivityRequest) String() string {
 func (*GetActivityRequest) ProtoMessage() {}
 
 func (x *GetActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[11]
+	mi := &file_activities_v1_activities_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1075,7 @@ func (x *GetActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActivityRequest.ProtoReflect.Descriptor instead.
 func (*GetActivityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{11}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetActivityRequest) GetId() string {
@@ -1081,6 +1083,94 @@ func (x *GetActivityRequest) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+type GetActivityPhotosRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActivityPhotosRequest) Reset() {
+	*x = GetActivityPhotosRequest{}
+	mi := &file_activities_v1_activities_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActivityPhotosRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActivityPhotosRequest) ProtoMessage() {}
+
+func (x *GetActivityPhotosRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_activities_v1_activities_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActivityPhotosRequest.ProtoReflect.Descriptor instead.
+func (*GetActivityPhotosRequest) Descriptor() ([]byte, []int) {
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GetActivityPhotosRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetActivityPhotosResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Photos        []*Photo               `protobuf:"bytes,1,rep,name=photos,proto3" json:"photos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetActivityPhotosResponse) Reset() {
+	*x = GetActivityPhotosResponse{}
+	mi := &file_activities_v1_activities_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetActivityPhotosResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetActivityPhotosResponse) ProtoMessage() {}
+
+func (x *GetActivityPhotosResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_activities_v1_activities_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetActivityPhotosResponse.ProtoReflect.Descriptor instead.
+func (*GetActivityPhotosResponse) Descriptor() ([]byte, []int) {
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetActivityPhotosResponse) GetPhotos() []*Photo {
+	if x != nil {
+		return x.Photos
+	}
+	return nil
 }
 
 type ListAdminCitiesRequest struct {
@@ -1091,7 +1181,7 @@ type ListAdminCitiesRequest struct {
 
 func (x *ListAdminCitiesRequest) Reset() {
 	*x = ListAdminCitiesRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[12]
+	mi := &file_activities_v1_activities_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1103,7 +1193,7 @@ func (x *ListAdminCitiesRequest) String() string {
 func (*ListAdminCitiesRequest) ProtoMessage() {}
 
 func (x *ListAdminCitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[12]
+	mi := &file_activities_v1_activities_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1116,7 +1206,7 @@ func (x *ListAdminCitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAdminCitiesRequest.ProtoReflect.Descriptor instead.
 func (*ListAdminCitiesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{12}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{14}
 }
 
 type ListAdminCitiesResponse struct {
@@ -1128,7 +1218,7 @@ type ListAdminCitiesResponse struct {
 
 func (x *ListAdminCitiesResponse) Reset() {
 	*x = ListAdminCitiesResponse{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[13]
+	mi := &file_activities_v1_activities_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1140,7 +1230,7 @@ func (x *ListAdminCitiesResponse) String() string {
 func (*ListAdminCitiesResponse) ProtoMessage() {}
 
 func (x *ListAdminCitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[13]
+	mi := &file_activities_v1_activities_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1153,7 +1243,7 @@ func (x *ListAdminCitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAdminCitiesResponse.ProtoReflect.Descriptor instead.
 func (*ListAdminCitiesResponse) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{13}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListAdminCitiesResponse) GetCities() []string {
@@ -1178,7 +1268,7 @@ type UploadPhotoRequest struct {
 
 func (x *UploadPhotoRequest) Reset() {
 	*x = UploadPhotoRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[14]
+	mi := &file_activities_v1_activities_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1280,7 @@ func (x *UploadPhotoRequest) String() string {
 func (*UploadPhotoRequest) ProtoMessage() {}
 
 func (x *UploadPhotoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[14]
+	mi := &file_activities_v1_activities_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1293,7 @@ func (x *UploadPhotoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadPhotoRequest.ProtoReflect.Descriptor instead.
 func (*UploadPhotoRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{14}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UploadPhotoRequest) GetActivityId() string {
@@ -1233,7 +1323,7 @@ type UploadPhotoResponse struct {
 
 func (x *UploadPhotoResponse) Reset() {
 	*x = UploadPhotoResponse{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[15]
+	mi := &file_activities_v1_activities_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1335,7 @@ func (x *UploadPhotoResponse) String() string {
 func (*UploadPhotoResponse) ProtoMessage() {}
 
 func (x *UploadPhotoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[15]
+	mi := &file_activities_v1_activities_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1348,7 @@ func (x *UploadPhotoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadPhotoResponse.ProtoReflect.Descriptor instead.
 func (*UploadPhotoResponse) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{15}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UploadPhotoResponse) GetUrl() string {
@@ -1292,7 +1382,7 @@ type CreateActivityRequest struct {
 
 func (x *CreateActivityRequest) Reset() {
 	*x = CreateActivityRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[16]
+	mi := &file_activities_v1_activities_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1304,7 +1394,7 @@ func (x *CreateActivityRequest) String() string {
 func (*CreateActivityRequest) ProtoMessage() {}
 
 func (x *CreateActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[16]
+	mi := &file_activities_v1_activities_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1317,7 +1407,7 @@ func (x *CreateActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateActivityRequest.ProtoReflect.Descriptor instead.
 func (*CreateActivityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{16}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CreateActivityRequest) GetTitle() string {
@@ -1389,7 +1479,7 @@ type PhotoList struct {
 
 func (x *PhotoList) Reset() {
 	*x = PhotoList{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[17]
+	mi := &file_activities_v1_activities_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1401,7 +1491,7 @@ func (x *PhotoList) String() string {
 func (*PhotoList) ProtoMessage() {}
 
 func (x *PhotoList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[17]
+	mi := &file_activities_v1_activities_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1414,7 +1504,7 @@ func (x *PhotoList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PhotoList.ProtoReflect.Descriptor instead.
 func (*PhotoList) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{17}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PhotoList) GetPhotos() []*Photo {
@@ -1445,7 +1535,7 @@ type UpdateActivityRequest struct {
 
 func (x *UpdateActivityRequest) Reset() {
 	*x = UpdateActivityRequest{}
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[18]
+	mi := &file_activities_v1_activities_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1457,7 +1547,7 @@ func (x *UpdateActivityRequest) String() string {
 func (*UpdateActivityRequest) ProtoMessage() {}
 
 func (x *UpdateActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_activities_v1_activities_proto_msgTypes[18]
+	mi := &file_activities_v1_activities_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1470,7 +1560,7 @@ func (x *UpdateActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateActivityRequest.ProtoReflect.Descriptor instead.
 func (*UpdateActivityRequest) Descriptor() ([]byte, []int) {
-	return file_proto_activities_v1_activities_proto_rawDescGZIP(), []int{18}
+	return file_activities_v1_activities_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateActivityRequest) GetId() string {
@@ -1536,11 +1626,11 @@ func (x *UpdateActivityRequest) GetPhotos() *PhotoList {
 	return nil
 }
 
-var File_proto_activities_v1_activities_proto protoreflect.FileDescriptor
+var File_activities_v1_activities_proto protoreflect.FileDescriptor
 
-const file_proto_activities_v1_activities_proto_rawDesc = "" +
+const file_activities_v1_activities_proto_rawDesc = "" +
 	"\n" +
-	"$proto/activities/v1/activities.proto\x12\ractivities.v1\".\n" +
+	"\x1eactivities/v1/activities.proto\x12\ractivities.v1\".\n" +
 	"\bLocation\x12\x10\n" +
 	"\x03lat\x18\x01 \x01(\x01R\x03lat\x12\x10\n" +
 	"\x03lng\x18\x02 \x01(\x01R\x03lng\"\x89\x01\n" +
@@ -1613,7 +1703,11 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x128\n" +
 	"\x05stats\x18\x05 \x01(\v2\".activities.v1.ListActivitiesStatsR\x05stats\"$\n" +
 	"\x12GetActivityRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"*\n" +
+	"\x18GetActivityPhotosRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"I\n" +
+	"\x19GetActivityPhotosResponse\x12,\n" +
+	"\x06photos\x18\x01 \x03(\v2\x14.activities.v1.PhotoR\x06photos\"\x18\n" +
 	"\x16ListAdminCitiesRequest\"1\n" +
 	"\x17ListAdminCitiesResponse\x12\x16\n" +
 	"\x06cities\x18\x01 \x03(\tR\x06cities\"I\n" +
@@ -1678,56 +1772,59 @@ const file_proto_activities_v1_activities_proto_rawDesc = "" +
 	"\x1bACTIVITY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19ACTIVITY_STATUS_PUBLISHED\x10\x01\x12\x19\n" +
 	"\x15ACTIVITY_STATUS_DRAFT\x10\x02\x12\x1b\n" +
-	"\x17ACTIVITY_STATUS_PENDING\x10\x032\xd5\x05\n" +
+	"\x17ACTIVITY_STATUS_PENDING\x10\x032\xbd\x06\n" +
 	"\x11ActivitiesService\x12`\n" +
 	"\x0fQueryActivities\x12%.activities.v1.QueryActivitiesRequest\x1a&.activities.v1.QueryActivitiesResponse\x12Z\n" +
 	"\rSuggestCities\x12#.activities.v1.SuggestCitiesRequest\x1a$.activities.v1.SuggestCitiesResponse\x12]\n" +
 	"\x0eListActivities\x12$.activities.v1.ListActivitiesRequest\x1a%.activities.v1.ListActivitiesResponse\x12I\n" +
-	"\vGetActivity\x12!.activities.v1.GetActivityRequest\x1a\x17.activities.v1.Activity\x12O\n" +
+	"\vGetActivity\x12!.activities.v1.GetActivityRequest\x1a\x17.activities.v1.Activity\x12f\n" +
+	"\x11GetActivityPhotos\x12'.activities.v1.GetActivityPhotosRequest\x1a(.activities.v1.GetActivityPhotosResponse\x12O\n" +
 	"\x0eCreateActivity\x12$.activities.v1.CreateActivityRequest\x1a\x17.activities.v1.Activity\x12O\n" +
 	"\x0eUpdateActivity\x12$.activities.v1.UpdateActivityRequest\x1a\x17.activities.v1.Activity\x12`\n" +
 	"\x0fListAdminCities\x12%.activities.v1.ListAdminCitiesRequest\x1a&.activities.v1.ListAdminCitiesResponse\x12T\n" +
 	"\vUploadPhoto\x12!.activities.v1.UploadPhotoRequest\x1a\".activities.v1.UploadPhotoResponseB1Z/backend/shared/proto/activities/v1;activitiesv1b\x06proto3"
 
 var (
-	file_proto_activities_v1_activities_proto_rawDescOnce sync.Once
-	file_proto_activities_v1_activities_proto_rawDescData []byte
+	file_activities_v1_activities_proto_rawDescOnce sync.Once
+	file_activities_v1_activities_proto_rawDescData []byte
 )
 
-func file_proto_activities_v1_activities_proto_rawDescGZIP() []byte {
-	file_proto_activities_v1_activities_proto_rawDescOnce.Do(func() {
-		file_proto_activities_v1_activities_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)))
+func file_activities_v1_activities_proto_rawDescGZIP() []byte {
+	file_activities_v1_activities_proto_rawDescOnce.Do(func() {
+		file_activities_v1_activities_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_activities_v1_activities_proto_rawDesc), len(file_activities_v1_activities_proto_rawDesc)))
 	})
-	return file_proto_activities_v1_activities_proto_rawDescData
+	return file_activities_v1_activities_proto_rawDescData
 }
 
-var file_proto_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
-var file_proto_activities_v1_activities_proto_goTypes = []any{
-	(Scope)(0),                      // 0: activities.v1.Scope
-	(Category)(0),                   // 1: activities.v1.Category
-	(ActivityStatus)(0),             // 2: activities.v1.ActivityStatus
-	(*Location)(nil),                // 3: activities.v1.Location
-	(*Photo)(nil),                   // 4: activities.v1.Photo
-	(*QueryActivitiesRequest)(nil),  // 5: activities.v1.QueryActivitiesRequest
-	(*Activity)(nil),                // 6: activities.v1.Activity
-	(*QueryActivitiesResponse)(nil), // 7: activities.v1.QueryActivitiesResponse
-	(*SuggestCitiesRequest)(nil),    // 8: activities.v1.SuggestCitiesRequest
-	(*CitySuggestion)(nil),          // 9: activities.v1.CitySuggestion
-	(*SuggestCitiesResponse)(nil),   // 10: activities.v1.SuggestCitiesResponse
-	(*ListActivitiesRequest)(nil),   // 11: activities.v1.ListActivitiesRequest
-	(*ListActivitiesStats)(nil),     // 12: activities.v1.ListActivitiesStats
-	(*ListActivitiesResponse)(nil),  // 13: activities.v1.ListActivitiesResponse
-	(*GetActivityRequest)(nil),      // 14: activities.v1.GetActivityRequest
-	(*ListAdminCitiesRequest)(nil),  // 15: activities.v1.ListAdminCitiesRequest
-	(*ListAdminCitiesResponse)(nil), // 16: activities.v1.ListAdminCitiesResponse
-	(*UploadPhotoRequest)(nil),      // 17: activities.v1.UploadPhotoRequest
-	(*UploadPhotoResponse)(nil),     // 18: activities.v1.UploadPhotoResponse
-	(*CreateActivityRequest)(nil),   // 19: activities.v1.CreateActivityRequest
-	(*PhotoList)(nil),               // 20: activities.v1.PhotoList
-	(*UpdateActivityRequest)(nil),   // 21: activities.v1.UpdateActivityRequest
+var file_activities_v1_activities_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_activities_v1_activities_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_activities_v1_activities_proto_goTypes = []any{
+	(Scope)(0),                        // 0: activities.v1.Scope
+	(Category)(0),                     // 1: activities.v1.Category
+	(ActivityStatus)(0),               // 2: activities.v1.ActivityStatus
+	(*Location)(nil),                  // 3: activities.v1.Location
+	(*Photo)(nil),                     // 4: activities.v1.Photo
+	(*QueryActivitiesRequest)(nil),    // 5: activities.v1.QueryActivitiesRequest
+	(*Activity)(nil),                  // 6: activities.v1.Activity
+	(*QueryActivitiesResponse)(nil),   // 7: activities.v1.QueryActivitiesResponse
+	(*SuggestCitiesRequest)(nil),      // 8: activities.v1.SuggestCitiesRequest
+	(*CitySuggestion)(nil),            // 9: activities.v1.CitySuggestion
+	(*SuggestCitiesResponse)(nil),     // 10: activities.v1.SuggestCitiesResponse
+	(*ListActivitiesRequest)(nil),     // 11: activities.v1.ListActivitiesRequest
+	(*ListActivitiesStats)(nil),       // 12: activities.v1.ListActivitiesStats
+	(*ListActivitiesResponse)(nil),    // 13: activities.v1.ListActivitiesResponse
+	(*GetActivityRequest)(nil),        // 14: activities.v1.GetActivityRequest
+	(*GetActivityPhotosRequest)(nil),  // 15: activities.v1.GetActivityPhotosRequest
+	(*GetActivityPhotosResponse)(nil), // 16: activities.v1.GetActivityPhotosResponse
+	(*ListAdminCitiesRequest)(nil),    // 17: activities.v1.ListAdminCitiesRequest
+	(*ListAdminCitiesResponse)(nil),   // 18: activities.v1.ListAdminCitiesResponse
+	(*UploadPhotoRequest)(nil),        // 19: activities.v1.UploadPhotoRequest
+	(*UploadPhotoResponse)(nil),       // 20: activities.v1.UploadPhotoResponse
+	(*CreateActivityRequest)(nil),     // 21: activities.v1.CreateActivityRequest
+	(*PhotoList)(nil),                 // 22: activities.v1.PhotoList
+	(*UpdateActivityRequest)(nil),     // 23: activities.v1.UpdateActivityRequest
 }
-var file_proto_activities_v1_activities_proto_depIdxs = []int32{
+var file_activities_v1_activities_proto_depIdxs = []int32{
 	0,  // 0: activities.v1.QueryActivitiesRequest.scope:type_name -> activities.v1.Scope
 	3,  // 1: activities.v1.QueryActivitiesRequest.current_location:type_name -> activities.v1.Location
 	1,  // 2: activities.v1.QueryActivitiesRequest.categories:type_name -> activities.v1.Category
@@ -1743,58 +1840,61 @@ var file_proto_activities_v1_activities_proto_depIdxs = []int32{
 	2,  // 12: activities.v1.ListActivitiesRequest.status:type_name -> activities.v1.ActivityStatus
 	6,  // 13: activities.v1.ListActivitiesResponse.activities:type_name -> activities.v1.Activity
 	12, // 14: activities.v1.ListActivitiesResponse.stats:type_name -> activities.v1.ListActivitiesStats
-	1,  // 15: activities.v1.CreateActivityRequest.category:type_name -> activities.v1.Category
-	2,  // 16: activities.v1.CreateActivityRequest.status:type_name -> activities.v1.ActivityStatus
-	4,  // 17: activities.v1.CreateActivityRequest.photos:type_name -> activities.v1.Photo
-	4,  // 18: activities.v1.PhotoList.photos:type_name -> activities.v1.Photo
-	1,  // 19: activities.v1.UpdateActivityRequest.category:type_name -> activities.v1.Category
-	2,  // 20: activities.v1.UpdateActivityRequest.status:type_name -> activities.v1.ActivityStatus
-	20, // 21: activities.v1.UpdateActivityRequest.photos:type_name -> activities.v1.PhotoList
-	5,  // 22: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
-	8,  // 23: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
-	11, // 24: activities.v1.ActivitiesService.ListActivities:input_type -> activities.v1.ListActivitiesRequest
-	14, // 25: activities.v1.ActivitiesService.GetActivity:input_type -> activities.v1.GetActivityRequest
-	19, // 26: activities.v1.ActivitiesService.CreateActivity:input_type -> activities.v1.CreateActivityRequest
-	21, // 27: activities.v1.ActivitiesService.UpdateActivity:input_type -> activities.v1.UpdateActivityRequest
-	15, // 28: activities.v1.ActivitiesService.ListAdminCities:input_type -> activities.v1.ListAdminCitiesRequest
-	17, // 29: activities.v1.ActivitiesService.UploadPhoto:input_type -> activities.v1.UploadPhotoRequest
-	7,  // 30: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
-	10, // 31: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
-	13, // 32: activities.v1.ActivitiesService.ListActivities:output_type -> activities.v1.ListActivitiesResponse
-	6,  // 33: activities.v1.ActivitiesService.GetActivity:output_type -> activities.v1.Activity
-	6,  // 34: activities.v1.ActivitiesService.CreateActivity:output_type -> activities.v1.Activity
-	6,  // 35: activities.v1.ActivitiesService.UpdateActivity:output_type -> activities.v1.Activity
-	16, // 36: activities.v1.ActivitiesService.ListAdminCities:output_type -> activities.v1.ListAdminCitiesResponse
-	18, // 37: activities.v1.ActivitiesService.UploadPhoto:output_type -> activities.v1.UploadPhotoResponse
-	30, // [30:38] is the sub-list for method output_type
-	22, // [22:30] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	4,  // 15: activities.v1.GetActivityPhotosResponse.photos:type_name -> activities.v1.Photo
+	1,  // 16: activities.v1.CreateActivityRequest.category:type_name -> activities.v1.Category
+	2,  // 17: activities.v1.CreateActivityRequest.status:type_name -> activities.v1.ActivityStatus
+	4,  // 18: activities.v1.CreateActivityRequest.photos:type_name -> activities.v1.Photo
+	4,  // 19: activities.v1.PhotoList.photos:type_name -> activities.v1.Photo
+	1,  // 20: activities.v1.UpdateActivityRequest.category:type_name -> activities.v1.Category
+	2,  // 21: activities.v1.UpdateActivityRequest.status:type_name -> activities.v1.ActivityStatus
+	22, // 22: activities.v1.UpdateActivityRequest.photos:type_name -> activities.v1.PhotoList
+	5,  // 23: activities.v1.ActivitiesService.QueryActivities:input_type -> activities.v1.QueryActivitiesRequest
+	8,  // 24: activities.v1.ActivitiesService.SuggestCities:input_type -> activities.v1.SuggestCitiesRequest
+	11, // 25: activities.v1.ActivitiesService.ListActivities:input_type -> activities.v1.ListActivitiesRequest
+	14, // 26: activities.v1.ActivitiesService.GetActivity:input_type -> activities.v1.GetActivityRequest
+	15, // 27: activities.v1.ActivitiesService.GetActivityPhotos:input_type -> activities.v1.GetActivityPhotosRequest
+	21, // 28: activities.v1.ActivitiesService.CreateActivity:input_type -> activities.v1.CreateActivityRequest
+	23, // 29: activities.v1.ActivitiesService.UpdateActivity:input_type -> activities.v1.UpdateActivityRequest
+	17, // 30: activities.v1.ActivitiesService.ListAdminCities:input_type -> activities.v1.ListAdminCitiesRequest
+	19, // 31: activities.v1.ActivitiesService.UploadPhoto:input_type -> activities.v1.UploadPhotoRequest
+	7,  // 32: activities.v1.ActivitiesService.QueryActivities:output_type -> activities.v1.QueryActivitiesResponse
+	10, // 33: activities.v1.ActivitiesService.SuggestCities:output_type -> activities.v1.SuggestCitiesResponse
+	13, // 34: activities.v1.ActivitiesService.ListActivities:output_type -> activities.v1.ListActivitiesResponse
+	6,  // 35: activities.v1.ActivitiesService.GetActivity:output_type -> activities.v1.Activity
+	16, // 36: activities.v1.ActivitiesService.GetActivityPhotos:output_type -> activities.v1.GetActivityPhotosResponse
+	6,  // 37: activities.v1.ActivitiesService.CreateActivity:output_type -> activities.v1.Activity
+	6,  // 38: activities.v1.ActivitiesService.UpdateActivity:output_type -> activities.v1.Activity
+	18, // 39: activities.v1.ActivitiesService.ListAdminCities:output_type -> activities.v1.ListAdminCitiesResponse
+	20, // 40: activities.v1.ActivitiesService.UploadPhoto:output_type -> activities.v1.UploadPhotoResponse
+	32, // [32:41] is the sub-list for method output_type
+	23, // [23:32] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
-func init() { file_proto_activities_v1_activities_proto_init() }
-func file_proto_activities_v1_activities_proto_init() {
-	if File_proto_activities_v1_activities_proto != nil {
+func init() { file_activities_v1_activities_proto_init() }
+func file_activities_v1_activities_proto_init() {
+	if File_activities_v1_activities_proto != nil {
 		return
 	}
-	file_proto_activities_v1_activities_proto_msgTypes[18].OneofWrappers = []any{}
+	file_activities_v1_activities_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_activities_v1_activities_proto_rawDesc), len(file_proto_activities_v1_activities_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_activities_v1_activities_proto_rawDesc), len(file_activities_v1_activities_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   19,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_proto_activities_v1_activities_proto_goTypes,
-		DependencyIndexes: file_proto_activities_v1_activities_proto_depIdxs,
-		EnumInfos:         file_proto_activities_v1_activities_proto_enumTypes,
-		MessageInfos:      file_proto_activities_v1_activities_proto_msgTypes,
+		GoTypes:           file_activities_v1_activities_proto_goTypes,
+		DependencyIndexes: file_activities_v1_activities_proto_depIdxs,
+		EnumInfos:         file_activities_v1_activities_proto_enumTypes,
+		MessageInfos:      file_activities_v1_activities_proto_msgTypes,
 	}.Build()
-	File_proto_activities_v1_activities_proto = out.File
-	file_proto_activities_v1_activities_proto_goTypes = nil
-	file_proto_activities_v1_activities_proto_depIdxs = nil
+	File_activities_v1_activities_proto = out.File
+	file_activities_v1_activities_proto_goTypes = nil
+	file_activities_v1_activities_proto_depIdxs = nil
 }
