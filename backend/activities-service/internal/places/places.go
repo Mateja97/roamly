@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"activities-service/internal/placesmap"
+
+	"backend/shared/config"
 )
 
 // defaultBase is the production Places API (New) host.
@@ -37,6 +39,17 @@ type Client struct {
 // New builds a Client against the production Places API.
 func New(apiKey string) *Client {
 	return NewWithBase(apiKey, defaultBase)
+}
+
+// NewFromEnv builds a Client reading GOOGLE_MAPS_API_KEY via config.Require,
+// the single fail-fast point every call site should use instead of its own
+// os.Getenv.
+func NewFromEnv() (*Client, error) {
+	key, err := config.Require("GOOGLE_MAPS_API_KEY")
+	if err != nil {
+		return nil, err
+	}
+	return New(key), nil
 }
 
 // NewWithBase is New with the Places API base URL parameterized, so tests can

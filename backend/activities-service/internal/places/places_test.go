@@ -95,6 +95,19 @@ func TestSearchText_RetriesOn429ThenSucceeds(t *testing.T) {
 	}
 }
 
+func TestNewFromEnv(t *testing.T) {
+	t.Setenv("GOOGLE_MAPS_API_KEY", "")
+	if _, err := places.NewFromEnv(); err == nil {
+		t.Fatal("expected error when GOOGLE_MAPS_API_KEY is unset")
+	}
+
+	t.Setenv("GOOGLE_MAPS_API_KEY", "k")
+	c, err := places.NewFromEnv()
+	if err != nil || c == nil {
+		t.Fatalf("NewFromEnv() = %v, %v, want a client, nil", c, err)
+	}
+}
+
 func TestSearchText_NoRetryOnOther4xx(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
