@@ -449,9 +449,9 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
-			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw)
+			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw, subcategory)
 		VALUES
-			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		ON CONFLICT (source_url) WHERE source_url IS NOT NULL DO UPDATE SET
 			title = EXCLUDED.title,
 			description = EXCLUDED.description,
@@ -464,12 +464,14 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			details = EXCLUDED.details,
 			source = EXCLUDED.source,
 			external_id = EXCLUDED.external_id,
-			raw = EXCLUDED.raw
+			raw = EXCLUDED.raw,
+			subcategory = EXCLUDED.subcategory
 		RETURNING `+adminColumns,
 		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
 		in.Country, in.Rating, in.City, in.Address, string(in.Status),
 		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
 		in.Source, in.SourceURL, in.ExternalID, nonEmptyDetailsBytes(in.Raw),
+		in.Subcategory,
 	))
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", in.SourceURL, err)

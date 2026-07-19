@@ -23,6 +23,7 @@ import (
 
 	"activities-service/internal/photo"
 	"activities-service/internal/places"
+	"activities-service/internal/placesmap"
 	"activities-service/internal/repository"
 
 	"backend/shared/config"
@@ -51,6 +52,11 @@ type inputRow struct {
 	PhotoURLs   []string        `json:"photo_urls"`
 	SourceURL   string          `json:"source_url"`
 	PlaceID     string          `json:"place_id"`
+	// PrimaryType and Types are the Places machine type (see scrapecity's T1
+	// outputRow); used here (T2) to auto-assign Subcategory via
+	// placesmap.Subtype.
+	PrimaryType string          `json:"primary_type,omitempty"`
+	Types       []string        `json:"types,omitempty"`
 	Raw         json.RawMessage `json:"raw"`
 }
 
@@ -85,10 +91,11 @@ func statusAndTags(photoCount int) []string {
 // source_url, so re-running the same city.json is idempotent), returning
 // the row's id.
 func importRow(ctx context.Context, repo *repository.Activities, r inputRow) (string, error) {
+	category := activitiessvc.Category(r.Category)
 	a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
 		Title:       r.Title,
 		Description: r.Description,
-		Category:    activitiessvc.Category(r.Category),
+		Category:    category,
 		Lat:         r.Lat,
 		Lng:         r.Lng,
 		Country:     r.Country,
@@ -101,6 +108,7 @@ func importRow(ctx context.Context, repo *repository.Activities, r inputRow) (st
 		SourceURL:   r.SourceURL,
 		ExternalID:  r.PlaceID,
 		Raw:         r.Raw,
+		Subcategory: placesmap.Subtype(category, r.PrimaryType, r.Types),
 	})
 	if err != nil {
 		return "", fmt.Errorf("importing row %q: %w", r.SourceURL, err)

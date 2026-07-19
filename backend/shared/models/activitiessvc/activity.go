@@ -488,6 +488,11 @@ type IngestActivity struct {
 	SourceURL   string
 	ExternalID  string
 	Raw         json.RawMessage
+	// Subcategory (T2) is the auto-assigned subtype slug derived from the
+	// scraped Places machine type (see placesmap.Subtype); "" when nothing
+	// mapped. Same validation contract as NewActivity.Subcategory
+	// (ValidSubcategory); never guessed beyond the curated lookup.
+	Subcategory string
 }
 
 // UpdatePatch is a partial update (T2): a nil field is left untouched, a
