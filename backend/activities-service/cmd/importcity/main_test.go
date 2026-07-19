@@ -1,6 +1,28 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+// TestInputRow_ParsesPrimaryTypeAndTypes proves inputRow reads T1's
+// primary_type/types fields off Stage-A's JSON (T2's prerequisite for
+// deriving Subcategory, wired in importRow via placesmap.Subtype — see
+// placesmap/subtype_test.go for that lookup's own coverage) rather than
+// silently dropping them like before.
+func TestInputRow_ParsesPrimaryTypeAndTypes(t *testing.T) {
+	raw := []byte(`{"title":"Venue","category":"restaurants","lat":1,"lng":2,"source_url":"http://x/1","primary_type":"fine_dining_restaurant","types":["fine_dining_restaurant","restaurant"]}`)
+	var r inputRow
+	if err := json.Unmarshal(raw, &r); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if r.PrimaryType != "fine_dining_restaurant" {
+		t.Errorf("PrimaryType = %q, want fine_dining_restaurant", r.PrimaryType)
+	}
+	if len(r.Types) != 2 {
+		t.Errorf("Types = %v, want 2 entries", r.Types)
+	}
+}
 
 func TestValidateRow(t *testing.T) {
 	ok := inputRow{Title: "A", Category: "cafes", Lat: 1, Lng: 2, SourceURL: "http://x/1"}
