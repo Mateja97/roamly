@@ -6,7 +6,18 @@ import {
 } from '@testing-library/react-native';
 import { Linking, Share } from 'react-native';
 import type { Activity } from '../../api/activities';
+import { getActivityPhotos } from '../../api/activities';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
+
+// T4: real network calls aren't available in the Jest environment (a bare
+// `fetch` throws, caught by getActivityPhotos' own try/catch) — mocking
+// keeps that failure deterministic and lets the new describe block below
+// control resolve/reject timing.
+jest.mock('../../api/activities', () => ({
+  ...jest.requireActual('../../api/activities'),
+  getActivityPhotos: jest.fn(),
+}));
+const mockedGetActivityPhotos = jest.mocked(getActivityPhotos);
 
 const activity: Activity = {
   id: '1',
@@ -24,8 +35,15 @@ const activity: Activity = {
 
 describe('ActivityDetailScreen', () => {
   const originalKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+  beforeEach(() => {
+    // Default: never resolves, so every pre-existing test above (none of
+    // which cares about the photo-set upgrade) sees the plain provisional
+    // state throughout.
+    mockedGetActivityPhotos.mockReturnValue(new Promise(() => {}));
+  });
   afterEach(() => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = originalKey;
+    mockedGetActivityPhotos.mockReset();
   });
 
   it('shows the full description (no snippet truncation) and every tag, uncapped', () => {
@@ -599,6 +617,62 @@ describe('ActivityDetailScreen', () => {
       expect(
         screen.getByText("Booking is handled on the venue's own site"),
       ).toBeTruthy();
+    });
+  });
+
+  describe('photo-set upgrade fetch (T4)', () => {
+    it('fetches the T3 endpoint for this activity on open', () => {
+      render(
+        <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
+      );
+      expect(mockedGetActivityPhotos).toHaveBeenCalledWith(activity.id);
+    });
+
+    it('renders the provisional photo immediately, before the fetch resolves — no blocking spinner over the screen', () => {
+      render(
+        <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByTestId('activity-detail-hero-image').props.source).toEqual([
+        { uri: activity.image_refs[0].uri },
+      ]);
+      // The one-photo provisional set hides the pill — no other loading
+      // affordance replaces it, per design-spec.md.
+      expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
+    });
+
+    it('upgrades to the full gallery (pill + viewer) once the fetch resolves, without swapping the hero photo', async () => {
+      const fullSet = [
+        activity.image_refs[0],
+        { uri: 'https://example.com/2.jpg', attribution: { author: 'Jane Doe' } },
+        { uri: 'https://example.com/3.jpg' },
+      ];
+      mockedGetActivityPhotos.mockResolvedValue({ status: 'success', image_refs: fullSet });
+      render(
+        <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
+      );
+
+      await waitFor(() => expect(screen.getByText('Photos 3')).toBeTruthy());
+      expect(screen.getByTestId('activity-detail-hero-image').props.source).toEqual([
+        { uri: activity.image_refs[0].uri },
+      ]);
+
+      fireEvent.press(screen.getByLabelText('View 3 photos'));
+      expect(screen.getByText('1 / 3')).toBeTruthy();
+    });
+
+    it('stays on the provisional photo with no error UI when the fetch fails', async () => {
+      mockedGetActivityPhotos.mockResolvedValue({ status: 500, message: 'boom' });
+      render(
+        <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
+      );
+
+      await waitFor(() => expect(mockedGetActivityPhotos).toHaveBeenCalled());
+      await screen.findByText(activity.description); // let the resolved promise settle
+      expect(screen.queryByText('boom')).toBeNull();
+      expect(screen.getByTestId('activity-detail-hero-image').props.source).toEqual([
+        { uri: activity.image_refs[0].uri },
+      ]);
+      expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
     });
   });
 });

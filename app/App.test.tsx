@@ -25,7 +25,12 @@ async function flush() {
   await act(async () => {});
 }
 
-jest.mock('./src/api/activities', () => ({ queryActivities: jest.fn() }));
+// T4: a pushed ActivityDetailScreen fires its own getActivityPhotos fetch on
+// mount — stub it to never resolve so it doesn't disturb assertions here.
+jest.mock('./src/api/activities', () => ({
+  queryActivities: jest.fn(),
+  getActivityPhotos: jest.fn(() => new Promise(() => {})),
+}));
 const mockedQuery = jest.mocked(queryActivities);
 
 jest.mock('expo-location', () => ({

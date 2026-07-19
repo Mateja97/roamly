@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Linking,
@@ -23,7 +23,8 @@ import {
   MapPinOff,
   Star,
 } from 'lucide-react-native';
-import type { Activity } from '../../api/activities';
+import type { Activity, ActivityPhoto } from '../../api/activities';
+import { getActivityPhotos } from '../../api/activities';
 import {
   hasMapsKey,
   hasValidCoordinates,
@@ -64,9 +65,10 @@ import { UniqueSection } from './UniqueSection';
 // hero photo (280px, standardized across categories), title/badge/rating,
 // description, fact strip, unique section, bottom action bar. Pushed onto
 // the existing hand-rolled stack by ActivityListScreen (see there) — no
-// router, no new fetch (renders from the already-loaded `Activity`), so
-// there's no loading/error/empty state here, only the async surfaces below
-// (hero/map images, CTA OS-handoff failures).
+// router. Renders from the already-loaded `Activity` immediately (no
+// blocking loading/error/empty state), then fires the T4 photo-set upgrade
+// fetch in the background — see the `photos` state below for that surface.
+// Other async surfaces here: hero/map images, CTA OS-handoff failures.
 const HERO_HEIGHT = 280;
 const DETAIL_MAP_WIDTH = 600;
 const DETAIL_MAP_HEIGHT = 400; // 3:2, per the map box's reserved aspect ratio.
@@ -100,7 +102,26 @@ export function ActivityDetailScreen({
   // count, not the hero's own loading/broken state) — a single-photo pill
   // opening a one-slide viewer is noise, per design-spec.md.
   const [viewerOpen, setViewerOpen] = useState(false);
-  const heroPhoto = activity.image_refs[0];
+  // T4: starts as the provisional list data, upgrades in place once T3's
+  // GET /activities/{id}/photos resolves. `image_refs[0]` is guaranteed to
+  // stay the same photo pre/post-upgrade (T2 persists it first), so the
+  // hero never swaps/reloads — only `photos.length` (the count pill) and
+  // the viewer's slide count change. Failure/timeout leaves this untouched
+  // — no error UI, per design-spec.md. ActivityListScreen only ever mounts
+  // this screen fresh per open (`{selectedActivity && <ActivityDetailScreen
+  // .../>}`), never swaps `activity` on an already-mounted instance, so
+  // there's no reset-on-prop-change case to handle here.
+  const [photos, setPhotos] = useState<ActivityPhoto[]>(activity.image_refs);
+  useEffect(() => {
+    let cancelled = false;
+    getActivityPhotos(activity.id).then((result) => {
+      if (!cancelled && result.status === 'success') setPhotos(result.image_refs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activity.id]);
+  const heroPhoto = photos[0];
   const heroUri = heroPhoto?.uri;
   const metaText = showDistance
     ? `${activity.distance_km.toFixed(1)} km away`
@@ -238,13 +259,13 @@ export function ActivityDetailScreen({
           {heroUri && heroState === 'loading' && (
             <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />
           )}
-          {activity.image_refs.length >= 2 && (
+          {photos.length >= 2 && (
             <Pressable
               onPress={() => setViewerOpen(true)}
               onFocus={photosFocus.onFocus}
               onBlur={photosFocus.onBlur}
               accessibilityRole="button"
-              accessibilityLabel={`View ${activity.image_refs.length} photos`}
+              accessibilityLabel={`View ${photos.length} photos`}
               style={[
                 styles.photosPill,
                 photosFocus.focused && styles.photosPillFocused,
@@ -252,7 +273,7 @@ export function ActivityDetailScreen({
             >
               <Images size={16} color={colors.text} strokeWidth={1.75} />
               <Text style={styles.photosPillLabel}>
-                {`Photos ${activity.image_refs.length}`}
+                {`Photos ${photos.length}`}
               </Text>
             </Pressable>
           )}
@@ -479,7 +500,7 @@ export function ActivityDetailScreen({
 
       {viewerOpen && (
         <PhotoViewerModal
-          photos={activity.image_refs}
+          photos={photos}
           activityTitle={activity.title}
           onClose={() => setViewerOpen(false)}
         />
