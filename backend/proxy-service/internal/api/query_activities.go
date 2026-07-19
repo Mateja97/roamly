@@ -52,7 +52,11 @@ type queryActivitiesRequestDTO struct {
 	// results.
 	CurrentLocation *locationDTO `json:"current_location,omitempty"`
 	Categories      []string     `json:"categories,omitempty"`
-	MinRating       float64      `json:"min_rating,omitempty"`
+	// Subcategories (T1) narrows results to any of these subtype slugs (OR),
+	// AND-ed with Categories above; unlike Categories these aren't validated
+	// against a known set here — an unrecognized slug just matches nothing.
+	Subcategories []string `json:"subcategories,omitempty"`
+	MinRating     float64  `json:"min_rating,omitempty"`
 	// Narrows results to within this distance of current_location, or (for
 	// scope "anywhere") of the nearest entry in cities. 0 = no cap
 	// ("anywhere" at the top of the distance slider). Requires
@@ -88,16 +92,16 @@ type photoDTO struct {
 
 // activityDTO carries every field the app's activity card needs to render.
 type activityDTO struct {
-	ID          string          `json:"id"`
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	Category    string          `json:"category"`
-	Location    locationDTO     `json:"location"`
-	Country     string          `json:"country"`
-	Rating      float64         `json:"rating"`
-	ImageRefs   []photoDTO      `json:"image_refs"`
-	Tags        []string        `json:"tags"`
-	DistanceKM  float64         `json:"distance_km"`
+	ID          string      `json:"id"`
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+	Category    string      `json:"category"`
+	Location    locationDTO `json:"location"`
+	Country     string      `json:"country"`
+	Rating      float64     `json:"rating"`
+	ImageRefs   []photoDTO  `json:"image_refs"`
+	Tags        []string    `json:"tags"`
+	DistanceKM  float64     `json:"distance_km"`
 	// Details is the category-specific detail payload (T2), passed through
 	// as a decoded JSON object — activities-service's `details` proto field
 	// is already a JSON string, so this is a raw re-embed, not a
@@ -109,6 +113,9 @@ type activityDTO struct {
 	City    string `json:"city"`
 	Address string `json:"address"`
 	Status  string `json:"status"`
+	// Subcategory (T1) is the optional, category-validated subtype slug; ""
+	// when not set.
+	Subcategory string `json:"subcategory"`
 }
 
 type queryActivitiesResponseDTO struct {
@@ -147,6 +154,7 @@ func (h *QueryActivitiesHandler) Handle(w http.ResponseWriter, r *http.Request) 
 		Scope:           scope,
 		CurrentLocation: toProtoLocation(reqDTO.CurrentLocation),
 		Categories:      categories,
+		Subcategories:   reqDTO.Subcategories,
 		MinRating:       reqDTO.MinRating,
 		MaxDistanceKm:   reqDTO.MaxDistanceKM,
 		Cities:          cities,
@@ -217,6 +225,8 @@ func toProtoCategory(c string) (activitiesv1.Category, bool) {
 		return activitiesv1.Category_CATEGORY_SHOPPING, true
 	case activitiessvc.CategoryEntertainment:
 		return activitiesv1.Category_CATEGORY_ENTERTAINMENT, true
+	case activitiessvc.CategoryToursExperiences:
+		return activitiesv1.Category_CATEGORY_TOURS_EXPERIENCES, true
 	default:
 		return activitiesv1.Category_CATEGORY_UNSPECIFIED, false
 	}
@@ -238,6 +248,7 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		City:        a.GetCity(),
 		Address:     a.GetAddress(),
 		Status:      toDomainStatus(a.GetStatus(), logger),
+		Subcategory: a.GetSubcategory(),
 	}
 }
 
@@ -318,6 +329,8 @@ func toDomainCategory(c activitiesv1.Category, logger *slog.Logger) activitiessv
 		return activitiessvc.CategoryShopping
 	case activitiesv1.Category_CATEGORY_ENTERTAINMENT:
 		return activitiessvc.CategoryEntertainment
+	case activitiesv1.Category_CATEGORY_TOURS_EXPERIENCES:
+		return activitiessvc.CategoryToursExperiences
 	default:
 		logger.Warn("unrecognized category from activities-service", "category", c)
 		return ""

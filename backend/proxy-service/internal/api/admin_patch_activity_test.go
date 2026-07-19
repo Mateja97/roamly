@@ -41,7 +41,8 @@ func TestAdminPatchActivity_OmittedFieldsStayNilOnTheWire(t *testing.T) {
 	if req.Title == nil || *req.Title != "New Title" {
 		t.Errorf("Title = %v, want New Title", req.Title)
 	}
-	if req.Description != nil || req.City != nil || req.Address != nil || req.Category != nil || req.Status != nil || req.Details != nil || req.Photos != nil {
+	if req.Description != nil || req.City != nil || req.Address != nil || req.Category != nil ||
+		req.Status != nil || req.Details != nil || req.Photos != nil || req.Subcategory != nil {
 		t.Errorf("request = %+v, want every omitted field nil (untouched)", req)
 	}
 }
@@ -98,6 +99,32 @@ func TestAdminPatchActivity_PhotosReplacement(t *testing.T) {
 	}
 	if got := fake.gotUpdate.Photos.GetPhotos()[0]; got.GetThumbUrl() != "https://example.com/a_t.jpg" || got.GetCaption() != "Sunset" {
 		t.Errorf("Photos[0] = %+v, want thumb_url/caption translated", got)
+	}
+}
+
+func TestAdminPatchActivity_SubcategoryPassesThrough(t *testing.T) {
+	fake := &fakeAdminActivitiesClient{updateOut: &activitiesv1.Activity{Id: "1"}}
+	h := NewAdminPatchActivityHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doAdminPatchRequest(t, h, "1", `{"subcategory":"fine_dining"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.gotUpdate.Subcategory == nil || *fake.gotUpdate.Subcategory != "fine_dining" {
+		t.Errorf("Subcategory = %v, want fine_dining", fake.gotUpdate.Subcategory)
+	}
+}
+
+func TestAdminPatchActivity_WrongCategorySubcategoryIs400WhenBothSet(t *testing.T) {
+	fake := &fakeAdminActivitiesClient{}
+	h := NewAdminPatchActivityHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doAdminPatchRequest(t, h, "1", `{"category":"restaurants","subcategory":"cocktail_bar"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.gotUpdate != nil {
+		t.Error("gRPC call must not happen once subcategory is rejected at the boundary")
 	}
 }
 

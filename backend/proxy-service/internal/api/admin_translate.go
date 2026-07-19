@@ -65,6 +65,9 @@ type adminActivityDTO struct {
 	Rating      float64         `json:"rating"`
 	Details     json.RawMessage `json:"details"`
 	Photos      []adminPhotoDTO `json:"photos"`
+	// Subcategory (T1) is the optional, category-validated subtype slug;
+	// "" when not set.
+	Subcategory string `json:"subcategory"`
 }
 
 type listActivitiesResponseDTO struct {
@@ -115,6 +118,7 @@ func toAdminActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) adminActi
 		Rating:      a.GetRating(),
 		Details:     detailsJSON(a.GetDetails()),
 		Photos:      toAdminPhotoDTOs(a.GetPhotos()),
+		Subcategory: a.GetSubcategory(),
 	}
 }
 

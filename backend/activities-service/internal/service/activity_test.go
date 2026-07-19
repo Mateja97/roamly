@@ -298,6 +298,7 @@ func TestValidCategory(t *testing.T) {
 		{"wellness valid", activitiessvc.CategoryWellness, true},
 		{"shopping valid", activitiessvc.CategoryShopping, true},
 		{"entertainment valid", activitiessvc.CategoryEntertainment, true},
+		{"tours_experiences valid", activitiessvc.CategoryToursExperiences, true},
 		{"retired food_and_drink rejected", activitiessvc.Category("food_and_drink"), false},
 		{"retired history_and_culture rejected", activitiessvc.Category("history_and_culture"), false},
 		{"retired nature_and_outdoors rejected", activitiessvc.Category("nature_and_outdoors"), false},
@@ -646,6 +647,21 @@ func TestActivities_Create(t *testing.T) {
 			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusPending},
 			wantStatus: activitiessvc.StatusPending,
 		},
+		{
+			name:       "valid subcategory for category accepted",
+			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryRestaurants, Subcategory: "fine_dining"},
+			wantStatus: activitiessvc.StatusDraft,
+		},
+		{
+			name:       "empty subcategory accepted",
+			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryRestaurants, Subcategory: ""},
+			wantStatus: activitiessvc.StatusDraft,
+		},
+		{
+			name:    "wrong-category subcategory rejected",
+			in:      activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryRestaurants, Subcategory: "cocktail_bar"},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -788,6 +804,49 @@ func TestActivities_Update(t *testing.T) {
 		}
 		if repo.gotUpdatePatch.Details == nil || string(*repo.gotUpdatePatch.Details) != "{}" {
 			t.Errorf("repo patch details = %v, want {}", repo.gotUpdatePatch.Details)
+		}
+	})
+
+	t.Run("subcategory validated against the patch's own new category when both are set", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{
+			Category:    catPtr(activitiessvc.CategorySport),
+			Subcategory: strPtr("fine_dining"), // restaurants-only subtype on the new (sport) category
+		})
+		if !errors.Is(err, sharederrors.ErrInvalidInput) {
+			t.Errorf("Update() error = %v, want wrapping ErrInvalidInput (subcategory doesn't match the new category)", err)
+		}
+		if repo.gotUpdateID != "" {
+			t.Error("Update() must not call the repo when subcategory validation fails")
+		}
+	})
+
+	t.Run("subcategory validated against the current category when the patch doesn't change category", func(t *testing.T) {
+		repo := &fakeRepo{getOut: activitiessvc.Activity{Category: activitiessvc.CategoryRestaurants}}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{
+			Subcategory: strPtr("fine_dining"),
+		})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotGetID != "1" {
+			t.Error("Update() should fetch the current activity to resolve its category for subcategory validation")
+		}
+	})
+
+	t.Run("empty subcategory accepted (clears it)", func(t *testing.T) {
+		repo := &fakeRepo{getOut: activitiessvc.Activity{Category: activitiessvc.CategoryRestaurants}}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{
+			Subcategory: strPtr(""),
+		})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotUpdatePatch.Subcategory == nil || *repo.gotUpdatePatch.Subcategory != "" {
+			t.Errorf("repo patch subcategory = %v, want empty string", repo.gotUpdatePatch.Subcategory)
 		}
 	})
 }

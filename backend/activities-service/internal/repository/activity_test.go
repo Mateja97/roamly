@@ -113,6 +113,22 @@ func TestBuildQuery(t *testing.T) {
 			},
 			wantSQL: []string{"category = ANY", "rating >=", " AND "},
 		},
+		{
+			name: "subcategory filter narrows with ANY and AND-s with category filter",
+			filter: activitiessvc.QueryFilter{
+				Scope:         activitiessvc.ScopeAnywhere,
+				Categories:    []activitiessvc.Category{activitiessvc.CategoryRestaurants},
+				Subcategories: []string{"fine_dining", "casual_dining"},
+			},
+			wantSQL: []string{"category = ANY", "subcategory = ANY", " AND "},
+		},
+		{
+			name: "no subcategory filter omits the clause entirely",
+			filter: activitiessvc.QueryFilter{
+				Scope: activitiessvc.ScopeAnywhere,
+			},
+			notWantSQL: []string{"subcategory = ANY"},
+		},
 	}
 
 	for _, tt := range tests {

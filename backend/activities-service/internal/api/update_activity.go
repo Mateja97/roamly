@@ -40,6 +40,7 @@ func (s *Server) UpdateActivity(ctx context.Context, req *activitiesv1.UpdateAct
 		Description: req.Description,
 		City:        req.City,
 		Address:     req.Address,
+		Subcategory: req.Subcategory,
 	}
 	if req.Category != nil {
 		cat := toDomainCategory(*req.Category)

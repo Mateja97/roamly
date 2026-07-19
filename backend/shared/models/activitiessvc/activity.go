@@ -27,28 +27,65 @@ const (
 type Category string
 
 const (
-	CategoryRestaurants   Category = "restaurants"
-	CategoryCafes         Category = "cafes"
-	CategoryBars          Category = "bars"
-	CategoryNightlife     Category = "nightlife"
-	CategoryNature        Category = "nature"
-	CategorySport         Category = "sport"
-	CategoryKids          Category = "kids"
-	CategoryCulture       Category = "culture"
-	CategoryArt           Category = "art"
-	CategoryWellness      Category = "wellness"
-	CategoryShopping      Category = "shopping"
-	CategoryEntertainment Category = "entertainment"
+	CategoryRestaurants      Category = "restaurants"
+	CategoryCafes            Category = "cafes"
+	CategoryBars             Category = "bars"
+	CategoryNightlife        Category = "nightlife"
+	CategoryNature           Category = "nature"
+	CategorySport            Category = "sport"
+	CategoryKids             Category = "kids"
+	CategoryCulture          Category = "culture"
+	CategoryArt              Category = "art"
+	CategoryWellness         Category = "wellness"
+	CategoryShopping         Category = "shopping"
+	CategoryEntertainment    Category = "entertainment"
+	CategoryToursExperiences Category = "tours_experiences"
 )
 
-// Valid reports whether c is one of the 12 taxonomy categories
+// Valid reports whether c is one of the 13 taxonomy categories
 // (BUSINESS_STANDARDS.md). Used at ingestion trust boundaries.
 func (c Category) Valid() bool {
 	switch c {
 	case CategoryRestaurants, CategoryCafes, CategoryBars, CategoryNightlife,
 		CategoryNature, CategorySport, CategoryKids, CategoryCulture,
-		CategoryArt, CategoryWellness, CategoryShopping, CategoryEntertainment:
+		CategoryArt, CategoryWellness, CategoryShopping, CategoryEntertainment,
+		CategoryToursExperiences:
 		return true
+	}
+	return false
+}
+
+// Subcategories is the single source-of-truth category -> subtype slug map
+// (T1, BUSINESS_STANDARDS.md). Slugs are globally unique across categories
+// (not just per-category), so a filter query param is unambiguous. Adding or
+// renaming a subtype is a one-line edit here.
+var Subcategories = map[Category][]string{
+	CategoryRestaurants:      {"fine_dining", "casual_dining", "fast_casual", "street_food", "bakery_dessert"},
+	CategoryCafes:            {"coffee_shop", "tea_house", "bakery_cafe"},
+	CategoryBars:             {"cocktail_bar", "wine_bar", "brewery", "sports_bar", "pub"},
+	CategoryNightlife:        {"nightclub", "live_music_venue", "lounge"},
+	CategoryNature:           {"hiking_trail", "park", "beach", "botanical_garden", "viewpoint"},
+	CategorySport:            {"gym_fitness", "climbing_gym", "swimming_pool", "sports_court", "golf_course", "extreme_sports"},
+	CategoryKids:             {"playground", "indoor_play_center", "zoo_aquarium", "amusement_park", "kids_museum"},
+	CategoryCulture:          {"historical_site", "monument_landmark", "heritage_museum", "religious_site"},
+	CategoryArt:              {"art_gallery", "art_museum", "studio_workshop", "public_art"},
+	CategoryWellness:         {"spa", "yoga_studio", "meditation_center", "thermal_bath"},
+	CategoryShopping:         {"market_bazaar", "boutique", "mall", "specialty_store"},
+	CategoryEntertainment:    {"cinema", "escape_room", "bowling_arcade", "theater", "casino"},
+	CategoryToursExperiences: {"walking_tour", "day_trip", "food_drink_tour", "adventure_tour", "cooking_class", "bike_tour"},
+}
+
+// ValidSubcategory reports whether sub is allowed for cat (T1): empty sub is
+// always valid (subcategory is an optional field); a non-empty sub must
+// appear in Subcategories[cat].
+func ValidSubcategory(cat Category, sub string) bool {
+	if sub == "" {
+		return true
+	}
+	for _, s := range Subcategories[cat] {
+		if s == sub {
+			return true
+		}
 	}
 	return false
 }
@@ -110,7 +147,7 @@ type Activity struct {
 	DistanceKM  float64
 	// Details is the category-specific structured payload (T2), stored
 	// as-is against the `details` JSONB column. Kept raw here rather than
-	// decoded to a typed struct because only one of the 12 category shapes
+	// decoded to a typed struct because only one of the 13 category shapes
 	// (below) is ever valid for a given row's Category; decode with the
 	// matching struct once Category is known (see service.ValidateDetails).
 	Details json.RawMessage
@@ -124,6 +161,9 @@ type Activity struct {
 	// ExternalID is the ingestion source's stable identifier (the Google
 	// Places place_id for scraped rows); empty for admin-created rows.
 	ExternalID string
+	// Subcategory (T1) is an optional, category-validated subtype slug (see
+	// Subcategories/ValidSubcategory); "" = not set.
+	Subcategory string
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar
@@ -369,6 +409,9 @@ type QueryFilter struct {
 	Categories    []Category // empty = no category filter
 	MinRating     float64    // 0 = no filter
 	MaxDistanceKM float64    // 0 = no filter (no distance cap)
+	// Subcategories (T1) narrows results to any of these subtype slugs (OR
+	// within the list), AND-ed with Categories above; empty = no filter.
+	Subcategories []string
 }
 
 // ListFilter is the admin list query (T2): unlike QueryFilter, there is no
@@ -419,6 +462,9 @@ type NewActivity struct {
 	Status      Status // "" -> service defaults to StatusDraft
 	Details     json.RawMessage
 	Photos      []Photo
+	// Subcategory (T1) is optional, validated against Category (see
+	// ValidSubcategory); "" = not set.
+	Subcategory string
 }
 
 // IngestActivity is one activity from the ingestion pipeline (cmd/importcity).
@@ -459,4 +505,8 @@ type UpdatePatch struct {
 	Details     *json.RawMessage
 	Photos      *[]Photo
 	Tags        *[]string
+	// Subcategory (T1): same nil-untouched/non-nil-set convention as the
+	// other fields; validated against the effective Category (see
+	// service.Update).
+	Subcategory *string
 }

@@ -44,8 +44,13 @@ type Request struct {
 	// Cities is ScopeAnywhere-only: resolved city centroids to anchor the
 	// distance filter on instead of (and taking priority over)
 	// CurrentLocation.
-	Cities        []activitiessvc.Point
-	Categories    []activitiessvc.Category
+	Cities     []activitiessvc.Point
+	Categories []activitiessvc.Category
+	// Subcategories (T1) narrows results to any of these subtype slugs (OR),
+	// AND-ed with Categories. Not validated against Subcategories here — an
+	// unrecognized slug simply matches nothing, the same way an unrecognized
+	// value would on any other filter with no enum behind it.
+	Subcategories []string
 	MinRating     float64
 	MaxDistanceKM float64
 }
@@ -125,9 +130,10 @@ func (a *Activities) resolve(req Request) (activitiessvc.QueryFilter, error) {
 	}
 
 	filter := activitiessvc.QueryFilter{
-		Scope:      req.Scope,
-		Categories: req.Categories,
-		MinRating:  req.MinRating,
+		Scope:         req.Scope,
+		Categories:    req.Categories,
+		Subcategories: req.Subcategories,
+		MinRating:     req.MinRating,
 	}
 
 	switch req.Scope {
@@ -514,6 +520,9 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	if !validCategory(in.Category) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, in.Category)
 	}
+	if !activitiessvc.ValidSubcategory(in.Category, in.Subcategory) {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: subcategory %q does not belong to category %q", sharederrors.ErrInvalidInput, in.Subcategory, in.Category)
+	}
 
 	newStatus := in.Status
 	switch {
@@ -531,6 +540,7 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	created, err := a.repo.Create(ctx, activitiessvc.NewActivity{
 		Title: title, Description: in.Description, Category: in.Category,
 		City: in.City, Address: in.Address, Status: newStatus, Details: details, Photos: in.Photos,
+		Subcategory: in.Subcategory,
 	})
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("creating activity: %w", err)
@@ -540,10 +550,10 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 
 // Update applies a partial update (T2): only patch's non-nil fields are
 // validated/persisted, everything else stays untouched (see
-// activitiessvc.UpdatePatch's doc). A details payload is validated against
-// the patch's own category when both are set in the same request,
-// otherwise against the activity's current category — fetched only in that
-// case, not on every update.
+// activitiessvc.UpdatePatch's doc). A details payload or subcategory (T1) is
+// validated against the patch's own category when set in the same request,
+// otherwise against the activity's current category — fetched at most once,
+// shared by both checks, and only when either needs it, not on every update.
 func (a *Activities) Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error) {
 	if patch.Category != nil && !validCategory(*patch.Category) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, *patch.Category)
@@ -552,21 +562,32 @@ func (a *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown status %q", sharederrors.ErrInvalidInput, *patch.Status)
 	}
 
+	// category is the patch's own category when set, otherwise the
+	// activity's current one — fetched at most once, shared by the Details
+	// and Subcategory checks below, and only when either needs it.
+	var category activitiessvc.Category
+	switch {
+	case patch.Category != nil:
+		category = *patch.Category
+	case patch.Details != nil || patch.Subcategory != nil:
+		current, err := a.repo.GetByID(ctx, id)
+		if err != nil {
+			return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
+		}
+		category = current.Category
+	}
+
 	if patch.Details != nil {
 		normalized := normalizeDetails(*patch.Details)
 		patch.Details = &normalized
 
-		category := patch.Category
-		if category == nil {
-			current, err := a.repo.GetByID(ctx, id)
-			if err != nil {
-				return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
-			}
-			category = &current.Category
-		}
-		if err := ValidateDetails(*category, normalized); err != nil {
+		if err := ValidateDetails(category, normalized); err != nil {
 			return activitiessvc.Activity{}, err
 		}
+	}
+
+	if patch.Subcategory != nil && !activitiessvc.ValidSubcategory(category, *patch.Subcategory) {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: subcategory %q does not belong to category %q", sharederrors.ErrInvalidInput, *patch.Subcategory, category)
 	}
 
 	updated, err := a.repo.Update(ctx, id, patch)
@@ -614,7 +635,8 @@ func validCategory(c activitiessvc.Category) bool {
 		activitiessvc.CategoryArt,
 		activitiessvc.CategoryWellness,
 		activitiessvc.CategoryShopping,
-		activitiessvc.CategoryEntertainment:
+		activitiessvc.CategoryEntertainment,
+		activitiessvc.CategoryToursExperiences:
 		return true
 	}
 	return false
