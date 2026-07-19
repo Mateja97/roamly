@@ -59,6 +59,10 @@ export interface AdminActivityDetail {
   title: string;
   description: string;
   category: string;
+  // Optional (T2): the category-validated subtype slug, "" when unset. Typed
+  // optional like location/created_at above — widens with no frontend change
+  // if an older/unwired backend response ever omits it.
+  subcategory?: string;
   city: string;
   address: string;
   status: ActivityStatus;
@@ -74,6 +78,7 @@ export interface PatchAdminActivityPayload {
   title?: string;
   description?: string;
   category?: string;
+  subcategory?: string;
   city?: string;
   address?: string;
   status?: string;
@@ -84,6 +89,7 @@ export interface PatchAdminActivityPayload {
 export interface CreateAdminActivityPayload {
   title: string;
   category: string;
+  subcategory?: string;
   description?: string;
   city?: string;
   address?: string;

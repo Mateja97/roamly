@@ -154,6 +154,68 @@ describe('EditActivityPage', () => {
     });
   });
 
+  it('switching category resets subcategory to empty ("—")', async () => {
+    const user = userEvent.setup();
+    getAdminActivity.mockResolvedValue({
+      status: 'success',
+      data: { ...ACTIVITY, subcategory: 'hiking_trail' },
+    });
+    patchAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });
+    renderEditPage('/activities/a1/edit');
+
+    await screen.findByDisplayValue('Kalemegdan Park');
+    expect(screen.getByLabelText('Subcategory')).toHaveValue('hiking_trail');
+    await user.selectOptions(screen.getByLabelText('Category'), 'sport');
+    expect(screen.getByLabelText('Subcategory')).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: /Save changes/ }));
+    await waitFor(() => expect(patchAdminActivity).toHaveBeenCalled());
+    expect(patchAdminActivity).toHaveBeenCalledWith('a1', {
+      category: 'sport',
+      subcategory: '',
+      details: {},
+    });
+  });
+
+  it('a subcategory pick is included in the PATCH payload', async () => {
+    const user = userEvent.setup();
+    getAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });
+    patchAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });
+    renderEditPage('/activities/a1/edit');
+
+    await screen.findByDisplayValue('Kalemegdan Park');
+    await user.selectOptions(screen.getByLabelText('Subcategory'), 'hiking_trail');
+    await user.click(screen.getByRole('button', { name: /Save changes/ }));
+
+    await waitFor(() => expect(patchAdminActivity).toHaveBeenCalled());
+    expect(patchAdminActivity).toHaveBeenCalledWith('a1', {
+      subcategory: 'hiking_trail',
+    });
+  });
+
+  it('create mode Save includes the chosen subcategory in the payload', async () => {
+    const user = userEvent.setup();
+    createAdminActivity.mockResolvedValue({
+      status: 'success',
+      data: ACTIVITY,
+    });
+    renderEditPage('/activities/new');
+
+    await user.type(screen.getByLabelText('Activity name'), 'New Spot');
+    await user.selectOptions(screen.getByLabelText('Category'), 'nature');
+    await user.selectOptions(screen.getByLabelText('Subcategory'), 'hiking_trail');
+    await user.click(screen.getByRole('button', { name: /Save changes/ }));
+
+    await waitFor(() => expect(createAdminActivity).toHaveBeenCalled());
+    expect(createAdminActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'New Spot',
+        category: 'nature',
+        subcategory: 'hiking_trail',
+      }),
+    );
+  });
+
   it('validation blocks submit and focuses the first invalid field', async () => {
     const user = userEvent.setup();
     getAdminActivity.mockResolvedValue({ status: 'success', data: ACTIVITY });

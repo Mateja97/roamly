@@ -14,11 +14,19 @@ const VALID_CONTROLS: ControlKind[] = [
 ];
 
 describe('DETAILS_SCHEMA', () => {
-  it('has an entry for every one of the 12 taxonomy categories', () => {
+  it('has an entry for every one of the 12 categories with a bespoke details shape', () => {
+    // tours_experiences (T2, the 13th category) is deliberately excluded —
+    // it uses the default/empty detail rendering, no bespoke UI (out of
+    // scope per product-tasks.md T1/T2).
     for (const { value } of CATEGORY_OPTIONS) {
+      if (value === 'tours_experiences') continue;
       expect(DETAILS_SCHEMA[value]).toBeDefined();
       expect(DETAILS_SCHEMA[value].length).toBeGreaterThan(0);
     }
+  });
+
+  it('tours_experiences has no bespoke details schema (default/empty rendering)', () => {
+    expect(DETAILS_SCHEMA.tours_experiences).toBeUndefined();
   });
 
   it('every field uses a valid control kind and a non-empty key/label', () => {

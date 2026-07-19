@@ -24,6 +24,7 @@ interface FormState {
   title: string;
   description: string;
   category: string;
+  subcategory: string;
   city: string;
   address: string;
   status: ActivityStatus;
@@ -34,6 +35,7 @@ const EMPTY_FORM: FormState = {
   title: '',
   description: '',
   category: '',
+  subcategory: '',
   city: '',
   address: '',
   status: 'draft',
@@ -45,6 +47,7 @@ function toFormState(activity: AdminActivityDetail): FormState {
     title: activity.title,
     description: activity.description,
     category: activity.category,
+    subcategory: activity.subcategory ?? '',
     city: activity.city,
     address: activity.address,
     status: activity.status,
@@ -64,6 +67,8 @@ function buildPatch(
   if (current.description !== original.description)
     patch.description = current.description;
   if (current.category !== original.category) patch.category = current.category;
+  if (current.subcategory !== original.subcategory)
+    patch.subcategory = current.subcategory;
   if (current.city !== original.city) patch.city = current.city;
   if (current.address !== original.address) patch.address = current.address;
   if (current.status !== original.status) patch.status = current.status;
@@ -76,6 +81,7 @@ function toCreatePayload(form: FormState): CreateAdminActivityPayload {
   return {
     title: form.title,
     category: form.category,
+    subcategory: form.subcategory || undefined,
     description: form.description || undefined,
     city: form.city || undefined,
     address: form.address || undefined,
@@ -271,24 +277,31 @@ export function EditActivityPage() {
             nameInputRef={nameRef}
             category={form.category}
             onCategoryChange={(category) =>
-              // Category switch clears `details`: the backend's per-
-              // category validator (activity.go's ValidateDetails) uses
-              // `json.Decoder.DisallowUnknownFields`, a *strict* decode —
-              // a leftover key from the old category's shape mixed into a
-              // save that also touches Details would 400 ("details do
-              // not match category"), not silently ignore it. Design-
-              // spec.md's T4 section says switching category "preserves
-              // untouched keys in the PATCH payload", which doesn't hold
-              // against that strict decode; clearing on switch is the
-              // corrected, save-safe behavior (data belonging to the old
-              // shape is already expected to be lost per the same spec
-              // text — this only drops the one clause that would break
-              // Save).
-              setForm((f) => ({ ...f, category, details: {} }))
+              // Category switch clears `details` (see below) AND
+              // `subcategory` (design-spec.md T2: "changing Category resets
+              // Subcategory to '' — a previously chosen subtype from the
+              // old category never lingers"). `details` clears because the
+              // backend's per-category validator (activity.go's
+              // ValidateDetails) uses `json.Decoder.DisallowUnknownFields`,
+              // a *strict* decode — a leftover key from the old category's
+              // shape mixed into a save that also touches Details would
+              // 400 ("details do not match category"), not silently
+              // ignore it. Design-spec.md's T4 section says switching
+              // category "preserves untouched keys in the PATCH payload",
+              // which doesn't hold against that strict decode; clearing on
+              // switch is the corrected, save-safe behavior (data
+              // belonging to the old shape is already expected to be lost
+              // per the same spec text — this only drops the one clause
+              // that would break Save).
+              setForm((f) => ({ ...f, category, subcategory: '', details: {} }))
             }
             onCategoryBlur={() => validateCategory()}
             categoryError={categoryError}
             categorySelectRef={categoryRef}
+            subcategory={form.subcategory}
+            onSubcategoryChange={(subcategory) =>
+              setForm((f) => ({ ...f, subcategory }))
+            }
             city={form.city}
             onCityChange={(city) => setForm((f) => ({ ...f, city }))}
             description={form.description}
