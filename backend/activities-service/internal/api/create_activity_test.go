@@ -20,8 +20,9 @@ func TestCreateActivity_HappyPath(t *testing.T) {
 
 	resp, err := client.CreateActivity(context.Background(), &activitiesv1.CreateActivityRequest{
 		Title: "New Activity", Category: activitiesv1.Category_CATEGORY_SPORT, City: "Belgrade",
-		Details: `{"difficulty":3}`,
-		Photos:  []*activitiesv1.Photo{{Url: "https://example.com/x.jpg", ThumbUrl: "https://example.com/x_t.jpg", Caption: "Sunset"}},
+		Details:     `{"difficulty":3}`,
+		Photos:      []*activitiesv1.Photo{{Url: "https://example.com/x.jpg", ThumbUrl: "https://example.com/x_t.jpg", Caption: "Sunset"}},
+		Subcategory: "climbing_gym",
 	})
 	if err != nil {
 		t.Fatalf("CreateActivity() error: %v", err)
@@ -40,6 +41,9 @@ func TestCreateActivity_HappyPath(t *testing.T) {
 	}
 	if fake.gotCreate.Photos[0].ThumbURL != "https://example.com/x_t.jpg" || fake.gotCreate.Photos[0].Caption != "Sunset" {
 		t.Errorf("service received photos = %+v, want thumb_url/caption translated", fake.gotCreate.Photos)
+	}
+	if fake.gotCreate.Subcategory != "climbing_gym" {
+		t.Errorf("service received subcategory = %q, want climbing_gym", fake.gotCreate.Subcategory)
 	}
 }
 

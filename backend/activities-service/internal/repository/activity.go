@@ -84,6 +84,9 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 		}
 		where = append(where, fmt.Sprintf("category = ANY(%s)", arg(cats)))
 	}
+	if len(filter.Subcategories) > 0 {
+		where = append(where, fmt.Sprintf("subcategory = ANY(%s)", arg(filter.Subcategories)))
+	}
 	if filter.MinRating > 0 {
 		where = append(where, fmt.Sprintf("rating >= %s", arg(filter.MinRating)))
 	}
@@ -95,7 +98,7 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 	query := fmt.Sprintf(
 		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 			country, rating, photos, tags, details,
-			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status,
+			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, subcategory,
 			%s AS distance_km
 		FROM activities
 		WHERE %s
@@ -203,7 +206,7 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 			&a.Location.Lat, &a.Location.Lng,
 			&a.Country, &a.Rating,
 			&a.Photos, &a.Tags, &a.Details,
-			&a.City, &a.Address, &a.Status, &a.DistanceKM,
+			&a.City, &a.Address, &a.Status, &a.Subcategory, &a.DistanceKM,
 		); err != nil {
 			return nil, fmt.Errorf("scanning activity row: %w", err)
 		}
@@ -221,7 +224,7 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 // column order used by scanAdminActivity never drifts from what's selected.
 const adminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 	country, rating, photos, tags, details,
-	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id`
+	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id, subcategory`
 
 func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 	var a activitiessvc.Activity
@@ -230,7 +233,7 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 		&a.Location.Lat, &a.Location.Lng,
 		&a.Country, &a.Rating,
 		&a.Photos, &a.Tags, &a.Details,
-		&a.City, &a.Address, &a.Status, &a.ExternalID,
+		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Subcategory,
 	)
 	return a, err
 }
@@ -420,11 +423,11 @@ func nonEmptyDetailsBytes(details []byte) []byte {
 // feature is what actually sets these.
 func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
-		INSERT INTO activities (title, description, category, location, country, rating, city, address, status, details, photos)
-		VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint(0, 0), 4326)::geography, '', 0, $4, $5, $6, $7, $8)
+		INSERT INTO activities (title, description, category, location, country, rating, city, address, status, details, photos, subcategory)
+		VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint(0, 0), 4326)::geography, '', 0, $4, $5, $6, $7, $8, $9)
 		RETURNING `+adminColumns,
 		in.Title, in.Description, string(in.Category),
-		in.City, in.Address, string(in.Status), nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
+		in.City, in.Address, string(in.Status), nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos), in.Subcategory,
 	))
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("creating activity: %w", err)
@@ -545,6 +548,9 @@ func (r *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 	}
 	if patch.Tags != nil {
 		sets = append(sets, "tags = "+arg(nonNilTags(*patch.Tags)))
+	}
+	if patch.Subcategory != nil {
+		sets = append(sets, "subcategory = "+arg(*patch.Subcategory))
 	}
 
 	if len(sets) == 0 {

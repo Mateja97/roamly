@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"backend/shared/models/activitiessvc"
 	activitiesv1 "backend/shared/proto/activities/v1"
 )
 
@@ -31,6 +32,8 @@ type patchActivityRequestDTO struct {
 	Status      *string          `json:"status"`
 	Details     *json.RawMessage `json:"details"`
 	Photos      *[]adminPhotoDTO `json:"photos"`
+	// Subcategory (T1): same presence semantics as the other pointer fields.
+	Subcategory *string `json:"subcategory"`
 }
 
 // Handle answers PATCH /admin/activities/{id}: a partial update accepting
@@ -47,7 +50,7 @@ func (h *AdminPatchActivityHandler) Handle(w http.ResponseWriter, r *http.Reques
 
 	req := &activitiesv1.UpdateActivityRequest{
 		Id: id, Title: reqDTO.Title, Description: reqDTO.Description,
-		City: reqDTO.City, Address: reqDTO.Address,
+		City: reqDTO.City, Address: reqDTO.Address, Subcategory: reqDTO.Subcategory,
 	}
 	if reqDTO.Category != nil {
 		cat, ok := toProtoCategory(*reqDTO.Category)
@@ -56,6 +59,16 @@ func (h *AdminPatchActivityHandler) Handle(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		req.Category = &cat
+	}
+	// Both set in the same patch is the only case this handler has enough
+	// information to validate without an extra GetActivity round-trip
+	// (patch.Category absent means "keep the current category", which only
+	// activities-service's service layer can resolve) — that case still
+	// gets validated (and 400s) via UpdateActivity's own InvalidArgument.
+	if reqDTO.Category != nil && reqDTO.Subcategory != nil &&
+		!activitiessvc.ValidSubcategory(activitiessvc.Category(*reqDTO.Category), *reqDTO.Subcategory) {
+		writeError(w, http.StatusBadRequest, "subcategory "+*reqDTO.Subcategory+" does not belong to category "+*reqDTO.Category, h.logger)
+		return
 	}
 	if reqDTO.Status != nil {
 		st, ok := toProtoStatus(*reqDTO.Status)

@@ -85,6 +85,7 @@ func toServiceRequest(req *activitiesv1.QueryActivitiesRequest) service.Request 
 		CurrentLocation: toDomainPoint(req.GetCurrentLocation()),
 		Cities:          cities,
 		Categories:      categories,
+		Subcategories:   req.GetSubcategories(),
 		MinRating:       req.GetMinRating(),
 		MaxDistanceKM:   req.GetMaxDistanceKm(),
 	}
@@ -134,6 +135,8 @@ func toDomainCategory(c activitiesv1.Category) activitiessvc.Category {
 		return activitiessvc.CategoryShopping
 	case activitiesv1.Category_CATEGORY_ENTERTAINMENT:
 		return activitiessvc.CategoryEntertainment
+	case activitiesv1.Category_CATEGORY_TOURS_EXPERIENCES:
+		return activitiessvc.CategoryToursExperiences
 	default:
 		return "" // service layer rejects this as an unknown category
 	}
@@ -155,6 +158,7 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		City:        a.City,
 		Address:     a.Address,
 		Status:      toProtoStatus(a.Status),
+		Subcategory: a.Subcategory,
 	}
 }
 
@@ -220,6 +224,8 @@ func toProtoCategory(c activitiessvc.Category) activitiesv1.Category {
 		return activitiesv1.Category_CATEGORY_SHOPPING
 	case activitiessvc.CategoryEntertainment:
 		return activitiesv1.Category_CATEGORY_ENTERTAINMENT
+	case activitiessvc.CategoryToursExperiences:
+		return activitiesv1.Category_CATEGORY_TOURS_EXPERIENCES
 	default:
 		return activitiesv1.Category_CATEGORY_UNSPECIFIED
 	}

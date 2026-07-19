@@ -77,19 +77,20 @@ func (Scope) EnumDescriptor() ([]byte, []int) {
 type Category int32
 
 const (
-	Category_CATEGORY_UNSPECIFIED   Category = 0
-	Category_CATEGORY_RESTAURANTS   Category = 1
-	Category_CATEGORY_CAFES         Category = 2
-	Category_CATEGORY_BARS          Category = 3
-	Category_CATEGORY_NIGHTLIFE     Category = 4
-	Category_CATEGORY_NATURE        Category = 5
-	Category_CATEGORY_SPORT         Category = 6
-	Category_CATEGORY_KIDS          Category = 7
-	Category_CATEGORY_CULTURE       Category = 8
-	Category_CATEGORY_ART           Category = 9
-	Category_CATEGORY_WELLNESS      Category = 10
-	Category_CATEGORY_SHOPPING      Category = 11
-	Category_CATEGORY_ENTERTAINMENT Category = 12
+	Category_CATEGORY_UNSPECIFIED       Category = 0
+	Category_CATEGORY_RESTAURANTS       Category = 1
+	Category_CATEGORY_CAFES             Category = 2
+	Category_CATEGORY_BARS              Category = 3
+	Category_CATEGORY_NIGHTLIFE         Category = 4
+	Category_CATEGORY_NATURE            Category = 5
+	Category_CATEGORY_SPORT             Category = 6
+	Category_CATEGORY_KIDS              Category = 7
+	Category_CATEGORY_CULTURE           Category = 8
+	Category_CATEGORY_ART               Category = 9
+	Category_CATEGORY_WELLNESS          Category = 10
+	Category_CATEGORY_SHOPPING          Category = 11
+	Category_CATEGORY_ENTERTAINMENT     Category = 12
+	Category_CATEGORY_TOURS_EXPERIENCES Category = 13
 )
 
 // Enum value maps for Category.
@@ -108,21 +109,23 @@ var (
 		10: "CATEGORY_WELLNESS",
 		11: "CATEGORY_SHOPPING",
 		12: "CATEGORY_ENTERTAINMENT",
+		13: "CATEGORY_TOURS_EXPERIENCES",
 	}
 	Category_value = map[string]int32{
-		"CATEGORY_UNSPECIFIED":   0,
-		"CATEGORY_RESTAURANTS":   1,
-		"CATEGORY_CAFES":         2,
-		"CATEGORY_BARS":          3,
-		"CATEGORY_NIGHTLIFE":     4,
-		"CATEGORY_NATURE":        5,
-		"CATEGORY_SPORT":         6,
-		"CATEGORY_KIDS":          7,
-		"CATEGORY_CULTURE":       8,
-		"CATEGORY_ART":           9,
-		"CATEGORY_WELLNESS":      10,
-		"CATEGORY_SHOPPING":      11,
-		"CATEGORY_ENTERTAINMENT": 12,
+		"CATEGORY_UNSPECIFIED":       0,
+		"CATEGORY_RESTAURANTS":       1,
+		"CATEGORY_CAFES":             2,
+		"CATEGORY_BARS":              3,
+		"CATEGORY_NIGHTLIFE":         4,
+		"CATEGORY_NATURE":            5,
+		"CATEGORY_SPORT":             6,
+		"CATEGORY_KIDS":              7,
+		"CATEGORY_CULTURE":           8,
+		"CATEGORY_ART":               9,
+		"CATEGORY_WELLNESS":          10,
+		"CATEGORY_SHOPPING":          11,
+		"CATEGORY_ENTERTAINMENT":     12,
+		"CATEGORY_TOURS_EXPERIENCES": 13,
 	}
 )
 
@@ -371,7 +374,11 @@ type QueryActivitiesRequest struct {
 	// current_location. When set, results are the union of activities within
 	// max_distance_km of ANY listed city, and current_location is ignored for
 	// filtering purposes.
-	Cities        []*Location `protobuf:"bytes,10,rep,name=cities,proto3" json:"cities,omitempty"`
+	Cities []*Location `protobuf:"bytes,10,rep,name=cities,proto3" json:"cities,omitempty"`
+	// Narrows results to activities whose subcategory is any of these
+	// (T1), OR'd within the field and AND-ed with categories above. Slugs
+	// from activitiessvc.Subcategories; empty = no filter.
+	Subcategories []string `protobuf:"bytes,11,rep,name=subcategories,proto3" json:"subcategories,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -448,6 +455,13 @@ func (x *QueryActivitiesRequest) GetCities() []*Location {
 	return nil
 }
 
+func (x *QueryActivitiesRequest) GetSubcategories() []string {
+	if x != nil {
+		return x.Subcategories
+	}
+	return nil
+}
+
 type Activity struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -467,17 +481,21 @@ type Activity struct {
 	// decoded JSON object per APP_STANDARDS.md's per-category field table,
 	// e.g. {"cuisine": "Italian", "popular_dishes": [...]});
 	// "{}" when the category has no detail data. A JSON string rather than
-	// 12 proto messages: the app renders it generically off a data-driven
-	// config, not 12 typed screens.
+	// 13 proto messages: the app renders it generically off a data-driven
+	// config, not 13 typed screens.
 	Details string `protobuf:"bytes,12,opt,name=details,proto3" json:"details,omitempty"`
 	// city, address, and status are T1 additions: city was already a DB
 	// column (unexposed on the wire before now); address is new. Both are
 	// empty when unset. status is always ACTIVITY_STATUS_PUBLISHED on
 	// QueryActivities responses (see ActivityStatus above); exposed here as
 	// a real field for the admin surface (T2), which reads/writes all three.
-	City          string         `protobuf:"bytes,13,opt,name=city,proto3" json:"city,omitempty"`
-	Address       string         `protobuf:"bytes,14,opt,name=address,proto3" json:"address,omitempty"`
-	Status        ActivityStatus `protobuf:"varint,15,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"`
+	City    string         `protobuf:"bytes,13,opt,name=city,proto3" json:"city,omitempty"`
+	Address string         `protobuf:"bytes,14,opt,name=address,proto3" json:"address,omitempty"`
+	Status  ActivityStatus `protobuf:"varint,15,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"`
+	// subcategory (T1) is an optional, category-validated subtype slug
+	// (activitiessvc.Subcategories), e.g. "fine_dining" under "restaurants".
+	// "" = not set; always valid.
+	Subcategory   string `protobuf:"bytes,16,opt,name=subcategory,proto3" json:"subcategory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -608,6 +626,13 @@ func (x *Activity) GetStatus() ActivityStatus {
 		return x.Status
 	}
 	return ActivityStatus_ACTIVITY_STATUS_UNSPECIFIED
+}
+
+func (x *Activity) GetSubcategory() string {
+	if x != nil {
+		return x.Subcategory
+	}
+	return ""
 }
 
 type QueryActivitiesResponse struct {
@@ -1373,9 +1398,12 @@ type CreateActivityRequest struct {
 	City        string                 `protobuf:"bytes,4,opt,name=city,proto3" json:"city,omitempty"`
 	Address     string                 `protobuf:"bytes,5,opt,name=address,proto3" json:"address,omitempty"`
 	// ACTIVITY_STATUS_UNSPECIFIED defaults to ACTIVITY_STATUS_DRAFT.
-	Status        ActivityStatus `protobuf:"varint,6,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"`
-	Details       string         `protobuf:"bytes,7,opt,name=details,proto3" json:"details,omitempty"` // JSON string, "" = no detail data
-	Photos        []*Photo       `protobuf:"bytes,8,rep,name=photos,proto3" json:"photos,omitempty"`
+	Status  ActivityStatus `protobuf:"varint,6,opt,name=status,proto3,enum=activities.v1.ActivityStatus" json:"status,omitempty"`
+	Details string         `protobuf:"bytes,7,opt,name=details,proto3" json:"details,omitempty"` // JSON string, "" = no detail data
+	Photos  []*Photo       `protobuf:"bytes,8,rep,name=photos,proto3" json:"photos,omitempty"`
+	// subcategory (T1) is optional, validated against category server-side; a
+	// mismatch is rejected InvalidArgument. "" is always valid.
+	Subcategory   string `protobuf:"bytes,9,opt,name=subcategory,proto3" json:"subcategory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1466,6 +1494,13 @@ func (x *CreateActivityRequest) GetPhotos() []*Photo {
 	return nil
 }
 
+func (x *CreateActivityRequest) GetSubcategory() string {
+	if x != nil {
+		return x.Subcategory
+	}
+	return ""
+}
+
 // PhotoList wraps the one repeated field UpdateActivityRequest needs
 // optional (proto3 doesn't allow the `optional` keyword on repeated fields);
 // a nil PhotoList means "leave photos untouched", a non-nil one (even with
@@ -1519,16 +1554,20 @@ func (x *PhotoList) GetPhotos() []*Photo {
 // untouched" from "present" (including present-and-empty-string) the same
 // way proxy-service's JSON pointer fields do on the HTTP side.
 type UpdateActivityRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title         *string                `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`
-	Description   *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	Category      *Category              `protobuf:"varint,4,opt,name=category,proto3,enum=activities.v1.Category,oneof" json:"category,omitempty"`
-	City          *string                `protobuf:"bytes,5,opt,name=city,proto3,oneof" json:"city,omitempty"`
-	Address       *string                `protobuf:"bytes,6,opt,name=address,proto3,oneof" json:"address,omitempty"`
-	Status        *ActivityStatus        `protobuf:"varint,7,opt,name=status,proto3,enum=activities.v1.ActivityStatus,oneof" json:"status,omitempty"`
-	Details       *string                `protobuf:"bytes,8,opt,name=details,proto3,oneof" json:"details,omitempty"`
-	Photos        *PhotoList             `protobuf:"bytes,9,opt,name=photos,proto3" json:"photos,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title       *string                `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`
+	Description *string                `protobuf:"bytes,3,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	Category    *Category              `protobuf:"varint,4,opt,name=category,proto3,enum=activities.v1.Category,oneof" json:"category,omitempty"`
+	City        *string                `protobuf:"bytes,5,opt,name=city,proto3,oneof" json:"city,omitempty"`
+	Address     *string                `protobuf:"bytes,6,opt,name=address,proto3,oneof" json:"address,omitempty"`
+	Status      *ActivityStatus        `protobuf:"varint,7,opt,name=status,proto3,enum=activities.v1.ActivityStatus,oneof" json:"status,omitempty"`
+	Details     *string                `protobuf:"bytes,8,opt,name=details,proto3,oneof" json:"details,omitempty"`
+	Photos      *PhotoList             `protobuf:"bytes,9,opt,name=photos,proto3" json:"photos,omitempty"`
+	// subcategory (T1): same optional/category-validated semantics as
+	// CreateActivityRequest's field. `optional` distinguishes "absent, leave
+	// untouched" from "present" (including present-and-empty, i.e. clear it).
+	Subcategory   *string `protobuf:"bytes,10,opt,name=subcategory,proto3,oneof" json:"subcategory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1626,6 +1665,13 @@ func (x *UpdateActivityRequest) GetPhotos() *PhotoList {
 	return nil
 }
 
+func (x *UpdateActivityRequest) GetSubcategory() string {
+	if x != nil && x.Subcategory != nil {
+		return *x.Subcategory
+	}
+	return ""
+}
+
 var File_activities_v1_activities_proto protoreflect.FileDescriptor
 
 const file_activities_v1_activities_proto_rawDesc = "" +
@@ -1640,7 +1686,7 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\vauthor_link\x18\x03 \x01(\tR\n" +
 	"authorLink\x12\x1b\n" +
 	"\tthumb_url\x18\x04 \x01(\tR\bthumbUrl\x12\x18\n" +
-	"\acaption\x18\x05 \x01(\tR\acaption\"\xf4\x02\n" +
+	"\acaption\x18\x05 \x01(\tR\acaption\"\x9a\x03\n" +
 	"\x16QueryActivitiesRequest\x12*\n" +
 	"\x05scope\x18\x01 \x01(\x0e2\x14.activities.v1.ScopeR\x05scope\x12B\n" +
 	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x127\n" +
@@ -1651,8 +1697,9 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"min_rating\x18\a \x01(\x01R\tminRating\x12&\n" +
 	"\x0fmax_distance_km\x18\b \x01(\x01R\rmaxDistanceKm\x12/\n" +
 	"\x06cities\x18\n" +
-	" \x03(\v2\x17.activities.v1.LocationR\x06citiesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
-	"R\rhome_locationR\fhome_countryR\x04sort\"\xd6\x03\n" +
+	" \x03(\v2\x17.activities.v1.LocationR\x06cities\x12$\n" +
+	"\rsubcategories\x18\v \x03(\tR\rsubcategoriesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
+	"R\rhome_locationR\fhome_countryR\x04sort\"\xf8\x03\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -1669,7 +1716,8 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\adetails\x18\f \x01(\tR\adetails\x12\x12\n" +
 	"\x04city\x18\r \x01(\tR\x04city\x12\x18\n" +
 	"\aaddress\x18\x0e \x01(\tR\aaddress\x125\n" +
-	"\x06status\x18\x0f \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06statusJ\x04\b\a\x10\b\"R\n" +
+	"\x06status\x18\x0f \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06status\x12 \n" +
+	"\vsubcategory\x18\x10 \x01(\tR\vsubcategoryJ\x04\b\a\x10\b\"R\n" +
 	"\x17QueryActivitiesResponse\x127\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x17.activities.v1.ActivityR\n" +
@@ -1717,7 +1765,7 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fR\x04data\"D\n" +
 	"\x13UploadPhotoResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1b\n" +
-	"\tthumb_url\x18\x02 \x01(\tR\bthumbUrl\"\xb1\x02\n" +
+	"\tthumb_url\x18\x02 \x01(\tR\bthumbUrl\"\xd3\x02\n" +
 	"\x15CreateActivityRequest\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x123\n" +
 	"\bcategory\x18\x02 \x01(\x0e2\x17.activities.v1.CategoryR\bcategory\x12 \n" +
@@ -1726,9 +1774,10 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\aaddress\x18\x05 \x01(\tR\aaddress\x125\n" +
 	"\x06status\x18\x06 \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06status\x12\x18\n" +
 	"\adetails\x18\a \x01(\tR\adetails\x12,\n" +
-	"\x06photos\x18\b \x03(\v2\x14.activities.v1.PhotoR\x06photos\"9\n" +
+	"\x06photos\x18\b \x03(\v2\x14.activities.v1.PhotoR\x06photos\x12 \n" +
+	"\vsubcategory\x18\t \x01(\tR\vsubcategory\"9\n" +
 	"\tPhotoList\x12,\n" +
-	"\x06photos\x18\x01 \x03(\v2\x14.activities.v1.PhotoR\x06photos\"\xbb\x03\n" +
+	"\x06photos\x18\x01 \x03(\v2\x14.activities.v1.PhotoR\x06photos\"\xf2\x03\n" +
 	"\x15UpdateActivityRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
 	"\x05title\x18\x02 \x01(\tH\x00R\x05title\x88\x01\x01\x12%\n" +
@@ -1738,7 +1787,9 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\aaddress\x18\x06 \x01(\tH\x04R\aaddress\x88\x01\x01\x12:\n" +
 	"\x06status\x18\a \x01(\x0e2\x1d.activities.v1.ActivityStatusH\x05R\x06status\x88\x01\x01\x12\x1d\n" +
 	"\adetails\x18\b \x01(\tH\x06R\adetails\x88\x01\x01\x120\n" +
-	"\x06photos\x18\t \x01(\v2\x18.activities.v1.PhotoListR\x06photosB\b\n" +
+	"\x06photos\x18\t \x01(\v2\x18.activities.v1.PhotoListR\x06photos\x12%\n" +
+	"\vsubcategory\x18\n" +
+	" \x01(\tH\aR\vsubcategory\x88\x01\x01B\b\n" +
 	"\x06_titleB\x0e\n" +
 	"\f_descriptionB\v\n" +
 	"\t_categoryB\a\n" +
@@ -1747,12 +1798,13 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\b_addressB\t\n" +
 	"\a_statusB\n" +
 	"\n" +
-	"\b_details*s\n" +
+	"\b_detailsB\x0e\n" +
+	"\f_subcategory*s\n" +
 	"\x05Scope\x12\x15\n" +
 	"\x11SCOPE_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fSCOPE_NEARBY\x10\x02\x12\x12\n" +
 	"\x0eSCOPE_ANYWHERE\x10\x04\"\x04\b\x01\x10\x01\"\x04\b\x03\x10\x03*\n" +
-	"SCOPE_HOME*\x15SCOPE_OUTSIDE_COUNTRY*\xab\x02\n" +
+	"SCOPE_HOME*\x15SCOPE_OUTSIDE_COUNTRY*\xcb\x02\n" +
 	"\bCategory\x12\x18\n" +
 	"\x14CATEGORY_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14CATEGORY_RESTAURANTS\x10\x01\x12\x12\n" +
@@ -1767,7 +1819,8 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\x11CATEGORY_WELLNESS\x10\n" +
 	"\x12\x15\n" +
 	"\x11CATEGORY_SHOPPING\x10\v\x12\x1a\n" +
-	"\x16CATEGORY_ENTERTAINMENT\x10\f*\x88\x01\n" +
+	"\x16CATEGORY_ENTERTAINMENT\x10\f\x12\x1e\n" +
+	"\x1aCATEGORY_TOURS_EXPERIENCES\x10\r*\x88\x01\n" +
 	"\x0eActivityStatus\x12\x1f\n" +
 	"\x1bACTIVITY_STATUS_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19ACTIVITY_STATUS_PUBLISHED\x10\x01\x12\x19\n" +

@@ -29,7 +29,7 @@ func TestAdminCreateActivity_HappyPath(t *testing.T) {
 	}}
 	h := NewAdminCreateActivityHandler(fake, slog.New(slog.DiscardHandler))
 
-	rec := doAdminCreateRequest(t, h, `{"title":"New Activity","category":"sport","city":"Belgrade","status":"draft","photos":[{"url":"https://example.com/x.jpg","thumb_url":"https://example.com/x_t.jpg","caption":"Sunset"}]}`)
+	rec := doAdminCreateRequest(t, h, `{"title":"New Activity","category":"sport","city":"Belgrade","status":"draft","subcategory":"climbing_gym","photos":[{"url":"https://example.com/x.jpg","thumb_url":"https://example.com/x_t.jpg","caption":"Sunset"}]}`)
 
 	// Status 200 on create, not 201, per the repo's fixed status contract.
 	if rec.Code != http.StatusOK {
@@ -38,6 +38,9 @@ func TestAdminCreateActivity_HappyPath(t *testing.T) {
 	if fake.gotCreate.GetTitle() != "New Activity" || fake.gotCreate.GetCategory() != activitiesv1.Category_CATEGORY_SPORT ||
 		fake.gotCreate.GetCity() != "Belgrade" || fake.gotCreate.GetStatus() != activitiesv1.ActivityStatus_ACTIVITY_STATUS_DRAFT {
 		t.Errorf("gRPC request = %+v, a field was dropped in translation", fake.gotCreate)
+	}
+	if fake.gotCreate.GetSubcategory() != "climbing_gym" {
+		t.Errorf("gRPC request subcategory = %q, want climbing_gym", fake.gotCreate.GetSubcategory())
 	}
 	if photos := fake.gotCreate.GetPhotos(); len(photos) != 1 || photos[0].GetThumbUrl() != "https://example.com/x_t.jpg" || photos[0].GetCaption() != "Sunset" {
 		t.Errorf("gRPC request photos = %+v, want thumb_url/caption translated", photos)
@@ -84,6 +87,29 @@ func TestAdminCreateActivity_UnknownCategoryIs400(t *testing.T) {
 	rec := doAdminCreateRequest(t, h, `{"title":"X","category":"not-a-category"}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminCreateActivity_WrongCategorySubcategoryIs400(t *testing.T) {
+	fake := &fakeAdminActivitiesClient{}
+	h := NewAdminCreateActivityHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doAdminCreateRequest(t, h, `{"title":"X","category":"restaurants","subcategory":"cocktail_bar"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	if fake.gotCreate != nil {
+		t.Error("gRPC call must not happen once subcategory is rejected at the boundary")
+	}
+}
+
+func TestAdminCreateActivity_EmptySubcategoryAccepted(t *testing.T) {
+	fake := &fakeAdminActivitiesClient{createOut: &activitiesv1.Activity{Id: "new-1"}}
+	h := NewAdminCreateActivityHandler(fake, slog.New(slog.DiscardHandler))
+
+	rec := doAdminCreateRequest(t, h, `{"title":"X","category":"restaurants"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
 	}
 }
 

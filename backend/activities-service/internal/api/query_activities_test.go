@@ -160,6 +160,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 			Tags:   []string{"sports"}, DistanceKM: 3.2,
 			Details: []byte(`{"difficulty":3}`),
 			City:    "Belgrade", Address: "Ada Ciganlija bb", Status: activitiessvc.StatusPublished,
+			Subcategory: "extreme_sports",
 		},
 	}}
 	client := dialServer(t, fake)
@@ -167,6 +168,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	resp, err := client.QueryActivities(context.Background(), &activitiesv1.QueryActivitiesRequest{
 		Scope:           activitiesv1.Scope_SCOPE_NEARBY,
 		CurrentLocation: &activitiesv1.Location{Lat: 44.8, Lng: 20.4},
+		Subcategories:   []string{"extreme_sports"},
 	})
 	if err != nil {
 		t.Fatalf("QueryActivities() unexpected error: %v", err)
@@ -190,8 +192,14 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	if got.GetDetails() != `{"difficulty":3}` {
 		t.Errorf("details = %q, want passthrough of the domain JSON", got.GetDetails())
 	}
+	if got.GetSubcategory() != "extreme_sports" {
+		t.Errorf("subcategory = %q, want passthrough of the domain value", got.GetSubcategory())
+	}
 	if fake.got.Scope != activitiessvc.ScopeNearby {
 		t.Errorf("service received scope = %v, want nearby", fake.got.Scope)
+	}
+	if len(fake.got.Subcategories) != 1 || fake.got.Subcategories[0] != "extreme_sports" {
+		t.Errorf("service received subcategories = %v, want [extreme_sports]", fake.got.Subcategories)
 	}
 }
 
@@ -267,6 +275,7 @@ func TestCategoryTranslation(t *testing.T) {
 		{"wellness", activitiessvc.CategoryWellness, activitiesv1.Category_CATEGORY_WELLNESS},
 		{"shopping", activitiessvc.CategoryShopping, activitiesv1.Category_CATEGORY_SHOPPING},
 		{"entertainment", activitiessvc.CategoryEntertainment, activitiesv1.Category_CATEGORY_ENTERTAINMENT},
+		{"tours_experiences", activitiessvc.CategoryToursExperiences, activitiesv1.Category_CATEGORY_TOURS_EXPERIENCES},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

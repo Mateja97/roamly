@@ -24,8 +24,9 @@ func TestUpdateActivity_OnlySetFieldsReachTheService(t *testing.T) {
 
 	newTitle := "New Title"
 	newStatus := activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED
+	newSubcategory := "fine_dining"
 	resp, err := client.UpdateActivity(context.Background(), &activitiesv1.UpdateActivityRequest{
-		Id: "1", Title: &newTitle, Status: &newStatus,
+		Id: "1", Title: &newTitle, Status: &newStatus, Subcategory: &newSubcategory,
 	})
 	if err != nil {
 		t.Fatalf("UpdateActivity() error: %v", err)
@@ -42,6 +43,9 @@ func TestUpdateActivity_OnlySetFieldsReachTheService(t *testing.T) {
 	}
 	if patch.Status == nil || *patch.Status != activitiessvc.StatusPublished {
 		t.Errorf("patch.Status = %v, want published", patch.Status)
+	}
+	if patch.Subcategory == nil || *patch.Subcategory != "fine_dining" {
+		t.Errorf("patch.Subcategory = %v, want fine_dining", patch.Subcategory)
 	}
 	if patch.Description != nil || patch.Category != nil || patch.City != nil || patch.Address != nil || patch.Details != nil || patch.Photos != nil {
 		t.Errorf("patch = %+v, want every omitted field nil (untouched)", patch)

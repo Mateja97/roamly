@@ -70,6 +70,7 @@ enum Category {
   CATEGORY_WELLNESS = 10;
   CATEGORY_SHOPPING = 11;
   CATEGORY_ENTERTAINMENT = 12;
+  CATEGORY_TOURS_EXPERIENCES = 13;
 }
 
 // ActivityStatus (T1) is an activity's catalog lifecycle state. Only
@@ -138,6 +139,11 @@ message QueryActivitiesRequest {
   // max_distance_km of ANY listed city, and current_location is ignored for
   // filtering purposes.
   repeated Location cities = 10;
+
+  // Narrows results to activities whose subcategory is any of these
+  // (T1), OR'd within the field and AND-ed with categories above. Slugs
+  // from activitiessvc.Subcategories; empty = no filter.
+  repeated string subcategories = 11;
 }
 
 message Activity {
@@ -160,8 +166,8 @@ message Activity {
   // decoded JSON object per APP_STANDARDS.md's per-category field table,
   // e.g. {"cuisine": "Italian", "popular_dishes": [...]});
   // "{}" when the category has no detail data. A JSON string rather than
-  // 12 proto messages: the app renders it generically off a data-driven
-  // config, not 12 typed screens.
+  // 13 proto messages: the app renders it generically off a data-driven
+  // config, not 13 typed screens.
   string details = 12;
 
   // city, address, and status are T1 additions: city was already a DB
@@ -172,6 +178,11 @@ message Activity {
   string city = 13;
   string address = 14;
   ActivityStatus status = 15;
+
+  // subcategory (T1) is an optional, category-validated subtype slug
+  // (activitiessvc.Subcategories), e.g. "fine_dining" under "restaurants".
+  // "" = not set; always valid.
+  string subcategory = 16;
 }
 
 message QueryActivitiesResponse {
@@ -273,6 +284,9 @@ message CreateActivityRequest {
   ActivityStatus status = 6;
   string details = 7; // JSON string, "" = no detail data
   repeated Photo photos = 8;
+  // subcategory (T1) is optional, validated against category server-side; a
+  // mismatch is rejected InvalidArgument. "" is always valid.
+  string subcategory = 9;
 }
 
 // PhotoList wraps the one repeated field UpdateActivityRequest needs
@@ -297,4 +311,8 @@ message UpdateActivityRequest {
   optional ActivityStatus status = 7;
   optional string details = 8;
   PhotoList photos = 9;
+  // subcategory (T1): same optional/category-validated semantics as
+  // CreateActivityRequest's field. `optional` distinguishes "absent, leave
+  // untouched" from "present" (including present-and-empty, i.e. clear it).
+  optional string subcategory = 10;
 }

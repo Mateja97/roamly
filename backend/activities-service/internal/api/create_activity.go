@@ -26,6 +26,7 @@ func (s *Server) CreateActivity(ctx context.Context, req *activitiesv1.CreateAct
 		Status:      toDomainStatus(req.GetStatus()),
 		Details:     json.RawMessage(req.GetDetails()),
 		Photos:      toDomainPhotos(req.GetPhotos()),
+		Subcategory: req.GetSubcategory(),
 	})
 	if err != nil {
 		if errors.Is(err, sharederrors.ErrInvalidInput) {

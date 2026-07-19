@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"backend/shared/models/activitiessvc"
 	activitiesv1 "backend/shared/proto/activities/v1"
 )
 
@@ -26,6 +27,9 @@ type createActivityRequestDTO struct {
 	Status      string          `json:"status"`
 	Details     json.RawMessage `json:"details"`
 	Photos      []adminPhotoDTO `json:"photos"`
+	// Subcategory (T1) is optional, validated against Category by
+	// activities-service; a mismatch surfaces as a 400.
+	Subcategory string `json:"subcategory"`
 }
 
 // Handle answers POST /admin/activities. Requires title + category; status
@@ -47,6 +51,10 @@ func (h *AdminCreateActivityHandler) Handle(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "unknown category: "+reqDTO.Category, h.logger)
 		return
 	}
+	if !activitiessvc.ValidSubcategory(activitiessvc.Category(reqDTO.Category), reqDTO.Subcategory) {
+		writeError(w, http.StatusBadRequest, "subcategory "+reqDTO.Subcategory+" does not belong to category "+reqDTO.Category, h.logger)
+		return
+	}
 	var statusValue activitiesv1.ActivityStatus
 	if reqDTO.Status != "" {
 		st, ok := toProtoStatus(reqDTO.Status)
@@ -61,6 +69,7 @@ func (h *AdminCreateActivityHandler) Handle(w http.ResponseWriter, r *http.Reque
 		Title: reqDTO.Title, Description: reqDTO.Description, Category: category,
 		City: reqDTO.City, Address: reqDTO.Address, Status: statusValue,
 		Details: string(reqDTO.Details), Photos: toProtoPhotoList(reqDTO.Photos),
+		Subcategory: reqDTO.Subcategory,
 	})
 	if err != nil {
 		writeGRPCError(w, err, h.logger)
