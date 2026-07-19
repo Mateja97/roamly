@@ -29,6 +29,7 @@ export const ANYWHERE_NO_LIMIT_SLIDER_VALUE = MAX_DISTANCE_KM_ANYWHERE + ANYWHER
 export function defaultFilters(_scope: Scope): Filters {
   return {
     categories: [],
+    subtypes: [],
     minRating: null,
     maxDistanceKm: null,
   };
@@ -51,12 +52,107 @@ export const CATEGORY_OPTIONS: { value: Category; label: string }[] = [
   { value: 'wellness', label: 'Wellness' },
   { value: 'shopping', label: 'Shopping' },
   { value: 'entertainment', label: 'Entertainment' },
+  { value: 'tours_experiences', label: 'Tours & Experiences' },
 ];
 
 export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce(
   (acc, { value, label }) => ({ ...acc, [value]: label }),
   {} as Record<Category, string>
 );
+
+// T3: category -> subtype options, the same 59-slug taxonomy from
+// BUSINESS_STANDARDS.md's subcategory table as the web frontend's
+// `SUBCATEGORIES` (frontend/src/features/admin/constants.ts) and the T1 wire
+// contract's `subcategories` field — one source of truth per surface (app has
+// no shared package with frontend), kept in lockstep by hand since both are
+// small, static, and rarely change.
+export const SUBCATEGORIES: Record<Category, { value: string; label: string }[]> = {
+  restaurants: [
+    { value: 'fine_dining', label: 'Fine Dining' },
+    { value: 'casual_dining', label: 'Casual Dining' },
+    { value: 'fast_casual', label: 'Fast Casual' },
+    { value: 'street_food', label: 'Food Truck/Street Food' },
+    { value: 'bakery_dessert', label: 'Bakery & Dessert' },
+  ],
+  cafes: [
+    { value: 'coffee_shop', label: 'Coffee Shop' },
+    { value: 'tea_house', label: 'Tea House' },
+    { value: 'bakery_cafe', label: 'Bakery Cafe' },
+  ],
+  bars: [
+    { value: 'cocktail_bar', label: 'Cocktail Bar' },
+    { value: 'wine_bar', label: 'Wine Bar' },
+    { value: 'brewery', label: 'Brewery/Beer Garden' },
+    { value: 'sports_bar', label: 'Sports Bar' },
+    { value: 'pub', label: 'Pub' },
+  ],
+  nightlife: [
+    { value: 'nightclub', label: 'Nightclub' },
+    { value: 'live_music_venue', label: 'Live Music Venue' },
+    { value: 'lounge', label: 'Lounge' },
+  ],
+  nature: [
+    { value: 'hiking_trail', label: 'Hiking Trail' },
+    { value: 'park', label: 'Park' },
+    { value: 'beach', label: 'Beach' },
+    { value: 'botanical_garden', label: 'Garden/Botanical' },
+    { value: 'viewpoint', label: 'Viewpoint/Lookout' },
+  ],
+  sport: [
+    { value: 'gym_fitness', label: 'Gym/Fitness Studio' },
+    { value: 'climbing_gym', label: 'Climbing Gym' },
+    { value: 'swimming_pool', label: 'Swimming Pool' },
+    { value: 'sports_court', label: 'Sports Court/Field' },
+    { value: 'golf_course', label: 'Golf Course' },
+    { value: 'extreme_sports', label: 'Adventure/Extreme Sports' },
+  ],
+  kids: [
+    { value: 'playground', label: 'Playground' },
+    { value: 'indoor_play_center', label: 'Indoor Play Center' },
+    { value: 'zoo_aquarium', label: 'Zoo/Aquarium' },
+    { value: 'amusement_park', label: 'Amusement Park' },
+    { value: 'kids_museum', label: "Kids' Museum" },
+  ],
+  culture: [
+    { value: 'historical_site', label: 'Historical Site' },
+    { value: 'monument_landmark', label: 'Monument/Landmark' },
+    { value: 'heritage_museum', label: 'Heritage Museum' },
+    { value: 'religious_site', label: 'Religious Site' },
+  ],
+  art: [
+    { value: 'art_gallery', label: 'Art Gallery' },
+    { value: 'art_museum', label: 'Art Museum' },
+    { value: 'studio_workshop', label: 'Studio/Workshop' },
+    { value: 'public_art', label: 'Public Art Installation' },
+  ],
+  wellness: [
+    { value: 'spa', label: 'Spa' },
+    { value: 'yoga_studio', label: 'Yoga Studio' },
+    { value: 'meditation_center', label: 'Meditation Center' },
+    { value: 'thermal_bath', label: 'Hot Springs/Thermal Bath' },
+  ],
+  shopping: [
+    { value: 'market_bazaar', label: 'Market/Bazaar' },
+    { value: 'boutique', label: 'Boutique' },
+    { value: 'mall', label: 'Mall' },
+    { value: 'specialty_store', label: 'Specialty Store' },
+  ],
+  entertainment: [
+    { value: 'cinema', label: 'Cinema' },
+    { value: 'escape_room', label: 'Escape Room' },
+    { value: 'bowling_arcade', label: 'Bowling/Arcade' },
+    { value: 'theater', label: 'Theater/Performance' },
+    { value: 'casino', label: 'Casino' },
+  ],
+  tours_experiences: [
+    { value: 'walking_tour', label: 'Walking Tour' },
+    { value: 'day_trip', label: 'Day Trip' },
+    { value: 'food_drink_tour', label: 'Food & Drink Tour' },
+    { value: 'adventure_tour', label: 'Adventure Tour' },
+    { value: 'cooking_class', label: 'Cooking Class/Workshop' },
+    { value: 'bike_tour', label: 'Bike Tour' },
+  ],
+};
 
 export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: null, label: 'Any' },
@@ -136,6 +232,10 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
   }
 
   if (filters.categories.length > 0) request.categories = filters.categories;
+  // Only meaningful (and only ever populated) alongside exactly one selected
+  // category — see FilterSheet's orphan-clearing — but sent as-is here since
+  // by request-build time that invariant already holds.
+  if (filters.subtypes.length > 0) request.subcategories = filters.subtypes;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
 
   if (selection.scope === 'anywhere' && selection.coordinates && filters.maxDistanceKm !== null) {

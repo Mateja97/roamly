@@ -251,6 +251,10 @@ export type ActivitiesQueryRequest = {
   // (denied/unavailable still queries broadly, see T2).
   current_location?: Location;
   categories?: Category[];
+  // T3: subtype refinement of a single selected category (see filters.ts's
+  // buildActivitiesRequest/SUBCATEGORIES) — OR within the field, AND-ed with
+  // `categories` server-side per T1's wire contract.
+  subcategories?: string[];
   min_rating?: number;
   max_distance_km?: number;
   // T5/T3: `anywhere` only — one-or-more city centroids to anchor distance on

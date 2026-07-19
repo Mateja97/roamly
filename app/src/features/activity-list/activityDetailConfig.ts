@@ -98,6 +98,10 @@ export const PRIMARY_CTA_LABEL: Record<Category, string> = {
   wellness: 'Visit website',
   entertainment: 'Get tickets',
   shopping: 'Get directions',
+  // T3 (roa-5-category-subtypes): new category, no bespoke detail UI in
+  // scope (see product-tasks.md's T3 out-of-scope) — generic label, same
+  // treatment as any other non-directions category.
+  tours_experiences: 'Book now',
 };
 
 export function primaryCTAIsDirections(category: Category): boolean {
@@ -148,6 +152,11 @@ export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
   wellness: ['description', 'unique'],
   entertainment: ['unique'],
   shopping: ['description', 'unique', 'factstrip'],
+  // T3 (roa-5-category-subtypes): no bespoke detail UI in scope — `details`
+  // has no `tours_experiences` variant (ActivityDetails), so factstrip/unique
+  // simply omit themselves (no data); this is the same generic order as
+  // kids/wellness above.
+  tours_experiences: ['description', 'unique'],
 };
 
 // design-spec.md T8 addendum #8: Entertainment's genre + neighborhood move

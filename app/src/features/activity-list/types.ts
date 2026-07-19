@@ -14,18 +14,22 @@ export type Category =
   | 'art'
   | 'wellness'
   | 'shopping'
-  | 'entertainment';
+  | 'entertainment'
+  | 'tours_experiences';
 
 export type RatingOption = 4.0 | 4.5 | 4.8;
 
 // The sheet's applied selection. `null` means "unset" for the single-select
-// groups; an empty array means "unset" for the multi-select category group.
-// `maxDistanceKm` only has a slider/control for `anywhere` — `null` there
-// means "no limit" (the slider's widest/default stop). Nearby's range is
-// server-fixed and never adjustable, so it's always `null` too (no slider,
-// no chip, no request field) — see filters.ts's `defaultFilters`.
+// groups; an empty array means "unset" for the multi-select category and
+// subtype groups. `maxDistanceKm` only has a slider/control for `anywhere` —
+// `null` there means "no limit" (the slider's widest/default stop). Nearby's
+// range is server-fixed and never adjustable, so it's always `null` too (no
+// slider, no chip, no request field) — see filters.ts's `defaultFilters`.
+// `subtypes` (T3) is only ever non-empty while exactly one category is
+// selected — see filters.ts's SUBCATEGORIES and FilterSheet's orphan-clearing.
 export type Filters = {
   categories: Category[];
+  subtypes: string[];
   minRating: RatingOption | null;
   maxDistanceKm: number | null;
 };
