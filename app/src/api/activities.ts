@@ -1,4 +1,5 @@
 import type { Category } from '../features/activity-list/types';
+import { withTimeout } from '../features/scope-picker/withTimeout';
 import type { Scope } from '../features/scope-picker/types';
 
 const PROXY_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://localhost:8080';
@@ -223,18 +224,24 @@ function resolveUri(uri: string): string {
   return /^https?:\/\//.test(uri) ? uri : `${PROXY_URL}${uri}`;
 }
 
+// Shared by toActivity and T4's getActivityPhotos — both consume the same
+// wire shape (plain string or ActivityPhoto object per entry).
+function toActivityPhotos(refs: (string | ActivityPhoto)[] | undefined): ActivityPhoto[] {
+  return (refs ?? []).map((ref) => {
+    const photo = typeof ref === 'string' ? { uri: ref } : ref;
+    return {
+      ...photo,
+      uri: resolveUri(photo.uri),
+      ...(photo.thumb_url ? { thumb_url: resolveUri(photo.thumb_url) } : {}),
+    };
+  });
+}
+
 function toActivity(raw: RawActivity): Activity {
   return {
     ...raw,
     details: attachCategory(raw.details, raw.category),
-    image_refs: (raw.image_refs ?? []).map((ref) => {
-      const photo = typeof ref === 'string' ? { uri: ref } : ref;
-      return {
-        ...photo,
-        uri: resolveUri(photo.uri),
-        ...(photo.thumb_url ? { thumb_url: resolveUri(photo.thumb_url) } : {}),
-      };
-    }),
+    image_refs: toActivityPhotos(raw.image_refs),
   };
 }
 
@@ -281,6 +288,50 @@ export async function queryActivities(body: ActivitiesQueryRequest): Promise<Act
     } catch {
       // Malformed 200 body — same discriminated-error shape as every other
       // failure path, so callers never have to special-case a thrown reject.
+      return { status: 500, message: 'Something went wrong. Please try again.' };
+    }
+  }
+
+  let message = 'Something went wrong. Please try again.';
+  try {
+    const errorBody = (await res.json()) as { error?: string };
+    if (errorBody.error) message = errorBody.error;
+  } catch {
+    // ponytail: non-JSON error body falls back to the generic message above.
+  }
+
+  const status = KNOWN_ERROR_STATUSES.includes(res.status as (typeof KNOWN_ERROR_STATUSES)[number])
+    ? (res.status as (typeof KNOWN_ERROR_STATUSES)[number])
+    : 500;
+  return { status, message };
+}
+
+// T4: bounds the detail screen's photo-set upgrade fetch so a hung request
+// can't leave it "still upgrading" forever — the caller stays on the
+// provisional photo either way (design-spec.md: no error UI on failure).
+const PHOTOS_FETCH_TIMEOUT_MS = 10000;
+
+export type ActivityPhotosResult =
+  | { status: 'success'; image_refs: ActivityPhoto[] }
+  | { status: 400 | 403 | 404 | 409 | 500; message: string };
+
+// T4's `GET /activities/{id}/photos` (T3) — the activity's full, resolved
+// photo set. Same discriminated-result convention as queryActivities; the
+// detail screen (only caller) intentionally ignores the error branch's
+// message and just keeps showing the provisional photo, per design-spec.md.
+export async function getActivityPhotos(id: string): Promise<ActivityPhotosResult> {
+  let res: Response;
+  try {
+    res = await withTimeout(fetch(`${PROXY_URL}/activities/${encodeURIComponent(id)}/photos`), PHOTOS_FETCH_TIMEOUT_MS);
+  } catch {
+    return { status: 500, message: 'Could not reach the server. Check your connection and try again.' };
+  }
+
+  if (res.ok) {
+    try {
+      const data = (await res.json()) as { image_refs: (string | ActivityPhoto)[] };
+      return { status: 'success', image_refs: toActivityPhotos(data.image_refs) };
+    } catch {
       return { status: 500, message: 'Something went wrong. Please try again.' };
     }
   }

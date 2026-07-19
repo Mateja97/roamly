@@ -4,7 +4,12 @@ import { queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { NearbySearchSetupScreen } from './NearbySearchSetupScreen';
 
-jest.mock('../../api/activities', () => ({ queryActivities: jest.fn() }));
+// T4: a pushed ActivityDetailScreen fires its own getActivityPhotos fetch on
+// mount — stub it to never resolve so it doesn't disturb assertions here.
+jest.mock('../../api/activities', () => ({
+  queryActivities: jest.fn(),
+  getActivityPhotos: jest.fn(() => new Promise(() => {})),
+}));
 const mockedQuery = jest.mocked(queryActivities);
 
 beforeEach(() => {

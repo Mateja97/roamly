@@ -1,12 +1,20 @@
 import { AccessibilityInfo, BackHandler, StyleSheet } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { queryActivities } from '../../api/activities';
+import { getActivityPhotos, queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import type { CitySuggestion } from '../../api/cities';
 import { ActivityListScreen } from './ActivityListScreen';
 
-jest.mock('../../api/activities', () => ({ queryActivities: jest.fn() }));
+// T4: the pushed ActivityDetailScreen fires its own getActivityPhotos fetch
+// on mount — stub it to never resolve so it never disturbs the list-level
+// assertions here (ActivityDetailScreen.test.tsx owns the photo-upgrade
+// behavior itself).
+jest.mock('../../api/activities', () => ({
+  queryActivities: jest.fn(),
+  getActivityPhotos: jest.fn(),
+}));
 const mockedQuery = jest.mocked(queryActivities);
+const mockedGetActivityPhotos = jest.mocked(getActivityPhotos);
 
 const COORDINATES = { latitude: 44.8125, longitude: 20.4612 };
 const LOCATION = { lat: 44.8125, lng: 20.4612 };
@@ -19,6 +27,9 @@ beforeEach(() => {
   // calls — irrelevant to what these tests verify (data fetching, filters).
   jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
   jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
+  // resetAllMocks (below) wipes getActivityPhotos' implementation too —
+  // re-arm every test, same reasoning as the AccessibilityInfo spies above.
+  mockedGetActivityPhotos.mockReturnValue(new Promise(() => {}));
 });
 
 const activity: Activity = {
