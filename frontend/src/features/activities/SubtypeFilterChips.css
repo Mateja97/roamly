@@ -1,0 +1,50 @@
+/* Filter chip (selectable), dark theme — design-spec.md T2. */
+
+.subtype-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  animation: subtype-filter-fade-in 150ms ease-out;
+}
+
+@keyframes subtype-filter-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subtype-filter-row {
+    animation: none;
+  }
+}
+
+.subtype-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.subtype-chip-selected {
+  background: var(--surface-hover);
+  border: 2px solid var(--primary);
+  color: var(--text);
+}
+
+.subtype-chip:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}

@@ -40,10 +40,10 @@ describe('FilterRow', () => {
     expect(props.onStatusChange).toHaveBeenCalledWith('published');
   });
 
-  it('renders the 12-category taxonomy plus "All categories"', () => {
+  it('renders the 13-category taxonomy plus "All categories"', () => {
     renderFilterRow();
     const select = screen.getByRole('combobox', { name: 'Category' });
-    expect(select.querySelectorAll('option')).toHaveLength(13);
+    expect(select.querySelectorAll('option')).toHaveLength(14);
   });
 
   it('renders city options plus "All cities" and calls onCityChange', async () => {
