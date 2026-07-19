@@ -54,6 +54,12 @@ type Place struct {
 	PrimaryTypeDisplayName struct {
 		Text string `json:"text"`
 	} `json:"primaryTypeDisplayName"`
+	// PrimaryType and Types are the machine-readable Places type taxonomy
+	// (e.g. "fine_dining_restaurant"), distinct from PrimaryTypeDisplayName's
+	// localized label. Captured for a future subtype mapping (see T2); not
+	// consumed by BuildDetails.
+	PrimaryType string   `json:"primaryType"`
+	Types       []string `json:"types"`
 }
 
 // cityTimezones maps a scraped city to its IANA zone, the timezone structured

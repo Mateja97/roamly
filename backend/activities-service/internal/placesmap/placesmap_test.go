@@ -8,6 +8,29 @@ import (
 	"backend/shared/models/activitiessvc"
 )
 
+// TestPlace_UnmarshalsMachineType proves Place parses the Places API's
+// machine-readable primaryType/types fields (distinct from the localized
+// primaryTypeDisplayName label), not just the display name.
+func TestPlace_UnmarshalsMachineType(t *testing.T) {
+	raw := []byte(`{
+		"id": "places/abc123",
+		"displayName": {"text": "Buena Vida Beograd"},
+		"primaryTypeDisplayName": {"text": "Restaurant"},
+		"primaryType": "fine_dining_restaurant",
+		"types": ["fine_dining_restaurant", "restaurant", "food", "point_of_interest"]
+	}`)
+	var p Place
+	if err := json.Unmarshal(raw, &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if p.PrimaryType != "fine_dining_restaurant" {
+		t.Errorf("PrimaryType = %q, want %q", p.PrimaryType, "fine_dining_restaurant")
+	}
+	if len(p.Types) != 4 || p.Types[0] != "fine_dining_restaurant" {
+		t.Errorf("Types = %v, want 4 entries starting with fine_dining_restaurant", p.Types)
+	}
+}
+
 func TestPriceTier(t *testing.T) {
 	for in, want := range map[string]string{
 		"PRICE_LEVEL_INEXPENSIVE":    "$",
