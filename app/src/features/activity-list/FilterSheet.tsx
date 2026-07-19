@@ -15,6 +15,7 @@ import {
   CATEGORY_OPTIONS,
   MIN_DISTANCE_KM_ANYWHERE,
   RATING_OPTIONS,
+  SUBCATEGORIES,
   defaultFilters,
 } from './filters';
 import type { Filters } from './types';
@@ -140,16 +141,51 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
                   label={option.label}
                   selected={draft.categories.includes(option.value)}
                   onPress={() =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      categories: prev.categories.includes(option.value)
+                    setDraft((prev) => {
+                      const categories = prev.categories.includes(option.value)
                         ? prev.categories.filter((c) => c !== option.value)
-                        : [...prev.categories, option.value],
-                    }))
+                        : [...prev.categories, option.value];
+                      // Orphan-clearing (design-spec.md T3): subtypes only
+                      // ever get selected while exactly one category is
+                      // selected, so any transition away from that single
+                      // category (to 0, to >1, or — reachable only via an
+                      // intermediate 0/>1 step, since each click toggles one
+                      // category — to a different one) drops them. Keeping
+                      // `prev.subtypes` when `categories.length === 1` is
+                      // therefore always keeping subtypes scoped to that same
+                      // category, never a stale one.
+                      const subtypes = categories.length === 1 ? prev.subtypes : [];
+                      return { ...prev, categories, subtypes };
+                    })
                   }
                 />
               ))}
             </FilterGroup>
+
+            {/* Progressive disclosure driven by the Category group directly
+                above — present only for exactly one selected category, gone
+                (not disabled/empty) otherwise, same conditional-render
+                pattern as the Anywhere distance slider below. */}
+            {draft.categories.length === 1 && (
+              <FilterGroup label="Subtype">
+                {SUBCATEGORIES[draft.categories[0]].map((option) => (
+                  <FilterChip
+                    key={option.value}
+                    variant="select"
+                    label={option.label}
+                    selected={draft.subtypes.includes(option.value)}
+                    onPress={() =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        subtypes: prev.subtypes.includes(option.value)
+                          ? prev.subtypes.filter((s) => s !== option.value)
+                          : [...prev.subtypes, option.value],
+                      }))
+                    }
+                  />
+                ))}
+              </FilterGroup>
+            )}
 
             <FilterGroup label="Minimum rating">
               {singleSelectChips(RATING_OPTIONS, draft.minRating, (minRating) =>

@@ -2,6 +2,7 @@ import {
   ANYWHERE_NO_LIMIT_SLIDER_VALUE,
   EMPTY_FILTERS,
   MAX_DISTANCE_KM_ANYWHERE,
+  SUBCATEGORIES,
   activeFilterCount,
   buildActivitiesRequest,
   defaultFilters,
@@ -11,11 +12,18 @@ import type { Filters } from './types';
 
 describe('defaultFilters', () => {
   it('nearby\'s default has no distance value — its range is server-fixed, not user-adjustable', () => {
-    expect(defaultFilters('nearby')).toEqual({ categories: [], minRating: null, maxDistanceKm: null });
+    expect(defaultFilters('nearby')).toEqual({ categories: [], subtypes: [], minRating: null, maxDistanceKm: null });
   });
 
   it('anywhere\'s default is "no limit" (null)', () => {
-    expect(defaultFilters('anywhere')).toEqual({ categories: [], minRating: null, maxDistanceKm: null });
+    expect(defaultFilters('anywhere')).toEqual({ categories: [], subtypes: [], minRating: null, maxDistanceKm: null });
+  });
+});
+
+describe('SUBCATEGORIES', () => {
+  it('has a non-empty subtype list for every category, including tours_experiences', () => {
+    expect(SUBCATEGORIES.tours_experiences.length).toBeGreaterThan(0);
+    expect(SUBCATEGORIES.tours_experiences).toContainEqual({ value: 'walking_tour', label: 'Walking Tour' });
   });
 });
 
@@ -31,6 +39,7 @@ describe('activeFilterCount', () => {
   it('counts each category plus each single-select group (nearby), distance never counted', () => {
     const filters: Filters = {
       categories: ['sport', 'restaurants'],
+      subtypes: [],
       minRating: 4.5,
       maxDistanceKm: null,
     };
@@ -38,7 +47,7 @@ describe('activeFilterCount', () => {
   });
 
   it('counts a narrowed anywhere distance as an active filter', () => {
-    const filters: Filters = { categories: [], minRating: null, maxDistanceKm: 300 };
+    const filters: Filters = { categories: [], subtypes: [], minRating: null, maxDistanceKm: 300 };
     expect(activeFilterCount(filters, 'anywhere')).toBe(1);
   });
 });
@@ -47,6 +56,7 @@ describe('filterChips', () => {
   it('produces one chip per category and one per single-select group, no distance chip for nearby', () => {
     const filters: Filters = {
       categories: ['sport'],
+      subtypes: [],
       minRating: 4.5,
       maxDistanceKm: null,
     };
@@ -55,11 +65,12 @@ describe('filterChips', () => {
   });
 
   it('a chip.remove() clears only that one filter value', () => {
-    const filters: Filters = { categories: ['sport', 'art'], minRating: null, maxDistanceKm: null };
+    const filters: Filters = { categories: ['sport', 'art'], subtypes: [], minRating: null, maxDistanceKm: null };
     const chips = filterChips(filters, 'nearby');
     const sportsChip = chips.find((c) => c.label === 'Sport')!;
     expect(sportsChip.remove()).toEqual({
       categories: ['art'],
+      subtypes: [],
       minRating: null,
       maxDistanceKm: null,
     });
@@ -72,7 +83,7 @@ describe('filterChips', () => {
   });
 
   it('a max-distance chip.remove() resets anywhere back to "no limit"', () => {
-    const filters: Filters = { categories: [], minRating: null, maxDistanceKm: 300 };
+    const filters: Filters = { categories: [], subtypes: [], minRating: null, maxDistanceKm: 300 };
     const chips = filterChips(filters, 'anywhere');
     const distanceChip = chips.find((c) => c.key === 'max-distance')!;
     expect(distanceChip.remove().maxDistanceKm).toBeNull();
@@ -100,7 +111,7 @@ describe('buildActivitiesRequest', () => {
   it('never includes max_distance_km for nearby even if somehow narrowed', () => {
     const req = buildActivitiesRequest(
       { scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } },
-      { categories: [], minRating: null, maxDistanceKm: 25 }
+      { categories: [], subtypes: [], minRating: null, maxDistanceKm: 25 }
     );
     expect(req.max_distance_km).toBeUndefined();
   });
@@ -121,7 +132,7 @@ describe('buildActivitiesRequest', () => {
   it('sends max_distance_km for anywhere only when narrowed below "no limit"', () => {
     const req = buildActivitiesRequest(
       { scope: 'anywhere', coordinates: { latitude: 1, longitude: 2 } },
-      { categories: [], minRating: null, maxDistanceKm: 300 }
+      { categories: [], subtypes: [], minRating: null, maxDistanceKm: 300 }
     );
     expect(req.max_distance_km).toBe(300);
   });
@@ -129,7 +140,7 @@ describe('buildActivitiesRequest', () => {
   it('never sends max_distance_km for anywhere without an anchor, even if somehow narrowed', () => {
     const req = buildActivitiesRequest(
       { scope: 'anywhere' },
-      { categories: [], minRating: null, maxDistanceKm: 300 }
+      { categories: [], subtypes: [], minRating: null, maxDistanceKm: 300 }
     );
     expect(req.max_distance_km).toBeUndefined();
   });
@@ -137,6 +148,7 @@ describe('buildActivitiesRequest', () => {
   it('includes only the set filter fields (nearby never gets max_distance_km)', () => {
     const filters: Filters = {
       categories: ['sport'],
+      subtypes: [],
       minRating: 4.5,
       maxDistanceKm: null,
     };
@@ -147,6 +159,26 @@ describe('buildActivitiesRequest', () => {
       categories: ['sport'],
       min_rating: 4.5,
     });
+  });
+
+  it('T3: wires selected subtypes into the request as subcategories, AND-ed with the single category', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['extreme_sports', 'climbing_gym'],
+      minRating: null,
+      maxDistanceKm: null,
+    };
+    const req = buildActivitiesRequest({ scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } }, filters);
+    expect(req.categories).toEqual(['sport']);
+    expect(req.subcategories).toEqual(['extreme_sports', 'climbing_gym']);
+  });
+
+  it('T3: omits subcategories entirely when no subtype is selected', () => {
+    const req = buildActivitiesRequest(
+      { scope: 'nearby', coordinates: { latitude: 1, longitude: 2 } },
+      { categories: ['sport'], subtypes: [], minRating: null, maxDistanceKm: null }
+    );
+    expect(req.subcategories).toBeUndefined();
   });
 });
 

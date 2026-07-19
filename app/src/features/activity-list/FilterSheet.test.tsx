@@ -93,6 +93,7 @@ describe('FilterSheet', () => {
 
     expect(onApply).toHaveBeenCalledWith({
       categories: ['sport'],
+      subtypes: [],
       minRating: null,
       maxDistanceKm: null,
     });
@@ -127,7 +128,7 @@ describe('FilterSheet', () => {
   });
 
   it('Clear all resets every group to unset for nearby (no distance control to reset)', async () => {
-    const initial: Filters = { categories: ['sport'], minRating: 4.5, maxDistanceKm: null };
+    const initial: Filters = { categories: ['sport'], subtypes: [], minRating: 4.5, maxDistanceKm: null };
     render(
       <FilterSheet
         visible
@@ -151,7 +152,7 @@ describe('FilterSheet', () => {
   });
 
   it('Clear all resets anywhere\'s distance slider back to "No limit"', async () => {
-    const initial: Filters = { categories: [], minRating: null, maxDistanceKm: 300 };
+    const initial: Filters = { categories: [], subtypes: [], minRating: null, maxDistanceKm: 300 };
     render(
       <FilterSheet
         visible
@@ -188,5 +189,120 @@ describe('FilterSheet', () => {
     );
     await flush();
     expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
+  });
+
+  describe('Subtype group (T3)', () => {
+    it('is absent when 0 categories are selected', async () => {
+      render(
+        <FilterSheet
+          visible
+          initialFilters={EMPTY_FILTERS}
+          scope="nearby"
+          hasLocationAnchor
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+      expect(screen.queryByText('Subtype')).toBeNull();
+    });
+
+    it('renders the selected category\'s subtype chips when exactly 1 category is selected', async () => {
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+      render(
+        <FilterSheet
+          visible
+          initialFilters={initial}
+          scope="nearby"
+          hasLocationAnchor
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+      expect(screen.getByText('Subtype')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Climbing Gym' })).toBeTruthy();
+      // A different category's subtype never leaks in.
+      expect(screen.queryByText('Fine Dining')).toBeNull();
+    });
+
+    it('is absent again when a second category is added (many selected)', async () => {
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+      render(
+        <FilterSheet
+          visible
+          initialFilters={initial}
+          scope="nearby"
+          hasLocationAnchor
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+      expect(screen.getByText('Subtype')).toBeTruthy();
+
+      fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
+
+      expect(screen.queryByText('Subtype')).toBeNull();
+    });
+
+    it('multi-selects subtype chips (OR)', async () => {
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+      const onApply = jest.fn().mockResolvedValue({ status: 'success', activities: [] });
+      render(
+        <FilterSheet
+          visible
+          initialFilters={initial}
+          scope="nearby"
+          hasLocationAnchor
+          onApply={onApply}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+
+      fireEvent.press(screen.getByRole('button', { name: 'Climbing Gym' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Golf Course' }));
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
+      });
+
+      expect(onApply).toHaveBeenCalledWith(
+        expect.objectContaining({ subtypes: ['climbing_gym', 'golf_course'] })
+      );
+    });
+
+    it('clears orphaned subtype selections when the category selection changes', async () => {
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+      const onApply = jest.fn().mockResolvedValue({ status: 'success', activities: [] });
+      render(
+        <FilterSheet
+          visible
+          initialFilters={initial}
+          scope="nearby"
+          hasLocationAnchor
+          onApply={onApply}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+
+      fireEvent.press(screen.getByRole('button', { name: 'Climbing Gym' }));
+      // Deselect Sport entirely -> 0 categories, group disappears.
+      fireEvent.press(screen.getByRole('button', { name: /sport, selected/i }));
+      expect(screen.queryByText('Subtype')).toBeNull();
+
+      // Re-select a single (different) category — subtype selection must
+      // come back empty, never the stale Sport subtype.
+      fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
+      expect(screen.getByText('Subtype')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /climbing gym, selected/i })).toBeNull();
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
+      });
+      expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ subtypes: [] }));
+    });
   });
 });
