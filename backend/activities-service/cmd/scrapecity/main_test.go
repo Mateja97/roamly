@@ -4,11 +4,56 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
+
+	"backend/shared/models/activitiessvc"
 )
+
+// TestFieldMask_RequestsMachineTypes proves the field mask asks Google for
+// the machine-readable type fields, not just the localized display label —
+// the T1 gap: primaryTypeDisplayName alone can't be mapped to a subtype.
+func TestFieldMask_RequestsMachineTypes(t *testing.T) {
+	for _, want := range []string{"places.primaryType", "places.types", "places.primaryTypeDisplayName"} {
+		if !strings.Contains(fieldMask, want) {
+			t.Errorf("fieldMask = %q, want it to contain %q", fieldMask, want)
+		}
+	}
+}
+
+// TestToOutputRow_CarriesPrimaryTypeAndTypes is the runnable check for T1's
+// acceptance criterion: a place with a Places machine type must land on the
+// output row with a non-empty primary_type, not dropped between parse and
+// persist; an absent type must stay empty, not invented.
+func TestToOutputRow_CarriesPrimaryTypeAndTypes(t *testing.T) {
+	cases := []struct {
+		name        string
+		primaryType string
+		types       []string
+	}{
+		{"known type flows through", "fine_dining_restaurant", []string{"fine_dining_restaurant", "restaurant", "food"}},
+		{"absent type stays empty", "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var p placesmap.Place
+			p.ID = "places/abc123"
+			p.PrimaryType = tc.primaryType
+			p.Types = tc.types
+
+			row := toOutputRow(activitiessvc.CategoryRestaurants, "Belgrade", "Serbia", p, nil)
+			if row.PrimaryType != tc.primaryType {
+				t.Errorf("row.PrimaryType = %q, want %q", row.PrimaryType, tc.primaryType)
+			}
+			if len(row.Types) != len(tc.types) {
+				t.Errorf("row.Types = %v, want %v", row.Types, tc.types)
+			}
+		})
+	}
+}
 
 func TestPassesFilter(t *testing.T) {
 	mk := func(rating float64, reviews int) placesmap.Place {

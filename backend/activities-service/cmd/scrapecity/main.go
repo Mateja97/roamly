@@ -35,7 +35,8 @@ var fieldMask = strings.Join([]string{
 	"places.id", "places.displayName", "places.location",
 	"places.formattedAddress", "places.rating", "places.userRatingCount",
 	"places.priceLevel", "places.googleMapsUri", "places.photos",
-	"places.regularOpeningHours", "places.primaryTypeDisplayName", "nextPageToken",
+	"places.regularOpeningHours", "places.primaryTypeDisplayName",
+	"places.primaryType", "places.types", "nextPageToken",
 }, ",")
 
 // categoryQueries maps each of the 12 taxonomy categories to the Places Text
@@ -60,8 +61,10 @@ var categoryQueries = []struct {
 	{activitiessvc.CategoryEntertainment, "entertainment"},
 }
 
-// outputRow mirrors cmd/importcity's inputRow exactly — the two files are the
-// contract between Stage A and Stage B.
+// outputRow mirrors cmd/importcity's inputRow — the two files are the
+// contract between Stage A and Stage B. PrimaryType/Types are captured here
+// ahead of a downstream subtype consumer; importcity's inputRow doesn't read
+// them yet.
 type outputRow struct {
 	Title       string          `json:"title"`
 	Description string          `json:"description"`
@@ -77,8 +80,37 @@ type outputRow struct {
 	SourceURL   string          `json:"source_url"`
 	// PlaceID is the Places place_id (p.ID) — the stable identifier that
 	// becomes activities.external_id, distinct from SourceURL (the Maps URI).
-	PlaceID string          `json:"place_id"`
-	Raw     json.RawMessage `json:"raw"`
+	PlaceID string `json:"place_id"`
+	// PrimaryType and Types are the raw Places machine type, captured for a
+	// downstream subtype mapping (T2); not consumed here.
+	PrimaryType string          `json:"primary_type,omitempty"`
+	Types       []string        `json:"types,omitempty"`
+	Raw         json.RawMessage `json:"raw"`
+}
+
+// toOutputRow maps one already-filtered Place onto the Stage-A output row.
+// Pulled out of the scan loop so the field-by-field mapping (in particular
+// PrimaryType/Types surviving the parse-to-persist hop) is directly
+// testable without a live Places call.
+func toOutputRow(cat activitiessvc.Category, city, country string, p placesmap.Place, photoURLs []string) outputRow {
+	raw, _ := json.Marshal(p)
+	return outputRow{
+		Title:       p.DisplayName.Text,
+		Category:    string(cat),
+		Lat:         p.Location.Latitude,
+		Lng:         p.Location.Longitude,
+		Country:     country,
+		City:        city,
+		Address:     p.FormattedAddress,
+		Rating:      p.Rating,
+		Details:     placesmap.BuildDetails(cat, city, p),
+		PhotoURLs:   photoURLs,
+		SourceURL:   p.GoogleMapsURI,
+		PlaceID:     p.ID,
+		PrimaryType: p.PrimaryType,
+		Types:       p.Types,
+		Raw:         raw,
+	}
 }
 
 // passesFilter is the "high confidence + relevant" gate: a venue must clear
@@ -161,22 +193,8 @@ func main() {
 				}
 				seen[p.ID] = true
 
-				raw, _ := json.Marshal(p)
-				rows = append(rows, outputRow{
-					Title:     p.DisplayName.Text,
-					Category:  string(cq.category),
-					Lat:       p.Location.Latitude,
-					Lng:       p.Location.Longitude,
-					Country:   *country,
-					City:      *city,
-					Address:   p.FormattedAddress,
-					Rating:    p.Rating,
-					Details:   placesmap.BuildDetails(cq.category, *city, p),
-					PhotoURLs: photoURIs(ctx, c, photoNames(p), *photos),
-					SourceURL: p.GoogleMapsURI,
-					PlaceID:   p.ID,
-					Raw:       raw,
-				})
+				photoURLs := photoURIs(ctx, c, photoNames(p), *photos)
+				rows = append(rows, toOutputRow(cq.category, *city, *country, p, photoURLs))
 				kept++
 			}
 			token = resp.NextPageToken
