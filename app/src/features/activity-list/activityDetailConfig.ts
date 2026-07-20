@@ -374,6 +374,77 @@ export function openStatus(
   return undefined;
 }
 
+// opening-hours T1: Monday-first display order for the week view.
+// `DAY_ORDER` above stays Sunday-first — that's what `venueNow`/
+// `periodCoversNow` key off internally — this is purely a display order.
+const WEEK_VIEW_ORDER: DayOfWeek[] = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+];
+
+export type WeekViewDay = { day: DayOfWeek; hours: string };
+
+function dayHours(oh: OpeningHours, day: DayOfWeek): string {
+  if (oh.always_open) return 'Open 24 hours';
+  const dayPeriods = (oh.periods ?? [])
+    .filter((p) => p.day === day)
+    .slice()
+    .sort((a, b) => (hhmmToMinutes(a.open) ?? 0) - (hhmmToMinutes(b.open) ?? 0));
+  if (dayPeriods.length === 0) return 'Closed';
+  return dayPeriods.map((p) => `${p.open}–${p.close}`).join(', ');
+}
+
+// Pure: flat `periods` -> one entry per day, Monday->Sunday. A period is
+// bucketed by its own `day` field (the day it *starts*), so a past-midnight
+// period like Sunday 20:00-02:00 lands on Sunday, never Monday — matches
+// `periodCoversNow`'s own treatment of `period.day` as the start day. A day
+// with multiple periods (split hours) lists them ascending by start time,
+// comma-joined; a day with none reads "Closed"; `always_open` reads
+// "Open 24 hours" for every day. Feeds this task's Today row and T2's
+// full-week modal — no visual surface of its own.
+export function weekView(oh: OpeningHours): WeekViewDay[] {
+  return WEEK_VIEW_ORDER.map((day) => ({ day, hours: dayHours(oh, day) }));
+}
+
+function capitalize(day: DayOfWeek): string {
+  return day.charAt(0).toUpperCase() + day.slice(1);
+}
+
+export type TodayHoursRowData = {
+  status: NonNullable<ReturnType<typeof openStatus>>;
+  weekday: string;
+  hours: string;
+};
+
+// opening-hours T1: the detail screen's default-state "today" line. Renders
+// only when `opening_hours` is present *and* usable — mirrors `openStatus`'s
+// own usability gate (`computeOpeningHoursStatus`) plus a resolvable
+// `venueNow` for "today"'s venue-local weekday — so a bad/missing timezone
+// degrades to `undefined` and the caller falls back to the legacy free-text
+// `hours` chip instead of showing a wrong or blank row.
+export function todayHoursRow(activity: Activity): TodayHoursRowData | undefined {
+  const d = activity.details;
+  if (!d) return undefined;
+  const oh = openingHoursOf(d);
+  if (!oh || computeOpeningHoursStatus(oh) === undefined) return undefined;
+  const now = venueNow(oh.timezone);
+  if (!now) return undefined;
+  const status = openStatus(activity);
+  if (!status) return undefined;
+  const today = weekView(oh).find((row) => row.day === now.day);
+  if (!today) return undefined;
+  return {
+    status,
+    weekday: capitalize(now.day),
+    hours: today.hours === 'Closed' ? 'Closed today' : today.hours,
+  };
+}
+
 function buildChips(
   entries: [ComponentType<LucideProps>, string, string | undefined][],
 ): FactChip[] {
@@ -391,12 +462,16 @@ function buildChips(
 export function factStripFields(activity: Activity): FactChip[] {
   const d = activity.details;
   if (!d) return [];
+  // opening-hours T1: the Today row (when it renders) becomes the one home
+  // for hours — suppress the legacy free-text `hours` chip so it never
+  // duplicates alongside it (design-spec.md's "no duplicate hours" rule).
+  const suppressLegacyHours = todayHoursRow(activity) !== undefined;
   switch (d.category) {
     case 'restaurants':
       return buildChips([
         [Utensils, 'Cuisine', d.cuisine],
         [Euro, 'Price', d.price_tier],
-        [Clock, 'Hours', d.hours],
+        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
       ]);
     case 'bars':
       return buildChips([
@@ -408,7 +483,7 @@ export function factStripFields(activity: Activity): FactChip[] {
       return buildChips([
         [Coffee, 'Known for', d.known_for_brew],
         [Wifi, 'Wifi', d.wifi_quality],
-        [Clock, 'Hours', d.hours],
+        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
       ]);
     case 'nightlife':
       return buildChips([
@@ -432,19 +507,19 @@ export function factStripFields(activity: Activity): FactChip[] {
       return buildChips([
         [Landmark, 'Venue', d.venue_type],
         [Euro, 'Tickets', d.ticket_price],
-        [Clock, 'Hours', d.hours],
+        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
       ]);
     case 'art':
       return buildChips([
         [ImageIcon, 'Venue', d.venue_type],
         [Euro, 'Tickets', d.ticket_price],
-        [Clock, 'Hours', d.hours],
+        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
       ]);
     case 'shopping':
       return buildChips([
         [Store, 'Venue', d.venue_type],
         [Calendar, 'Best day', d.best_day],
-        [Clock, 'Hours', d.hours],
+        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
       ]);
     case 'kids':
     case 'wellness':

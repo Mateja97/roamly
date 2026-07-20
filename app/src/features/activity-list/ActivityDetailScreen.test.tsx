@@ -675,4 +675,127 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
     });
   });
+
+  describe('Today hours row (opening-hours T1)', () => {
+    // 2024-01-01 is a Monday, noon UTC — fixes the venue-local weekday/time
+    // the same way activityDetailConfig.test.ts does.
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T12:00:00Z'));
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('shows today only, suppresses the legacy Hours chip and the meta-row status item, for usable structured opening_hours', () => {
+      const withStructuredHours: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          hours: '9am–11pm',
+          opening_hours: {
+            timezone: 'UTC',
+            periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+          },
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={withStructuredHours}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Monday')).toBeTruthy();
+      expect(screen.getByText('09:00–17:00')).toBeTruthy();
+      expect(screen.getAllByText('Open')).toHaveLength(1); // only the Today row, not also the meta row
+      expect(screen.queryByText('9am–11pm')).toBeNull(); // legacy chip suppressed
+      expect(screen.queryByText('Tuesday')).toBeNull(); // default state is today-only
+    });
+
+    it('shows "Closed today" when today has zero periods', () => {
+      const closedToday: Activity = {
+        ...activity,
+        details: {
+          category: 'cafes',
+          opening_hours: {
+            timezone: 'UTC',
+            periods: [{ day: 'tuesday', open: '09:00', close: '17:00' }],
+          },
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={closedToday}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Closed today')).toBeTruthy();
+    });
+
+    it('shows "Open 24 hours" for an always_open venue', () => {
+      const alwaysOpen: Activity = {
+        ...activity,
+        category: 'shopping',
+        details: {
+          category: 'shopping',
+          opening_hours: { timezone: 'UTC', always_open: true },
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={alwaysOpen}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Open 24 hours')).toBeTruthy();
+    });
+
+    it('legacy-only fallback: keeps showing the free-text Hours chip and the meta-row status, no Today row, no regression', () => {
+      const legacyOnly: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          hours: '9am–11pm',
+          open_status: 'Open now',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={legacyOnly}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('9am–11pm')).toBeTruthy();
+      expect(screen.getByText('Open now')).toBeTruthy();
+      expect(screen.queryByText('Monday')).toBeNull();
+    });
+
+    it('degrades to the legacy chip (no Today row) when opening_hours has an unresolvable timezone', () => {
+      const badTimezone: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          hours: '9am–11pm',
+          open_status: 'Open now',
+          opening_hours: {
+            timezone: 'Not/AZone',
+            periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+          },
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={badTimezone}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('9am–11pm')).toBeTruthy();
+      expect(screen.getByText('Open now')).toBeTruthy();
+      expect(screen.queryByText('Monday')).toBeNull();
+    });
+  });
 });

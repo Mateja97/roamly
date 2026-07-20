@@ -52,6 +52,7 @@ import {
   PRIMARY_CTA_LABEL,
   primaryActionURL,
   primaryCTAIsDirections,
+  todayHoursRow,
   uniqueSection,
   wellnessBookingNote,
   type BodySection,
@@ -59,6 +60,7 @@ import {
 import { DifficultyMeter } from './DifficultyMeter';
 import { FactStrip } from './FactStrip';
 import { PhotoViewerModal } from './PhotoViewerModal';
+import { TodayHoursRow } from './TodayHoursRow';
 import { UniqueSection } from './UniqueSection';
 
 // design-spec.md's T4 "Shared base layout" section: header back control,
@@ -127,6 +129,10 @@ export function ActivityDetailScreen({
     ? `${activity.distance_km.toFixed(1)} km away`
     : activity.country;
   const status = openStatus(activity);
+  // opening-hours T1: when this is defined, it supersedes the meta row's
+  // own Open/Closed item below (single home for the status, per
+  // design-spec.md) and renders as its own row instead.
+  const todayRow = todayHoursRow(activity);
   const metaExtras = metaRowExtras(activity);
   const fields = factStripFields(activity);
   const unique = uniqueSection(activity);
@@ -323,7 +329,7 @@ export function ActivityDetailScreen({
           <Text style={styles.title}>{activity.title}</Text>
 
           <View style={styles.metaRow}>
-            {activity.category === 'nightlife' && status ? (
+            {activity.category === 'nightlife' && status && !todayRow ? (
               // design-spec.md T8 addendum #9: the status dot + label is the
               // only place a leading status dot appears, and sits first,
               // before the usual "·"-separated items.
@@ -358,7 +364,7 @@ export function ActivityDetailScreen({
                     <Text style={styles.metaText}>{extra}</Text>
                   </View>
                 ))}
-                {status && (
+                {status && !todayRow && (
                   <View style={styles.metaExtraGroup}>
                     <Text style={styles.metaSeparator}>·</Text>
                     <Text
@@ -375,6 +381,8 @@ export function ActivityDetailScreen({
               </>
             )}
           </View>
+
+          {todayRow && <TodayHoursRow data={todayRow} />}
 
           {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 
