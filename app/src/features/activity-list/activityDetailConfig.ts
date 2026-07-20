@@ -37,6 +37,10 @@ export type FactChip = {
   icon: ComponentType<LucideProps>;
   label: string;
   value: string;
+  // opening-hours T3: present only on the Hours chip when structured
+  // opening_hours is usable — marks it interactive so FactStrip renders it
+  // as a Pressable (opens the T2 week modal) instead of a plain View.
+  onPress?: () => void;
 };
 
 export type CompactRow = {
@@ -476,21 +480,42 @@ function buildChips(
 // Per-field omission lives here: `buildChips` drops any field with no value,
 // so the fact strip naturally re-flows to 2 chips or omits itself entirely
 // (empty array) with no placeholder — the component decides whether to
-// render based on array length.
-export function factStripFields(activity: Activity): FactChip[] {
+// render based on array length. The Hours chip is appended separately (via
+// `withHours` below) since its shape isn't a plain [icon, label, value]
+// triple once it's interactive.
+export function factStripFields(
+  activity: Activity,
+  onPressHours?: () => void,
+): FactChip[] {
   const d = activity.details;
   if (!d) return [];
-  // opening-hours T1: the Today row (when it renders) becomes the one home
-  // for hours — suppress the legacy free-text `hours` chip so it never
-  // duplicates alongside it (design-spec.md's "no duplicate hours" rule).
-  const suppressLegacyHours = todayHoursRow(activity) !== undefined;
+  // opening-hours T3: the one Hours chip builder shared by every category
+  // below. Structured `opening_hours` usable -> today's status is the bold
+  // value line, today's hour range is the muted label line (mirrors the
+  // sibling chip's value/label shape), and `onPressHours` makes it a real
+  // tap target reopening the T2 week modal. Otherwise falls back to the
+  // legacy free-text value under the static "Hours" label, non-interactive
+  // — exactly the chip that shipped before T1 (no chevron, no tap target).
+  // Omits the chip (returns `chips` unchanged) when there's nothing to show.
+  function withHours(chips: FactChip[], legacyHours: string | undefined): FactChip[] {
+    const today = todayHoursRow(activity);
+    if (today) {
+      return [
+        ...chips,
+        { icon: Clock, value: today.status.text, label: today.hours, onPress: onPressHours },
+      ];
+    }
+    return legacyHours ? [...chips, { icon: Clock, value: legacyHours, label: 'Hours' }] : chips;
+  }
   switch (d.category) {
     case 'restaurants':
-      return buildChips([
-        [Utensils, 'Cuisine', d.cuisine],
-        [Euro, 'Price', d.price_tier],
-        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
-      ]);
+      return withHours(
+        buildChips([
+          [Utensils, 'Cuisine', d.cuisine],
+          [Euro, 'Price', d.price_tier],
+        ]),
+        d.hours,
+      );
     case 'bars':
       return buildChips([
         [Martini, 'Vibe', d.vibe],
@@ -498,11 +523,13 @@ export function factStripFields(activity: Activity): FactChip[] {
         [Clock, 'Opens', d.opens_time],
       ]);
     case 'cafes':
-      return buildChips([
-        [Coffee, 'Known for', d.known_for_brew],
-        [Wifi, 'Wifi', d.wifi_quality],
-        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
-      ]);
+      return withHours(
+        buildChips([
+          [Coffee, 'Known for', d.known_for_brew],
+          [Wifi, 'Wifi', d.wifi_quality],
+        ]),
+        d.hours,
+      );
     case 'nightlife':
       return buildChips([
         [Euro, 'Entry', d.entry_price],
@@ -522,23 +549,29 @@ export function factStripFields(activity: Activity): FactChip[] {
         [Wrench, 'Gear', d.gear],
       ]);
     case 'culture':
-      return buildChips([
-        [Landmark, 'Venue', d.venue_type],
-        [Euro, 'Tickets', d.ticket_price],
-        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
-      ]);
+      return withHours(
+        buildChips([
+          [Landmark, 'Venue', d.venue_type],
+          [Euro, 'Tickets', d.ticket_price],
+        ]),
+        d.hours,
+      );
     case 'art':
-      return buildChips([
-        [ImageIcon, 'Venue', d.venue_type],
-        [Euro, 'Tickets', d.ticket_price],
-        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
-      ]);
+      return withHours(
+        buildChips([
+          [ImageIcon, 'Venue', d.venue_type],
+          [Euro, 'Tickets', d.ticket_price],
+        ]),
+        d.hours,
+      );
     case 'shopping':
-      return buildChips([
-        [Store, 'Venue', d.venue_type],
-        [Calendar, 'Best day', d.best_day],
-        [Clock, 'Hours', suppressLegacyHours ? undefined : d.hours],
-      ]);
+      return withHours(
+        buildChips([
+          [Store, 'Venue', d.venue_type],
+          [Calendar, 'Best day', d.best_day],
+        ]),
+        d.hours,
+      );
     case 'kids':
     case 'wellness':
       return [];

@@ -1,5 +1,11 @@
+import { Clock } from 'lucide-react-native';
 import type { Activity, OpeningHours } from '../../api/activities';
-import { openStatus, todayHoursRow, weekView } from './activityDetailConfig';
+import {
+  factStripFields,
+  openStatus,
+  todayHoursRow,
+  weekView,
+} from './activityDetailConfig';
 
 // 2024-01-01 is a Monday. Fixing the clock lets every case below assert an
 // exact venue-local weekday/time without depending on the host machine's
@@ -307,5 +313,78 @@ describe('todayHoursRow — default-state today line', () => {
       open_tonight: true,
     });
     expect(todayHoursRow(activity)).toBeUndefined();
+  });
+});
+
+describe('factStripFields — Hours chip (opening-hours T3)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('replaces the legacy free-text value with today status/hours and attaches onPress when structured data is usable', () => {
+    const onPressHours = jest.fn();
+    const activity = baseActivity({
+      category: 'restaurants',
+      hours: '9am–11pm',
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+      },
+    });
+    const hours = factStripFields(activity, onPressHours).find(
+      (f) => f.label === '09:00–17:00',
+    );
+    expect(hours).toEqual({
+      icon: Clock,
+      label: '09:00–17:00',
+      value: 'Open',
+      onPress: onPressHours,
+    });
+  });
+
+  it('keeps the plain legacy chip (no onPress) when there is no usable structured data', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      hours: '9am–11pm',
+    });
+    const hours = factStripFields(activity, jest.fn()).find(
+      (f) => f.label === 'Hours',
+    );
+    expect(hours).toEqual({
+      icon: Clock,
+      label: 'Hours',
+      value: '9am–11pm',
+    });
+  });
+
+  it('omits the Hours chip entirely when there is neither structured nor legacy data', () => {
+    const activity = baseActivity({ category: 'restaurants' });
+    expect(factStripFields(activity).some((f) => f.label === 'Hours')).toBe(
+      false,
+    );
+  });
+
+  it('shows "Open 24 hours" / "Closed today" compactly for always_open and fully-closed-today venues', () => {
+    const alwaysOpen = baseActivity({
+      category: 'shopping',
+      opening_hours: { timezone: 'UTC', always_open: true },
+    });
+    expect(
+      factStripFields(alwaysOpen).find((f) => f.label === 'Open 24 hours'),
+    ).toMatchObject({ value: 'Open' });
+
+    const closedToday = baseActivity({
+      category: 'cafes',
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'tuesday', open: '09:00', close: '17:00' }],
+      },
+    });
+    expect(
+      factStripFields(closedToday).find((f) => f.label === 'Closed today'),
+    ).toMatchObject({ value: 'Closed' });
   });
 });
