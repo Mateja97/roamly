@@ -1,5 +1,5 @@
-import type { Activity } from '../../api/activities';
-import { openStatus } from './activityDetailConfig';
+import type { Activity, OpeningHours } from '../../api/activities';
+import { openStatus, todayHoursRow, weekView } from './activityDetailConfig';
 
 // 2024-01-01 is a Monday. Fixing the clock lets every case below assert an
 // exact venue-local weekday/time without depending on the host machine's
@@ -159,5 +159,153 @@ describe('openStatus — structured opening_hours', () => {
   it('returns undefined for an activity with no details at all', () => {
     const activity = baseActivity(undefined);
     expect(openStatus(activity)).toBeUndefined();
+  });
+});
+
+describe('weekView — flat periods to Monday-first week view', () => {
+  it('orders Monday->Sunday regardless of the input periods order', () => {
+    const oh: OpeningHours = {
+      timezone: 'UTC',
+      periods: [
+        { day: 'sunday', open: '10:00', close: '14:00' },
+        { day: 'monday', open: '09:00', close: '17:00' },
+      ],
+    };
+    const rows = weekView(oh);
+    expect(rows.map((row) => row.day)).toEqual([
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ]);
+    expect(rows[0]).toEqual({ day: 'monday', hours: '09:00–17:00' });
+    expect(rows[6]).toEqual({ day: 'sunday', hours: '10:00–14:00' });
+  });
+
+  it('lists a split-hours day ascending by start time, comma-joined', () => {
+    const oh: OpeningHours = {
+      timezone: 'UTC',
+      periods: [
+        { day: 'monday', open: '18:00', close: '22:00' },
+        { day: 'monday', open: '09:00', close: '14:00' },
+      ],
+    };
+    const monday = weekView(oh).find((row) => row.day === 'monday');
+    expect(monday?.hours).toBe('09:00–14:00, 18:00–22:00');
+  });
+
+  it('reads "Closed" for a day with zero periods', () => {
+    const oh: OpeningHours = {
+      timezone: 'UTC',
+      periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+    };
+    const tuesday = weekView(oh).find((row) => row.day === 'tuesday');
+    expect(tuesday?.hours).toBe('Closed');
+  });
+
+  it('reads "Open 24 hours" for every day of an always_open venue', () => {
+    const oh: OpeningHours = { timezone: 'UTC', always_open: true };
+    expect(weekView(oh).every((row) => row.hours === 'Open 24 hours')).toBe(
+      true,
+    );
+  });
+
+  it('attributes a past-midnight period to its start day, not the day it ends on', () => {
+    const oh: OpeningHours = {
+      timezone: 'UTC',
+      periods: [{ day: 'sunday', open: '20:00', close: '02:00' }],
+    };
+    const rows = weekView(oh);
+    expect(rows.find((row) => row.day === 'sunday')?.hours).toBe(
+      '20:00–02:00',
+    );
+    expect(rows.find((row) => row.day === 'monday')?.hours).toBe('Closed');
+  });
+});
+
+describe('todayHoursRow — default-state today line', () => {
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('returns the venue-local today entry when opening_hours is usable', () => {
+    const activity = baseActivity({
+      category: 'cafes',
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+      },
+    });
+    expect(todayHoursRow(activity)).toEqual({
+      status: { text: 'Open', isOpen: true },
+      weekday: 'Monday',
+      hours: '09:00–17:00',
+    });
+  });
+
+  it('reads "Closed today" when today has zero periods', () => {
+    const activity = baseActivity({
+      category: 'cafes',
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'tuesday', open: '09:00', close: '17:00' }],
+      },
+    });
+    expect(todayHoursRow(activity)).toEqual({
+      status: { text: 'Closed', isOpen: false },
+      weekday: 'Monday',
+      hours: 'Closed today',
+    });
+  });
+
+  it('reads "Open 24 hours" for an always_open venue', () => {
+    const activity = baseActivity({
+      category: 'shopping',
+      opening_hours: { timezone: 'UTC', always_open: true },
+    });
+    expect(todayHoursRow(activity)).toEqual({
+      status: { text: 'Open', isOpen: true },
+      weekday: 'Monday',
+      hours: 'Open 24 hours',
+    });
+  });
+
+  it('joins split hours ascending by start time in the detail line', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [
+          { day: 'monday', open: '18:00', close: '22:00' },
+          { day: 'monday', open: '09:00', close: '14:00' },
+        ],
+      },
+    });
+    expect(todayHoursRow(activity)?.hours).toBe('09:00–14:00, 18:00–22:00');
+  });
+
+  it('degrades to undefined on an unresolvable timezone (falls back to the legacy chip)', () => {
+    const activity = baseActivity({
+      category: 'art',
+      opening_hours: {
+        timezone: 'Not/AZone',
+        periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+      },
+    });
+    expect(todayHoursRow(activity)).toBeUndefined();
+  });
+
+  it('degrades to undefined when there is no opening_hours at all', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      open_tonight: true,
+    });
+    expect(todayHoursRow(activity)).toBeUndefined();
   });
 });
