@@ -677,7 +677,7 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
-  describe('Today hours row (opening-hours T1)', () => {
+  describe('Hours fact chip (opening-hours T1+T3 — folded back into FactStrip)', () => {
     // 2024-01-01 is a Monday, noon UTC — fixes the venue-local weekday/time
     // the same way activityDetailConfig.test.ts does.
     beforeEach(() => {
@@ -687,7 +687,7 @@ describe('ActivityDetailScreen', () => {
       jest.useRealTimers();
     });
 
-    it('shows today only, suppresses the legacy Hours chip and the meta-row status item, for usable structured opening_hours', () => {
+    it('shows today status/hours as a compact chip, suppressing the legacy free-text value and the meta-row status item, for usable structured opening_hours', () => {
       const withStructuredHours: Activity = {
         ...activity,
         details: {
@@ -706,11 +706,36 @@ describe('ActivityDetailScreen', () => {
           onBack={jest.fn()}
         />,
       );
-      expect(screen.getByText('Monday')).toBeTruthy();
+      expect(screen.getAllByText('Open')).toHaveLength(1); // only the Hours chip, not also the meta row
       expect(screen.getByText('09:00–17:00')).toBeTruthy();
-      expect(screen.getAllByText('Open')).toHaveLength(1); // only the Today row, not also the meta row
-      expect(screen.queryByText('9am–11pm')).toBeNull(); // legacy chip suppressed
-      expect(screen.queryByText('Tuesday')).toBeNull(); // default state is today-only
+      expect(screen.queryByText('9am–11pm')).toBeNull(); // legacy free-text suppressed
+    });
+
+    it('keeps the venue-type sibling chip in the same FactStrip grid, not pushed down by any extra row', () => {
+      const cultureVenue: Activity = {
+        ...activity,
+        category: 'culture',
+        details: {
+          category: 'culture',
+          venue_type: 'Historical Landmark',
+          opening_hours: {
+            timezone: 'UTC',
+            periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+          },
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={cultureVenue}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      // Both chips render together in FactStrip — no standalone full-width
+      // row inserted above it that would push the venue-type chip down.
+      expect(screen.getByText('Historical Landmark')).toBeTruthy();
+      expect(screen.getByText('Venue')).toBeTruthy();
+      expect(screen.getByText('09:00–17:00')).toBeTruthy();
     });
 
     it('shows "Closed today" when today has zero periods', () => {
@@ -753,7 +778,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Open 24 hours')).toBeTruthy();
     });
 
-    it('legacy-only fallback: keeps showing the free-text Hours chip and the meta-row status, no Today row, no regression', () => {
+    it('legacy-only fallback: keeps showing the free-text Hours chip (non-interactive) and the meta-row status, no regression', () => {
       const legacyOnly: Activity = {
         ...activity,
         details: {
@@ -771,10 +796,12 @@ describe('ActivityDetailScreen', () => {
       );
       expect(screen.getByText('9am–11pm')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
-      expect(screen.queryByText('Monday')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'See full opening hours' }),
+      ).toBeNull();
     });
 
-    it('degrades to the legacy chip (no Today row) when opening_hours has an unresolvable timezone', () => {
+    it('degrades to the legacy chip when opening_hours has an unresolvable timezone', () => {
       const badTimezone: Activity = {
         ...activity,
         details: {
@@ -796,7 +823,9 @@ describe('ActivityDetailScreen', () => {
       );
       expect(screen.getByText('9am–11pm')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
-      expect(screen.queryByText('Monday')).toBeNull();
+      expect(
+        screen.queryByRole('button', { name: 'See full opening hours' }),
+      ).toBeNull();
     });
   });
 

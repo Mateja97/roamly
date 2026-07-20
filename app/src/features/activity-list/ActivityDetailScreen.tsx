@@ -61,7 +61,6 @@ import {
 import { DifficultyMeter } from './DifficultyMeter';
 import { FactStrip } from './FactStrip';
 import { PhotoViewerModal } from './PhotoViewerModal';
-import { TodayHoursRow } from './TodayHoursRow';
 import { UniqueSection } from './UniqueSection';
 import { WeekHoursModal } from './WeekHoursModal';
 
@@ -136,13 +135,18 @@ export function ActivityDetailScreen({
   const status = openStatus(activity);
   // opening-hours T1: when this is defined, it supersedes the meta row's
   // own Open/Closed item below (single home for the status, per
-  // design-spec.md) and renders as its own row instead.
+  // design-spec.md) — opening-hours T3 moved the actual rendering of
+  // today's status/hours into the FactStrip Hours chip (see `fields`
+  // below), this flag now only gates the meta-row suppression.
   const todayRow = todayHoursRow(activity);
   // opening-hours T2: same usability gate as `todayRow` — defined exactly
-  // when the tap affordance above should be interactive.
+  // when the Hours chip's tap affordance below should be interactive.
   const weekData = weekHoursModalData(activity);
   const metaExtras = metaRowExtras(activity);
-  const fields = factStripFields(activity);
+  // opening-hours T3: threads the modal-open callback into the Hours chip —
+  // `factStripFields` only attaches it when structured opening_hours is
+  // usable (see `hoursChip` there), so this is a no-op for the legacy chip.
+  const fields = factStripFields(activity, () => setHoursModalOpen(true));
   const unique = uniqueSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
   const genericLabel = genericActionLabel(activity.category);
@@ -389,10 +393,6 @@ export function ActivityDetailScreen({
               </>
             )}
           </View>
-
-          {todayRow && (
-            <TodayHoursRow data={todayRow} onPress={() => setHoursModalOpen(true)} />
-          )}
 
           {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 
