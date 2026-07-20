@@ -1,10 +1,11 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import { Linking, Share } from 'react-native';
+import { AccessibilityInfo, Linking, Modal, Share } from 'react-native';
 import type { Activity } from '../../api/activities';
 import { getActivityPhotos } from '../../api/activities';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
@@ -796,6 +797,90 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('9am–11pm')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
       expect(screen.queryByText('Monday')).toBeNull();
+    });
+  });
+
+  describe('Week hours modal (opening-hours T2)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T12:00:00Z')); // Monday, noon UTC
+      jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+    });
+
+    const withStructuredHours: Activity = {
+      ...activity,
+      details: {
+        category: 'restaurants',
+        hours: '9am–11pm',
+        opening_hours: {
+          timezone: 'UTC',
+          periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+        },
+      },
+    };
+
+    async function flush() {
+      await act(async () => {});
+    }
+
+    it('opens the full-week modal when the Today row is tapped', async () => {
+      render(
+        <ActivityDetailScreen activity={withStructuredHours} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByText('Opening hours')).toBeNull();
+
+      fireEvent.press(screen.getByRole('button', { name: 'See full opening hours' }));
+      await flush();
+
+      expect(screen.getByText('Opening hours')).toBeTruthy();
+      // Full week, Monday->Sunday, now visible (unlike the collapsed default state).
+      expect(screen.getByText('Tuesday')).toBeTruthy();
+      expect(screen.getByText('Monday · Today')).toBeTruthy();
+    });
+
+    it('closes the modal (not the screen) via its close control', async () => {
+      const onBack = jest.fn();
+      render(
+        <ActivityDetailScreen activity={withStructuredHours} showDistance onBack={onBack} />,
+      );
+      fireEvent.press(screen.getByRole('button', { name: 'See full opening hours' }));
+      await flush();
+
+      fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+
+      expect(screen.queryByText('Opening hours')).toBeNull();
+      expect(onBack).not.toHaveBeenCalled();
+    });
+
+    it('closes the modal (not the screen) via the platform back gesture / Android hardware back', async () => {
+      const onBack = jest.fn();
+      render(
+        <ActivityDetailScreen activity={withStructuredHours} showDistance onBack={onBack} />,
+      );
+      fireEvent.press(screen.getByRole('button', { name: 'See full opening hours' }));
+      await flush();
+
+      const modal = screen.UNSAFE_getByType(Modal);
+      await act(async () => modal.props.onRequestClose());
+
+      expect(screen.queryByText('Opening hours')).toBeNull();
+      expect(onBack).not.toHaveBeenCalled();
+    });
+
+    it('shows no tap affordance and no modal for the legacy-only fallback (no usable structured opening_hours)', () => {
+      const legacyOnly: Activity = {
+        ...activity,
+        details: { category: 'restaurants', hours: '9am–11pm', open_status: 'Open now' },
+      };
+      render(
+        <ActivityDetailScreen activity={legacyOnly} showDistance onBack={jest.fn()} />,
+      );
+      expect(
+        screen.queryByRole('button', { name: 'See full opening hours' }),
+      ).toBeNull();
     });
   });
 });

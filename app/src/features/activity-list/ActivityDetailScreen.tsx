@@ -54,6 +54,7 @@ import {
   primaryCTAIsDirections,
   todayHoursRow,
   uniqueSection,
+  weekHoursModalData,
   wellnessBookingNote,
   type BodySection,
 } from './activityDetailConfig';
@@ -62,6 +63,7 @@ import { FactStrip } from './FactStrip';
 import { PhotoViewerModal } from './PhotoViewerModal';
 import { TodayHoursRow } from './TodayHoursRow';
 import { UniqueSection } from './UniqueSection';
+import { WeekHoursModal } from './WeekHoursModal';
 
 // design-spec.md's T4 "Shared base layout" section: header back control,
 // hero photo (280px, standardized across categories), title/badge/rating,
@@ -104,6 +106,9 @@ export function ActivityDetailScreen({
   // count, not the hero's own loading/broken state) — a single-photo pill
   // opening a one-slide viewer is noise, per design-spec.md.
   const [viewerOpen, setViewerOpen] = useState(false);
+  // opening-hours T2: the full-week modal, same conditional-mount pattern as
+  // the photo viewer above.
+  const [hoursModalOpen, setHoursModalOpen] = useState(false);
   // T4: starts as the provisional list data, upgrades in place once T3's
   // GET /activities/{id}/photos resolves. `image_refs[0]` is guaranteed to
   // stay the same photo pre/post-upgrade (T2 persists it first), so the
@@ -133,6 +138,9 @@ export function ActivityDetailScreen({
   // own Open/Closed item below (single home for the status, per
   // design-spec.md) and renders as its own row instead.
   const todayRow = todayHoursRow(activity);
+  // opening-hours T2: same usability gate as `todayRow` — defined exactly
+  // when the tap affordance above should be interactive.
+  const weekData = weekHoursModalData(activity);
   const metaExtras = metaRowExtras(activity);
   const fields = factStripFields(activity);
   const unique = uniqueSection(activity);
@@ -382,7 +390,9 @@ export function ActivityDetailScreen({
             )}
           </View>
 
-          {todayRow && <TodayHoursRow data={todayRow} />}
+          {todayRow && (
+            <TodayHoursRow data={todayRow} onPress={() => setHoursModalOpen(true)} />
+          )}
 
           {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 
@@ -512,6 +522,10 @@ export function ActivityDetailScreen({
           activityTitle={activity.title}
           onClose={() => setViewerOpen(false)}
         />
+      )}
+
+      {hoursModalOpen && weekData && (
+        <WeekHoursModal data={weekData} onClose={() => setHoursModalOpen(false)} />
       )}
     </SafeAreaView>
   );

@@ -411,7 +411,7 @@ export function weekView(oh: OpeningHours): WeekViewDay[] {
   return WEEK_VIEW_ORDER.map((day) => ({ day, hours: dayHours(oh, day) }));
 }
 
-function capitalize(day: DayOfWeek): string {
+export function capitalize(day: DayOfWeek): string {
   return day.charAt(0).toUpperCase() + day.slice(1);
 }
 
@@ -443,6 +443,24 @@ export function todayHoursRow(activity: Activity): TodayHoursRowData | undefined
     weekday: capitalize(now.day),
     hours: today.hours === 'Closed' ? 'Closed today' : today.hours,
   };
+}
+
+export type WeekHoursModalData = { days: WeekViewDay[]; today: DayOfWeek };
+
+// opening-hours T2: the full-week modal's data — same usability gate as
+// `todayHoursRow` above (usable `computeOpeningHoursStatus` + resolvable
+// `venueNow`), so the tap affordance and the modal it opens are defined
+// exactly when the Today row itself is. `today` is the venue-local weekday
+// (for the modal's current-day highlight), `days` is T1's own Monday-first
+// `weekView` — no reimplementation of its closed/split/always-open rendering.
+export function weekHoursModalData(activity: Activity): WeekHoursModalData | undefined {
+  const d = activity.details;
+  if (!d) return undefined;
+  const oh = openingHoursOf(d);
+  if (!oh || computeOpeningHoursStatus(oh) === undefined) return undefined;
+  const now = venueNow(oh.timezone);
+  if (!now) return undefined;
+  return { days: weekView(oh), today: now.day };
 }
 
 function buildChips(
