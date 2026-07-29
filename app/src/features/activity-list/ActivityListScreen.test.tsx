@@ -311,4 +311,39 @@ describe('ActivityListScreen', () => {
     expect(screen.queryByText(/^1 activity/)).toBeNull();
     expect(screen.queryByText(/·/)).toBeNull();
   });
+
+  describe('Tripadvisor list-footer attribution (T8)', () => {
+    it('shows the footer caption when the visible list has >=1 Tripadvisor row', async () => {
+      const tripadvisorActivity: Activity = {
+        ...activity,
+        id: '2',
+        title: 'Casa Verde Bistro',
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 42,
+            web_url: 'https://tripadvisor.example/place',
+          },
+        },
+      };
+      mockedQuery.mockResolvedValue(successResult([activity, tripadvisorActivity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      expect(
+        screen.getByText('Restaurant and bar ratings, reviews and photos provided by Tripadvisor.'),
+      ).toBeTruthy();
+    });
+
+    it('omits the footer caption when no row in the visible list is Tripadvisor-sourced', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      expect(
+        screen.queryByText('Restaurant and bar ratings, reviews and photos provided by Tripadvisor.'),
+      ).toBeNull();
+    });
+  });
 });

@@ -22,6 +22,7 @@ import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
+import { tripadvisorAttribution } from './activityDetailConfig';
 import { FilterSheet } from './FilterSheet';
 import { SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, defaultFilters, filterChips, headerSubtitle } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
@@ -293,6 +294,17 @@ export function ActivityListScreen({
             renderItem={renderItem}
             contentContainerStyle={styles.list}
             removeClippedSubviews
+            // design-spec.md T8 (Tripadvisor initiative): a single caption
+            // below the last card, reinforcing attribution beyond the
+            // per-card logo, present iff the visible list has >=1
+            // Tripadvisor row — omitted otherwise (no reserved gap).
+            ListFooterComponent={
+              queryState.activities.some((activity) => Boolean(tripadvisorAttribution(activity))) ? (
+                <Text style={styles.tripadvisorFooter}>
+                  Restaurant and bar ratings, reviews and photos provided by Tripadvisor.
+                </Text>
+              ) : null
+            }
           />
         ) : (
           <ScrollView contentContainerStyle={styles.list}>
@@ -487,6 +499,10 @@ const styles = StyleSheet.create({
     padding: space[4],
     gap: space[4],
     paddingBottom: space[6],
+  },
+  tripadvisorFooter: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
   },
   emptyState: {
     alignItems: 'center',

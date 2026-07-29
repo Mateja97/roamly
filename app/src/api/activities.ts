@@ -52,6 +52,28 @@ export type OpeningHours = {
 // exhibition" unique sections share this shape (mirrors backend's Banner).
 export type DetailBanner = { title: string; description?: string };
 
+// T8: Tripadvisor's required attribution for a Tripadvisor-sourced
+// Restaurant/Bar row — mirrors backend's `TripadvisorAttribution`
+// (backend/shared/models/activitiessvc/activity.go). Present only for
+// Tripadvisor-sourced rows, never for any other row. No aggregate numeric
+// rating field on the wire — the rating is carried entirely by the
+// API-hosted `rating_image_url` bubble image.
+export type TripadvisorAttribution = {
+  rating_image_url: string;
+  review_count: number;
+  ranking_text?: string;
+  web_url: string;
+};
+
+// T8: a backend-gated quoted traveler review — only ever populated for a
+// 5-bubble review on a place rated >=4.0 (compliance rule 04), so the UI
+// renders it "if present" with no eligibility check of its own.
+export type FeaturedReview = {
+  rating: number;
+  date: string;
+  text: string;
+};
+
 // T3: per-category structured detail payload (T4 consumes this for the
 // Activity Detail screen's fact strip + unique section). Discriminated by
 // `category` so a consumer narrows to the right shape via
@@ -70,6 +92,9 @@ export type ActivityDetails =
       // opening-hours T3: structured alternative to `open_status` above —
       // when present, supersedes it in the meta-row status slot.
       opening_hours?: OpeningHours;
+      // T8: present only for Tripadvisor-sourced rows (see TripadvisorAttribution).
+      tripadvisor?: TripadvisorAttribution;
+      featured_review?: FeaturedReview;
     }
   | {
       category: 'bars';
@@ -80,6 +105,9 @@ export type ActivityDetails =
       // T7: primary CTA's external link ("See menu").
       action_url?: string;
       opening_hours?: OpeningHours;
+      // T8: present only for Tripadvisor-sourced rows (see TripadvisorAttribution).
+      tripadvisor?: TripadvisorAttribution;
+      featured_review?: FeaturedReview;
     }
   | {
       category: 'cafes';

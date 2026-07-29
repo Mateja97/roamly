@@ -21,6 +21,12 @@ export const colors = {
   cardHighlight: 'rgba(206,144,66,0.5)',
   scrim: 'rgba(42,14,17,0.72)',
 
+  // T8: DESIGN_STANDARDS.md's Partner attribution plate recipe — a fixed
+  // white plate a partner's brand asset + API rating image sit on so the
+  // wine page background never shows through (Tripadvisor's first user).
+  // Not a general surface; only for partner-mandated lockups.
+  attributionPlate: '#FFFFFF',
+
   // T4: fullscreen photo viewer's opaque near-black backdrop — DESIGN_STANDARDS.md's
   // --photo-viewer-bg, distinct from wine --bg/--scrim/--ink so photos are the only
   // color on that one surface.

@@ -53,6 +53,8 @@ import {
   primaryActionURL,
   primaryCTAIsDirections,
   todayHoursRow,
+  tripadvisorAttribution,
+  tripadvisorFeaturedReview,
   uniqueSection,
   weekHoursModalData,
   wellnessBookingNote,
@@ -61,6 +63,7 @@ import {
 import { DifficultyMeter } from './DifficultyMeter';
 import { FactStrip } from './FactStrip';
 import { PhotoViewerModal } from './PhotoViewerModal';
+import { TripadvisorBlock } from './TripadvisorBlock';
 import { UniqueSection } from './UniqueSection';
 import { WeekHoursModal } from './WeekHoursModal';
 
@@ -154,6 +157,10 @@ export function ActivityDetailScreen({
   const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
+  // design-spec.md T8 (Tripadvisor initiative): presence of this field is
+  // the sole detection signal for the Tripadvisor-branded treatment below.
+  const tripadvisor = tripadvisorAttribution(activity);
+  const tripadvisorReview = tripadvisorFeaturedReview(activity);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -324,17 +331,23 @@ export function ActivityDetailScreen({
               <View style={styles.badge}>
                 <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
               </View>
-              <View style={styles.rating}>
-                <Star
-                  size={16}
-                  color={colors.primary}
-                  strokeWidth={1.75}
-                  fill={colors.primary}
-                />
-                <Text style={styles.ratingLabel}>
-                  {activity.rating.toFixed(1)}
-                </Text>
-              </View>
+              {/* design-spec.md T8 (Tripadvisor initiative), compliance rule 03:
+                  no Roamly gold star/numeric rating on a Tripadvisor-treated
+                  row — the TripadvisorBlock below carries its own rating
+                  presentation instead. */}
+              {!tripadvisor && (
+                <View style={styles.rating}>
+                  <Star
+                    size={16}
+                    color={colors.primary}
+                    strokeWidth={1.75}
+                    fill={colors.primary}
+                  />
+                  <Text style={styles.ratingLabel}>
+                    {activity.rating.toFixed(1)}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -393,6 +406,15 @@ export function ActivityDetailScreen({
               </>
             )}
           </View>
+
+          {tripadvisor && (
+            <TripadvisorBlock
+              tripadvisor={tripadvisor}
+              featuredReview={tripadvisorReview}
+              ctaBusy={ctaBusy}
+              onOpenWebUrl={() => openExternalLink(tripadvisor.web_url)}
+            />
+          )}
 
           {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 

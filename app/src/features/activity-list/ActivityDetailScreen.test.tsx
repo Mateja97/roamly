@@ -912,4 +912,104 @@ describe('ActivityDetailScreen', () => {
       ).toBeNull();
     });
   });
+
+  describe('Tripadvisor-branded block (T8)', () => {
+    const tripadvisorActivity: Activity = {
+      ...activity,
+      details: {
+        category: 'restaurants',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
+          web_url: 'https://tripadvisor.example/place',
+        },
+      },
+    };
+
+    it('suppresses the Roamly gold star + numeric rating, replacing it with the aggregate plate', () => {
+      render(
+        <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByText('4.6')).toBeNull();
+      expect(
+        screen.getByText('1,204 reviews on Tripadvisor · #3 of 512 Restaurants in Belgrade, June 2026'),
+      ).toBeTruthy();
+    });
+
+    it('keeps the gold star + numeric rating for a non-Tripadvisor row, unchanged', () => {
+      render(
+        <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('4.6')).toBeTruthy();
+    });
+
+    it('omits ranking text with no dangling separator when absent', () => {
+      const noRanking: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 88,
+            web_url: 'https://tripadvisor.example/place',
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={noRanking} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('88 reviews on Tripadvisor')).toBeTruthy();
+    });
+
+    it('renders the featured-review quote block when featured_review is present', () => {
+      const withReview: Activity = {
+        ...tripadvisorActivity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
+            web_url: 'https://tripadvisor.example/place',
+          },
+          featured_review: { rating: 5, date: '14 June 2026', text: 'Fantastic evening.' },
+        },
+      };
+      render(<ActivityDetailScreen activity={withReview} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('A Tripadvisor traveler review')).toBeTruthy();
+      expect(screen.getByText('Rated 5.0 · 14 June 2026')).toBeTruthy();
+    });
+
+    it('omits the featured-review block entirely when featured_review is absent (no empty state)', () => {
+      render(<ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('A Tripadvisor traveler review')).toBeNull();
+    });
+
+    it('opens tripadvisor.web_url via the deep-link row, and surfaces the error banner on failure', async () => {
+      const openURLSpy = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no browser'));
+      render(
+        <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+      );
+      fireEvent.press(screen.getByRole('button', { name: 'Read all reviews on Tripadvisor' }));
+      await waitFor(() => expect(openURLSpy).toHaveBeenCalledWith('https://tripadvisor.example/place'));
+      await waitFor(() =>
+        expect(screen.getByText('Could not open the link. Please try again.')).toBeTruthy(),
+      );
+      openURLSpy.mockRestore();
+    });
+
+    it('renders the compliance disclaimer for a Tripadvisor row', () => {
+      render(
+        <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+      );
+      expect(
+        screen.getByText(/Roamly does not rate these places/),
+      ).toBeTruthy();
+    });
+
+    it('renders no disclaimer / no Tripadvisor block for a non-Tripadvisor row', () => {
+      render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText(/Roamly does not rate these places/)).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeNull();
+    });
+  });
 });
