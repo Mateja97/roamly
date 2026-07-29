@@ -32,6 +32,16 @@ export const colors = {
   // color on that one surface.
   photoViewerBg: '#0F0405',
 
+  // T2: DESIGN_STANDARDS.md's --hero-overlay-gradient — a directional scrim
+  // over the Detail hero photo carousel (dark top for the back chevron, near-
+  // opaque wine bottom for the caption). Top stop #17090B (near-black wine),
+  // bottom stop --bg #7D2027 at 0.95. expo-linear-gradient is already a
+  // dependency (see surfaceGradient/glow below).
+  heroOverlayGradient: {
+    colors: ['rgba(23,9,11,0.5)', 'rgba(23,9,11,0)', 'rgba(125,32,39,0.95)'] as const,
+    locations: [0, 0.4, 1] as const,
+  },
+
   // Scope ticket's --surface-gradient (top-lit body) and --glow (one
   // per-screen radial accent, approximated as a linear fade — see
   // ScopeTicket.tsx). Welcome screen is the one area:app surface that
