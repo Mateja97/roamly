@@ -107,6 +107,12 @@ message Photo {
   // independent of attribution. Both are empty for a Google-sourced photo.
   string thumb_url = 4;
   string caption = 5;
+  // provider is the raw activitiessvc.Provider string ("google",
+  // "tripadvisor", "admin", "user"). Only a "google" photo gets the
+  // Google-Photos-style attribution caption client-side — Tripadvisor's
+  // author field holds the reviewer's username, not a Google Photos
+  // contributor, and must not be rendered the same way.
+  string provider = 6;
 }
 
 message QueryActivitiesRequest {

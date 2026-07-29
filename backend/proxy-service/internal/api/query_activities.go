@@ -295,7 +295,10 @@ func toPhotoDTOs(photos []*activitiesv1.Photo) []photoDTO {
 	out := make([]photoDTO, len(photos))
 	for i, p := range photos {
 		dto := photoDTO{URI: p.GetUrl(), ThumbURL: p.GetThumbUrl(), Caption: p.GetCaption()}
-		if p.GetAuthor() != "" {
+		// Google-Photos-style attribution is Google's own mandatory caption;
+		// gated to provider=="google" (allow-list) so Tripadvisor's reviewer
+		// username, or any admin/user-sourced author, never gets it too.
+		if p.GetAuthor() != "" && p.GetProvider() == "google" {
 			dto.Attribution = &attributionDTO{Author: p.GetAuthor(), Link: p.GetAuthorLink()}
 		}
 		out[i] = dto

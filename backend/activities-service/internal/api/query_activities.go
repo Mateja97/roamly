@@ -192,7 +192,7 @@ func toProtoPhotos(photos []activitiessvc.Photo) []*activitiesv1.Photo {
 	for i, p := range photos {
 		out[i] = &activitiesv1.Photo{
 			Url: p.URL, Author: p.Author, AuthorLink: p.AuthorLink,
-			ThumbUrl: p.ThumbURL, Caption: p.Caption,
+			ThumbUrl: p.ThumbURL, Caption: p.Caption, Provider: string(p.Provider),
 		}
 	}
 	return out

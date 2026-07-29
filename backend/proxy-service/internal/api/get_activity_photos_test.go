@@ -37,7 +37,7 @@ func doPhotosRequest(t *testing.T, h *GetActivityPhotosHandler, id string) *http
 func TestGetActivityPhotosHandler_HappyPath(t *testing.T) {
 	fake := &fakeActivitiesPhotosClient{resp: &activitiesv1.GetActivityPhotosResponse{
 		Photos: []*activitiesv1.Photo{
-			{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane", ThumbUrl: "img1_t", Caption: "Sunset view"},
+			{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane", ThumbUrl: "img1_t", Caption: "Sunset view", Provider: "google"},
 			{Url: "img2"}, // unresolved: no author, attribution must be omitted
 		},
 	}}
