@@ -20,16 +20,18 @@ describe('TripadvisorAttributionPlate', () => {
     expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
   });
 
-  it('detail variant: appends ranking_text verbatim, separated by " · ", when present', () => {
+  // design-spec.md T4: the ranking sentence is mock-only (no Terra API
+  // ranking data exists) — `ranking_text` is never rendered even when a
+  // caller sets it, so a stray value on the wire can never leak through.
+  it('detail variant: never renders ranking_text even when present (mock-only, out of scope)', () => {
     render(
       <TripadvisorAttributionPlate
         tripadvisor={{ ...tripadvisor, ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026' }}
         variant="detail"
       />,
     );
-    expect(
-      screen.getByText('1,204 reviews on Tripadvisor · #3 of 512 Restaurants in Belgrade, June 2026'),
-    ).toBeTruthy();
+    expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
+    expect(screen.queryByText(/#3 of 512/)).toBeNull();
   });
 
   it('reserves the rating image width so a broken load keeps the count in place', () => {

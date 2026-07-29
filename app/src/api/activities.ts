@@ -52,23 +52,42 @@ export type OpeningHours = {
 // exhibition" unique sections share this shape (mirrors backend's Banner).
 export type DetailBanner = { title: string; description?: string };
 
+// T4: Tripadvisor's per-category rating breakdown — mirrors backend's
+// `TripadvisorSubratings` (backend/shared/models/activitiessvc/activity.go).
+// Numeric 1-5 values only; the Terra API's per-subrating `rating_image_url`
+// doesn't exist (confirmed against the backend model), so the subratings
+// grid renders these as plain text rather than a redrawn bubble image
+// (compliance rule 02 forbids hand-drawing partner bubbles). `omitempty` on
+// the wire means an absent key here — never a real 0 rating.
+export type TripadvisorSubratings = {
+  food?: number;
+  service?: number;
+  value?: number;
+  atmosphere?: number;
+};
+
 // T8: Tripadvisor's required attribution for a Tripadvisor-sourced
 // Restaurant/Bar row — mirrors backend's `TripadvisorAttribution`
 // (backend/shared/models/activitiessvc/activity.go). Present only for
 // Tripadvisor-sourced rows, never for any other row. No aggregate numeric
 // rating field on the wire — the rating is carried entirely by the
-// API-hosted `rating_image_url` bubble image.
+// API-hosted `rating_image_url` bubble image. Phone/Subratings are T3/T4
+// additions, both optional (absent when Tripadvisor returned none for the
+// location).
 export type TripadvisorAttribution = {
   rating_image_url: string;
   review_count: number;
   ranking_text?: string;
   web_url: string;
+  phone?: string;
+  subratings?: TripadvisorSubratings;
 };
 
-// T8: a backend-gated quoted traveler review — only ever populated for a
-// 5-bubble review on a place rated >=4.0 (compliance rule 04), so the UI
-// renders it "if present" with no eligibility check of its own.
-export type FeaturedReview = {
+// T4: a backend-gated quoted traveler review — only ever populated for a
+// 5-bubble review on a place rated >=4.0 (compliance rule 04). Up to 3 ship
+// per place (T3); no per-review `rating_image_url` on the wire (mirrors
+// TripadvisorSubratings above — numeric only).
+export type TripadvisorReview = {
   rating: number;
   date: string;
   text: string;
@@ -94,7 +113,8 @@ export type ActivityDetails =
       opening_hours?: OpeningHours;
       // T8: present only for Tripadvisor-sourced rows (see TripadvisorAttribution).
       tripadvisor?: TripadvisorAttribution;
-      featured_review?: FeaturedReview;
+      // T4: up to 3 reviews (replaces the old single `featured_review`).
+      reviews?: TripadvisorReview[];
     }
   | {
       category: 'bars';
@@ -107,7 +127,8 @@ export type ActivityDetails =
       opening_hours?: OpeningHours;
       // T8: present only for Tripadvisor-sourced rows (see TripadvisorAttribution).
       tripadvisor?: TripadvisorAttribution;
-      featured_review?: FeaturedReview;
+      // T4: up to 3 reviews (replaces the old single `featured_review`).
+      reviews?: TripadvisorReview[];
     }
   | {
       category: 'cafes';
@@ -221,6 +242,11 @@ export type Activity = {
   // detail screen omits the fact-strip/unique-section slot rather than
   // rendering an empty placeholder.
   details?: ActivityDetails;
+  // T4: already on the wire (proxy-service's activityDTO), optional here
+  // only so existing test fixtures without them still type-check — the
+  // place-facts address row omits itself when both are absent.
+  address?: string;
+  city?: string;
 };
 
 // The wire format today (pre-T3) is still a plain string[] of URLs; T3 will

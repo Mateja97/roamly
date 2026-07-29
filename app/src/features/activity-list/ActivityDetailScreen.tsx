@@ -53,8 +53,9 @@ import {
   primaryActionURL,
   primaryCTAIsDirections,
   todayHoursRow,
+  tripadvisorAddressLine,
   tripadvisorAttribution,
-  tripadvisorFeaturedReview,
+  tripadvisorReviews,
   uniqueSection,
   weekHoursModalData,
   wellnessBookingNote,
@@ -160,7 +161,8 @@ export function ActivityDetailScreen({
   // design-spec.md T8 (Tripadvisor initiative): presence of this field is
   // the sole detection signal for the Tripadvisor-branded treatment below.
   const tripadvisor = tripadvisorAttribution(activity);
-  const tripadvisorReview = tripadvisorFeaturedReview(activity);
+  const reviews = tripadvisorReviews(activity);
+  const address = tripadvisorAddressLine(activity);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -215,6 +217,15 @@ export function ActivityDetailScreen({
   function handlePrimaryPress() {
     if (isDirectionsPrimary) return openDirections();
     if (actionURL) return openExternalLink(actionURL);
+  }
+
+  // design-spec.md T4's Place-facts list: "Phone... rendered as a tel: link
+  // (tap to call)". Reuses `openExternalLink`'s existing async/error-banner
+  // handling — a `tel:` URL fails the same way any other OS handoff can
+  // (e.g. simulator has no phone app), and it should surface the same
+  // generic error banner rather than a silent no-op.
+  function handleCallPhone(phone: string) {
+    return openExternalLink(`tel:${phone}`);
   }
 
   // design-spec.md T8 addendum #3: per-category body-section order.
@@ -410,9 +421,11 @@ export function ActivityDetailScreen({
           {tripadvisor && (
             <TripadvisorBlock
               tripadvisor={tripadvisor}
-              featuredReview={tripadvisorReview}
+              reviews={reviews}
+              address={address}
               ctaBusy={ctaBusy}
               onOpenWebUrl={() => openExternalLink(tripadvisor.web_url)}
+              onCallPhone={handleCallPhone}
             />
           )}
 
