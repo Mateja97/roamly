@@ -992,3 +992,55 @@ func TestUpsertStoresSourceReadableViaGetByID(t *testing.T) {
 		t.Errorf("Source = %q, want %q", got.Source, "tripadvisor")
 	}
 }
+
+// TestSyncedAtAndMarkSynced proves the repository-layer freshness
+// read/write the lazy sync (service.Activities.syncTripadvisorIfNeeded)
+// relies on: no record reports ok=false, MarkSynced then SyncedAt reports
+// a fresh timestamp, and a different category at the same cell is tracked
+// independently.
+func TestSyncedAtAndMarkSynced(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	_, ok, err := repo.SyncedAt(ctx, "44.8,20.5", "restaurants")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if ok {
+		t.Fatal("SyncedAt() ok = true, want false for a never-synced cell")
+	}
+
+	// ponytail: small sleep to account for potential clock skew between
+	// container and host (database now() might be slightly earlier than Go time.Now()).
+	time.Sleep(time.Millisecond)
+	before := time.Now()
+	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
+		t.Fatalf("MarkSynced() error: %v", err)
+	}
+
+	syncedAt, ok, err := repo.SyncedAt(ctx, "44.8,20.5", "restaurants")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if !ok {
+		t.Fatal("SyncedAt() ok = false, want true right after MarkSynced")
+	}
+	if syncedAt.Before(before) {
+		t.Errorf("syncedAt = %v, want >= %v", syncedAt, before)
+	}
+
+	_, ok, err = repo.SyncedAt(ctx, "44.8,20.5", "bars")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if ok {
+		t.Fatal("SyncedAt() ok = true for bars, want false — restaurants and bars track independently")
+	}
+
+	// Re-marking the same cell/category updates the timestamp in place
+	// rather than erroring on a duplicate primary key.
+	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
+		t.Fatalf("MarkSynced() (second call) error: %v", err)
+	}
+}

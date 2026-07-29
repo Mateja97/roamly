@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -478,6 +479,38 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", in.SourceURL, err)
 	}
 	return a, nil
+}
+
+// SyncedAt reports the last successful Tripadvisor sync time for
+// (cellKey, category), and whether one has happened at all — false, zero
+// time when the cell/category pair has never been synced.
+func (r *Activities) SyncedAt(ctx context.Context, cellKey, category string) (time.Time, bool, error) {
+	var syncedAt time.Time
+	err := r.db.QueryRow(ctx,
+		`SELECT synced_at FROM tripadvisor_sync_regions WHERE cell_key = $1 AND category = $2`,
+		cellKey, category,
+	).Scan(&syncedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("querying tripadvisor sync region %s/%s: %w", cellKey, category, err)
+	}
+	return syncedAt, true, nil
+}
+
+// MarkSynced records a fresh Tripadvisor sync for (cellKey, category),
+// upserting the timestamp in place on a re-sync.
+func (r *Activities) MarkSynced(ctx context.Context, cellKey, category string) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ($1, $2, now())
+		 ON CONFLICT (cell_key, category) DO UPDATE SET synced_at = EXCLUDED.synced_at`,
+		cellKey, category,
+	)
+	if err != nil {
+		return fmt.Errorf("marking tripadvisor sync region %s/%s: %w", cellKey, category, err)
+	}
+	return nil
 }
 
 // BackfillRow is one row's category plus its stored Places payload, the input
