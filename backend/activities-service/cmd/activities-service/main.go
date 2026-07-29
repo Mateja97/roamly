@@ -20,6 +20,7 @@ import (
 	"activities-service/internal/places"
 	"activities-service/internal/repository"
 	"activities-service/internal/service"
+	"activities-service/internal/tripadvisor"
 )
 
 func main() {
@@ -53,6 +54,14 @@ func main() {
 	// error/timeout, so this is deliberately not a fail-fast Require.
 	if key := sharedconfig.OrDefault("GOOGLE_MAPS_API_KEY", ""); key != "" {
 		svc = svc.WithPlaces(places.New(key))
+	}
+	// TRIPADVISOR_API_KEY is optional, same fallback contract as
+	// GOOGLE_MAPS_API_KEY above: unset, the server still runs fine —
+	// Restaurants/Bars simply never lazily sync and GetActivityPhotos never
+	// resolves Tripadvisor-sourced photos live, both falling back to
+	// whatever's already stored.
+	if key := sharedconfig.OrDefault("TRIPADVISOR_API_KEY", ""); key != "" {
+		svc = svc.WithTripadvisor(tripadvisor.New(key))
 	}
 	photos := photo.NewStore(sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos"))
 	grpcServer := api.NewGRPCServer(svc, photos, logger)

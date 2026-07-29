@@ -286,12 +286,12 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
 		wantCounts := map[string]int{
-			"Belgrade":  131, // 7 from 0002_seed.sql + 6 demo from 0008 + 118 from 0011_import_belgrade_listings
-			"Rome":      1,
-			"Paris":     1,
-			"Tokyo":     1,
-			"New York":  1,
-			"Barcelona": 1,
+			"Belgrade":  109, // 7 from 0002_seed.sql - 1 (Skadarlija recategorized to restaurants) + 6 demo from 0008 - 1 bar + 118 from 0011_import_belgrade_listings - 20 restaurants/bars (0016 deletes legacy non-Tripadvisor)
+			"Rome":      1,   // history_and_culture (survives 0016)
+			"Paris":     0,   // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"Tokyo":     0,   // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"New York":  1,   // sports (survives 0016)
+			"Barcelona": 1,   // art_and_design (survives 0016)
 		}
 		for city, want := range wantCounts {
 			var got int
@@ -477,7 +477,10 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 
 		wantCategories := []activitiessvc.Category{
-			activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars,
+			// restaurants and bars demo activities are deleted by 0016 (legacy non-Tripadvisor).
+			// All seeded restaurants/bars were sourced from Google or created by hand; 0016 is
+			// the cutover to Tripadvisor-exclusive for these categories.
+			activitiessvc.CategoryCafes,
 			activitiessvc.CategoryNightlife, activitiessvc.CategoryNature, activitiessvc.CategorySport,
 			activitiessvc.CategoryKids, activitiessvc.CategoryCulture, activitiessvc.CategoryArt,
 			activitiessvc.CategoryWellness, activitiessvc.CategoryShopping, activitiessvc.CategoryEntertainment,
@@ -857,6 +860,76 @@ func TestUpsertIdempotentBySourceURL(t *testing.T) {
 	}
 }
 
+// TestUpsertDedupesBySourceURLAndCategoryNotSourceURLAlone proves the
+// 0017 migration's fix: the same source_url may legitimately exist as two
+// separate rows under two different categories (a venue Tripadvisor-synced
+// as both Restaurants and Bars, since Terra has no bars-specific category
+// and both syncs query it identically), and each category stays idempotent
+// on its own — a same-source_url-same-category re-upsert still updates the
+// original row in place rather than creating a third one.
+func TestUpsertDedupesBySourceURLAndCategoryNotSourceURLAlone(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	const sourceURL = "https://ta/dual-category-venue"
+	restaurantIn := activitiessvc.IngestActivity{
+		Title: "Ambar Beograd", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: sourceURL, ExternalID: "111",
+	}
+	barIn := restaurantIn
+	barIn.Category = activitiessvc.CategoryBars
+
+	restaurantRow, err := repo.Upsert(ctx, restaurantIn)
+	if err != nil {
+		t.Fatalf("upserting restaurant row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, restaurantRow.ID) })
+
+	barRow, err := repo.Upsert(ctx, barIn)
+	if err != nil {
+		t.Fatalf("upserting bar row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, barRow.ID) })
+
+	if restaurantRow.ID == barRow.ID {
+		t.Fatalf("bar upsert reused the restaurant row's ID (%s) — same source_url, different category should not collide", restaurantRow.ID)
+	}
+
+	gotRestaurant, err := repo.GetByID(ctx, restaurantRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(restaurant): %v", err)
+	}
+	if gotRestaurant.Category != activitiessvc.CategoryRestaurants {
+		t.Errorf("restaurant row category = %q, want %q — the bar upsert must not have overwritten it", gotRestaurant.Category, activitiessvc.CategoryRestaurants)
+	}
+
+	gotBar, err := repo.GetByID(ctx, barRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(bar): %v", err)
+	}
+	if gotBar.Category != activitiessvc.CategoryBars {
+		t.Errorf("bar row category = %q, want %q", gotBar.Category, activitiessvc.CategoryBars)
+	}
+
+	// Re-upserting the same source_url + same category (restaurant) must
+	// still update the first row in place, not create a third row — the new
+	// uniqueness is scoped to (source_url, category), not source_url alone.
+	restaurantIn.Rating = 4.9
+	thirdUpsert, err := repo.Upsert(ctx, restaurantIn)
+	if err != nil {
+		t.Fatalf("re-upserting restaurant row: %v", err)
+	}
+	if thirdUpsert.ID != restaurantRow.ID {
+		t.Fatalf("re-upsert with same source_url+category created a new row (%s != %s), want update in place", thirdUpsert.ID, restaurantRow.ID)
+	}
+	if thirdUpsert.Rating != 4.9 {
+		t.Errorf("rating = %v, want 4.9 (updated)", thirdUpsert.Rating)
+	}
+}
+
 // TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource proves T1's
 // ingestion round trip: a known Places place_id lands verbatim in
 // external_id (not GoogleMapsURI, not the raw blob), and source reads
@@ -941,5 +1014,171 @@ func TestRawRowsReturnsIDCategoryRaw(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("RawRows did not return upserted row %s", a.ID)
+	}
+}
+
+// TestMigration0015TripadvisorSyncRegions proves the freshness table exists
+// with the (cell_key, category) composite primary key the lazy sync relies
+// on: one row per area+category, a duplicate rejected, a different
+// category at the same cell allowed (Restaurants and Bars track freshness
+// independently).
+func TestMigration0015TripadvisorSyncRegions(t *testing.T) {
+	ctx := context.Background()
+	pool := startTestPostgres(t)
+
+	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'restaurants', now())`); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'restaurants', now())`); err == nil {
+		t.Fatal("duplicate (cell_key, category) insert succeeded, want primary-key violation")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'bars', now())`); err != nil {
+		t.Fatalf("different-category insert at the same cell: %v", err)
+	}
+}
+
+// TestUpsertStoresSourceReadableViaGetByID proves the `source` column
+// (already written by Upsert since 0012_ingestion.sql) now round-trips
+// through the domain Activity struct via GetByID, not just raw SQL.
+func TestUpsertStoresSourceReadableViaGetByID(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Source Fixture", Description: "restaurant", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://www.tripadvisor.com/Restaurant_Review-x",
+		ExternalID: "12345",
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, a.ID) })
+
+	got, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	if got.Source != "tripadvisor" {
+		t.Errorf("Source = %q, want %q", got.Source, "tripadvisor")
+	}
+}
+
+// TestSyncedAtAndMarkSynced proves the repository-layer freshness
+// read/write the lazy sync (service.Activities.syncTripadvisorIfNeeded)
+// relies on: no record reports ok=false, MarkSynced then SyncedAt reports
+// a fresh timestamp, and a different category at the same cell is tracked
+// independently.
+func TestSyncedAtAndMarkSynced(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	_, ok, err := repo.SyncedAt(ctx, "44.8,20.5", "restaurants")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if ok {
+		t.Fatal("SyncedAt() ok = true, want false for a never-synced cell")
+	}
+
+	// ponytail: small sleep to account for potential clock skew between
+	// container and host (database now() might be slightly earlier than Go time.Now()).
+	time.Sleep(time.Millisecond)
+	before := time.Now()
+	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
+		t.Fatalf("MarkSynced() error: %v", err)
+	}
+
+	syncedAt, ok, err := repo.SyncedAt(ctx, "44.8,20.5", "restaurants")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if !ok {
+		t.Fatal("SyncedAt() ok = false, want true right after MarkSynced")
+	}
+	if syncedAt.Before(before) {
+		t.Errorf("syncedAt = %v, want >= %v", syncedAt, before)
+	}
+
+	_, ok, err = repo.SyncedAt(ctx, "44.8,20.5", "bars")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if ok {
+		t.Fatal("SyncedAt() ok = true for bars, want false — restaurants and bars track independently")
+	}
+
+	// Re-marking the same cell/category updates the timestamp in place
+	// rather than erroring on a duplicate primary key.
+	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
+		t.Fatalf("MarkSynced() (second call) error: %v", err)
+	}
+}
+
+// TestDeleteLegacyRestaurantsBars_Predicate proves 0016's cutover DELETE
+// targets exactly the rows it should. The migration itself already ran
+// (once, against an empty DB) by the time startTestPostgres returns —
+// there's no data yet for a one-time cleanup migration to act on in a
+// fresh test DB — so this test re-executes 0016's exact DELETE statement
+// against freshly seeded fixture rows, the only way to exercise a
+// one-time data migration's WHERE-clause logic.
+func TestDeleteLegacyRestaurantsBars_Predicate(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	googleRestaurant, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Legacy Google Restaurant", Description: "d", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "http://legacy/1",
+	})
+	if err != nil {
+		t.Fatalf("seeding google restaurant: %v", err)
+	}
+	taRestaurant, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Tripadvisor Restaurant", Description: "d", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "http://legacy/2",
+	})
+	if err != nil {
+		t.Fatalf("seeding tripadvisor restaurant: %v", err)
+	}
+	otherCategory, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Legacy Google Museum", Description: "d", Category: activitiessvc.CategoryCulture,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.2, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "http://legacy/3",
+	})
+	if err != nil {
+		t.Fatalf("seeding other-category row: %v", err)
+	}
+	adminBar, err := repo.Create(ctx, activitiessvc.NewActivity{
+		Title: "Legacy Admin Bar", Category: activitiessvc.CategoryBars, Status: activitiessvc.StatusPublished,
+	})
+	if err != nil {
+		t.Fatalf("seeding admin-created bar: %v", err)
+	}
+
+	if _, err := db.Exec(ctx, `DELETE FROM activities WHERE category IN ('restaurants', 'bars') AND source IS DISTINCT FROM 'tripadvisor'`); err != nil {
+		t.Fatalf("running 0016's delete: %v", err)
+	}
+
+	if _, err := repo.GetByID(ctx, googleRestaurant.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+		t.Errorf("legacy google restaurant: GetByID() error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.GetByID(ctx, adminBar.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+		t.Errorf("legacy admin bar: GetByID() error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.GetByID(ctx, taRestaurant.ID); err != nil {
+		t.Errorf("tripadvisor restaurant: GetByID() error = %v, want it to survive the delete", err)
+	} else {
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, taRestaurant.ID) })
+	}
+	if _, err := repo.GetByID(ctx, otherCategory.ID); err != nil {
+		t.Errorf("other-category google row: GetByID() error = %v, want it to survive the delete", err)
+	} else {
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, otherCategory.ID) })
 	}
 }

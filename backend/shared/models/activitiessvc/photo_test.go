@@ -52,6 +52,7 @@ func TestPhoto_RoundTripsProvider(t *testing.T) {
 	}{
 		{"admin", ProviderAdmin},
 		{"google", ProviderGoogle},
+		{"tripadvisor", ProviderTripadvisor},
 		{"user", ProviderUser},
 		{"empty", ""},
 	}

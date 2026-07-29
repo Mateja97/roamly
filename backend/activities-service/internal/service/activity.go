@@ -9,9 +9,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
+
+	"activities-service/internal/tripadvisor"
+	"activities-service/internal/tripadvisormap"
 
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
@@ -25,6 +29,16 @@ type repository interface {
 	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
 	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
 	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
+	// Upsert inserts or updates an ingested activity, keyed on
+	// (source_url, category) — the same source_url may legitimately exist
+	// under two different categories (T4's Restaurants/Bars lazy sync
+	// reuses the same upsert the batch Google pipeline already relies on).
+	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
+	// SyncedAt reports the last successful Tripadvisor sync time for
+	// (cellKey, category), and whether one has happened at all.
+	SyncedAt(ctx context.Context, cellKey, category string) (time.Time, bool, error)
+	// MarkSynced records a fresh Tripadvisor sync for (cellKey, category).
+	MarkSynced(ctx context.Context, cellKey, category string) error
 }
 
 // placesClient is the subset of internal/places.Client GetPhotos needs
@@ -33,6 +47,18 @@ type repository interface {
 // resolves a venue's rest-of-set live.
 type placesClient interface {
 	ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error)
+}
+
+// tripadvisorClient is the subset of internal/tripadvisor.Client the
+// service layer needs: GetPhotos uses LocationPhotos; the lazy
+// Restaurants/Bars sync (below) uses the other three. Optional (see
+// WithTripadvisor) — a server with none configured never triggers a live
+// sync and GetPhotos falls back to whatever's already cached.
+type tripadvisorClient interface {
+	LocationPhotos(ctx context.Context, locationID string, limit int) ([]activitiessvc.Photo, error)
+	NearbySearch(ctx context.Context, lat, lng, radiusKM float64, category string) ([]tripadvisor.LocationSummary, error)
+	LocationDetails(ctx context.Context, locationID string) (tripadvisor.LocationDetails, error)
+	LocationReviews(ctx context.Context, locationID string) ([]tripadvisor.Review, error)
 }
 
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
@@ -60,8 +86,9 @@ type Request struct {
 const NearbyRadiusKM = 10
 
 type Activities struct {
-	repo   repository
-	places placesClient
+	repo        repository
+	places      placesClient
+	tripadvisor tripadvisorClient
 }
 
 func New(repo repository) *Activities {
@@ -78,11 +105,21 @@ func (a *Activities) WithPlaces(p placesClient) *Activities {
 	return a
 }
 
+// WithTripadvisor attaches a live Tripadvisor client for the
+// Restaurants/Bars lazy sync and GetPhotos' Tripadvisor-sourced resolve
+// path. Optional, same nil-safe contract as WithPlaces.
+func (a *Activities) WithTripadvisor(t tripadvisorClient) *Activities {
+	a.tripadvisor = t
+	return a
+}
+
 func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Activity, error) {
 	filter, err := a.resolve(req)
 	if err != nil {
 		return nil, fmt.Errorf("resolving query: %w", err)
 	}
+
+	a.syncTripadvisorIfNeeded(ctx, req)
 
 	activities, err := a.repo.Query(ctx, filter)
 	if err != nil {
@@ -484,17 +521,26 @@ func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.
 	if err != nil {
 		return nil, fmt.Errorf("getting activity %s: %w", id, err)
 	}
-	if a.places == nil || activity.ExternalID == "" || len(activity.Photos) > 1 {
+	if activity.ExternalID == "" || len(activity.Photos) > 1 {
 		return activity.Photos, nil
 	}
 
 	resolveCtx, cancel := context.WithTimeout(ctx, photoResolveTimeout)
 	defer cancel()
-	resolved, err := a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+
+	var resolved []activitiessvc.Photo
+	switch {
+	case activity.Source == "tripadvisor" && a.tripadvisor != nil:
+		resolved, err = a.tripadvisor.LocationPhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+	case activity.Source != "tripadvisor" && a.places != nil:
+		resolved, err = a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+	default:
+		return activity.Photos, nil
+	}
 	if err != nil || len(resolved) == 0 {
-		// Places failure/timeout/empty result: fall back to what's already
-		// stored (at minimum the provisional photo) rather than error or
-		// block the request.
+		// Live resolve failure/timeout/empty result: fall back to what's
+		// already stored (at minimum the provisional photo) rather than
+		// error or block the request.
 		return activity.Photos, nil
 	}
 
@@ -519,6 +565,9 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	}
 	if !validCategory(in.Category) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, in.Category)
+	}
+	if in.Category == activitiessvc.CategoryRestaurants || in.Category == activitiessvc.CategoryBars {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: category %q is sourced exclusively from Tripadvisor and cannot be admin-created", sharederrors.ErrInvalidInput, in.Category)
 	}
 	if !activitiessvc.ValidSubcategory(in.Category, in.Subcategory) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: subcategory %q does not belong to category %q", sharederrors.ErrInvalidInput, in.Subcategory, in.Category)
@@ -640,4 +689,256 @@ func validCategory(c activitiessvc.Category) bool {
 		return true
 	}
 	return false
+}
+
+// tripadvisorSyncRadiusKM is the fixed local radius the lazy sync sweeps
+// around each anchor point, independent of the request's own
+// MaxDistanceKM — same reasoning as Google being seeded per-city rather
+// than swept over arbitrary radii (design doc "Sync trigger").
+const tripadvisorSyncRadiusKM = 15
+
+// tripadvisorSyncTTL is how long a synced area's data is considered fresh
+// before the next query for that area re-syncs.
+const tripadvisorSyncTTL = 14 * 24 * time.Hour
+
+// tripadvisorSyncTimeout bounds one anchor/category sync sweep — bounded
+// and request-scoped, same fallback philosophy as photoResolveTimeout: a
+// search query can't block indefinitely on a third-party call.
+const tripadvisorSyncTimeout = 6 * time.Second
+
+// maxSyncAnchorsPerQuery caps how many distinct stale anchors one Query call
+// can trigger a live sync for — an Anywhere query with many selected cities
+// must not fan out into a dozen live Tripadvisor calls at once. One anchor
+// costs exactly one Terra NearbySearch call regardless of how many of its
+// due categories it covers (Restaurants and Bars share the same search —
+// see syncTripadvisorAnchor), so this is a true per-anchor cap: staleness is
+// still checked per (anchor, category) pair before the cap is applied (see
+// syncTripadvisorIfNeeded), but the cap itself counts distinct anchors, not
+// (anchor, category) pairs.
+const maxSyncAnchorsPerQuery = 3
+
+// syncCategories returns which of requested (or, if empty, both) of
+// Restaurants/Bars a lazy sync should cover for this query.
+func syncCategories(requested []activitiessvc.Category) []activitiessvc.Category {
+	if len(requested) == 0 {
+		return []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars}
+	}
+	var out []activitiessvc.Category
+	for _, c := range requested {
+		if c == activitiessvc.CategoryRestaurants || c == activitiessvc.CategoryBars {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// syncAnchors collects the points a lazy sync should sweep for req:
+// CurrentLocation for ScopeNearby; CurrentLocation and/or each city
+// centroid for ScopeAnywhere.
+func syncAnchors(req Request) []activitiessvc.Point {
+	var anchors []activitiessvc.Point
+	if req.CurrentLocation != nil {
+		anchors = append(anchors, *req.CurrentLocation)
+	}
+	anchors = append(anchors, req.Cities...)
+	return anchors
+}
+
+// syncCellKey snaps lat/lng to a coarse ~0.1-degree (~11km) grid so nearby
+// queries share one freshness record instead of each re-triggering a sync.
+func syncCellKey(lat, lng float64) string {
+	return fmt.Sprintf("%.1f,%.1f", lat, lng)
+}
+
+// syncGroup is one anchor and the due categories a live sync should cover
+// for this query — categories whose cached data at that anchor is missing
+// or stale. Terra has no per-category search distinction (see
+// terraNearbySearchCategory), so grouping by anchor lets syncTripadvisorAnchor
+// make exactly one NearbySearch call regardless of how many categories are
+// due.
+type syncGroup struct {
+	anchor     activitiessvc.Point
+	categories []activitiessvc.Category
+}
+
+// syncTripadvisorIfNeeded triggers a live Tripadvisor sync for req's
+// Restaurants/Bars anchors when the resolved category filter could include
+// them and their cached data is missing or stale. Never fails Query — a
+// sync problem at any step is logged and simply leaves the DB as-is; the
+// SQL query that follows just sees whatever's already cached (possibly
+// nothing, for a never-synced area, until the next successful attempt).
+//
+// Staleness is checked for every (anchor, category) pair *before* the
+// maxSyncAnchorsPerQuery cap is applied, not after — capping the raw anchor
+// list first would let a handful of already-fresh low-index anchors starve
+// a genuinely stale anchor further down the list (e.g. anchor #4 or #5 of
+// an Anywhere request's cities) indefinitely across repeated requests with
+// the same anchor set. The cap itself then applies to distinct anchors
+// (groups), not (anchor, category) pairs — see maxSyncAnchorsPerQuery.
+func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
+	if a.tripadvisor == nil {
+		return
+	}
+	categories := syncCategories(req.Categories)
+	if len(categories) == 0 {
+		return
+	}
+
+	var groups []syncGroup
+	for _, anchor := range syncAnchors(req) {
+		cell := syncCellKey(anchor.Lat, anchor.Lng)
+		var due []activitiessvc.Category
+		for _, cat := range categories {
+			syncedAt, ok, err := a.repo.SyncedAt(ctx, cell, string(cat))
+			if err != nil {
+				slog.Warn("tripadvisor synced-at lookup failed", "cell", cell, "category", cat, "error", err)
+			} else if ok && time.Since(syncedAt) < tripadvisorSyncTTL {
+				continue
+			}
+			due = append(due, cat)
+		}
+		if len(due) > 0 {
+			groups = append(groups, syncGroup{anchor: anchor, categories: due})
+		}
+	}
+
+	if len(groups) > maxSyncAnchorsPerQuery {
+		groups = groups[:maxSyncAnchorsPerQuery]
+	}
+	for _, g := range groups {
+		a.syncTripadvisorAnchor(ctx, g.anchor, g.categories)
+	}
+}
+
+// syncTripadvisorAnchor syncs one anchor for every category in categories:
+// a single live NearbySearch (Terra has no per-category distinction — see
+// terraNearbySearchCategory), then one LocationDetails/LocationReviews/
+// LocationPhotos pass per candidate (venue-level facts, identical regardless
+// of which Roamly category the venue ends up filed under), then one
+// repo.Upsert per candidate per due category — so a venue due for both
+// Restaurants and Bars gets two upserts, same details/review/photos,
+// different Category, avoiding the source_url collision a per-category
+// NearbySearch used to cause. A NearbySearch failure aborts this anchor's
+// sync entirely (no upserts, no MarkSynced calls); a single candidate's
+// LocationDetails failure only skips that candidate — the rest of the
+// anchor's candidates and its MarkSynced calls still proceed, same rule
+// internal/places.ResolvePhotos already follows. MarkSynced is called once
+// per due category after all candidates are processed, not once per
+// candidate.
+func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitiessvc.Point, categories []activitiessvc.Category) {
+	syncCtx, cancel := context.WithTimeout(ctx, tripadvisorSyncTimeout)
+	defer cancel()
+
+	summaries, err := a.tripadvisor.NearbySearch(syncCtx, anchor.Lat, anchor.Lng, tripadvisorSyncRadiusKM, terraNearbySearchCategory)
+	if err != nil {
+		slog.Warn("tripadvisor nearby search failed", "categories", categories, "error", err)
+		return
+	}
+
+	for _, s := range summaries {
+		details, err := a.tripadvisor.LocationDetails(syncCtx, s.LocationID)
+		if err != nil {
+			slog.Warn("tripadvisor location details failed", "location_id", s.LocationID, "error", err)
+			continue
+		}
+		review := a.featuredReview(syncCtx, details)
+
+		// One provisional photo at ingest time, the rest resolved later on
+		// first view via GetPhotos — same pattern as cmd/scrapecity's Google
+		// seed (minPhotos = 1). LocationDetails carries no photo of its own
+		// in the real API, so this is the only source for it. A failure or
+		// empty result here must never block the sync.
+		var photos []activitiessvc.Photo
+		if p, err := a.tripadvisor.LocationPhotos(syncCtx, details.LocationID, 1); err == nil && len(p) > 0 {
+			photos = p
+		}
+
+		for _, category := range categories {
+			if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, review, photos)); err != nil {
+				slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "category", category, "error", err)
+			}
+		}
+	}
+
+	for _, category := range categories {
+		if err := a.repo.MarkSynced(ctx, syncCellKey(anchor.Lat, anchor.Lng), string(category)); err != nil {
+			slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
+		}
+	}
+}
+
+// terraNearbySearchCategory is the Terra nearby-search category value used
+// for the shared per-anchor sync (RESTAURANT/ATTRACTION/HOTEL — no BAR value
+// exists). Bars are a kind of food/drink venue, so RESTAURANT is the closest
+// available Terra category. Because it's the same value regardless of which
+// Roamly category is being synced, one NearbySearch call per anchor covers
+// every due category at that anchor (see syncTripadvisorAnchor) instead of
+// one call per category — the Roamly Category each result is upserted under
+// is decided by the caller's own due-category list, unaffected by this
+// value.
+const terraNearbySearchCategory = "RESTAURANT"
+
+// featuredReview returns the one quoted review eligible under compliance
+// rule 04 (5-bubble, place rated >= 4.0), or nil when none qualifies —
+// never a live reviews call for a place below the rating bar.
+func (a *Activities) featuredReview(ctx context.Context, details tripadvisor.LocationDetails) *activitiessvc.TripadvisorReview {
+	if details.Rating < 4.0 {
+		return nil
+	}
+	reviews, err := a.tripadvisor.LocationReviews(ctx, details.LocationID)
+	if err != nil {
+		slog.Warn("tripadvisor location reviews failed", "location_id", details.LocationID, "error", err)
+		return nil
+	}
+	for _, r := range reviews {
+		if r.Rating == 5 {
+			return &activitiessvc.TripadvisorReview{Rating: r.Rating, Date: r.Date, Text: r.Text}
+		}
+	}
+	return nil
+}
+
+// tripadvisorIngestActivity maps a resolved Tripadvisor location into the
+// shape repo.Upsert expects: auto-published (no admin moderation step —
+// the whole point of an on-demand sync is that the requesting user sees
+// results now). RankingText is always "" — the real API returns no ranking
+// data at all (see LocationDetails' doc).
+func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, review *activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
+	attribution := &activitiessvc.TripadvisorAttribution{
+		RatingImageURL: d.RatingImageURL,
+		ReviewCount:    d.ReviewCount,
+		WebURL:         d.WebURL,
+	}
+	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, review))
+
+	return activitiessvc.IngestActivity{
+		Title:      d.Name,
+		Category:   category,
+		Lat:        d.Lat,
+		Lng:        d.Lng,
+		Address:    d.Address,
+		City:       d.City,
+		Country:    d.Country,
+		Rating:     d.Rating,
+		Status:     activitiessvc.StatusPublished,
+		Details:    detailsJSON,
+		Photos:     photos,
+		Source:     "tripadvisor",
+		SourceURL:  d.WebURL,
+		ExternalID: d.LocationID,
+		// ponytail: the real API returns no subcategory/cuisine data at all
+		// (Terra's location detail response has nothing that maps to it), so
+		// tripadvisormap.Subtype always sees a nil input and returns "" —
+		// correct per its contract, not broken. The mapper stays unused-for-
+		// now in case Terra ever adds a category field, or a future task
+		// derives a subtype from the search category param itself.
+		Subcategory: tripadvisormap.Subtype(category, nil),
+	}
+}
+
+func tripadvisorDetailsPayload(category activitiessvc.Category, attribution *activitiessvc.TripadvisorAttribution, review *activitiessvc.TripadvisorReview) any {
+	if category == activitiessvc.CategoryBars {
+		return activitiessvc.BarDetails{Tripadvisor: attribution, FeaturedReview: review}
+	}
+	return activitiessvc.RestaurantDetails{Tripadvisor: attribution, FeaturedReview: review}
 }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"activities-service/internal/tripadvisor"
+
 	"backend/shared/models/activitiessvc"
 )
 
@@ -135,4 +137,110 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// nearbySearchCall records one NearbySearch invocation's arguments, so
+// tests can assert on what was actually sent to Tripadvisor (radius,
+// anchor lat/lng, category) instead of only counting calls.
+type nearbySearchCall struct {
+	lat, lng, radiusKM float64
+	category           string
+}
+
+// fakeTripadvisor is a fake tripadvisorClient. Task 5 (the lazy sync) adds
+// NearbySearch/LocationDetails/LocationReviews fields and methods to this
+// same struct as the tripadvisorClient interface it implements grows.
+type fakeTripadvisor struct {
+	photosOut   []activitiessvc.Photo
+	photosErr   error
+	photosCalls int
+
+	nearbyOut       []tripadvisor.LocationSummary
+	nearbyErr       error
+	nearbyCalls     int
+	gotNearbySearch []nearbySearchCall
+
+	detailsOut  map[string]tripadvisor.LocationDetails
+	detailsErrs map[string]error // per-locationID error, so one bad candidate can be simulated without failing every candidate
+
+	reviewsOut map[string][]tripadvisor.Review
+}
+
+func (f *fakeTripadvisor) LocationPhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
+	f.photosCalls++
+	return f.photosOut, f.photosErr
+}
+
+func (f *fakeTripadvisor) NearbySearch(_ context.Context, lat, lng, radiusKM float64, category string) ([]tripadvisor.LocationSummary, error) {
+	f.nearbyCalls++
+	f.gotNearbySearch = append(f.gotNearbySearch, nearbySearchCall{lat: lat, lng: lng, radiusKM: radiusKM, category: category})
+	return f.nearbyOut, f.nearbyErr
+}
+
+func (f *fakeTripadvisor) LocationDetails(_ context.Context, locationID string) (tripadvisor.LocationDetails, error) {
+	if err, ok := f.detailsErrs[locationID]; ok {
+		return tripadvisor.LocationDetails{}, err
+	}
+	return f.detailsOut[locationID], nil
+}
+
+func (f *fakeTripadvisor) LocationReviews(_ context.Context, locationID string) ([]tripadvisor.Review, error) {
+	return f.reviewsOut[locationID], nil
+}
+
+func TestActivities_GetPhotos_TripadvisorSourceRoutesToTripadvisor(t *testing.T) {
+	provisional := []activitiessvc.Photo{{URL: "https://example.com/provisional.jpg"}}
+	resolvedSet := []activitiessvc.Photo{
+		{URL: "https://example.com/1.jpg", Provider: activitiessvc.ProviderTripadvisor},
+		{URL: "https://example.com/2.jpg", Provider: activitiessvc.ProviderTripadvisor},
+	}
+	activity := activitiessvc.Activity{ID: "1", ExternalID: "111", Source: "tripadvisor", Photos: provisional}
+
+	repo := &fakeRepo{getOut: activity, updateOut: activitiessvc.Activity{ID: "1", Photos: resolvedSet}}
+	ta := &fakeTripadvisor{photosOut: resolvedSet}
+	places := &fakePlaces{out: []activitiessvc.Photo{{URL: "https://wrong-provider.example.com/x.jpg"}}}
+	svc := New(repo).WithPlaces(places).WithTripadvisor(ta)
+
+	got, err := svc.GetPhotos(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetPhotos() error: %v", err)
+	}
+	if len(got) != 2 || got[0].URL != resolvedSet[0].URL {
+		t.Fatalf("got %+v, want the tripadvisor-resolved set", got)
+	}
+	if ta.photosCalls != 1 {
+		t.Errorf("tripadvisor.LocationPhotos calls = %d, want 1", ta.photosCalls)
+	}
+	if places.calls != 0 {
+		t.Errorf("places.ResolvePhotos calls = %d, want 0 — a tripadvisor-sourced row must never call Google", places.calls)
+	}
+}
+
+func TestActivities_GetPhotos_NonTripadvisorSourceStillUsesPlaces(t *testing.T) {
+	provisional := []activitiessvc.Photo{{URL: "https://example.com/provisional.jpg"}}
+	resolvedSet := []activitiessvc.Photo{{URL: "https://example.com/1.jpg", Provider: activitiessvc.ProviderGoogle}}
+	// Source unset, same as every pre-Task-4 fixture (google_places rows
+	// read "" until this ships against a real DB backfill, and admin rows
+	// are always "") — must keep routing to places, not break existing
+	// Google-sourced venues.
+	activity := activitiessvc.Activity{ID: "1", ExternalID: "place-1", Source: "", Photos: provisional}
+
+	repo := &fakeRepo{getOut: activity, updateOut: activitiessvc.Activity{ID: "1", Photos: resolvedSet}}
+	places := &fakePlaces{out: resolvedSet}
+	ta := &fakeTripadvisor{photosOut: []activitiessvc.Photo{{URL: "https://wrong-provider.example.com/x.jpg"}}}
+	svc := New(repo).WithPlaces(places).WithTripadvisor(ta)
+
+	got, err := svc.GetPhotos(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetPhotos() error: %v", err)
+	}
+	if len(got) != 1 || got[0].URL != resolvedSet[0].URL {
+		t.Fatalf("got %+v, want the places-resolved set", got)
+	}
+	if places.calls != 1 {
+		t.Errorf("places.ResolvePhotos calls = %d, want 1", places.calls)
+	}
+	if ta.photosCalls != 0 {
+		t.Errorf("tripadvisor.LocationPhotos calls = %d, want 0", ta.photosCalls)
+	}
 }

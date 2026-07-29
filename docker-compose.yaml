@@ -43,6 +43,10 @@ services:
       # Google photos live) — so the stack comes up with this feature
       # gracefully degraded rather than requiring a key.
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      # T4: optional, same fallback contract as GOOGLE_MAPS_API_KEY above.
+      # Unset, Restaurants/Bars simply never lazily sync from Tripadvisor —
+      # the stack still comes up, those two categories just stay empty.
+      TRIPADVISOR_API_KEY: ${TRIPADVISOR_API_KEY:-}
     ports:
       - "9090:9090"
     volumes:
