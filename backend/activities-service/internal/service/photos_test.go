@@ -139,6 +139,14 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+// nearbySearchCall records one NearbySearch invocation's arguments, so
+// tests can assert on what was actually sent to Tripadvisor (radius,
+// anchor lat/lng, category) instead of only counting calls.
+type nearbySearchCall struct {
+	lat, lng, radiusKM float64
+	category           string
+}
+
 // fakeTripadvisor is a fake tripadvisorClient. Task 5 (the lazy sync) adds
 // NearbySearch/LocationDetails/LocationReviews fields and methods to this
 // same struct as the tripadvisorClient interface it implements grows.
@@ -147,9 +155,10 @@ type fakeTripadvisor struct {
 	photosErr   error
 	photosCalls int
 
-	nearbyOut   []tripadvisor.LocationSummary
-	nearbyErr   error
-	nearbyCalls int
+	nearbyOut       []tripadvisor.LocationSummary
+	nearbyErr       error
+	nearbyCalls     int
+	gotNearbySearch []nearbySearchCall
 
 	detailsOut  map[string]tripadvisor.LocationDetails
 	detailsErrs map[string]error // per-locationID error, so one bad candidate can be simulated without failing every candidate
@@ -162,8 +171,9 @@ func (f *fakeTripadvisor) LocationPhotos(_ context.Context, _ string, _ int) ([]
 	return f.photosOut, f.photosErr
 }
 
-func (f *fakeTripadvisor) NearbySearch(_ context.Context, _, _, _ float64, _ string) ([]tripadvisor.LocationSummary, error) {
+func (f *fakeTripadvisor) NearbySearch(_ context.Context, lat, lng, radiusKM float64, category string) ([]tripadvisor.LocationSummary, error) {
 	f.nearbyCalls++
+	f.gotNearbySearch = append(f.gotNearbySearch, nearbySearchCall{lat: lat, lng: lng, radiusKM: radiusKM, category: category})
 	return f.nearbyOut, f.nearbyErr
 }
 

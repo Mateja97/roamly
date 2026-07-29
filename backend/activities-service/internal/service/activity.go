@@ -740,12 +740,26 @@ func syncCellKey(lat, lng float64) string {
 	return fmt.Sprintf("%.1f,%.1f", lat, lng)
 }
 
+// syncDue is one (anchor, category) pair whose cached data is missing or
+// stale and is therefore eligible for a live sync this query.
+type syncDue struct {
+	anchor   activitiessvc.Point
+	category activitiessvc.Category
+}
+
 // syncTripadvisorIfNeeded triggers a live Tripadvisor sync for req's
 // Restaurants/Bars anchors when the resolved category filter could include
 // them and their cached data is missing or stale. Never fails Query — a
 // sync problem at any step is logged and simply leaves the DB as-is; the
 // SQL query that follows just sees whatever's already cached (possibly
 // nothing, for a never-synced area, until the next successful attempt).
+//
+// Staleness is checked for every (anchor, category) pair *before* the
+// maxSyncAnchorsPerQuery cap is applied, not after — capping the raw anchor
+// list first would let a handful of already-fresh low-index anchors starve
+// a genuinely stale anchor further down the list (e.g. anchor #4 or #5 of
+// an Anywhere request's cities) indefinitely across repeated requests with
+// the same anchor set.
 func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 	if a.tripadvisor == nil {
 		return
@@ -755,19 +769,25 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 		return
 	}
 
-	anchors := syncAnchors(req)
-	if len(anchors) > maxSyncAnchorsPerQuery {
-		anchors = anchors[:maxSyncAnchorsPerQuery]
-	}
-	for _, anchor := range anchors {
+	var due []syncDue
+	for _, anchor := range syncAnchors(req) {
 		cell := syncCellKey(anchor.Lat, anchor.Lng)
 		for _, cat := range categories {
 			syncedAt, ok, err := a.repo.SyncedAt(ctx, cell, string(cat))
-			if err == nil && ok && time.Since(syncedAt) < tripadvisorSyncTTL {
+			if err != nil {
+				slog.Warn("tripadvisor synced-at lookup failed", "cell", cell, "category", cat, "error", err)
+			} else if ok && time.Since(syncedAt) < tripadvisorSyncTTL {
 				continue
 			}
-			a.syncTripadvisorArea(ctx, anchor, cat)
+			due = append(due, syncDue{anchor: anchor, category: cat})
 		}
+	}
+
+	if len(due) > maxSyncAnchorsPerQuery {
+		due = due[:maxSyncAnchorsPerQuery]
+	}
+	for _, d := range due {
+		a.syncTripadvisorArea(ctx, d.anchor, d.category)
 	}
 }
 
@@ -813,6 +833,7 @@ func (a *Activities) featuredReview(ctx context.Context, details tripadvisor.Loc
 	}
 	reviews, err := a.tripadvisor.LocationReviews(ctx, details.LocationID)
 	if err != nil {
+		slog.Warn("tripadvisor location reviews failed", "location_id", details.LocationID, "error", err)
 		return nil
 	}
 	for _, r := range reviews {

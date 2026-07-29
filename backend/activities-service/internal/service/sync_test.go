@@ -22,6 +22,12 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 				RankingString: "#12 of 1,780 Restaurants in Belgrade",
 			},
 		},
+		reviewsOut: map[string][]tripadvisor.Review{
+			"111": {
+				{Rating: 4, Date: "2026-01-01", Text: "It was fine."},
+				{Rating: 5, Date: "2026-03-03", Text: "Loved it."},
+			},
+		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
 
@@ -32,6 +38,12 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
+	}
+	if len(ta.gotNearbySearch) != 1 {
+		t.Fatalf("NearbySearch recorded calls = %d, want 1", len(ta.gotNearbySearch))
+	}
+	if got := ta.gotNearbySearch[0]; got.lat != 44.81 || got.lng != 20.46 || got.radiusKM != tripadvisorSyncRadiusKM || got.category != "restaurants" {
+		t.Errorf("NearbySearch call = %+v, want lat=44.81 lng=20.46 radiusKM=%v category=restaurants", got, float64(tripadvisorSyncRadiusKM))
 	}
 	if repo.upsertCalls != 1 {
 		t.Errorf("Upsert calls = %d, want 1", repo.upsertCalls)
@@ -54,6 +66,11 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if details.Tripadvisor.WebURL != "https://ta/1" || details.Tripadvisor.RatingImageURL != "https://ta/img/4.5.svg" ||
 		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != wantRanking {
 		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = %q", details.Tripadvisor, wantRanking)
+	}
+
+	wantReview := &activitiessvc.TripadvisorReview{Rating: 5, Date: "2026-03-03", Text: "Loved it."}
+	if details.FeaturedReview == nil || *details.FeaturedReview != *wantReview {
+		t.Errorf("details.FeaturedReview = %+v, want %+v — proves FeaturedReview survives the actual json.Marshal/tripadvisorDetailsPayload upsert path, not just the isolated featuredReview() unit test", details.FeaturedReview, wantReview)
 	}
 }
 
@@ -145,6 +162,44 @@ func TestActivities_Query_TripadvisorSync_CapsAnchorsPerQuery(t *testing.T) {
 	}
 	if ta.nearbyCalls != maxSyncAnchorsPerQuery {
 		t.Errorf("NearbySearch calls = %d, want %d (5 cities, capped)", ta.nearbyCalls, maxSyncAnchorsPerQuery)
+	}
+}
+
+func TestActivities_Query_TripadvisorSync_StaleAnchorNotStarvedByEarlierFreshAnchors(t *testing.T) {
+	// Anchors 1-3 are already fresh; anchor 4 has never been synced. The
+	// maxSyncAnchorsPerQuery cap (3) must apply to the anchors that still
+	// need a sync, not to the raw anchor list before staleness is known —
+	// otherwise a cap-then-check order would truncate to anchors 1-3, all
+	// fresh, and anchor 4 would never get synced no matter how many times
+	// this exact request repeats.
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{
+		"1.0,1.0|restaurants": time.Now().Add(-time.Hour),
+		"2.0,2.0|restaurants": time.Now().Add(-time.Hour),
+		"3.0,3.0|restaurants": time.Now().Add(-time.Hour),
+		// "4.0,4.0|restaurants" intentionally absent: never synced.
+	}}
+	ta := &fakeTripadvisor{}
+	svc := New(repo).WithTripadvisor(ta)
+
+	req := Request{
+		Scope: activitiessvc.ScopeAnywhere,
+		Cities: []activitiessvc.Point{
+			{Lat: 1, Lng: 1}, {Lat: 2, Lng: 2}, {Lat: 3, Lng: 3}, {Lat: 4, Lng: 4},
+		},
+		Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants},
+	}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+
+	if ta.nearbyCalls != 1 {
+		t.Fatalf("NearbySearch calls = %d, want 1 (only the never-synced 4th anchor is due)", ta.nearbyCalls)
+	}
+	if len(ta.gotNearbySearch) != 1 || ta.gotNearbySearch[0].lat != 4 || ta.gotNearbySearch[0].lng != 4 {
+		t.Errorf("NearbySearch call = %+v, want the stale anchor (4,4), not one of the earlier fresh anchors", ta.gotNearbySearch)
+	}
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != "4.0,4.0|restaurants" {
+		t.Errorf("markSynced = %v, want exactly one call for cell 4.0,4.0/restaurants", repo.markSynced)
 	}
 }
 
