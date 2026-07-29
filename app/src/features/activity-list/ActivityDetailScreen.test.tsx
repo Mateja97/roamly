@@ -99,10 +99,10 @@ describe('ActivityDetailScreen', () => {
         onBack={jest.fn()}
       />,
     );
-    fireEvent(screen.getByTestId('activity-detail-hero-image'), 'error', {
+    fireEvent(screen.getByTestId('activity-detail-hero-image-0'), 'error', {
       nativeEvent: { error: 'load failed' },
     });
-    expect(screen.queryByTestId('activity-detail-hero-image')).toBeNull();
+    expect(screen.queryByTestId('activity-detail-hero-image-0')).toBeNull();
   });
 
   it('omits the map block entirely when the maps key is absent, app-wide', () => {
@@ -633,7 +633,7 @@ describe('ActivityDetailScreen', () => {
       render(
         <ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />,
       );
-      expect(screen.getByTestId('activity-detail-hero-image').props.source).toEqual([
+      expect(screen.getByTestId('activity-detail-hero-image-0').props.source).toEqual([
         { uri: activity.image_refs[0].uri },
       ]);
       // The one-photo provisional set hides the pill — no other loading
@@ -653,7 +653,7 @@ describe('ActivityDetailScreen', () => {
       );
 
       await waitFor(() => expect(screen.getByText('Photos 3')).toBeTruthy());
-      expect(screen.getByTestId('activity-detail-hero-image').props.source).toEqual([
+      expect(screen.getByTestId('activity-detail-hero-image-0').props.source).toEqual([
         { uri: activity.image_refs[0].uri },
       ]);
 
@@ -670,7 +670,7 @@ describe('ActivityDetailScreen', () => {
       await waitFor(() => expect(mockedGetActivityPhotos).toHaveBeenCalled());
       await screen.findByText(activity.description); // let the resolved promise settle
       expect(screen.queryByText('boom')).toBeNull();
-      expect(screen.getByTestId('activity-detail-hero-image').props.source).toEqual([
+      expect(screen.getByTestId('activity-detail-hero-image-0').props.source).toEqual([
         { uri: activity.image_refs[0].uri },
       ]);
       expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();

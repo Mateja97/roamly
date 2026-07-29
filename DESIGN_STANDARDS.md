@@ -50,6 +50,7 @@ puts the gold brand into the structure, not only the text.
 | `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
 | `--scrim` | `rgba(42,14,17,0.72)` | modal dim behind bottom sheets/overlays (wine-black tint) |
 | `--photo-viewer-bg` | `#0F0405` | opaque near-black backdrop for the fullscreen photo viewer — photos pop against it; the app renders no other body UI on this surface |
+| `--hero-overlay-gradient` | `linear-gradient(180deg, rgba(23,9,11,0.5) 0%, rgba(23,9,11,0) 40%, rgba(125,32,39,0.95) 100%)` | directional scrim over a full-bleed detail hero photo — darkens the top for the overlaid back-chevron and floods the bottom with near-opaque `--bg` wine (0.95) for the photo-source caption + a clean blend into the content below. Decorative, but **load-bearing for the caption's AA** (see the Detail hero recipe). `area: app` renders it via `expo-linear-gradient` (already a dependency). Top stop `#17090B` is a near-black wine; bottom stop is `--bg` (`#7D2027`) at 0.95 |
 | `--attribution-plate` | `#FFFFFF` | fixed white plate behind a third-party partner's brand asset (logo + API-hosted rating image) so the wine page background never shows through it — see the Partner attribution plate recipe. Not a general surface; only for partner-mandated lockups. Text on it is `--ink` (≈17.5:1 ✓) |
 | `--radius-full` | `999px` | pills/badges |
 
@@ -791,6 +792,104 @@ Composes from `--photo-viewer-bg`, `--scrim`, `--primary`, `--text`,
 into `app/src/theme/tokens.ts`. Pre-computed pairings on `--photo-viewer-bg`:
 `--text` 17:1 ✓ · `--text-muted` 12.6:1 ✓ · `--primary` 7.4:1 ✓.
 
+### Detail hero (swipeable photo carousel)
+
+The full-bleed photo surface at the top of an activity/place detail screen: a
+reserved-height photo the user can page horizontally through, with an overlaid
+back control, a photo-source caption, and a page indicator. The **inline,
+quick-browse** sibling of the Fullscreen photo viewer — the count pill on this
+hero is the doorway into that viewer for zoom/thumbnails/share. `area: app`
+recipe (the app is the only surface with a detail hero today; the pieces
+generalise to a future web hero).
+
+- **Surface:** full screen width, flush to the top edge (no header bar above
+  it — the back control moves onto the hero, below), a **fixed reserved
+  height** (the detail screen's existing hero height — space reserved so
+  nothing jumps as photos load), corners square/top (it's edge-to-edge), bg
+  `--surface-hover` behind the photos.
+- **Pager:** a horizontal, `pagingEnabled`, snap-per-page carousel over the
+  activity's `photos` (1–8), one photo per page at full screen width,
+  `contentFit: cover`. Reuses the Fullscreen photo viewer's paging mechanics
+  verbatim — `getItemLayout` on the page width (so a programmatic jump never
+  needs a measurement pass) + `onMomentumScrollEnd` (`round(offsetX / width)`)
+  to track the current index. **No new dependency** — RN's own `FlatList`
+  covers a single-row paged carousel. It lives inside the screen's vertical
+  `ScrollView`; horizontal paging and vertical scroll disambiguate by gesture
+  direction (native).
+  - *Per-photo loading:* the Skeleton pulse over the reserved box (same as the
+    photo-viewer page). *Per-photo broken/missing:* a centred 20px
+    `--text-muted` `ImageOff` on `--surface-hover` — never a broken glyph,
+    never a collapsed page.
+  - The pager pages render from `photos`, which may **upgrade in place** after
+    first paint (a background photo-set fetch); `photos[0]` is guaranteed
+    stable across that upgrade, so the visible page-0 photo never swaps/reloads
+    — the pager only *gains* pages and dots. No reset, no jump.
+- **Overlay gradient:** `--hero-overlay-gradient` filling the whole hero,
+  `pointer-events: none`, above the pager and below the three overlay elements.
+  Its dark top protects the back chevron; its near-opaque wine bottom protects
+  the caption and blends into the content below. It renders on **every** hero
+  photo (it's on the hero box, not per page), so it never shifts while paging.
+- **Back control (overlaid, top-left):** the over-hero variant of the
+  Mobile-specific interim back control — an **icon-only** `ChevronLeft` in
+  `--scrim` cream (the hero overlay-control device, identical to the count
+  pill's fill/legibility guarantee: `--text` cream on `--scrim` ≥6.1:1 over any
+  photo — reconciled from the source draft's `rgba(23,9,11,0.55)`, which only
+  reaches ~3.7:1 over a light photo, to the AA-vetted `--scrim`), `--radius-full`,
+  **44×44** target, `accessibilityLabel` "Back", press → brief `opacity` dip,
+  focus → 2px `--primary` outline. Always rendered (even with 0–1 photos) — back
+  is never unreachable. Coexists with the platform hardware/gesture back.
+- **Photo-source caption (overlaid, bottom-left):** the required partner /
+  source credit for a hero photo that carries one (e.g. "Photo via Tripadvisor").
+  `--font-size-xs`, uppercase, `letter-spacing 0.06em`, **`--text` cream** (not
+  the muted tan the source mock draws): over the gradient's caption band (~0.84
+  wine over the photo) cream clears **≈5.77:1 worst-case over a pure-white
+  photo** ✓, whereas `--text-muted` drops to ~4.3:1 there and **fails** the
+  4.5:1 bar — this is the "a pairing that reads on one surface needn't on
+  another" trap, so the caption is cream and the gradient is load-bearing (the
+  caption never renders without it). Per-photo (travels with the pager page's
+  photo), non-interactive; renders only when that photo has a source credit.
+  This is distinct from the below-photo Photo-attribution recipe (Google
+  per-author credit) — a partner source label and a Google author credit can
+  both apply to different photos; neither suppresses the other.
+- **Page indicator (dots):** reuses the **Fullscreen photo viewer Dots**
+  recipe verbatim — active `20×7` `--primary` gold pill, inactive `7×7` `--text`
+  cream at 40% opacity, `--space-1` apart — centred at the hero's bottom band
+  (`--space-3` from the bottom edge), over the gradient. Reusing the
+  photo-viewer dots (rather than a bespoke circle-active variant) keeps the
+  inline hero and the fullscreen viewer — the same photos, the pager hands off
+  to the other — visually identical. Same gold-active / translucent-cream-inactive
+  scheme regardless. Over the wine bottom band the gold pill is 3.65:1 (UI ✓).
+  **Hidden entirely below 2 photos** (a lone dot is noise). The caption sits
+  bottom-left, the count pill bottom-right, the dots centred between them; up to
+  8 photos fit the centre band without overlap (the row condenses for larger M,
+  per the photo-viewer dots). Decorative echo — hidden from AT.
+- **Count pill + fullscreen viewer:** the existing **Hero photo-count pill**
+  (bottom-right, `--scrim`, "Photos N", opens the Fullscreen photo viewer) is
+  **kept unchanged** and is the **keyboard/AT-complete path**: the inline swipe
+  is a sighted-user convenience (progressive enhancement), and the pill →
+  viewer (chevrons + thumbnail strip, already fully AT-navigable) is the
+  redundant, non-swipe way to browse every photo. The pill is present exactly
+  when the pager is swipeable (both gate at ≥2 photos), so a swipeable hero
+  always ships its accessible path. The pill opens the viewer at the hero's
+  **current** page index (continuity), not always photo 0.
+- **Single photo (or none):** the pager holds one page and does not paginate; no
+  dots, no count pill (both already gate at ≥2). The gradient, overlaid back
+  control, and caption still render. A zero-photo edge shows the `ImageOff`
+  fallback in the reserved box (no dots/pill/caption). "Single-photo renders as
+  before" holds — plus the shared hero chrome.
+- **Motion:** native `transform` paging; the active-dot change animates
+  `opacity`/color only, ≤150ms; `prefers-reduced-motion` → instant. No
+  size/scale animation.
+
+Composes from `--hero-overlay-gradient`, `--scrim`, `--surface-hover`,
+`--primary`, `--text`, `--text-muted`, `--radius-full`, `--space-1`/`--space-3`,
+`--font-size-xs`, and reuses the Skeleton, the Fullscreen photo viewer's paging
+mechanics + Dots + count pill, and the interim back control (over-hero variant).
+One new token (`--hero-overlay-gradient`); mirror it into
+`app/src/theme/tokens.ts`. ponytail: no carousel library — a paged `FlatList`
+already does this, and the fullscreen viewer already wrote the paging logic to
+reuse.
+
 ### Filter chip (selectable / removable)
 
 The interactive sibling of the (non-interactive) Badge/pill, for two jobs: a
@@ -809,6 +908,26 @@ feedback carries on touch (no hover reliance).
   `--border`, `--text` label + trailing 16px `X` icon in `--text-muted`. The
   whole chip is one 44×44 remove control; `aria-label` "Remove <filter>
   filter". Press → `--surface` bg.
+- **Segmented (single-select, filled)** — a list-screen quick-filter where
+  exactly one option is always active (e.g. the activities-list category
+  shortcut row: `All` + a few headline categories). Distinct from the sheet
+  `select` variant above: that is a multi-select checklist (border + `Check`);
+  this is an always-one-active toggle, so a filled pill reads correctly where
+  a check does not.
+  - *Selected:* `--primary` gold fill, `--ink` label (6.6:1 ✓ — the documented
+    filled-gold pairing), weight 600, **no `Check` icon**; the
+    **filled-vs-outlined pill is itself the non-color selection cue** (the same
+    device as the Scope ticket / Activity card go-button's filled-vs-outlined
+    circle), reinforced for AT by `accessibilityState.selected`.
+  - *Unselected:* transparent bg, 1px `--border`, `--text` cream label (8.5:1
+    on `--bg` ✓ — cream, not the sheet variant's `--text-muted`, because these
+    chips sit on `--bg` and read as the row's resting options).
+  - *Pressed:* selected → `--primary-active` fill; unselected → `--surface-hover`
+    bg. *Focus (keyboard/AT):* 2px `--primary` border.
+  - The visible pill is ~32px tall, but the control keeps the ≥44×44 tap
+    target (vertical hit area / padding), with ≥`--space-2` between chips and a
+    horizontally-scrollable row. Single-select: tapping one clears the others;
+    `All` is the default state (no category filter applied).
 
 No new color tokens.
 
@@ -968,7 +1087,12 @@ the palette:
   (6.2:1 on `--bg`), 44×44 target, `aria-label`/`accessibilityLabel` "Back",
   keyboard-operable, `--surface-hover` bg on press. It coexists with (does
   not replace) the platform hardware/gesture back. Remove it in favor of the
-  router's native chrome once a router exists.
+  router's native chrome once a router exists. **Over-hero variant:** on a screen
+  whose hero photo is full-bleed to the top edge (the Detail hero recipe), this
+  control is instead an icon-only `ChevronLeft` in a `--scrim` circle overlaid
+  top-left on the hero — the header bar is dropped so the hero sits flush — with
+  the same 44×44 target, "Back" label, `--primary` focus outline, and
+  coexistence with the platform back; see the Detail hero recipe.
 - **Touch targets**: the existing 44×44px floor (see "Touch & interaction"
   above) already satisfies both iOS HIG's 44pt minimum and Android
   Material's 48dp recommendation — no separate mobile sizing rule needed.

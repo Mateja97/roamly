@@ -14,15 +14,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import {
-  ChevronLeft,
-  Images,
-  ImageOff,
-  Info,
-  MapPin,
-  MapPinOff,
-  Star,
-} from 'lucide-react-native';
+import { Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity, ActivityPhoto } from '../../api/activities';
 import { getActivityPhotos } from '../../api/activities';
 import {
@@ -62,20 +54,21 @@ import {
 } from './activityDetailConfig';
 import { DifficultyMeter } from './DifficultyMeter';
 import { FactStrip } from './FactStrip';
+import { HeroCarousel } from './HeroCarousel';
 import { PhotoViewerModal } from './PhotoViewerModal';
 import { TripadvisorBlock } from './TripadvisorBlock';
 import { UniqueSection } from './UniqueSection';
 import { WeekHoursModal } from './WeekHoursModal';
 
-// design-spec.md's T4 "Shared base layout" section: header back control,
-// hero photo (280px, standardized across categories), title/badge/rating,
-// description, fact strip, unique section, bottom action bar. Pushed onto
-// the existing hand-rolled stack by ActivityListScreen (see there) — no
-// router. Renders from the already-loaded `Activity` immediately (no
-// blocking loading/error/empty state), then fires the T4 photo-set upgrade
-// fetch in the background — see the `photos` state below for that surface.
-// Other async surfaces here: hero/map images, CTA OS-handoff failures.
-const HERO_HEIGHT = 280;
+// design-spec.md's T4 "Shared base layout" section: hero photo carousel
+// (T2, owns the back control + top safe-area inset — see HeroCarousel),
+// title/badge/rating, description, fact strip, unique section, bottom
+// action bar. Pushed onto the existing hand-rolled stack by
+// ActivityListScreen (see there) — no router. Renders from the
+// already-loaded `Activity` immediately (no blocking loading/error/empty
+// state), then fires the T4 photo-set upgrade fetch in the background — see
+// the `photos` state below for that surface. Other async surfaces here:
+// hero/map images, CTA OS-handoff failures.
 const DETAIL_MAP_WIDTH = 600;
 const DETAIL_MAP_HEIGHT = 400; // 3:2, per the map box's reserved aspect ratio.
 
@@ -90,24 +83,19 @@ export function ActivityDetailScreen({
   showDistance,
   onBack,
 }: ActivityDetailScreenProps) {
-  const backFocus = useFocusable();
   const genericFocus = useFocusable();
   const primaryFocus = useFocusable();
   const mapFocus = useFocusable();
-  const photosFocus = useFocusable();
   const insets = useSafeAreaInsets();
-  const [heroState, setHeroState] = useState<'loading' | 'loaded' | 'broken'>(
-    'loading',
-  );
   const [mapState, setMapState] = useState<'loading' | 'loaded' | 'broken'>(
     'loading',
   );
   const [ctaBusy, setCtaBusy] = useState(false);
   const [ctaError, setCtaError] = useState<string | null>(null);
-  // T4: fewer than 2 photos hides the pill entirely (driven by the photo
-  // count, not the hero's own loading/broken state) — a single-photo pill
-  // opening a one-slide viewer is noise, per design-spec.md.
-  const [viewerOpen, setViewerOpen] = useState(false);
+  // T2: null = closed; a number = open the fullscreen viewer at that page
+  // (the hero carousel's current page — continuity between the two).
+  // Fewer than 2 photos never opens this (the hero's pill hides itself).
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   // opening-hours T2: the full-week modal, same conditional-mount pattern as
   // the photo viewer above.
   const [hoursModalOpen, setHoursModalOpen] = useState(false);
@@ -131,7 +119,6 @@ export function ActivityDetailScreen({
     };
   }, [activity.id]);
   const heroPhoto = photos[0];
-  const heroUri = heroPhoto?.uri;
   const metaText = showDistance
     ? `${activity.distance_km.toFixed(1)} km away`
     : activity.country;
@@ -245,64 +232,17 @@ export function ActivityDetailScreen({
   }
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={onBack}
-          onFocus={backFocus.onFocus}
-          onBlur={backFocus.onBlur}
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          style={[
-            styles.backButton,
-            backFocus.focused && styles.backButtonFocused,
-          ]}
-        >
-          <ChevronLeft size={16} color={colors.textMuted} strokeWidth={1.75} />
-          <Text style={styles.backLabel}>Back</Text>
-        </Pressable>
-      </View>
-
+    // T2: the hero owns the top safe-area inset (its overlaid back control
+    // pads by insets.top itself) — no header bar above it, per
+    // DESIGN_STANDARDS.md's Detail hero recipe / Mobile-specific over-hero
+    // back-control variant. The footer below still owns the bottom inset.
+    <SafeAreaView style={styles.screen} edges={['left', 'right', 'bottom']}>
       <ScrollView contentContainerStyle={styles.body}>
-        <View style={styles.heroBox}>
-          {heroUri && heroState !== 'broken' ? (
-            <Image
-              testID="activity-detail-hero-image"
-              source={{ uri: heroUri }}
-              style={styles.image}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              accessibilityIgnoresInvertColors
-              onLoad={() => setHeroState('loaded')}
-              onError={() => setHeroState('broken')}
-            />
-          ) : (
-            <View style={styles.imageFallback}>
-              <ImageOff size={20} color={colors.textMuted} strokeWidth={1.75} />
-            </View>
-          )}
-          {heroUri && heroState === 'loading' && (
-            <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />
-          )}
-          {photos.length >= 2 && (
-            <Pressable
-              onPress={() => setViewerOpen(true)}
-              onFocus={photosFocus.onFocus}
-              onBlur={photosFocus.onBlur}
-              accessibilityRole="button"
-              accessibilityLabel={`View ${photos.length} photos`}
-              style={[
-                styles.photosPill,
-                photosFocus.focused && styles.photosPillFocused,
-              ]}
-            >
-              <Images size={16} color={colors.text} strokeWidth={1.75} />
-              <Text style={styles.photosPillLabel}>
-                {`Photos ${photos.length}`}
-              </Text>
-            </Pressable>
-          )}
-        </View>
+        <HeroCarousel
+          photos={photos}
+          onBack={onBack}
+          onOpenViewer={setViewerIndex}
+        />
 
         <PhotoAttributionCaption
           attribution={heroPhoto?.attribution}
@@ -538,11 +478,12 @@ export function ActivityDetailScreen({
         </View>
       </View>
 
-      {viewerOpen && (
+      {viewerIndex !== null && (
         <PhotoViewerModal
           photos={photos}
           activityTitle={activity.title}
-          onClose={() => setViewerOpen(false)}
+          initialIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
         />
       )}
 
@@ -558,42 +499,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
-  header: {
-    paddingVertical: space[4],
-    paddingHorizontal: space[6],
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: space[1],
-    minHeight: 44,
-    minWidth: 44,
-    paddingHorizontal: space[2],
-    borderRadius: radius.default,
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  backButtonFocused: {
-    backgroundColor: colors.surfaceHover,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  backLabel: {
-    fontSize: fontSize.md,
-    color: colors.textMuted,
-  },
   body: {
     paddingBottom: space[8],
-  },
-  heroBox: {
-    width: '100%',
-    height: HERO_HEIGHT,
-    borderRadius: radius.default,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceHover,
   },
   mapBox: {
     width: '100%',
@@ -622,30 +529,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-  },
-  photosPill: {
-    position: 'absolute',
-    right: space[3],
-    bottom: space[3],
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    minHeight: 44,
-    backgroundColor: colors.scrim,
-    borderRadius: radius.full,
-    paddingVertical: space[1],
-    paddingHorizontal: space[2],
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  photosPillFocused: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  photosPillLabel: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
   },
   titleBlock: {
     paddingHorizontal: space[6],

@@ -32,6 +32,10 @@ import { colors, fontSize, radius, space } from '../../theme/tokens';
 type PhotoViewerModalProps = {
   photos: ActivityPhoto[];
   activityTitle: string;
+  /** T2: opens at the hero carousel's currently swiped-to page instead of
+   * always 0 — continuity between the inline hero and this fullscreen
+   * viewer. Defaults to 0 (unchanged behavior for other callers). */
+  initialIndex?: number;
   onClose: () => void;
 };
 
@@ -46,8 +50,10 @@ const CAPTION_BAND_MIN_HEIGHT = 80;
 // Shared by both FlatLists below (fixed-width pager pages, fixed-width
 // thumbnails) — giving each a getItemLayout means scrollToIndex never needs
 // a measurement pass, so a chevron/thumbnail tap or a swipe always resolves
-// synchronously instead of risking onScrollToIndexFailed.
-function itemLayout(size: number) {
+// synchronously instead of risking onScrollToIndexFailed. Exported: T2's
+// inline hero carousel reuses this verbatim for its own paged FlatList
+// (DESIGN_STANDARDS.md's Detail hero recipe — same paging mechanics).
+export function itemLayout(size: number) {
   return (_data: ArrayLike<unknown> | null | undefined, i: number) => ({
     length: size,
     offset: size * i,
@@ -58,11 +64,12 @@ function itemLayout(size: number) {
 export function PhotoViewerModal({
   photos,
   activityTitle,
+  initialIndex,
   onClose,
 }: PhotoViewerModalProps) {
   const insets = useSafeAreaInsets();
   const { width } = useSafeAreaFrame();
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(initialIndex ?? 0);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const pagerRef = useRef<FlatList<ActivityPhoto>>(null);
@@ -192,6 +199,7 @@ export function PhotoViewerModal({
             data={photos}
             horizontal
             pagingEnabled
+            initialScrollIndex={index}
             showsHorizontalScrollIndicator={false}
             keyExtractor={pageKeyExtractor}
             renderItem={renderPage}
