@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"activities-service/internal/tripadvisor"
+
 	"backend/shared/models/activitiessvc"
 )
 
@@ -144,11 +146,36 @@ type fakeTripadvisor struct {
 	photosOut   []activitiessvc.Photo
 	photosErr   error
 	photosCalls int
+
+	nearbyOut   []tripadvisor.LocationSummary
+	nearbyErr   error
+	nearbyCalls int
+
+	detailsOut  map[string]tripadvisor.LocationDetails
+	detailsErrs map[string]error // per-locationID error, so one bad candidate can be simulated without failing every candidate
+
+	reviewsOut map[string][]tripadvisor.Review
 }
 
 func (f *fakeTripadvisor) LocationPhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
 	f.photosCalls++
 	return f.photosOut, f.photosErr
+}
+
+func (f *fakeTripadvisor) NearbySearch(_ context.Context, _, _, _ float64, _ string) ([]tripadvisor.LocationSummary, error) {
+	f.nearbyCalls++
+	return f.nearbyOut, f.nearbyErr
+}
+
+func (f *fakeTripadvisor) LocationDetails(_ context.Context, locationID string) (tripadvisor.LocationDetails, error) {
+	if err, ok := f.detailsErrs[locationID]; ok {
+		return tripadvisor.LocationDetails{}, err
+	}
+	return f.detailsOut[locationID], nil
+}
+
+func (f *fakeTripadvisor) LocationReviews(_ context.Context, locationID string) ([]tripadvisor.Review, error) {
+	return f.reviewsOut[locationID], nil
 }
 
 func TestActivities_GetPhotos_TripadvisorSourceRoutesToTripadvisor(t *testing.T) {

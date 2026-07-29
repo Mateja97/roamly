@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
@@ -34,6 +35,14 @@ type fakeRepo struct {
 	gotUpdatePatch activitiessvc.UpdatePatch
 	updateOut      activitiessvc.Activity
 	updateErr      error
+
+	gotUpsert   activitiessvc.IngestActivity
+	upsertCalls int
+	upsertOut   activitiessvc.Activity
+	upsertErr   error
+
+	syncedAtOut map[string]time.Time // key: cellKey+"|"+category
+	markSynced  []string             // cellKey+"|"+category, in call order
 }
 
 func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
@@ -68,6 +77,22 @@ func (f *fakeRepo) Update(_ context.Context, id string, patch activitiessvc.Upda
 	f.gotUpdateID = id
 	f.gotUpdatePatch = patch
 	return f.updateOut, f.updateErr
+}
+
+func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
+	f.gotUpsert = in
+	f.upsertCalls++
+	return f.upsertOut, f.upsertErr
+}
+
+func (f *fakeRepo) SyncedAt(_ context.Context, cellKey, category string) (time.Time, bool, error) {
+	t, ok := f.syncedAtOut[cellKey+"|"+category]
+	return t, ok, nil
+}
+
+func (f *fakeRepo) MarkSynced(_ context.Context, cellKey, category string) error {
+	f.markSynced = append(f.markSynced, cellKey+"|"+category)
+	return nil
 }
 
 func TestActivities_Query_Validation(t *testing.T) {
