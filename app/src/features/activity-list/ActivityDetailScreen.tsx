@@ -14,7 +14,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
+import { ArrowUpRight, Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity, ActivityPhoto } from '../../api/activities';
 import { getActivityPhotos } from '../../api/activities';
 import {
@@ -87,6 +87,7 @@ export function ActivityDetailScreen({
   const genericFocus = useFocusable();
   const primaryFocus = useFocusable();
   const mapFocus = useFocusable();
+  const tripadvisorLinkFocus = useFocusable();
   const insets = useSafeAreaInsets();
   const [mapState, setMapState] = useState<'loading' | 'loaded' | 'broken'>(
     'loading',
@@ -364,7 +365,6 @@ export function ActivityDetailScreen({
               reviews={reviews}
               address={address}
               ctaBusy={ctaBusy}
-              onOpenWebUrl={() => openExternalLink(tripadvisor.web_url)}
               onCallPhone={handleCallPhone}
             />
           )}
@@ -431,6 +431,40 @@ export function ActivityDetailScreen({
                 </View>
               )}
             </Pressable>
+          )}
+
+          {/* design-spec.md T4's Footer CTAs + disclaimer section: the
+              deep-link button + disclaimer are the trailing elements of the
+              scrollable content — after facts/map, right before the pinned
+              Directions/Book-a-table footer bar. ("Add to my trip" is
+              out of scope — no existing trip/itinerary action to wire it
+              to, per T4's feature-availability escalation.) */}
+          {tripadvisor && (
+            <View style={styles.tripadvisorFooterCta}>
+              <Pressable
+                onPress={() => openExternalLink(tripadvisor.web_url)}
+                onFocus={tripadvisorLinkFocus.onFocus}
+                onBlur={tripadvisorLinkFocus.onBlur}
+                disabled={ctaBusy}
+                accessibilityRole="button"
+                accessibilityLabel="Read all reviews on Tripadvisor"
+                style={[
+                  styles.tripadvisorLinkButton,
+                  tripadvisorLinkFocus.focused &&
+                    styles.tripadvisorLinkButtonFocused,
+                ]}
+              >
+                <Text style={styles.tripadvisorLinkLabel}>
+                  Read all reviews on Tripadvisor
+                </Text>
+                <ArrowUpRight size={16} color={colors.text} strokeWidth={1.75} />
+              </Pressable>
+
+              <Text style={styles.tripadvisorDisclaimer}>
+                Ratings, reviews and photos for restaurants and bars are sourced from Tripadvisor and
+                refreshed periodically. Roamly does not rate these places.
+              </Text>
+            </View>
           )}
         </View>
       </ScrollView>
@@ -648,6 +682,34 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.text,
     lineHeight: fontSize.md * 1.5,
+  },
+  tripadvisorFooterCta: {
+    gap: space[4],
+  },
+  tripadvisorLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space[2],
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.default,
+    outlineStyle: 'solid',
+    outlineWidth: 0,
+  },
+  tripadvisorLinkButtonFocused: {
+    backgroundColor: colors.surfaceHover,
+    borderColor: colors.primary,
+  },
+  tripadvisorLinkLabel: {
+    fontSize: fontSize.md,
+    color: colors.text,
+  },
+  tripadvisorDisclaimer: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    lineHeight: fontSize.xs * 1.55,
   },
   tagsRow: {
     flexDirection: 'row',

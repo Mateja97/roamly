@@ -1075,5 +1075,33 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText(/Roamly does not rate these places/)).toBeNull();
       expect(screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeNull();
     });
+
+    // Bug fix: the deep-link button + disclaimer used to render mid-block,
+    // inside TripadvisorBlock right after the address/phone facts — ahead of
+    // the FactStrip/description/tags/map. They're now the trailing elements
+    // of the scrollable content, rendered by the screen itself.
+    it('renders the deep-link button and disclaimer after the description/tags/map, not inside TripadvisorBlock', () => {
+      process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+      render(
+        <ActivityDetailScreen
+          activity={{ ...tripadvisorActivity, tags: ['wine', 'dinner'] }}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+
+      const tree = JSON.stringify(screen.toJSON());
+      const descriptionIndex = tree.indexOf(tripadvisorActivity.description);
+      const tagIndex = tree.indexOf('wine');
+      const mapIndex = tree.indexOf('activity-detail-map-image');
+      const buttonIndex = tree.indexOf('Read all reviews on Tripadvisor');
+      const disclaimerIndex = tree.indexOf('Roamly does not rate these places');
+
+      expect(descriptionIndex).toBeGreaterThan(-1);
+      expect(tagIndex).toBeGreaterThan(descriptionIndex);
+      expect(mapIndex).toBeGreaterThan(tagIndex);
+      expect(buttonIndex).toBeGreaterThan(mapIndex);
+      expect(disclaimerIndex).toBeGreaterThan(buttonIndex);
+    });
   });
 });
