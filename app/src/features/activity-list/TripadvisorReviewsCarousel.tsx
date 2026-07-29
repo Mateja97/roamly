@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -139,13 +139,10 @@ export function TripadvisorReviewsCarousel({ reviews }: TripadvisorReviewsCarous
   );
 }
 
-const ReviewCard = memo(function ReviewCard({
-  review,
-  width,
-}: {
-  review: TripadvisorReview;
-  width: number;
-}) {
+// ponytail: plain function, not React.memo — up to 3 stateless cards, no
+// async work per card (unlike PhotoViewerModal's PhotoPage, which memoizes
+// around its own image-load state).
+function ReviewCard({ review, width }: { review: TripadvisorReview; width: number }) {
   return (
     <View style={[styles.card, { width }]}>
       <View style={styles.cardTopRow}>
@@ -156,7 +153,7 @@ const ReviewCard = memo(function ReviewCard({
       <Text style={styles.cardByline}>A Tripadvisor traveler review</Text>
     </View>
   );
-});
+}
 
 const styles = StyleSheet.create({
   section: {
