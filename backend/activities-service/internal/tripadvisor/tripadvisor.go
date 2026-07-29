@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"backend/shared/config"
@@ -127,10 +128,23 @@ func (c *Client) NearbySearch(ctx context.Context, lat, lng, radiusKM float64, c
 	return out, nil
 }
 
+// Subratings is Tripadvisor's per-category rating breakdown (T3):
+// Food/Service/Value/Atmosphere, each on Tripadvisor's usual 1-5 scale. A
+// zero field means Tripadvisor returned no subrating for that category
+// (optional per the API, same zero-means-absent convention as
+// LocationDetails.Rating) — never a fabricated 0-bubble score.
+type Subratings struct {
+	Food       float64
+	Service    float64
+	Value      float64
+	Atmosphere float64
+}
+
 // LocationDetails is one Tripadvisor location's full detail record — a
 // second call per NearbySearch candidate. The real API carries no ranking
 // text and no category/subcategory/cuisine data (see the fields' absence
-// here, deliberate not an oversight).
+// here, deliberate not an oversight). Phone and Subratings are both
+// optional per the API and zero-value when Tripadvisor didn't return them.
 type LocationDetails struct {
 	LocationID     string
 	Name           string
@@ -138,10 +152,12 @@ type LocationDetails struct {
 	Address        string
 	City           string
 	Country        string
+	Phone          string
 	Rating         float64
 	ReviewCount    int
 	RatingImageURL string
 	WebURL         string
+	Subratings     Subratings
 }
 
 func (c *Client) LocationDetails(ctx context.Context, locationID string) (LocationDetails, error) {
@@ -158,12 +174,19 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 			Latitude  float64 `json:"latitude"`
 			Longitude float64 `json:"longitude"`
 		} `json:"coordinates"`
+		PhoneNumbers []struct {
+			Value string `json:"value"`
+		} `json:"phone_numbers"`
 		TravelerRatings struct {
 			Overall struct {
 				Rating  float64 `json:"rating"`
 				Count   int     `json:"count"`
 				IconURL string  `json:"icon_url"`
 			} `json:"overall"`
+			Subratings []struct {
+				Name   string  `json:"name"`
+				Rating float64 `json:"rating_value"`
+			} `json:"subratings"`
 		} `json:"traveler_ratings"`
 		URLs struct {
 			Tripadvisor struct {
@@ -189,6 +212,21 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 		details.Address = parsed.Addresses[0].Formatted
 		details.City = parsed.Addresses[0].City
 		details.Country = parsed.Addresses[0].CountryName
+	}
+	if len(parsed.PhoneNumbers) > 0 {
+		details.Phone = parsed.PhoneNumbers[0].Value
+	}
+	for _, sr := range parsed.TravelerRatings.Subratings {
+		switch strings.ToLower(sr.Name) {
+		case "food":
+			details.Subratings.Food = sr.Rating
+		case "service":
+			details.Subratings.Service = sr.Rating
+		case "value":
+			details.Subratings.Value = sr.Rating
+		case "atmosphere":
+			details.Subratings.Atmosphere = sr.Rating
+		}
 	}
 	return details, nil
 }
@@ -232,13 +270,14 @@ type Review struct {
 	Text   string
 }
 
-// reviewsPageSize bounds LocationReviews — callers only need the first
-// 5-bubble one, no need to page through everything.
+// reviewsPageSize bounds LocationReviews — callers only need up to the
+// first 3 5-bubble ones (see the service layer's tripadvisorReviews), no
+// need to page through everything.
 const reviewsPageSize = 5
 
 // LocationReviews fetches locationID's reviews, most recent first (the
-// API's own default order). Callers pick the first eligible one (5-bubble,
-// place rated >= 4.0) — see the service layer's featuredReview.
+// API's own default order). Callers pick up to 3 eligible ones (5-bubble,
+// place rated >= 4.0) — see the service layer's tripadvisorReviews.
 func (c *Client) LocationReviews(ctx context.Context, locationID string) ([]Review, error) {
 	q := url.Values{"language": {"en"}, "size": {strconv.Itoa(reviewsPageSize)}}
 	var parsed struct {
