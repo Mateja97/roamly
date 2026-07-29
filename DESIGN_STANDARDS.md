@@ -653,7 +653,7 @@ the detail screen's gold star + numeric rating) untouched.
   **count/context text** (`--ink`, `--font-size-xs`). `--space-2` between the
   three. The rating image and count always travel together (a rating never shows
   without its review count).
-- **Two placements:**
+- **Placements:**
   - *In a list card* — a **full-bleed band**: the plate spans the card's full inner
     width (touches both inner edges; its corners are clipped by the card's own
     radius), no plate radius of its own, padding `--space-2` vertical /
@@ -666,6 +666,23 @@ the detail screen's gold star + numeric rating) untouched.
     `--space-4` horizontal, `--space-2` between its logo/rating row and the
     context line below. It replaces the detail screen's gold star + numeric Roamly
     rating for a partner row.
+  - *Subratings grid (detail screen)* — a **second inset white block** below the
+    aggregate lockup, holding a **2×2 grid** of the place's category subratings
+    (Food / Service / Value / Atmosphere). Each cell: the subrating's localized
+    name (`--ink`, `--font-size-sm`, left) beside its **own API-hosted
+    `rating_image_url`** (right — the per-subrating bubble image, ≥55px wide, its
+    width reserved so a slow/failed load doesn't reflow the grid; `contain`). The
+    bubble image is never redrawn or recolored (compliance rule 02), which is why
+    it sits on white and not on the wine page (where the mock's hand-drawn green
+    bubbles would violate "page background must not show through"). When a
+    subrating carries only a numeric `value` and no image URL, show the value as
+    `--ink` text (e.g. "4.5") — a number is not a redrawn bubble, so it stays
+    compliant; never substitute drawn bubbles. Cell gap `--space-3`
+    row / `--space-4` column, plate padding as the detail inset block. Renders
+    **only** when the place carries subratings; omitted entirely otherwise (no
+    empty grid). Collapses to one column at large dynamic-text sizes.
+    Non-interactive; the bubble images are decorative (excluded from the a11y
+    tree — the name + rating carry it).
 - **Context text wraps, never truncates** (it can carry a long dated-ranking
   string rendered verbatim from the data — no reformatting, no ellipsis); the
   plate grows in height and honors dynamic text scaling.
@@ -685,6 +702,53 @@ One new token (`--attribution-plate`); mirror it into `app/src/theme/tokens.ts`.
 The partner logo is a bundled brand-kit asset, not a token. ponytail: one white
 plate variant only — no dark-mode bubble swap until the app actually has a
 light/dark toggle to swap for.
+
+### Tripadvisor review card (quoted traveler review)
+
+A single quoted Tripadvisor traveler review on a **white card**, shown in a paged
+carousel of up to 3 on a place's detail screen. Compliance rule 04 governs the
+content: only 5-bubble reviews of a place rated ≥4.0, quoted, dated, and bylined
+"A Tripadvisor traveler review" — the backend already applies that filter, so the
+card presents whatever it's given. Sibling of the Partner attribution plate: it's
+a white surface because it carries the Tripadvisor bubble image, which on the wine
+page would violate the partner's "page background must not show through the
+bubbles" rule.
+
+- **Card:** `--attribution-plate` (`#FFFFFF`) fill, `--radius` (8px), `--space-4`
+  padding, a **fixed width narrower than the viewport** (~78% of the content
+  column, ~300px) so the next card **peeks** at the trailing edge and signals more
+  to swipe; `--space-3` between cards. All text is `--ink` (≈17.5:1 on white ✓ —
+  the only sanctioned white-plate text color); hierarchy comes from weight/size,
+  never from a second color.
+- **Content stack** (`--space-2`/`--space-3` between lines):
+  - *Top row* — the review's **API-hosted 5-bubble `rating_image_url`** image
+    (left, ≥55px wide, `contain`, width reserved) + the review **date**
+    (`--font-size-xs`, weight 400, verbatim from the API, e.g. "14 June 2026").
+  - *Quoted title* — `--font-size-sm`, weight 700, in quotation marks.
+  - *Quoted body* — `--font-size-sm`, weight 400, line-height 1.5, in quotation
+    marks; **wraps, never truncates** (reviews render verbatim — no ellipsis).
+  - *Byline* — "A Tripadvisor traveler review", `--font-size-xs`, weight 400.
+- **States:** renders synchronously from already-loaded data (no skeleton). The
+  rating image is the one async part — platform `<Image>` load/broken behavior, its
+  width reserved so the text never reflows (the quote carries the review if the
+  image fails). The card itself is **non-interactive** — the carousel's swipe and
+  its prev/next buttons move it; the card is not a tap target.
+- **Carousel** (dots + prev/next): reuse the **Fullscreen photo viewer's dot and
+  chevron convention** so this and the hero photo carousel read identically —
+  active dot **20×7 `--primary` gold** (`--radius-full`), inactive dots **7×7
+  `--text` cream @ 40% opacity** (element opacity, not a token), `--space-1` apart,
+  active↔inactive animates `opacity`/color only ≤150ms (`prefers-reduced-motion` →
+  instant); prev/next are icon-only Secondary controls (1px `--border`, `--text`
+  cream chevron, `--surface-hover` on press, **44×44**, focus → 2px `--primary`
+  outline). Swipe, dots, and the buttons are redundant ways to move — **never
+  swipe-only**, so keyboard/AT users have the buttons. A **single** review shows
+  the lone card with **no dots and no prev/next** (a dead pager is noise); the
+  section is **omitted entirely** when the place has no qualifying review.
+
+Composes from `--attribution-plate`, `--ink`, `--border`, `--primary`, `--text`,
+`--surface-hover`, `--radius`, `--radius-full`, `--space-1`/`--space-2`/`--space-3`/
+`--space-4`, `--font-size-xs`/`--font-size-sm`, and the platform `<Image>`. No new
+token.
 
 ### Fullscreen photo viewer (+ hero photo-count pill)
 
