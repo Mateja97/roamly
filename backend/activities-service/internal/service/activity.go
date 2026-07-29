@@ -694,8 +694,11 @@ func validCategory(c activitiessvc.Category) bool {
 // tripadvisorSyncRadiusKM is the fixed local radius the lazy sync sweeps
 // around each anchor point, independent of the request's own
 // MaxDistanceKM — same reasoning as Google being seeded per-city rather
-// than swept over arbitrary radii (design doc "Sync trigger").
-const tripadvisorSyncRadiusKM = 15
+// than swept over arbitrary radii (design doc "Sync trigger"). Capped at
+// 8 km: Terra's nearby-search endpoint rejects any radius above 8.0 KM
+// with a 400 (confirmed live) — a larger value here fails every sync
+// unconditionally.
+const tripadvisorSyncRadiusKM = 8
 
 // tripadvisorSyncTTL is how long a synced area's data is considered fresh
 // before the next query for that area re-syncs.
