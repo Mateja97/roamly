@@ -286,12 +286,12 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
 		wantCounts := map[string]int{
-			"Belgrade":  131, // 7 from 0002_seed.sql + 6 demo from 0008 + 118 from 0011_import_belgrade_listings
-			"Rome":      1,
-			"Paris":     1,
-			"Tokyo":     1,
-			"New York":  1,
-			"Barcelona": 1,
+			"Belgrade":  109, // 7 from 0002_seed.sql - 1 (Skadarlija recategorized to restaurants) + 6 demo from 0008 - 1 bar + 118 from 0011_import_belgrade_listings - 20 restaurants/bars (0016 deletes legacy non-Tripadvisor)
+			"Rome":      1,  // history_and_culture (survives 0016)
+			"Paris":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"Tokyo":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"New York":  1,  // sports (survives 0016)
+			"Barcelona": 1,  // art_and_design (survives 0016)
 		}
 		for city, want := range wantCounts {
 			var got int
@@ -477,7 +477,10 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 
 		wantCategories := []activitiessvc.Category{
-			activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars,
+			// restaurants and bars demo activities are deleted by 0016 (legacy non-Tripadvisor).
+			// All seeded restaurants/bars were sourced from Google or created by hand; 0016 is
+			// the cutover to Tripadvisor-exclusive for these categories.
+			activitiessvc.CategoryCafes,
 			activitiessvc.CategoryNightlife, activitiessvc.CategoryNature, activitiessvc.CategorySport,
 			activitiessvc.CategoryKids, activitiessvc.CategoryCulture, activitiessvc.CategoryArt,
 			activitiessvc.CategoryWellness, activitiessvc.CategoryShopping, activitiessvc.CategoryEntertainment,
@@ -1042,5 +1045,70 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 	// rather than erroring on a duplicate primary key.
 	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
 		t.Fatalf("MarkSynced() (second call) error: %v", err)
+	}
+}
+
+// TestDeleteLegacyRestaurantsBars_Predicate proves 0016's cutover DELETE
+// targets exactly the rows it should. The migration itself already ran
+// (once, against an empty DB) by the time startTestPostgres returns —
+// there's no data yet for a one-time cleanup migration to act on in a
+// fresh test DB — so this test re-executes 0016's exact DELETE statement
+// against freshly seeded fixture rows, the only way to exercise a
+// one-time data migration's WHERE-clause logic.
+func TestDeleteLegacyRestaurantsBars_Predicate(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	googleRestaurant, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Legacy Google Restaurant", Description: "d", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "http://legacy/1",
+	})
+	if err != nil {
+		t.Fatalf("seeding google restaurant: %v", err)
+	}
+	taRestaurant, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Tripadvisor Restaurant", Description: "d", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "http://legacy/2",
+	})
+	if err != nil {
+		t.Fatalf("seeding tripadvisor restaurant: %v", err)
+	}
+	otherCategory, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Legacy Google Museum", Description: "d", Category: activitiessvc.CategoryCulture,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.2, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "http://legacy/3",
+	})
+	if err != nil {
+		t.Fatalf("seeding other-category row: %v", err)
+	}
+	adminBar, err := repo.Create(ctx, activitiessvc.NewActivity{
+		Title: "Legacy Admin Bar", Category: activitiessvc.CategoryBars, Status: activitiessvc.StatusPublished,
+	})
+	if err != nil {
+		t.Fatalf("seeding admin-created bar: %v", err)
+	}
+
+	if _, err := db.Exec(ctx, `DELETE FROM activities WHERE category IN ('restaurants', 'bars') AND source IS DISTINCT FROM 'tripadvisor'`); err != nil {
+		t.Fatalf("running 0016's delete: %v", err)
+	}
+
+	if _, err := repo.GetByID(ctx, googleRestaurant.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+		t.Errorf("legacy google restaurant: GetByID() error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.GetByID(ctx, adminBar.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+		t.Errorf("legacy admin bar: GetByID() error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.GetByID(ctx, taRestaurant.ID); err != nil {
+		t.Errorf("tripadvisor restaurant: GetByID() error = %v, want it to survive the delete", err)
+	} else {
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, taRestaurant.ID) })
+	}
+	if _, err := repo.GetByID(ctx, otherCategory.ID); err != nil {
+		t.Errorf("other-category google row: GetByID() error = %v, want it to survive the delete", err)
+	} else {
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, otherCategory.ID) })
 	}
 }
