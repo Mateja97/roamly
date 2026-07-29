@@ -565,6 +565,9 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	if !validCategory(in.Category) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, in.Category)
 	}
+	if in.Category == activitiessvc.CategoryRestaurants || in.Category == activitiessvc.CategoryBars {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: category %q is sourced exclusively from Tripadvisor and cannot be admin-created", sharederrors.ErrInvalidInput, in.Category)
+	}
 	if !activitiessvc.ValidSubcategory(in.Category, in.Subcategory) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: subcategory %q does not belong to category %q", sharederrors.ErrInvalidInput, in.Subcategory, in.Category)
 	}

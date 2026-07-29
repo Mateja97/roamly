@@ -674,17 +674,17 @@ func TestActivities_Create(t *testing.T) {
 		},
 		{
 			name:       "valid subcategory for category accepted",
-			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryRestaurants, Subcategory: "fine_dining"},
+			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryNightlife, Subcategory: "nightclub"},
 			wantStatus: activitiessvc.StatusDraft,
 		},
 		{
 			name:       "empty subcategory accepted",
-			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryRestaurants, Subcategory: ""},
+			in:         activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryNightlife, Subcategory: ""},
 			wantStatus: activitiessvc.StatusDraft,
 		},
 		{
 			name:    "wrong-category subcategory rejected",
-			in:      activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryRestaurants, Subcategory: "cocktail_bar"},
+			in:      activitiessvc.NewActivity{Title: "New Activity", Category: activitiessvc.CategoryNightlife, Subcategory: "fine_dining"},
 			wantErr: true,
 		},
 	}
@@ -874,4 +874,30 @@ func TestActivities_Update(t *testing.T) {
 			t.Errorf("repo patch subcategory = %v, want empty string", repo.gotUpdatePatch.Subcategory)
 		}
 	})
+}
+
+func TestActivities_Create_BlocksRestaurantsAndBars(t *testing.T) {
+	for _, cat := range []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars} {
+		t.Run(string(cat), func(t *testing.T) {
+			repo := &fakeRepo{}
+			svc := New(repo)
+
+			_, err := svc.Create(context.Background(), activitiessvc.NewActivity{Title: "Hand-Created Venue", Category: cat})
+			if !errors.Is(err, sharederrors.ErrInvalidInput) {
+				t.Fatalf("Create() error = %v, want ErrInvalidInput", err)
+			}
+			if repo.gotCreate.Title != "" {
+				t.Error("repo.Create was called, want the request rejected before reaching the repository")
+			}
+		})
+	}
+}
+
+func TestActivities_Create_StillAllowsOtherCategories(t *testing.T) {
+	repo := &fakeRepo{createOut: activitiessvc.Activity{ID: "1", Category: activitiessvc.CategoryCulture}}
+	svc := New(repo)
+
+	if _, err := svc.Create(context.Background(), activitiessvc.NewActivity{Title: "Museum", Category: activitiessvc.CategoryCulture}); err != nil {
+		t.Fatalf("Create() error: %v, want culture still allowed", err)
+	}
 }
