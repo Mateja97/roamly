@@ -20,8 +20,10 @@ import type {
   Activity,
   ActivityDetails,
   DayOfWeek,
+  FeaturedReview,
   OpeningHours,
   OpeningHoursPeriod,
+  TripadvisorAttribution,
 } from '../../api/activities';
 import type { Category } from './types';
 import { CATEGORY_LABELS } from './filters';
@@ -186,6 +188,38 @@ export function artAttribution(activity: Activity): ArtAttribution | undefined {
   if (!artist && !work && !medium) return undefined;
   const workYear = work ? (d.year ? `${work}, ${d.year}` : work) : undefined;
   return { artist, workYear, medium };
+}
+
+// design-spec.md T8 (Tripadvisor initiative): a row is Tripadvisor-treated
+// iff `details.tripadvisor` is present — the sole detection signal (no
+// `Source` field on the wire, not needed for UI detection). Only
+// restaurants/bars carry this field. Shared by ActivityCard and the detail
+// screen so the union-narrowing switch lives in exactly one place.
+export function tripadvisorAttribution(activity: Activity): TripadvisorAttribution | undefined {
+  const d = activity.details;
+  if (!d) return undefined;
+  switch (d.category) {
+    case 'restaurants':
+    case 'bars':
+      return d.tripadvisor;
+    default:
+      return undefined;
+  }
+}
+
+// Backend-gated per compliance rule 04 — only ever populated alongside a
+// Tripadvisor-treated row, so the UI renders it "if present" with no
+// eligibility check of its own.
+export function tripadvisorFeaturedReview(activity: Activity): FeaturedReview | undefined {
+  const d = activity.details;
+  if (!d) return undefined;
+  switch (d.category) {
+    case 'restaurants':
+    case 'bars':
+      return d.featured_review;
+    default:
+      return undefined;
+  }
 }
 
 // design-spec.md T8 addendum #6: Wellness' external-booking note, lifted

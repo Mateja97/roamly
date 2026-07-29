@@ -50,6 +50,7 @@ puts the gold brand into the structure, not only the text.
 | `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
 | `--scrim` | `rgba(42,14,17,0.72)` | modal dim behind bottom sheets/overlays (wine-black tint) |
 | `--photo-viewer-bg` | `#0F0405` | opaque near-black backdrop for the fullscreen photo viewer — photos pop against it; the app renders no other body UI on this surface |
+| `--attribution-plate` | `#FFFFFF` | fixed white plate behind a third-party partner's brand asset (logo + API-hosted rating image) so the wine page background never shows through it — see the Partner attribution plate recipe. Not a general surface; only for partner-mandated lockups. Text on it is `--ink` (≈17.5:1 ✓) |
 | `--radius-full` | `999px` | pills/badges |
 
 ## Accessibility
@@ -78,6 +79,8 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
   5.3:1 ✓ · `--primary` on `--surface` 3.1:1 (large/UI only) · `--success` on
   `--surface` 4.84:1 ✓ · `--warning` on `--surface` 5.08:1 ✓ · `--error` on
   `--surface` 4.86:1 ✓ · `--ink` on `--error` (destructive label) 10.4:1 ✓.
+  On `--attribution-plate` (`#FFFFFF`): `--ink` (#2A0E11) ≈17.5:1 ✓ — the only
+  text pairing sanctioned on the white plate (partner-asset lockup text).
   On `--photo-viewer-bg` (`#0F0405`): `--text` 17:1 ✓ · `--text-muted` 12.6:1 ✓
   · `--primary` 7.4:1 ✓ — gold clears even the 4.5:1 normal-text bar on this
   near-black surface (unlike on wine, where it's 3.65:1 / large-UI only),
@@ -620,6 +623,67 @@ Pre-computed pairings: `--text-muted` author on `--surface` 5.3:1 ✓ / on
 `--bg` 6.2:1 ✓ · `--text` link on `--surface` 7.1:1 ✓ / on `--bg` 8.5:1 ✓ ·
 `--primary` focus outline on `--surface` 3.1:1 / on `--bg` 3.65:1 (UI element,
 clears 3:1). No new color tokens.
+
+### Partner attribution plate (Tripadvisor rating lockup)
+
+The required on-surface attribution for a third-party partner whose brand asset
+and rating image must sit on a fixed light plate — Tripadvisor's Restaurants/Bars
+rating lockup is the first user (partner rule: the logo and the API-hosted rating
+bubbles are drawn on white or the partner's own brand green, and the host page's
+background must never show through them). Sibling of the Photo attribution recipe;
+that one credits a photo, this one carries a partner's logo + rating. Renders
+**only** when the row carries the partner block; every non-partner row keeps its
+existing unbranded rating treatment (the Activity card's gold `Star` rating pill /
+the detail screen's gold star + numeric rating) untouched.
+
+- **Plate:** `--attribution-plate` (`#FFFFFF`) fill — a fixed light surface the
+  wine page must not show through (partner requirement). Single-theme: this app
+  is dark-only (see Deferred → Light mode), so there is **one** plate variant —
+  the white plate. The partner's optional "dark-mode" bubble/logo-chip variant is
+  **not** used (it exists for hosts that offer a light/dark toggle; Roamly has
+  none). All plate text is `--ink` (≈17.5:1 on white ✓) — never a wine/cream token
+  that assumes the dark surface.
+- **Contents, left-to-right, vertically centred:** the partner **logo** (the
+  partner's own brand-kit asset — never redrawn, recolored, or inverted), **≥20px
+  tall**; then the **API-hosted rating image** (`rating_image_url`, an `<Image>`
+  from the partner's URL — never a local copy, never the Roamly gold star),
+  **≥55px wide**, height auto to preserve aspect (`contain`), its 55px width
+  reserved so a slow/failed load doesn't shift the text beside it; then the
+  **count/context text** (`--ink`, `--font-size-xs`). `--space-2` between the
+  three. The rating image and count always travel together (a rating never shows
+  without its review count).
+- **Two placements:**
+  - *In a list card* — a **full-bleed band**: the plate spans the card's full inner
+    width (touches both inner edges; its corners are clipped by the card's own
+    radius), no plate radius of its own, padding `--space-2` vertical /
+    `--space-4` horizontal. It sits in the card body between the description and
+    the distance/go row; the card's own gold `Star` rating pill is **omitted** for
+    a partner row (never both — no blended/adjacent Roamly star). `--space-3`
+    separates it from the elements above and below.
+  - *On a detail screen* — an **inset block**: `--radius` (8px) corners, inset
+    within the body's horizontal padding, padding `--space-3` vertical /
+    `--space-4` horizontal, `--space-2` between its logo/rating row and the
+    context line below. It replaces the detail screen's gold star + numeric Roamly
+    rating for a partner row.
+- **Context text wraps, never truncates** (it can carry a long dated-ranking
+  string rendered verbatim from the data — no reformatting, no ellipsis); the
+  plate grows in height and honors dynamic text scaling.
+- **Non-interactive** (pure attribution display) — no hover/press/focus, not a tap
+  target; on a card the whole card stays the single tap control, and the plate's
+  logo/rating image are decorative (excluded from the a11y tree — the row's
+  accessible name carries "{partner}, {N} reviews" in place of "rated {x}").
+- **States:** the plate/text render synchronously from already-loaded data (no
+  skeleton). The rating image is the one async part — it uses the platform
+  `<Image>`'s existing load/broken behavior (no bespoke fallback UI); its 55px
+  width stays reserved so the count never reflows. No featured-partner content →
+  the plate simply isn't rendered (no empty state).
+
+Composes from `--attribution-plate`, `--ink`, `--radius`, `--radius-full` (n/a),
+`--space-2`/`--space-3`/`--space-4`, `--font-size-xs`, and the platform `<Image>`.
+One new token (`--attribution-plate`); mirror it into `app/src/theme/tokens.ts`.
+The partner logo is a bundled brand-kit asset, not a token. ponytail: one white
+plate variant only — no dark-mode bubble swap until the app actually has a
+light/dark toggle to swap for.
 
 ### Fullscreen photo viewer (+ hero photo-count pill)
 

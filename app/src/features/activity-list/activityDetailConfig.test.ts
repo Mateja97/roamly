@@ -4,6 +4,8 @@ import {
   factStripFields,
   openStatus,
   todayHoursRow,
+  tripadvisorAttribution,
+  tripadvisorFeaturedReview,
   weekView,
 } from './activityDetailConfig';
 
@@ -386,5 +388,51 @@ describe('factStripFields — Hours chip (opening-hours T3)', () => {
     expect(
       factStripFields(closedToday).find((f) => f.label === 'Closed today'),
     ).toMatchObject({ value: 'Closed' });
+  });
+});
+
+describe('tripadvisorAttribution / tripadvisorFeaturedReview (T8)', () => {
+  it('reads `tripadvisor`/`featured_review` off a restaurant row', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 1204,
+        ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
+        web_url: 'https://tripadvisor.example/place',
+      },
+      featured_review: { rating: 5, date: '14 June 2026', text: 'Fantastic evening.' },
+    });
+    expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 1204 });
+    expect(tripadvisorFeaturedReview(activity)).toMatchObject({ rating: 5 });
+  });
+
+  it('reads `tripadvisor` off a bar row too', () => {
+    const activity = baseActivity({
+      category: 'bars',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 88,
+        web_url: 'https://tripadvisor.example/place',
+      },
+    });
+    expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 88 });
+  });
+
+  it('is undefined for a non-Tripadvisor restaurant row (field simply absent)', () => {
+    const activity = baseActivity({ category: 'restaurants', cuisine: 'Serbian' });
+    expect(tripadvisorAttribution(activity)).toBeUndefined();
+    expect(tripadvisorFeaturedReview(activity)).toBeUndefined();
+  });
+
+  it('is undefined for any category that never carries the field (e.g. cafes)', () => {
+    const activity = baseActivity({ category: 'cafes', known_for_brew: 'Pour-over' });
+    expect(tripadvisorAttribution(activity)).toBeUndefined();
+  });
+
+  it('is undefined with no details at all', () => {
+    const activity = baseActivity(undefined);
+    expect(tripadvisorAttribution(activity)).toBeUndefined();
+    expect(tripadvisorFeaturedReview(activity)).toBeUndefined();
   });
 });

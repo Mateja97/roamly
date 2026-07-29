@@ -114,4 +114,36 @@ describe('ActivityCard', () => {
     render(<ActivityCard activity={withLink} showDistance onPress={jest.fn()} />);
     expect(screen.getByRole('link', { name: 'Photo by Jane Doe' })).toBeTruthy();
   });
+
+  describe('Tripadvisor-branded row (T8)', () => {
+    const tripadvisorActivity: Activity = {
+      ...activity,
+      details: {
+        category: 'restaurants',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          web_url: 'https://tripadvisor.example/place',
+        },
+      },
+    };
+
+    it('renders the attribution plate (review count) instead of the gold rating pill', () => {
+      render(<ActivityCard activity={tripadvisorActivity} showDistance onPress={jest.fn()} />);
+      expect(screen.getByText('1,204 reviews')).toBeTruthy();
+      expect(screen.queryByText('4.6', { includeHiddenElements: true })).toBeNull();
+    });
+
+    it('replaces the "rated {x}" a11y fragment with "Tripadvisor, {N} reviews"', () => {
+      render(<ActivityCard activity={tripadvisorActivity} showDistance onPress={jest.fn()} />);
+      const card = screen.getByLabelText(/tripadvisor, 1,204 reviews/i);
+      expect(card.props.accessibilityLabel).not.toMatch(/rated/i);
+    });
+
+    it('keeps the gold rating pill for a non-Tripadvisor row, unchanged', () => {
+      render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
+      expect(screen.getByText('4.6', { includeHiddenElements: true })).toBeTruthy();
+      expect(screen.queryByText(/reviews$/)).toBeNull();
+    });
+  });
 });

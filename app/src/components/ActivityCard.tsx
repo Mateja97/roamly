@@ -5,11 +5,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line } from 'react-native-svg';
 import { ArrowRight, ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
+import { tripadvisorAttribution } from '../features/activity-list/activityDetailConfig';
 import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 import { PhotoAttributionCaption } from './PhotoAttributionCaption';
 import { Skeleton } from './Skeleton';
+import { TripadvisorAttributionPlate } from './TripadvisorAttributionPlate';
 
 type ActivityCardProps = {
   activity: Activity;
@@ -38,11 +40,20 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
   const focus = useFocusable();
   const photo = activity.image_refs[0];
   const imageUri = photo?.uri;
+  // design-spec.md T8 (Tripadvisor initiative): presence of this field is
+  // the sole detection signal for the Tripadvisor-branded treatment below.
+  const tripadvisor = tripadvisorAttribution(activity);
 
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
 
   const label = [
-    `${activity.title}, ${CATEGORY_LABELS[activity.category]}, rated ${activity.rating.toFixed(1)}, ${metaText}`,
+    `${activity.title}, ${CATEGORY_LABELS[activity.category]}, ${
+      // compliance rule 03: no Roamly rating is shown for a Tripadvisor row,
+      // so none is announced — "Tripadvisor, {N} reviews" replaces it.
+      tripadvisor
+        ? `Tripadvisor, ${tripadvisor.review_count.toLocaleString('en-US')} reviews`
+        : `rated ${activity.rating.toFixed(1)}`
+    }, ${metaText}`,
     activity.description || null,
   ]
     .filter(Boolean)
@@ -88,10 +99,14 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
             <View style={styles.badge} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
               <Text style={styles.badgeLabel}>{CATEGORY_LABELS[activity.category]}</Text>
             </View>
-            <View style={styles.ratingPill} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <Star size={13} color={colors.primary} strokeWidth={1.75} fill={colors.primary} />
-              <Text style={styles.ratingLabel}>{activity.rating.toFixed(1)}</Text>
-            </View>
+            {/* compliance rule 03: never a Roamly star blended/adjacent with a
+                partner rating — omitted entirely for a Tripadvisor row. */}
+            {!tripadvisor && (
+              <View style={styles.ratingPill} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                <Star size={13} color={colors.primary} strokeWidth={1.75} fill={colors.primary} />
+                <Text style={styles.ratingLabel}>{activity.rating.toFixed(1)}</Text>
+              </View>
+            )}
           </View>
 
           <PhotoAttributionCaption attribution={photo?.attribution} horizontalInset={space[4]} />
@@ -126,6 +141,8 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
                 {activity.description}
               </Text>
             ) : null}
+
+            {tripadvisor && <TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="card" />}
 
             <View style={styles.metaRow}>
               <View style={styles.metaLeft}>
