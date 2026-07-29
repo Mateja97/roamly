@@ -60,6 +60,33 @@ export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce
   {} as Record<Category, string>
 );
 
+// design-spec.md T1: the activities-list header's quick-filter row —
+// `All` plus these headline categories, per frame `5a`'s `All / Restaurants
+// / Bars / Culture`. Same headline set for both scopes (the mock only shows
+// one); the sheet's full category list remains the source of truth for
+// anything beyond this shortcut row.
+export const HEADLINE_CATEGORIES: Category[] = ['restaurants', 'bars', 'culture'];
+
+// The quick-filter row is a projection of the sheet's own (multi-select)
+// category filter, not separate state. Exactly one chip reads as active: a
+// headline category when the applied filters hold exactly that one
+// category, `All` otherwise (0 or 2+ categories, or a non-headline
+// category) — the accepted resting behavior per design-spec.md T1, not a bug.
+export function activeQuickFilterCategory(filters: Filters): Category | null {
+  if (filters.categories.length !== 1) return null;
+  const [category] = filters.categories;
+  return HEADLINE_CATEGORIES.includes(category) ? category : null;
+}
+
+// Next Filters when a quick-filter chip is tapped: `null` (All) clears the
+// category filter; a headline category becomes the sole selected category.
+// Subtypes always reset — they're scoped to the sheet's own category
+// selection, which this shortcut row bypasses (same orphan-clearing intent
+// as FilterSheet's category checkbox handler).
+export function applyQuickFilterCategory(filters: Filters, category: Category | null): Filters {
+  return { ...filters, categories: category ? [category] : [], subtypes: [] };
+}
+
 // T3: category -> subtype options, the same 59-slug taxonomy from
 // BUSINESS_STANDARDS.md's subcategory table as the web frontend's
 // `SUBCATEGORIES` (frontend/src/features/admin/constants.ts) and the T1 wire
@@ -184,14 +211,14 @@ export function activeFilterCount(filters: Filters, scope: Scope): number {
 
 export type FilterChipData = { key: string; label: string; remove: () => Filters };
 
-// One removable chip per active filter value — categories get one chip each,
-// the other groups (single-select) get at most one.
+// One removable chip per active non-category filter value (rating,
+// distance) — each single-select group gets at most one. design-spec.md T1:
+// category filters no longer get a removable chip here — they're
+// represented by the header's quick-filter row highlight instead (see
+// activeQuickFilterCategory), so showing both would duplicate the same
+// state. The sheet remains the full control for categories either way.
 export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
-  const chips: FilterChipData[] = filters.categories.map((category) => ({
-    key: `category:${category}`,
-    label: CATEGORY_LABELS[category],
-    remove: () => ({ ...filters, categories: filters.categories.filter((c) => c !== category) }),
-  }));
+  const chips: FilterChipData[] = [];
 
   if (filters.minRating !== null) {
     chips.push({
@@ -254,8 +281,9 @@ export const SCOPE_TITLES: Record<Scope, string> = {
   anywhere: 'Anywhere',
 };
 
-function activityCountLabel(count: number): string {
-  return `${count} ${count === 1 ? 'activity' : 'activities'}`;
+// design-spec.md T1: copy change to match frame `5a` — "activities" → "places".
+function placeCountLabel(count: number): string {
+  return `${count} ${count === 1 ? 'place' : 'places'}`;
 }
 
 // "Lisbon" / "Lisbon & Barcelona" / "Lisbon, Barcelona & Amsterdam" — comma
@@ -271,7 +299,7 @@ export function citiesJoinLabel(cities: CitySuggestion[]): string {
 // "title-only header" — Anywhere's zero-city fallback (current_location
 // anchor, no city list to show).
 export function headerSubtitle(scope: Scope, count: number, cities: CitySuggestion[]): string | null {
-  const countLabel = activityCountLabel(count);
+  const countLabel = placeCountLabel(count);
   if (scope === 'nearby') return `${countLabel} · within ${NEARBY_RADIUS_KM} km`;
   if (cities.length === 0) return null;
   return `${countLabel} · ${citiesJoinLabel(cities)}`;

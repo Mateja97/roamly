@@ -53,7 +53,7 @@ describe('activeFilterCount', () => {
 });
 
 describe('filterChips', () => {
-  it('produces one chip per category and one per single-select group, no distance chip for nearby', () => {
+  it('produces one chip per single-select group, no chip for categories (quick-filter row owns that, T1)', () => {
     const filters: Filters = {
       categories: ['sport'],
       subtypes: [],
@@ -61,15 +61,15 @@ describe('filterChips', () => {
       maxDistanceKm: null,
     };
     const chips = filterChips(filters, 'nearby');
-    expect(chips.map((c) => c.label)).toEqual(['Sport', '4.5+']);
+    expect(chips.map((c) => c.label)).toEqual(['4.5+']);
   });
 
   it('a chip.remove() clears only that one filter value', () => {
-    const filters: Filters = { categories: ['sport', 'art'], subtypes: [], minRating: null, maxDistanceKm: null };
+    const filters: Filters = { categories: [], subtypes: [], minRating: 4.5, maxDistanceKm: null };
     const chips = filterChips(filters, 'nearby');
-    const sportsChip = chips.find((c) => c.label === 'Sport')!;
-    expect(sportsChip.remove()).toEqual({
-      categories: ['art'],
+    const ratingChip = chips.find((c) => c.label === '4.5+')!;
+    expect(ratingChip.remove()).toEqual({
+      categories: [],
       subtypes: [],
       minRating: null,
       maxDistanceKm: null,
