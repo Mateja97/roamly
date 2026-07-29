@@ -18,6 +18,7 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {
 				LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, Rating: 4.5,
+				City: "Belgrade", Country: "Serbia",
 				WebURL: "https://ta/1", RatingImageURL: "https://ta/img/4.5.svg", ReviewCount: 1204,
 				RankingString: "#12 of 1,780 Restaurants in Belgrade",
 			},
@@ -50,6 +51,9 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	}
 	if repo.gotUpsert.Source != "tripadvisor" || repo.gotUpsert.ExternalID != "111" || repo.gotUpsert.Status != activitiessvc.StatusPublished {
 		t.Errorf("Upsert input = %+v, want Source=tripadvisor ExternalID=111 Status=published", repo.gotUpsert)
+	}
+	if repo.gotUpsert.City != "Belgrade" || repo.gotUpsert.Country != "Serbia" {
+		t.Errorf("Upsert input City/Country = %q/%q, want Belgrade/Serbia", repo.gotUpsert.City, repo.gotUpsert.Country)
 	}
 	if len(repo.markSynced) != 1 || repo.markSynced[0] != "44.8,20.5|restaurants" {
 		t.Errorf("markSynced = %v, want exactly one call for cell 44.8,20.5/restaurants", repo.markSynced)

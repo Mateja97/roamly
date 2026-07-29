@@ -105,6 +105,8 @@ type LocationDetails struct {
 	Name           string
 	Lat, Lng       float64
 	Address        string
+	City           string
+	Country        string
 	Rating         float64
 	ReviewCount    int
 	RankingString  string
@@ -124,6 +126,8 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 		Longitude  string `json:"longitude"`
 		AddressObj struct {
 			AddressString string `json:"address_string"`
+			City          string `json:"city"`
+			Country       string `json:"country"`
 		} `json:"address_obj"`
 		Rating         string `json:"rating"`
 		NumReviews     string `json:"num_reviews"`
@@ -160,6 +164,8 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 		Lat:            parseFloat(parsed.Latitude),
 		Lng:            parseFloat(parsed.Longitude),
 		Address:        parsed.AddressObj.AddressString,
+		City:           parsed.AddressObj.City,
+		Country:        parsed.AddressObj.Country,
 		Rating:         parseFloat(parsed.Rating),
 		ReviewCount:    parseInt(parsed.NumReviews),
 		RankingString:  parsed.RankingData.RankingString,

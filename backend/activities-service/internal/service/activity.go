@@ -705,9 +705,13 @@ const tripadvisorSyncTTL = 14 * 24 * time.Hour
 // search query can't block indefinitely on a third-party call.
 const tripadvisorSyncTimeout = 6 * time.Second
 
-// maxSyncAnchorsPerQuery caps how many anchor points one Query call can
-// trigger a live sync for — an Anywhere query with many selected cities
-// must not fan out into a dozen live Tripadvisor calls at once.
+// maxSyncAnchorsPerQuery caps how many stale (anchor, category) pairs one
+// Query call can trigger a live sync for — an Anywhere query with many
+// selected cities (and both Restaurants and Bars stale) must not fan out
+// into a dozen live Tripadvisor calls at once. Because the cap applies to
+// pairs rather than distinct anchors, an unfiltered "All" query with 3+
+// stale anchors can end up syncing fewer than 3 distinct anchors in one
+// request — more conservative than a per-anchor cap, not less.
 const maxSyncAnchorsPerQuery = 3
 
 // syncCategories returns which of requested (or, if empty, both) of
@@ -876,6 +880,8 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 		Lat:         d.Lat,
 		Lng:         d.Lng,
 		Address:     d.Address,
+		City:        d.City,
+		Country:     d.Country,
 		Rating:      d.Rating,
 		Status:      activitiessvc.StatusPublished,
 		Details:     detailsJSON,

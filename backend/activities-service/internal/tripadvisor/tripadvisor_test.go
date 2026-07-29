@@ -46,7 +46,7 @@ func TestLocationDetails_Decoding(t *testing.T) {
 		io.WriteString(w, `{
 			"location_id":"111","name":"Ambar Beograd",
 			"latitude":"44.8062","longitude":"20.4226",
-			"address_obj":{"address_string":"Bulevar Milutina Milankovica 1i, Beograd"},
+			"address_obj":{"address_string":"Bulevar Milutina Milankovica 1i, Beograd","city":"Belgrade","country":"Serbia"},
 			"rating":"4.5","num_reviews":"1204",
 			"rating_image_url":"https://www.tripadvisor.com/img/cdsi/ratings/4.5.svg",
 			"web_url":"https://www.tripadvisor.com/Restaurant_Review-x",
@@ -67,6 +67,8 @@ func TestLocationDetails_Decoding(t *testing.T) {
 		LocationID: "111", Name: "Ambar Beograd",
 		Lat: 44.8062, Lng: 20.4226,
 		Address:        "Bulevar Milutina Milankovica 1i, Beograd",
+		City:           "Belgrade",
+		Country:        "Serbia",
 		Rating:         4.5,
 		ReviewCount:    1204,
 		RankingString:  "#12 of 1,780 Restaurants in Belgrade",
@@ -77,7 +79,8 @@ func TestLocationDetails_Decoding(t *testing.T) {
 		PhotoURL:       "https://media.tripadvisor.com/x.jpg",
 	}
 	if got.LocationID != want.LocationID || got.Name != want.Name || got.Lat != want.Lat || got.Lng != want.Lng ||
-		got.Address != want.Address || got.Rating != want.Rating || got.ReviewCount != want.ReviewCount ||
+		got.Address != want.Address || got.City != want.City || got.Country != want.Country ||
+		got.Rating != want.Rating || got.ReviewCount != want.ReviewCount ||
 		got.RankingString != want.RankingString || got.RatingImageURL != want.RatingImageURL ||
 		got.WebURL != want.WebURL || got.Category != want.Category || got.PhotoURL != want.PhotoURL ||
 		!slices.Equal(got.Subcategories, want.Subcategories) {
