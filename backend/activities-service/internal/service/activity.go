@@ -35,6 +35,16 @@ type placesClient interface {
 	ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error)
 }
 
+// tripadvisorClient is the subset of internal/tripadvisor.Client the
+// service layer needs, grown incrementally as call sites need more of it:
+// GetPhotos needs only LocationPhotos (T5); the lazy Restaurants/Bars sync
+// extends this same interface with NearbySearch/LocationDetails/
+// LocationReviews (T4). Optional (see WithTripadvisor) — a server with
+// none configured falls back to whatever's already cached for every caller.
+type tripadvisorClient interface {
+	LocationPhotos(ctx context.Context, locationID string, limit int) ([]activitiessvc.Photo, error)
+}
+
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
 // caller's raw filter value (0 = not set). ScopeNearby ignores it entirely
 // (fixed NearbyRadiusKM); ScopeAnywhere passes it through uncapped.
@@ -60,8 +70,9 @@ type Request struct {
 const NearbyRadiusKM = 10
 
 type Activities struct {
-	repo   repository
-	places placesClient
+	repo        repository
+	places      placesClient
+	tripadvisor tripadvisorClient
 }
 
 func New(repo repository) *Activities {
@@ -75,6 +86,14 @@ func New(repo repository) *Activities {
 // back to on error/timeout. Returns itself so call sites can chain it onto New.
 func (a *Activities) WithPlaces(p placesClient) *Activities {
 	a.places = p
+	return a
+}
+
+// WithTripadvisor attaches a live Tripadvisor client for the
+// Restaurants/Bars lazy sync and GetPhotos' Tripadvisor-sourced resolve
+// path. Optional, same nil-safe contract as WithPlaces.
+func (a *Activities) WithTripadvisor(t tripadvisorClient) *Activities {
+	a.tripadvisor = t
 	return a
 }
 
@@ -484,17 +503,26 @@ func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.
 	if err != nil {
 		return nil, fmt.Errorf("getting activity %s: %w", id, err)
 	}
-	if a.places == nil || activity.ExternalID == "" || len(activity.Photos) > 1 {
+	if activity.ExternalID == "" || len(activity.Photos) > 1 {
 		return activity.Photos, nil
 	}
 
 	resolveCtx, cancel := context.WithTimeout(ctx, photoResolveTimeout)
 	defer cancel()
-	resolved, err := a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+
+	var resolved []activitiessvc.Photo
+	switch {
+	case activity.Source == "tripadvisor" && a.tripadvisor != nil:
+		resolved, err = a.tripadvisor.LocationPhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+	case activity.Source != "tripadvisor" && a.places != nil:
+		resolved, err = a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+	default:
+		return activity.Photos, nil
+	}
 	if err != nil || len(resolved) == 0 {
-		// Places failure/timeout/empty result: fall back to what's already
-		// stored (at minimum the provisional photo) rather than error or
-		// block the request.
+		// Live resolve failure/timeout/empty result: fall back to what's
+		// already stored (at minimum the provisional photo) rather than
+		// error or block the request.
 		return activity.Photos, nil
 	}
 
