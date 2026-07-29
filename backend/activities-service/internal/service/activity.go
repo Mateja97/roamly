@@ -808,7 +808,7 @@ func (a *Activities) syncTripadvisorArea(ctx context.Context, anchor activitiess
 	syncCtx, cancel := context.WithTimeout(ctx, tripadvisorSyncTimeout)
 	defer cancel()
 
-	summaries, err := a.tripadvisor.NearbySearch(syncCtx, anchor.Lat, anchor.Lng, tripadvisorSyncRadiusKM, string(category))
+	summaries, err := a.tripadvisor.NearbySearch(syncCtx, anchor.Lat, anchor.Lng, tripadvisorSyncRadiusKM, terraCategory(category))
 	if err != nil {
 		slog.Warn("tripadvisor nearby search failed", "category", category, "error", err)
 		return
@@ -821,7 +821,18 @@ func (a *Activities) syncTripadvisorArea(ctx context.Context, anchor activitiess
 			continue
 		}
 		review := a.featuredReview(syncCtx, details)
-		if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, review)); err != nil {
+
+		// One provisional photo at ingest time, the rest resolved later on
+		// first view via GetPhotos — same pattern as cmd/scrapecity's Google
+		// seed (minPhotos = 1). LocationDetails carries no photo of its own
+		// in the real API, so this is the only source for it. A failure or
+		// empty result here must never block the sync.
+		var photos []activitiessvc.Photo
+		if p, err := a.tripadvisor.LocationPhotos(syncCtx, details.LocationID, 1); err == nil && len(p) > 0 {
+			photos = p
+		}
+
+		if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, review, photos)); err != nil {
 			slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "error", err)
 		}
 	}
@@ -829,6 +840,18 @@ func (a *Activities) syncTripadvisorArea(ctx context.Context, anchor activitiess
 	if err := a.repo.MarkSynced(ctx, syncCellKey(anchor.Lat, anchor.Lng), string(category)); err != nil {
 		slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
 	}
+}
+
+// terraCategory maps a Roamly category to Terra's nearby-search category
+// enum (RESTAURANT/ATTRACTION/HOTEL — no BAR value exists). Bars are a kind
+// of food/drink venue, so RESTAURANT is the closest available Terra
+// category; a "bars" and a "restaurants" sync for the same anchor therefore
+// query Terra identically and see overlapping/identical result sets. That's
+// an inherent limitation of the real API, not a bug — the Roamly Category
+// each result is upserted under is decided by the caller's own category,
+// unaffected by this mapping.
+func terraCategory(_ activitiessvc.Category) string {
+	return "RESTAURANT"
 }
 
 // featuredReview returns the one quoted review eligible under compliance
@@ -854,42 +877,38 @@ func (a *Activities) featuredReview(ctx context.Context, details tripadvisor.Loc
 // tripadvisorIngestActivity maps a resolved Tripadvisor location into the
 // shape repo.Upsert expects: auto-published (no admin moderation step —
 // the whole point of an on-demand sync is that the requesting user sees
-// results now), RankingText pre-formatted with the current month/year
-// (compliance rule 05).
-func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, review *activitiessvc.TripadvisorReview) activitiessvc.IngestActivity {
-	var photos []activitiessvc.Photo
-	if d.PhotoURL != "" {
-		photos = []activitiessvc.Photo{{URL: d.PhotoURL, Provider: activitiessvc.ProviderTripadvisor}}
-	}
-
-	rankingText := ""
-	if d.RankingString != "" {
-		rankingText = fmt.Sprintf("%s, as rated by Tripadvisor travelers as of %s", d.RankingString, time.Now().Format("January 2006"))
-	}
+// results now). RankingText is always "" — the real API returns no ranking
+// data at all (see LocationDetails' doc).
+func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, review *activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
 		RatingImageURL: d.RatingImageURL,
 		ReviewCount:    d.ReviewCount,
-		RankingText:    rankingText,
 		WebURL:         d.WebURL,
 	}
 	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, review))
 
 	return activitiessvc.IngestActivity{
-		Title:       d.Name,
-		Category:    category,
-		Lat:         d.Lat,
-		Lng:         d.Lng,
-		Address:     d.Address,
-		City:        d.City,
-		Country:     d.Country,
-		Rating:      d.Rating,
-		Status:      activitiessvc.StatusPublished,
-		Details:     detailsJSON,
-		Photos:      photos,
-		Source:      "tripadvisor",
-		SourceURL:   d.WebURL,
-		ExternalID:  d.LocationID,
-		Subcategory: tripadvisormap.Subtype(category, d.Subcategories),
+		Title:      d.Name,
+		Category:   category,
+		Lat:        d.Lat,
+		Lng:        d.Lng,
+		Address:    d.Address,
+		City:       d.City,
+		Country:    d.Country,
+		Rating:     d.Rating,
+		Status:     activitiessvc.StatusPublished,
+		Details:    detailsJSON,
+		Photos:     photos,
+		Source:     "tripadvisor",
+		SourceURL:  d.WebURL,
+		ExternalID: d.LocationID,
+		// ponytail: the real API returns no subcategory/cuisine data at all
+		// (Terra's location detail response has nothing that maps to it), so
+		// tripadvisormap.Subtype always sees a nil input and returns "" —
+		// correct per its contract, not broken. The mapper stays unused-for-
+		// now in case Terra ever adds a category field, or a future task
+		// derives a subtype from the search category param itself.
+		Subcategory: tripadvisormap.Subtype(category, nil),
 	}
 }
 

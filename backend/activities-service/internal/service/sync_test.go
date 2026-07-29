@@ -20,7 +20,6 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 				LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, Rating: 4.5,
 				City: "Belgrade", Country: "Serbia",
 				WebURL: "https://ta/1", RatingImageURL: "https://ta/img/4.5.svg", ReviewCount: 1204,
-				RankingString: "#12 of 1,780 Restaurants in Belgrade",
 			},
 		},
 		reviewsOut: map[string][]tripadvisor.Review{
@@ -43,8 +42,8 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if len(ta.gotNearbySearch) != 1 {
 		t.Fatalf("NearbySearch recorded calls = %d, want 1", len(ta.gotNearbySearch))
 	}
-	if got := ta.gotNearbySearch[0]; got.lat != 44.81 || got.lng != 20.46 || got.radiusKM != tripadvisorSyncRadiusKM || got.category != "restaurants" {
-		t.Errorf("NearbySearch call = %+v, want lat=44.81 lng=20.46 radiusKM=%v category=restaurants", got, float64(tripadvisorSyncRadiusKM))
+	if got := ta.gotNearbySearch[0]; got.lat != 44.81 || got.lng != 20.46 || got.radiusKM != tripadvisorSyncRadiusKM || got.category != "RESTAURANT" {
+		t.Errorf("NearbySearch call = %+v, want lat=44.81 lng=20.46 radiusKM=%v category=RESTAURANT (Terra has no bars-specific category)", got, float64(tripadvisorSyncRadiusKM))
 	}
 	if repo.upsertCalls != 1 {
 		t.Errorf("Upsert calls = %d, want 1", repo.upsertCalls)
@@ -66,10 +65,9 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if details.Tripadvisor == nil {
 		t.Fatal("details.Tripadvisor = nil, want the attribution block populated")
 	}
-	wantRanking := "#12 of 1,780 Restaurants in Belgrade, as rated by Tripadvisor travelers as of " + time.Now().Format("January 2006")
 	if details.Tripadvisor.WebURL != "https://ta/1" || details.Tripadvisor.RatingImageURL != "https://ta/img/4.5.svg" ||
-		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != wantRanking {
-		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = %q", details.Tripadvisor, wantRanking)
+		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != "" {
+		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = \"\" (the real API returns no ranking data)", details.Tripadvisor)
 	}
 
 	wantReview := &activitiessvc.TripadvisorReview{Rating: 5, Date: "2026-03-03", Text: "Loved it."}

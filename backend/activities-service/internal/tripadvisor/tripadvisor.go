@@ -1,8 +1,8 @@
-// Package tripadvisor is the single client for the Tripadvisor Content API,
-// structured as the direct counterpart to internal/places: it owns the API
-// key, the http.Client, the base URL, and the retry/backoff policy for the
-// four calls the Restaurants/Bars lazy sync needs (see design doc
-// "tripadvisor-restaurants-bars"). Unlike places (mostly a build/seed-time
+// Package tripadvisor is the single client for the Tripadvisor Terra
+// Partner API, structured as the direct counterpart to internal/places: it
+// owns the API key, the http.Client, the base URL, and the retry/backoff
+// policy for the four calls the Restaurants/Bars lazy sync needs (see design
+// doc "tripadvisor-restaurants-bars"). Unlike places (mostly a build/seed-time
 // tool with one live exception), every method here is a live, per-sync
 // call — there is no batch scrape path for Tripadvisor.
 package tripadvisor
@@ -23,13 +23,17 @@ import (
 	"backend/shared/models/activitiessvc"
 )
 
-// defaultBase is the production Tripadvisor Content API host.
-const defaultBase = "https://api.content.tripadvisor.com/api/v1"
+// defaultBase is the production Tripadvisor Terra Partner API host.
+const defaultBase = "https://terra.tripadvisor.com/api"
+
+// locale is the fixed locale sent on every request — Terra requires a real
+// locale like "en-US", a bare "en" is rejected with a 400.
+const locale = "en-US"
 
 // maxAttempts caps retries on transient (429/5xx) failures.
 const maxAttempts = 4
 
-// Client calls the Tripadvisor Content API: nearby search, location
+// Client calls the Tripadvisor Terra Partner API: nearby search, location
 // details, photos, and reviews. Exactly one http.Client, one base URL, one
 // key.
 type Client struct {
@@ -38,7 +42,7 @@ type Client struct {
 	base string
 }
 
-// New builds a Client against the production Tripadvisor Content API.
+// New builds a Client against the production Tripadvisor Terra Partner API.
 func New(apiKey string) *Client {
 	return NewWithBase(apiKey, defaultBase)
 }
@@ -61,45 +65,72 @@ func NewWithBase(apiKey, base string) *Client {
 }
 
 // LocationSummary is one Nearby Search result. Deliberately thin —
-// Tripadvisor's nearby_search endpoint returns only identity, never
+// Terra's /catalog/locations/nearby endpoint returns only identity, never
 // rating/photos/ranking; LocationDetails resolves the rest per candidate.
 type LocationSummary struct {
 	LocationID string
 	Name       string
 }
 
+// localizedValue is the shape shared by names/descriptions/title/text
+// arrays across every Terra endpoint: a set of per-language values, one
+// (usually) flagged primary.
+type localizedValue struct {
+	Language string `json:"language"`
+	Value    string `json:"value"`
+	Primary  bool   `json:"primary"`
+}
+
+// primaryValue returns the primary-flagged entry's Value, falling back to
+// the first entry, "" if vs is empty.
+func primaryValue(vs []localizedValue) string {
+	for _, v := range vs {
+		if v.Primary {
+			return v.Value
+		}
+	}
+	if len(vs) > 0 {
+		return vs[0].Value
+	}
+	return ""
+}
+
 // NearbySearch finds Tripadvisor locations of category (e.g.
-// "restaurants") within radiusKM of lat/lng.
+// "RESTAURANT") within radiusKM of lat/lng.
 func (c *Client) NearbySearch(ctx context.Context, lat, lng, radiusKM float64, category string) ([]LocationSummary, error) {
 	q := url.Values{
-		"key":        {c.key},
-		"latLong":    {fmt.Sprintf("%f,%f", lat, lng)},
-		"category":   {category},
-		"radius":     {fmt.Sprintf("%f", radiusKM)},
-		"radiusUnit": {"km"},
-		"language":   {"en"},
+		"lat":      {fmt.Sprintf("%f", lat)},
+		"lon":      {fmt.Sprintf("%f", lng)},
+		"radius":   {fmt.Sprintf("%f", radiusKM)},
+		"unit":     {"KM"},
+		"category": {category},
+		"locale":   {locale},
 	}
 	var parsed struct {
 		Data []struct {
-			LocationID string `json:"location_id"`
-			Name       string `json:"name"`
+			Location struct {
+				ID    int64            `json:"id"`
+				Names []localizedValue `json:"names"`
+			} `json:"location"`
 		} `json:"data"`
 	}
-	if err := c.doJSON(ctx, c.base+"/location/nearby_search?"+q.Encode(), &parsed); err != nil {
+	if err := c.doJSON(ctx, c.base+"/catalog/locations/nearby?"+q.Encode(), &parsed); err != nil {
 		return nil, fmt.Errorf("tripadvisor nearby search: %w", err)
 	}
 	out := make([]LocationSummary, 0, len(parsed.Data))
 	for _, d := range parsed.Data {
-		out = append(out, LocationSummary{LocationID: d.LocationID, Name: d.Name})
+		out = append(out, LocationSummary{
+			LocationID: strconv.FormatInt(d.Location.ID, 10),
+			Name:       primaryValue(d.Location.Names),
+		})
 	}
 	return out, nil
 }
 
 // LocationDetails is one Tripadvisor location's full detail record — a
-// second call per NearbySearch candidate. RankingString is Tripadvisor's
-// own phrase (e.g. "#12 of 1,780 Restaurants in Belgrade"), with no date —
-// callers append their own month/year stamp (design doc's compliance rule
-// 05) since that's a display-time concern, not this client's.
+// second call per NearbySearch candidate. The real API carries no ranking
+// text and no category/subcategory/cuisine data (see the fields' absence
+// here, deliberate not an oversight).
 type LocationDetails struct {
 	LocationID     string
 	Name           string
@@ -109,72 +140,57 @@ type LocationDetails struct {
 	Country        string
 	Rating         float64
 	ReviewCount    int
-	RankingString  string
 	RatingImageURL string
 	WebURL         string
-	Category       string
-	Subcategories  []string
-	PhotoURL       string
 }
 
 func (c *Client) LocationDetails(ctx context.Context, locationID string) (LocationDetails, error) {
-	q := url.Values{"key": {c.key}, "language": {"en"}, "currency": {"USD"}}
+	q := url.Values{"locale": {locale}}
 	var parsed struct {
-		LocationID string `json:"location_id"`
-		Name       string `json:"name"`
-		Latitude   string `json:"latitude"`
-		Longitude  string `json:"longitude"`
-		AddressObj struct {
-			AddressString string `json:"address_string"`
-			City          string `json:"city"`
-			Country       string `json:"country"`
-		} `json:"address_obj"`
-		Rating         string `json:"rating"`
-		NumReviews     string `json:"num_reviews"`
-		RatingImageURL string `json:"rating_image_url"`
-		WebURL         string `json:"web_url"`
-		RankingData    struct {
-			RankingString string `json:"ranking_string"`
-		} `json:"ranking_data"`
-		Category struct {
-			Name string `json:"name"`
-		} `json:"category"`
-		Subcategory []struct {
-			Name string `json:"name"`
-		} `json:"subcategory"`
-		Photo struct {
-			Images struct {
-				Large struct {
-					URL string `json:"url"`
-				} `json:"large"`
-			} `json:"images"`
-		} `json:"photo"`
+		ID        int64            `json:"id"`
+		Names     []localizedValue `json:"names"`
+		Addresses []struct {
+			City        string `json:"city"`
+			CountryName string `json:"country_name"`
+			Formatted   string `json:"formatted"`
+		} `json:"addresses"`
+		Coordinates struct {
+			Latitude  float64 `json:"latitude"`
+			Longitude float64 `json:"longitude"`
+		} `json:"coordinates"`
+		TravelerRatings struct {
+			Overall struct {
+				Rating  float64 `json:"rating"`
+				Count   int     `json:"count"`
+				IconURL string  `json:"icon_url"`
+			} `json:"overall"`
+		} `json:"traveler_ratings"`
+		URLs struct {
+			Tripadvisor struct {
+				Main string `json:"main"`
+			} `json:"tripadvisor"`
+		} `json:"urls"`
 	}
-	if err := c.doJSON(ctx, c.base+"/location/"+locationID+"/details?"+q.Encode(), &parsed); err != nil {
+	if err := c.doJSON(ctx, c.base+"/locations/"+locationID+"?"+q.Encode(), &parsed); err != nil {
 		return LocationDetails{}, fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
 	}
 
-	subs := make([]string, 0, len(parsed.Subcategory))
-	for _, s := range parsed.Subcategory {
-		subs = append(subs, s.Name)
+	details := LocationDetails{
+		LocationID:     strconv.FormatInt(parsed.ID, 10),
+		Name:           primaryValue(parsed.Names),
+		Lat:            parsed.Coordinates.Latitude,
+		Lng:            parsed.Coordinates.Longitude,
+		Rating:         parsed.TravelerRatings.Overall.Rating,
+		ReviewCount:    parsed.TravelerRatings.Overall.Count,
+		RatingImageURL: parsed.TravelerRatings.Overall.IconURL,
+		WebURL:         parsed.URLs.Tripadvisor.Main,
 	}
-	return LocationDetails{
-		LocationID:     parsed.LocationID,
-		Name:           parsed.Name,
-		Lat:            parseFloat(parsed.Latitude),
-		Lng:            parseFloat(parsed.Longitude),
-		Address:        parsed.AddressObj.AddressString,
-		City:           parsed.AddressObj.City,
-		Country:        parsed.AddressObj.Country,
-		Rating:         parseFloat(parsed.Rating),
-		ReviewCount:    parseInt(parsed.NumReviews),
-		RankingString:  parsed.RankingData.RankingString,
-		RatingImageURL: parsed.RatingImageURL,
-		WebURL:         parsed.WebURL,
-		Category:       parsed.Category.Name,
-		Subcategories:  subs,
-		PhotoURL:       parsed.Photo.Images.Large.URL,
-	}, nil
+	if len(parsed.Addresses) > 0 {
+		details.Address = parsed.Addresses[0].Formatted
+		details.City = parsed.Addresses[0].City
+		details.Country = parsed.Addresses[0].CountryName
+	}
+	return details, nil
 }
 
 // LocationPhotos resolves up to limit Tripadvisor-hosted photos for
@@ -182,31 +198,29 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 // internal/places.ResolvePhotos' role: the live, per-sync call that backs
 // GetPhotos' resolve-on-first-view path for a Tripadvisor-sourced row.
 func (c *Client) LocationPhotos(ctx context.Context, locationID string, limit int) ([]activitiessvc.Photo, error) {
-	q := url.Values{"key": {c.key}, "language": {"en"}}
+	q := url.Values{"locale": {locale}, "size": {strconv.Itoa(limit)}}
 	var parsed struct {
 		Data []struct {
-			Images struct {
-				Large struct {
-					URL string `json:"url"`
-				} `json:"large"`
-			} `json:"images"`
+			Photo struct {
+				OriginalSizeURL string `json:"original_size_url"`
+			} `json:"photo"`
 			User struct {
 				Username string `json:"username"`
 			} `json:"user"`
 		} `json:"data"`
 	}
-	if err := c.doJSON(ctx, c.base+"/location/"+locationID+"/photos?"+q.Encode(), &parsed); err != nil {
+	if err := c.doJSON(ctx, c.base+"/locations/"+locationID+"/photos?"+q.Encode(), &parsed); err != nil {
 		return nil, fmt.Errorf("tripadvisor location %s photos: %w", locationID, err)
 	}
 	out := make([]activitiessvc.Photo, 0, min(len(parsed.Data), limit))
 	for _, p := range parsed.Data {
 		if len(out) >= limit {
-			break
+			break // defensive backstop: size already asked the server to cap this
 		}
-		if p.Images.Large.URL == "" {
+		if p.Photo.OriginalSizeURL == "" {
 			continue
 		}
-		out = append(out, activitiessvc.Photo{URL: p.Images.Large.URL, Author: p.User.Username, Provider: activitiessvc.ProviderTripadvisor})
+		out = append(out, activitiessvc.Photo{URL: p.Photo.OriginalSizeURL, Author: p.User.Username, Provider: activitiessvc.ProviderTripadvisor})
 	}
 	return out, nil
 }
@@ -218,39 +232,30 @@ type Review struct {
 	Text   string
 }
 
+// reviewsPageSize bounds LocationReviews — callers only need the first
+// 5-bubble one, no need to page through everything.
+const reviewsPageSize = 5
+
 // LocationReviews fetches locationID's reviews, most recent first (the
 // API's own default order). Callers pick the first eligible one (5-bubble,
 // place rated >= 4.0) — see the service layer's featuredReview.
 func (c *Client) LocationReviews(ctx context.Context, locationID string) ([]Review, error) {
-	q := url.Values{"key": {c.key}, "language": {"en"}}
+	q := url.Values{"language": {"en"}, "size": {strconv.Itoa(reviewsPageSize)}}
 	var parsed struct {
 		Data []struct {
-			Rating        int    `json:"rating"`
-			PublishedDate string `json:"published_date"`
-			Text          string `json:"text"`
+			Rating    int              `json:"rating"`
+			PublishTs string           `json:"publish_ts"`
+			Text      []localizedValue `json:"text"`
 		} `json:"data"`
 	}
-	if err := c.doJSON(ctx, c.base+"/location/"+locationID+"/reviews?"+q.Encode(), &parsed); err != nil {
+	if err := c.doJSON(ctx, c.base+"/locations/"+locationID+"/reviews?"+q.Encode(), &parsed); err != nil {
 		return nil, fmt.Errorf("tripadvisor location %s reviews: %w", locationID, err)
 	}
 	out := make([]Review, 0, len(parsed.Data))
 	for _, r := range parsed.Data {
-		out = append(out, Review{Rating: r.Rating, Date: r.PublishedDate, Text: r.Text})
+		out = append(out, Review{Rating: r.Rating, Date: r.PublishTs, Text: primaryValue(r.Text)})
 	}
 	return out, nil
-}
-
-// parseFloat/parseInt treat an empty or malformed numeric field as zero
-// rather than erroring the whole call — a brand-new Tripadvisor listing
-// with "num_reviews":"" is a real, valid response shape.
-func parseFloat(s string) float64 {
-	v, _ := strconv.ParseFloat(s, 64)
-	return v
-}
-
-func parseInt(s string) int {
-	v, _ := strconv.Atoi(s)
-	return v
 }
 
 // doJSON sends one GET request, retrying on 429/5xx with capped, jittered
@@ -276,6 +281,7 @@ func (c *Client) doJSON(ctx context.Context, requestURL string, out any) error {
 			return fmt.Errorf("building request: %w", err)
 		}
 		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-API-Key", c.key)
 
 		resp, err := c.http.Do(req)
 		if err != nil {
