@@ -133,17 +133,81 @@ func TestActivities_Query_TripadvisorSync_NonTripadvisorCategoryNeverSyncs(t *te
 	}
 }
 
-func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsBothCategories(t *testing.T) {
+func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsBothCategoriesWithOneSearch(t *testing.T) {
+	// Restaurants and Bars are both due for the one anchor here. Terra has no
+	// bars-specific category, so a NearbySearch(RESTAURANT) covers both — the
+	// fix under test is that this now costs exactly one NearbySearch call
+	// (not one per due category) fanned out into one Upsert per category, so
+	// the two categories' rows don't collide on (source_url, category).
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
-	ta := &fakeTripadvisor{}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1"},
+		},
+	}
 	svc := New(repo).WithTripadvisor(ta)
 
 	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}} // no Categories = "All"
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
-	if ta.nearbyCalls != 2 {
-		t.Errorf("NearbySearch calls = %d, want 2 (restaurants + bars, unfiltered query)", ta.nearbyCalls)
+	if ta.nearbyCalls != 1 {
+		t.Errorf("NearbySearch calls = %d, want 1 (restaurants + bars share one search, unfiltered query)", ta.nearbyCalls)
+	}
+	if repo.upsertCalls != 2 {
+		t.Errorf("Upsert calls = %d, want 2 (one per due category for the one candidate)", repo.upsertCalls)
+	}
+}
+
+func TestActivities_Query_TripadvisorSync_BothCategoriesDueShareOneSearchButUpsertSeparately(t *testing.T) {
+	// The core bug fix: before, a Restaurants sync and a Bars sync for the
+	// same anchor each ran their own NearbySearch and their own Upsert
+	// keyed only on source_url, so the second upsert clobbered the first's
+	// category. Now one NearbySearch serves both due categories and each
+	// gets its own Upsert call, so both rows survive with the same
+	// ExternalID/SourceURL but a different Category.
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1"},
+		},
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	req := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars},
+	}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+
+	if ta.nearbyCalls != 1 {
+		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
+	}
+	if len(repo.gotUpserts) != 2 {
+		t.Fatalf("Upsert calls = %d, want 2", len(repo.gotUpserts))
+	}
+
+	first, second := repo.gotUpserts[0], repo.gotUpserts[1]
+	if first.ExternalID != second.ExternalID || first.ExternalID != "111" {
+		t.Errorf("ExternalID mismatch: %q, %q, want both = 111", first.ExternalID, second.ExternalID)
+	}
+	if first.SourceURL != second.SourceURL || first.SourceURL != "https://ta/1" {
+		t.Errorf("SourceURL mismatch: %q, %q, want both = https://ta/1", first.SourceURL, second.SourceURL)
+	}
+	if first.Category == second.Category {
+		t.Errorf("Category = %q for both upserts, want one Restaurants and one Bars", first.Category)
+	}
+	gotCategories := map[activitiessvc.Category]bool{first.Category: true, second.Category: true}
+	if !gotCategories[activitiessvc.CategoryRestaurants] || !gotCategories[activitiessvc.CategoryBars] {
+		t.Errorf("categories = %v, want exactly {restaurants, bars}", gotCategories)
+	}
+	if len(repo.markSynced) != 2 {
+		t.Errorf("markSynced calls = %d, want 2 (one per due category, not per candidate)", len(repo.markSynced))
 	}
 }
 

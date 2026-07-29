@@ -36,7 +36,8 @@ type fakeRepo struct {
 	updateOut      activitiessvc.Activity
 	updateErr      error
 
-	gotUpsert   activitiessvc.IngestActivity
+	gotUpsert   activitiessvc.IngestActivity   // most recent call
+	gotUpserts  []activitiessvc.IngestActivity // every call, in call order
 	upsertCalls int
 	upsertOut   activitiessvc.Activity
 	upsertErr   error
@@ -81,6 +82,7 @@ func (f *fakeRepo) Update(_ context.Context, id string, patch activitiessvc.Upda
 
 func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	f.gotUpsert = in
+	f.gotUpserts = append(f.gotUpserts, in)
 	f.upsertCalls++
 	return f.upsertOut, f.upsertErr
 }

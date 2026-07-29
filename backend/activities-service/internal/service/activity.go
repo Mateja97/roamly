@@ -29,9 +29,10 @@ type repository interface {
 	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
 	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
 	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
-	// Upsert inserts or updates an ingested activity, keyed on source_url
-	// (T4's Restaurants/Bars lazy sync reuses the same upsert the batch
-	// Google pipeline already relies on).
+	// Upsert inserts or updates an ingested activity, keyed on
+	// (source_url, category) — the same source_url may legitimately exist
+	// under two different categories (T4's Restaurants/Bars lazy sync
+	// reuses the same upsert the batch Google pipeline already relies on).
 	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
 	// SyncedAt reports the last successful Tripadvisor sync time for
 	// (cellKey, category), and whether one has happened at all.
@@ -705,13 +706,15 @@ const tripadvisorSyncTTL = 14 * 24 * time.Hour
 // search query can't block indefinitely on a third-party call.
 const tripadvisorSyncTimeout = 6 * time.Second
 
-// maxSyncAnchorsPerQuery caps how many stale (anchor, category) pairs one
-// Query call can trigger a live sync for — an Anywhere query with many
-// selected cities (and both Restaurants and Bars stale) must not fan out
-// into a dozen live Tripadvisor calls at once. Because the cap applies to
-// pairs rather than distinct anchors, an unfiltered "All" query with 3+
-// stale anchors can end up syncing fewer than 3 distinct anchors in one
-// request — more conservative than a per-anchor cap, not less.
+// maxSyncAnchorsPerQuery caps how many distinct stale anchors one Query call
+// can trigger a live sync for — an Anywhere query with many selected cities
+// must not fan out into a dozen live Tripadvisor calls at once. One anchor
+// costs exactly one Terra NearbySearch call regardless of how many of its
+// due categories it covers (Restaurants and Bars share the same search —
+// see syncTripadvisorAnchor), so this is a true per-anchor cap: staleness is
+// still checked per (anchor, category) pair before the cap is applied (see
+// syncTripadvisorIfNeeded), but the cap itself counts distinct anchors, not
+// (anchor, category) pairs.
 const maxSyncAnchorsPerQuery = 3
 
 // syncCategories returns which of requested (or, if empty, both) of
@@ -747,11 +750,15 @@ func syncCellKey(lat, lng float64) string {
 	return fmt.Sprintf("%.1f,%.1f", lat, lng)
 }
 
-// syncDue is one (anchor, category) pair whose cached data is missing or
-// stale and is therefore eligible for a live sync this query.
-type syncDue struct {
-	anchor   activitiessvc.Point
-	category activitiessvc.Category
+// syncGroup is one anchor and the due categories a live sync should cover
+// for this query — categories whose cached data at that anchor is missing
+// or stale. Terra has no per-category search distinction (see
+// terraNearbySearchCategory), so grouping by anchor lets syncTripadvisorAnchor
+// make exactly one NearbySearch call regardless of how many categories are
+// due.
+type syncGroup struct {
+	anchor     activitiessvc.Point
+	categories []activitiessvc.Category
 }
 
 // syncTripadvisorIfNeeded triggers a live Tripadvisor sync for req's
@@ -766,7 +773,8 @@ type syncDue struct {
 // list first would let a handful of already-fresh low-index anchors starve
 // a genuinely stale anchor further down the list (e.g. anchor #4 or #5 of
 // an Anywhere request's cities) indefinitely across repeated requests with
-// the same anchor set.
+// the same anchor set. The cap itself then applies to distinct anchors
+// (groups), not (anchor, category) pairs — see maxSyncAnchorsPerQuery.
 func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 	if a.tripadvisor == nil {
 		return
@@ -776,9 +784,10 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 		return
 	}
 
-	var due []syncDue
+	var groups []syncGroup
 	for _, anchor := range syncAnchors(req) {
 		cell := syncCellKey(anchor.Lat, anchor.Lng)
+		var due []activitiessvc.Category
 		for _, cat := range categories {
 			syncedAt, ok, err := a.repo.SyncedAt(ctx, cell, string(cat))
 			if err != nil {
@@ -786,31 +795,43 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 			} else if ok && time.Since(syncedAt) < tripadvisorSyncTTL {
 				continue
 			}
-			due = append(due, syncDue{anchor: anchor, category: cat})
+			due = append(due, cat)
+		}
+		if len(due) > 0 {
+			groups = append(groups, syncGroup{anchor: anchor, categories: due})
 		}
 	}
 
-	if len(due) > maxSyncAnchorsPerQuery {
-		due = due[:maxSyncAnchorsPerQuery]
+	if len(groups) > maxSyncAnchorsPerQuery {
+		groups = groups[:maxSyncAnchorsPerQuery]
 	}
-	for _, d := range due {
-		a.syncTripadvisorArea(ctx, d.anchor, d.category)
+	for _, g := range groups {
+		a.syncTripadvisorAnchor(ctx, g.anchor, g.categories)
 	}
 }
 
-// syncTripadvisorArea syncs one anchor/category pair: live NearbySearch,
-// then LocationDetails (and, when eligible, LocationReviews) per result,
-// upserted into the catalog. A NearbySearch failure aborts this area's
-// sync (nothing to iterate); a single candidate's LocationDetails/Upsert
-// failure only skips that candidate — one bad venue doesn't sink the rest,
-// same rule internal/places.ResolvePhotos already follows.
-func (a *Activities) syncTripadvisorArea(ctx context.Context, anchor activitiessvc.Point, category activitiessvc.Category) {
+// syncTripadvisorAnchor syncs one anchor for every category in categories:
+// a single live NearbySearch (Terra has no per-category distinction — see
+// terraNearbySearchCategory), then one LocationDetails/LocationReviews/
+// LocationPhotos pass per candidate (venue-level facts, identical regardless
+// of which Roamly category the venue ends up filed under), then one
+// repo.Upsert per candidate per due category — so a venue due for both
+// Restaurants and Bars gets two upserts, same details/review/photos,
+// different Category, avoiding the source_url collision a per-category
+// NearbySearch used to cause. A NearbySearch failure aborts this anchor's
+// sync entirely (no upserts, no MarkSynced calls); a single candidate's
+// LocationDetails failure only skips that candidate — the rest of the
+// anchor's candidates and its MarkSynced calls still proceed, same rule
+// internal/places.ResolvePhotos already follows. MarkSynced is called once
+// per due category after all candidates are processed, not once per
+// candidate.
+func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitiessvc.Point, categories []activitiessvc.Category) {
 	syncCtx, cancel := context.WithTimeout(ctx, tripadvisorSyncTimeout)
 	defer cancel()
 
-	summaries, err := a.tripadvisor.NearbySearch(syncCtx, anchor.Lat, anchor.Lng, tripadvisorSyncRadiusKM, terraCategory(category))
+	summaries, err := a.tripadvisor.NearbySearch(syncCtx, anchor.Lat, anchor.Lng, tripadvisorSyncRadiusKM, terraNearbySearchCategory)
 	if err != nil {
-		slog.Warn("tripadvisor nearby search failed", "category", category, "error", err)
+		slog.Warn("tripadvisor nearby search failed", "categories", categories, "error", err)
 		return
 	}
 
@@ -832,27 +853,30 @@ func (a *Activities) syncTripadvisorArea(ctx context.Context, anchor activitiess
 			photos = p
 		}
 
-		if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, review, photos)); err != nil {
-			slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "error", err)
+		for _, category := range categories {
+			if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, review, photos)); err != nil {
+				slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "category", category, "error", err)
+			}
 		}
 	}
 
-	if err := a.repo.MarkSynced(ctx, syncCellKey(anchor.Lat, anchor.Lng), string(category)); err != nil {
-		slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
+	for _, category := range categories {
+		if err := a.repo.MarkSynced(ctx, syncCellKey(anchor.Lat, anchor.Lng), string(category)); err != nil {
+			slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
+		}
 	}
 }
 
-// terraCategory maps a Roamly category to Terra's nearby-search category
-// enum (RESTAURANT/ATTRACTION/HOTEL — no BAR value exists). Bars are a kind
-// of food/drink venue, so RESTAURANT is the closest available Terra
-// category; a "bars" and a "restaurants" sync for the same anchor therefore
-// query Terra identically and see overlapping/identical result sets. That's
-// an inherent limitation of the real API, not a bug — the Roamly Category
-// each result is upserted under is decided by the caller's own category,
-// unaffected by this mapping.
-func terraCategory(_ activitiessvc.Category) string {
-	return "RESTAURANT"
-}
+// terraNearbySearchCategory is the Terra nearby-search category value used
+// for the shared per-anchor sync (RESTAURANT/ATTRACTION/HOTEL — no BAR value
+// exists). Bars are a kind of food/drink venue, so RESTAURANT is the closest
+// available Terra category. Because it's the same value regardless of which
+// Roamly category is being synced, one NearbySearch call per anchor covers
+// every due category at that anchor (see syncTripadvisorAnchor) instead of
+// one call per category — the Roamly Category each result is upserted under
+// is decided by the caller's own due-category list, unaffected by this
+// value.
+const terraNearbySearchCategory = "RESTAURANT"
 
 // featuredReview returns the one quoted review eligible under compliance
 // rule 04 (5-bubble, place rated >= 4.0), or nil when none qualifies —

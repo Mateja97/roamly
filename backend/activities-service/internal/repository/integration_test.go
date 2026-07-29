@@ -287,11 +287,11 @@ func TestActivities_Query_Integration(t *testing.T) {
 	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
 		wantCounts := map[string]int{
 			"Belgrade":  109, // 7 from 0002_seed.sql - 1 (Skadarlija recategorized to restaurants) + 6 demo from 0008 - 1 bar + 118 from 0011_import_belgrade_listings - 20 restaurants/bars (0016 deletes legacy non-Tripadvisor)
-			"Rome":      1,  // history_and_culture (survives 0016)
-			"Paris":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
-			"Tokyo":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
-			"New York":  1,  // sports (survives 0016)
-			"Barcelona": 1,  // art_and_design (survives 0016)
+			"Rome":      1,   // history_and_culture (survives 0016)
+			"Paris":     0,   // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"Tokyo":     0,   // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"New York":  1,   // sports (survives 0016)
+			"Barcelona": 1,   // art_and_design (survives 0016)
 		}
 		for city, want := range wantCounts {
 			var got int
@@ -857,6 +857,76 @@ func TestUpsertIdempotentBySourceURL(t *testing.T) {
 	}
 	if len(second.Photos) != 1 || second.Photos[0].URL != "/photos/x/a.jpg" {
 		t.Errorf("photos = %+v, want the pre-existing photo preserved (photos excluded from the conflict update)", second.Photos)
+	}
+}
+
+// TestUpsertDedupesBySourceURLAndCategoryNotSourceURLAlone proves the
+// 0017 migration's fix: the same source_url may legitimately exist as two
+// separate rows under two different categories (a venue Tripadvisor-synced
+// as both Restaurants and Bars, since Terra has no bars-specific category
+// and both syncs query it identically), and each category stays idempotent
+// on its own — a same-source_url-same-category re-upsert still updates the
+// original row in place rather than creating a third one.
+func TestUpsertDedupesBySourceURLAndCategoryNotSourceURLAlone(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	const sourceURL = "https://ta/dual-category-venue"
+	restaurantIn := activitiessvc.IngestActivity{
+		Title: "Ambar Beograd", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8178, Lng: 20.4547, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: sourceURL, ExternalID: "111",
+	}
+	barIn := restaurantIn
+	barIn.Category = activitiessvc.CategoryBars
+
+	restaurantRow, err := repo.Upsert(ctx, restaurantIn)
+	if err != nil {
+		t.Fatalf("upserting restaurant row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, restaurantRow.ID) })
+
+	barRow, err := repo.Upsert(ctx, barIn)
+	if err != nil {
+		t.Fatalf("upserting bar row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, barRow.ID) })
+
+	if restaurantRow.ID == barRow.ID {
+		t.Fatalf("bar upsert reused the restaurant row's ID (%s) — same source_url, different category should not collide", restaurantRow.ID)
+	}
+
+	gotRestaurant, err := repo.GetByID(ctx, restaurantRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(restaurant): %v", err)
+	}
+	if gotRestaurant.Category != activitiessvc.CategoryRestaurants {
+		t.Errorf("restaurant row category = %q, want %q — the bar upsert must not have overwritten it", gotRestaurant.Category, activitiessvc.CategoryRestaurants)
+	}
+
+	gotBar, err := repo.GetByID(ctx, barRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(bar): %v", err)
+	}
+	if gotBar.Category != activitiessvc.CategoryBars {
+		t.Errorf("bar row category = %q, want %q", gotBar.Category, activitiessvc.CategoryBars)
+	}
+
+	// Re-upserting the same source_url + same category (restaurant) must
+	// still update the first row in place, not create a third row — the new
+	// uniqueness is scoped to (source_url, category), not source_url alone.
+	restaurantIn.Rating = 4.9
+	thirdUpsert, err := repo.Upsert(ctx, restaurantIn)
+	if err != nil {
+		t.Fatalf("re-upserting restaurant row: %v", err)
+	}
+	if thirdUpsert.ID != restaurantRow.ID {
+		t.Fatalf("re-upsert with same source_url+category created a new row (%s != %s), want update in place", thirdUpsert.ID, restaurantRow.ID)
+	}
+	if thirdUpsert.Rating != 4.9 {
+		t.Errorf("rating = %v, want 4.9 (updated)", thirdUpsert.Rating)
 	}
 }
 
