@@ -20,10 +20,10 @@ import type {
   Activity,
   ActivityDetails,
   DayOfWeek,
-  FeaturedReview,
   OpeningHours,
   OpeningHoursPeriod,
   TripadvisorAttribution,
+  TripadvisorReview,
 } from '../../api/activities';
 import type { Category } from './types';
 import { CATEGORY_LABELS } from './filters';
@@ -208,18 +208,28 @@ export function tripadvisorAttribution(activity: Activity): TripadvisorAttributi
 }
 
 // Backend-gated per compliance rule 04 — only ever populated alongside a
-// Tripadvisor-treated row, so the UI renders it "if present" with no
-// eligibility check of its own.
-export function tripadvisorFeaturedReview(activity: Activity): FeaturedReview | undefined {
+// Tripadvisor-treated row. Always an array (never undefined) so callers
+// (the reviews carousel) self-guard on `.length` the same way FactStrip
+// self-guards on an empty fields array — up to 3 per T3.
+export function tripadvisorReviews(activity: Activity): TripadvisorReview[] {
   const d = activity.details;
-  if (!d) return undefined;
+  if (!d) return [];
   switch (d.category) {
     case 'restaurants':
     case 'bars':
-      return d.featured_review;
+      return d.reviews ?? [];
     default:
-      return undefined;
+      return [];
   }
+}
+
+// design-spec.md T4's Place-facts list: "Address — static text (Address/City
+// already flowing)". Joins the two already-on-the-wire fields into one line;
+// undefined (row omitted) when both are blank rather than showing a lone
+// comma.
+export function tripadvisorAddressLine(activity: Activity): string | undefined {
+  const parts = [activity.address, activity.city].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
 // design-spec.md T8 addendum #6: Wellness' external-booking note, lifted

@@ -32,11 +32,13 @@ function reviewCountLabel(count: number): string {
 // expo-image load/broken behavior, no bespoke fallback UI (out of scope).
 export function TripadvisorAttributionPlate({ tripadvisor, variant }: TripadvisorAttributionPlateProps) {
   const logoHeight = variant === 'card' ? 20 : 24;
+  // design-spec.md T4: the ranking sentence ("#N of M restaurants...") and
+  // the "Travellers' Choice 2026" badge are mock-only — the Terra API
+  // returns no ranking/award data at all, so `ranking_text` never actually
+  // populates (T3 confirmed). Context line is review count only now.
   const contextLine =
     variant === 'detail'
-      ? [`${reviewCountLabel(tripadvisor.review_count)} on Tripadvisor`, tripadvisor.ranking_text]
-          .filter(Boolean)
-          .join(' · ')
+      ? `${reviewCountLabel(tripadvisor.review_count)} on Tripadvisor`
       : null;
 
   return (

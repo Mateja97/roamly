@@ -4,8 +4,9 @@ import {
   factStripFields,
   openStatus,
   todayHoursRow,
+  tripadvisorAddressLine,
   tripadvisorAttribution,
-  tripadvisorFeaturedReview,
+  tripadvisorReviews,
   weekView,
 } from './activityDetailConfig';
 
@@ -391,20 +392,19 @@ describe('factStripFields — Hours chip (opening-hours T3)', () => {
   });
 });
 
-describe('tripadvisorAttribution / tripadvisorFeaturedReview (T8)', () => {
-  it('reads `tripadvisor`/`featured_review` off a restaurant row', () => {
+describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
+  it('reads `tripadvisor`/`reviews` off a restaurant row', () => {
     const activity = baseActivity({
       category: 'restaurants',
       tripadvisor: {
         rating_image_url: 'https://tripadvisor.example/bubble.png',
         review_count: 1204,
-        ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
         web_url: 'https://tripadvisor.example/place',
       },
-      featured_review: { rating: 5, date: '14 June 2026', text: 'Fantastic evening.' },
+      reviews: [{ rating: 5, date: '14 June 2026', text: 'Fantastic evening.' }],
     });
     expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 1204 });
-    expect(tripadvisorFeaturedReview(activity)).toMatchObject({ rating: 5 });
+    expect(tripadvisorReviews(activity)).toMatchObject([{ rating: 5 }]);
   });
 
   it('reads `tripadvisor` off a bar row too', () => {
@@ -419,10 +419,10 @@ describe('tripadvisorAttribution / tripadvisorFeaturedReview (T8)', () => {
     expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 88 });
   });
 
-  it('is undefined for a non-Tripadvisor restaurant row (field simply absent)', () => {
+  it('is undefined for a non-Tripadvisor restaurant row (field simply absent), reviews defaults to []', () => {
     const activity = baseActivity({ category: 'restaurants', cuisine: 'Serbian' });
     expect(tripadvisorAttribution(activity)).toBeUndefined();
-    expect(tripadvisorFeaturedReview(activity)).toBeUndefined();
+    expect(tripadvisorReviews(activity)).toEqual([]);
   });
 
   it('is undefined for any category that never carries the field (e.g. cafes)', () => {
@@ -430,9 +430,27 @@ describe('tripadvisorAttribution / tripadvisorFeaturedReview (T8)', () => {
     expect(tripadvisorAttribution(activity)).toBeUndefined();
   });
 
-  it('is undefined with no details at all', () => {
+  it('defaults to [] with no details at all', () => {
     const activity = baseActivity(undefined);
     expect(tripadvisorAttribution(activity)).toBeUndefined();
-    expect(tripadvisorFeaturedReview(activity)).toBeUndefined();
+    expect(tripadvisorReviews(activity)).toEqual([]);
+  });
+});
+
+describe('tripadvisorAddressLine (T4)', () => {
+  it('joins address + city when both are present', () => {
+    const activity = { ...baseActivity(undefined), address: 'Knez Mihailova 10', city: 'Belgrade' };
+    expect(tripadvisorAddressLine(activity)).toBe('Knez Mihailova 10, Belgrade');
+  });
+
+  it('falls back to whichever field is present', () => {
+    expect(tripadvisorAddressLine({ ...baseActivity(undefined), address: 'Knez Mihailova 10' })).toBe(
+      'Knez Mihailova 10',
+    );
+    expect(tripadvisorAddressLine({ ...baseActivity(undefined), city: 'Belgrade' })).toBe('Belgrade');
+  });
+
+  it('is undefined when both are absent (row omitted, no dangling comma)', () => {
+    expect(tripadvisorAddressLine(baseActivity(undefined))).toBeUndefined();
   });
 });

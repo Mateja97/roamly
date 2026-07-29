@@ -921,7 +921,6 @@ describe('ActivityDetailScreen', () => {
         tripadvisor: {
           rating_image_url: 'https://tripadvisor.example/bubble.png',
           review_count: 1204,
-          ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
           web_url: 'https://tripadvisor.example/place',
         },
       },
@@ -932,9 +931,7 @@ describe('ActivityDetailScreen', () => {
         <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
       );
       expect(screen.queryByText('4.6')).toBeNull();
-      expect(
-        screen.getByText('1,204 reviews on Tripadvisor · #3 of 512 Restaurants in Belgrade, June 2026'),
-      ).toBeTruthy();
+      expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
     });
 
     it('keeps the gold star + numeric rating for a non-Tripadvisor row, unchanged', () => {
@@ -944,44 +941,111 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('4.6')).toBeTruthy();
     });
 
-    it('omits ranking text with no dangling separator when absent', () => {
-      const noRanking: Activity = {
+    // design-spec.md T4: "Travellers' Choice 2026" badge / dated ranking
+    // text is mock-only (no Terra API ranking data) — never rendered even
+    // if a caller sets `ranking_text` (the field stays on the wire type but
+    // the UI ignores it, see TripadvisorAttributionPlate.test.tsx).
+    it('never renders ranking_text (mock-only, out of scope)', () => {
+      const withRanking: Activity = {
         ...activity,
         details: {
           category: 'restaurants',
           tripadvisor: {
             rating_image_url: 'https://tripadvisor.example/bubble.png',
             review_count: 88,
+            ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
             web_url: 'https://tripadvisor.example/place',
           },
         },
       };
-      render(<ActivityDetailScreen activity={noRanking} showDistance onBack={jest.fn()} />);
+      render(<ActivityDetailScreen activity={withRanking} showDistance onBack={jest.fn()} />);
       expect(screen.getByText('88 reviews on Tripadvisor')).toBeTruthy();
+      expect(screen.queryByText(/#3 of 512/)).toBeNull();
     });
 
-    it('renders the featured-review quote block when featured_review is present', () => {
-      const withReview: Activity = {
-        ...tripadvisorActivity,
+    it('renders the subratings grid when tripadvisor.subratings is present', () => {
+      const withSubratings: Activity = {
+        ...activity,
         details: {
           category: 'restaurants',
           tripadvisor: {
             rating_image_url: 'https://tripadvisor.example/bubble.png',
             review_count: 1204,
-            ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026',
             web_url: 'https://tripadvisor.example/place',
+            subratings: { food: 4.5, service: 4.0, value: 3.5, atmosphere: 5.0 },
           },
-          featured_review: { rating: 5, date: '14 June 2026', text: 'Fantastic evening.' },
         },
       };
-      render(<ActivityDetailScreen activity={withReview} showDistance onBack={jest.fn()} />);
-      expect(screen.getByText('A Tripadvisor traveler review')).toBeTruthy();
-      expect(screen.getByText('Rated 5.0 · 14 June 2026')).toBeTruthy();
+      render(<ActivityDetailScreen activity={withSubratings} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Food')).toBeTruthy();
+      expect(screen.getByText('4.5')).toBeTruthy();
     });
 
-    it('omits the featured-review block entirely when featured_review is absent (no empty state)', () => {
+    it('omits the subratings grid when absent (no empty grid)', () => {
       render(<ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />);
-      expect(screen.queryByText('A Tripadvisor traveler review')).toBeNull();
+      expect(screen.queryByText('Food')).toBeNull();
+    });
+
+    it('renders the reviews carousel with up to 3 cards when reviews is present', () => {
+      const withReviews: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            web_url: 'https://tripadvisor.example/place',
+          },
+          reviews: [
+            { rating: 5, date: '14 June 2026', text: 'Fantastic evening.' },
+            { rating: 5, date: '2 June 2026', text: 'Best meal of the trip.' },
+          ],
+        },
+      };
+      render(<ActivityDetailScreen activity={withReviews} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Tripadvisor traveler reviews')).toBeTruthy();
+      expect(screen.getByText('“Fantastic evening.”')).toBeTruthy();
+      expect(screen.getByText('“Best meal of the trip.”')).toBeTruthy();
+      expect(screen.getByText('1 of 2')).toBeTruthy();
+    });
+
+    it('omits the reviews carousel entirely when reviews is absent (no empty state)', () => {
+      render(<ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('Tripadvisor traveler reviews')).toBeNull();
+    });
+
+    it('renders the address row from the top-level address/city fields', () => {
+      const withAddress: Activity = { ...tripadvisorActivity, address: 'Knez Mihailova 10', city: 'Belgrade' };
+      render(<ActivityDetailScreen activity={withAddress} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Knez Mihailova 10, Belgrade')).toBeTruthy();
+    });
+
+    it('renders the phone row as a tel: link and opens it via Linking, surfacing the error banner on failure', async () => {
+      const openURLSpy = jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no phone app'));
+      const withPhone: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            web_url: 'https://tripadvisor.example/place',
+            phone: '+381 11 123 4567',
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={withPhone} showDistance onBack={jest.fn()} />);
+      fireEvent.press(screen.getByRole('link', { name: 'Call +381 11 123 4567' }));
+      await waitFor(() => expect(openURLSpy).toHaveBeenCalledWith('tel:+381 11 123 4567'));
+      await waitFor(() =>
+        expect(screen.getByText('Could not open the link. Please try again.')).toBeTruthy(),
+      );
+      openURLSpy.mockRestore();
+    });
+
+    it('omits the facts block when address and phone are both absent', () => {
+      render(<ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByLabelText(/call/i)).toBeNull();
     });
 
     it('opens tripadvisor.web_url via the deep-link row, and surfaces the error banner on failure', async () => {
