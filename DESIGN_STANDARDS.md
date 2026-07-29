@@ -809,6 +809,26 @@ feedback carries on touch (no hover reliance).
   `--border`, `--text` label + trailing 16px `X` icon in `--text-muted`. The
   whole chip is one 44×44 remove control; `aria-label` "Remove <filter>
   filter". Press → `--surface` bg.
+- **Segmented (single-select, filled)** — a list-screen quick-filter where
+  exactly one option is always active (e.g. the activities-list category
+  shortcut row: `All` + a few headline categories). Distinct from the sheet
+  `select` variant above: that is a multi-select checklist (border + `Check`);
+  this is an always-one-active toggle, so a filled pill reads correctly where
+  a check does not.
+  - *Selected:* `--primary` gold fill, `--ink` label (6.6:1 ✓ — the documented
+    filled-gold pairing), weight 600, **no `Check` icon**; the
+    **filled-vs-outlined pill is itself the non-color selection cue** (the same
+    device as the Scope ticket / Activity card go-button's filled-vs-outlined
+    circle), reinforced for AT by `accessibilityState.selected`.
+  - *Unselected:* transparent bg, 1px `--border`, `--text` cream label (8.5:1
+    on `--bg` ✓ — cream, not the sheet variant's `--text-muted`, because these
+    chips sit on `--bg` and read as the row's resting options).
+  - *Pressed:* selected → `--primary-active` fill; unselected → `--surface-hover`
+    bg. *Focus (keyboard/AT):* 2px `--primary` border.
+  - The visible pill is ~32px tall, but the control keeps the ≥44×44 tap
+    target (vertical hit area / padding), with ≥`--space-2` between chips and a
+    horizontally-scrollable row. Single-select: tapping one clears the others;
+    `All` is the default state (no category filter applied).
 
 No new color tokens.
 

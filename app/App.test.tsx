@@ -114,7 +114,11 @@ describe('App', () => {
         categories: ['sport'],
       })
     );
-    expect(screen.getByRole('button', { name: 'Remove Sport filter' })).toBeTruthy();
+    // T1: category filters no longer get their own removable chip (the
+    // list header's quick-filter row represents that state instead) — Sport
+    // isn't a headline category, so the row reads "All" active and the
+    // Filters button's count badge is the visible signal.
+    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
   });
 
   it('Anywhere with location denied still reaches the search-setup screen with no anchor (no dead end)', async () => {

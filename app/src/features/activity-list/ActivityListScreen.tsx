@@ -24,7 +24,18 @@ import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens'
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { tripadvisorAttribution } from './activityDetailConfig';
 import { FilterSheet } from './FilterSheet';
-import { SCOPE_TITLES, activeFilterCount, buildActivitiesRequest, defaultFilters, filterChips, headerSubtitle } from './filters';
+import {
+  CATEGORY_LABELS,
+  HEADLINE_CATEGORIES,
+  SCOPE_TITLES,
+  activeFilterCount,
+  activeQuickFilterCategory,
+  applyQuickFilterCategory,
+  buildActivitiesRequest,
+  defaultFilters,
+  filterChips,
+  headerSubtitle,
+} from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
 
 type QueryState =
@@ -176,6 +187,9 @@ export function ActivityListScreen({
 
   const chips = filterChips(appliedFilters, selection.scope);
   const filterCount = activeFilterCount(appliedFilters, selection.scope);
+  // design-spec.md T1: quick-filter row's active chip — a headline category
+  // when applied filters hold exactly it, `All` otherwise.
+  const activeQuickFilter = activeQuickFilterCategory(appliedFilters);
   const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
   // T2: whether the composite subtitle will render at all is knowable before
   // the count resolves — nearby always has one, anywhere only when cities
@@ -229,7 +243,7 @@ export function ActivityListScreen({
             <Circle cx={-20} cy={90} r={4.5} fill={colors.primary} stroke="none" opacity={0.22} />
             <Circle cx={430} cy={74} r={5} fill="none" stroke={colors.primary} strokeWidth={3} strokeOpacity={0.22} />
           </Svg>
-          <View style={styles.headerTitleBlock}>
+          <View style={styles.headerTopRow}>
             <View style={styles.headerTitleRow}>
               <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                 {selection.scope === 'nearby' ? (
@@ -242,36 +256,62 @@ export function ActivityListScreen({
                 {SCOPE_TITLES[selection.scope]}
               </Text>
             </View>
-            <View ref={countRef} accessible accessibilityLiveRegion="polite">
-              {resultCount === null
-                ? willShowSubtitle && <Skeleton width={140} height={14} style={styles.headerSubtitleSkeleton} />
-                : subtitle && (
-                    <Text style={styles.headerSubtitle} numberOfLines={1}>
-                      {subtitle}
-                    </Text>
-                  )}
-            </View>
+            <Pressable
+              ref={filtersButtonRef}
+              onPress={() => setSheetVisible(true)}
+              onFocus={filtersFocus.onFocus}
+              onBlur={filtersFocus.onBlur}
+              accessibilityRole="button"
+              accessibilityLabel={filterCount > 0 ? `Filters, ${filterCount} active` : 'Filters'}
+              style={({ pressed }) => [
+                styles.filtersButton,
+                (pressed || filtersFocus.focused) && styles.filtersButtonActive,
+              ]}
+            >
+              <SlidersHorizontal size={16} color={colors.primary} strokeWidth={1.75} />
+              <Text style={styles.filtersButtonLabel}>Filters</Text>
+              {filterCount > 0 && (
+                <View style={styles.countBadge}>
+                  <Text style={styles.countBadgeLabel}>{filterCount}</Text>
+                </View>
+              )}
+            </Pressable>
           </View>
-          <Pressable
-            ref={filtersButtonRef}
-            onPress={() => setSheetVisible(true)}
-            onFocus={filtersFocus.onFocus}
-            onBlur={filtersFocus.onBlur}
-            accessibilityRole="button"
-            accessibilityLabel={filterCount > 0 ? `Filters, ${filterCount} active` : 'Filters'}
-            style={({ pressed }) => [
-              styles.filtersButton,
-              (pressed || filtersFocus.focused) && styles.filtersButtonActive,
-            ]}
+
+          {/* design-spec.md T1: category quick-filter row — a projection of
+              the sheet's own category filter, see activeQuickFilterCategory. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryScroll}
+            contentContainerStyle={styles.categoryRow}
           >
-            <SlidersHorizontal size={16} color={colors.primary} strokeWidth={1.75} />
-            <Text style={styles.filtersButtonLabel}>Filters</Text>
-            {filterCount > 0 && (
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeLabel}>{filterCount}</Text>
-              </View>
-            )}
-          </Pressable>
+            <FilterChip
+              variant="segment"
+              label="All"
+              selected={activeQuickFilter === null}
+              onPress={() => handleFiltersChange(applyQuickFilterCategory(appliedFilters, null))}
+            />
+            {HEADLINE_CATEGORIES.map((category) => (
+              <FilterChip
+                key={category}
+                variant="segment"
+                label={CATEGORY_LABELS[category]}
+                selected={activeQuickFilter === category}
+                onPress={() => handleFiltersChange(applyQuickFilterCategory(appliedFilters, category))}
+              />
+            ))}
+          </ScrollView>
+
+          <View ref={countRef} accessible accessibilityLiveRegion="polite">
+            {resultCount === null
+              ? willShowSubtitle && <Skeleton width={140} height={14} style={styles.headerSubtitleSkeleton} />
+              : subtitle && (
+                  <Text style={styles.headerSubtitle} numberOfLines={1}>
+                    {subtitle}
+                  </Text>
+                )}
+          </View>
         </View>
 
         {chips.length > 0 && (
@@ -410,9 +450,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: space[2],
     paddingVertical: space[4],
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
@@ -428,10 +465,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: -1,
   },
-  headerTitleBlock: {
-    flex: 1,
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space[2],
   },
   headerTitleRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[2],
@@ -444,14 +484,21 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 26 * 1.2,
   },
+  // design-spec.md T1: `--space-3` below the title row.
+  categoryScroll: {
+    marginTop: space[3],
+  },
+  categoryRow: {
+    gap: space[2],
+  },
   headerSubtitle: {
-    marginTop: space[1],
+    marginTop: space[2],
     fontSize: fontSize.sm,
     color: colors.textMuted,
     fontVariant: ['tabular-nums'],
   },
   headerSubtitleSkeleton: {
-    marginTop: space[1],
+    marginTop: space[2],
   },
   filtersButton: {
     flexDirection: 'row',
