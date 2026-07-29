@@ -943,3 +943,52 @@ func TestRawRowsReturnsIDCategoryRaw(t *testing.T) {
 		t.Fatalf("RawRows did not return upserted row %s", a.ID)
 	}
 }
+
+// TestMigration0015TripadvisorSyncRegions proves the freshness table exists
+// with the (cell_key, category) composite primary key the lazy sync relies
+// on: one row per area+category, a duplicate rejected, a different
+// category at the same cell allowed (Restaurants and Bars track freshness
+// independently).
+func TestMigration0015TripadvisorSyncRegions(t *testing.T) {
+	ctx := context.Background()
+	pool := startTestPostgres(t)
+
+	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'restaurants', now())`); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'restaurants', now())`); err == nil {
+		t.Fatal("duplicate (cell_key, category) insert succeeded, want primary-key violation")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'bars', now())`); err != nil {
+		t.Fatalf("different-category insert at the same cell: %v", err)
+	}
+}
+
+// TestUpsertStoresSourceReadableViaGetByID proves the `source` column
+// (already written by Upsert since 0012_ingestion.sql) now round-trips
+// through the domain Activity struct via GetByID, not just raw SQL.
+func TestUpsertStoresSourceReadableViaGetByID(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Source Fixture", Description: "restaurant", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://www.tripadvisor.com/Restaurant_Review-x",
+		ExternalID: "12345",
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, a.ID) })
+
+	got, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	if got.Source != "tripadvisor" {
+		t.Errorf("Source = %q, want %q", got.Source, "tripadvisor")
+	}
+}

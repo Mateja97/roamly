@@ -224,7 +224,8 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 // column order used by scanAdminActivity never drifts from what's selected.
 const adminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 	country, rating, photos, tags, details,
-	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id, subcategory`
+	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id,
+	COALESCE(source, '') AS source, subcategory`
 
 func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 	var a activitiessvc.Activity
@@ -233,7 +234,7 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 		&a.Location.Lat, &a.Location.Lng,
 		&a.Country, &a.Rating,
 		&a.Photos, &a.Tags, &a.Details,
-		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Subcategory,
+		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory,
 	)
 	return a, err
 }

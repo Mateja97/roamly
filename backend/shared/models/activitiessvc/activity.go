@@ -104,6 +104,9 @@ type Provider string
 const (
 	ProviderAdmin  Provider = "admin"
 	ProviderGoogle Provider = "google"
+	// ProviderTripadvisor identifies a photo resolved from the Tripadvisor
+	// Content API (Restaurants/Bars lazy sync).
+	ProviderTripadvisor Provider = "tripadvisor"
 	// ProviderUser is reserved for a future user-upload flow; no code path
 	// writes it yet.
 	ProviderUser Provider = "user"
@@ -159,8 +162,16 @@ type Activity struct {
 	Address string
 	Status  Status
 	// ExternalID is the ingestion source's stable identifier (the Google
-	// Places place_id for scraped rows); empty for admin-created rows.
+	// Places place_id for scraped rows, the Tripadvisor location_id for
+	// Restaurants/Bars); empty for admin-created rows.
 	ExternalID string
+	// Source (T2) is the ingestion source's kind ("google_places",
+	// "tripadvisor", or "" for an admin-created row) — read from the
+	// existing `source` column (0012_ingestion.sql), which was previously
+	// written by Upsert but never read back. Used to route on-demand
+	// external calls (GetPhotos, the Tripadvisor lazy sync) to the right
+	// client per row.
+	Source string
 	// Subcategory (T1) is an optional, category-validated subtype slug (see
 	// Subcategories/ValidSubcategory); "" = not set.
 	Subcategory string
@@ -211,6 +222,32 @@ type OpeningHours struct {
 	Periods    []Period `json:"periods,omitempty"`
 }
 
+// TripadvisorAttribution is the required on-card/detail attribution for a
+// Tripadvisor-sourced Restaurants/Bars row (design doc
+// "tripadvisor-restaurants-bars", compliance rules 01-03/05/08).
+// RatingImageURL is Tripadvisor's own rating_image_url asset — never a
+// local copy, never rendered next to a Roamly star. RankingText is
+// pre-formatted with month/year at sync time (rule 05), e.g. "#12 of 1,780
+// restaurants in Belgrade, as rated by Tripadvisor travelers as of July
+// 2026"; empty when Tripadvisor returned no ranking data. WebURL is the
+// deep-link-out target (rule 08).
+type TripadvisorAttribution struct {
+	RatingImageURL string `json:"rating_image_url"`
+	ReviewCount    int    `json:"review_count"`
+	RankingText    string `json:"ranking_text,omitempty"`
+	WebURL         string `json:"web_url"`
+}
+
+// TripadvisorReview is the one quoted traveler review shown on a
+// Tripadvisor-sourced detail page (compliance rule 04): only ever
+// populated at sync time when Rating is 5 and the place itself is rated
+// >= 4.0.
+type TripadvisorReview struct {
+	Rating int    `json:"rating"`
+	Date   string `json:"date"`
+	Text   string `json:"text"`
+}
+
 // RestaurantDetails is CategoryRestaurants' detail payload.
 type RestaurantDetails struct {
 	Cuisine       string      `json:"cuisine,omitempty"`
@@ -224,6 +261,12 @@ type RestaurantDetails struct {
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text Hours field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
+	// Tripadvisor is the required attribution block for a
+	// Tripadvisor-sourced row; nil for Google/admin-sourced rows.
+	Tripadvisor *TripadvisorAttribution `json:"tripadvisor,omitempty"`
+	// FeaturedReview is the one quoted 5-bubble review shown when the place
+	// is rated >= 4.0; nil otherwise.
+	FeaturedReview *TripadvisorReview `json:"featured_review,omitempty"`
 }
 
 // BarDetails is CategoryBars' detail payload.
@@ -237,6 +280,12 @@ type BarDetails struct {
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text OpensTime field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
+	// Tripadvisor is the required attribution block for a
+	// Tripadvisor-sourced row; nil for Google/admin-sourced rows.
+	Tripadvisor *TripadvisorAttribution `json:"tripadvisor,omitempty"`
+	// FeaturedReview is the one quoted 5-bubble review shown when the place
+	// is rated >= 4.0; nil otherwise.
+	FeaturedReview *TripadvisorReview `json:"featured_review,omitempty"`
 }
 
 // CafeDetails is CategoryCafes' detail payload.
