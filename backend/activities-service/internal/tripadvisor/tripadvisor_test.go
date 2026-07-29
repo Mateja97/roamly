@@ -118,13 +118,66 @@ func TestLocationDetails_Decoding(t *testing.T) {
 		Address:        "Rome 00195 Italy",
 		City:           "Rome",
 		Country:        "Italy",
+		Phone:          "+39 339 314 2147",
 		Rating:         5.0,
 		ReviewCount:    96,
 		RatingImageURL: "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/5.0-70260-4.png",
 		WebURL:         "https://www.tripadvisor.com/Attraction_Review-g187791-d13834051-Reviews-Alfredo_s_Transfers_&_Tours-Rome_Lazio.html?m=70260",
+		// Subratings zero-value: the fixture's own "subratings" is an empty
+		// array (real locations without traveler subratings yet).
 	}
 	if got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestLocationDetails_SubratingsDecoding(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{
+			"id" : 26453069,
+			"names" : [ { "language" : "en", "value" : "Yugo Verse", "primary" : true } ],
+			"traveler_ratings" : {
+				"overall" : { "rating" : 4.5, "count" : 320 },
+				"subratings" : [
+					{ "name" : "Food", "rating_value" : 4.5 },
+					{ "name" : "Service", "rating_value" : 4.0 },
+					{ "name" : "Value", "rating_value" : 4.0 },
+					{ "name" : "Atmosphere", "rating_value" : 4.5 },
+					{ "name" : "Cleanliness", "rating_value" : 5.0 }
+				]
+			}
+		}`)
+	}))
+	defer srv.Close()
+
+	c := tripadvisor.NewWithBase("k", srv.URL)
+	got, err := c.LocationDetails(context.Background(), "26453069")
+	if err != nil {
+		t.Fatalf("LocationDetails: %v", err)
+	}
+	// "Cleanliness" isn't one of the 4 categories the detail page's grid
+	// shows (frame 5b) — it's dropped rather than mapped anywhere.
+	want := tripadvisor.Subratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5}
+	if got.Subratings != want {
+		t.Fatalf("Subratings = %+v, want %+v", got.Subratings, want)
+	}
+}
+
+func TestLocationDetails_MissingPhoneAndSubratingsParseAsZero(t *testing.T) {
+	// phone_numbers and subratings are both optional per the Terra API — a
+	// location without either must decode cleanly, not error the sync.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"id":222,"names":[{"language":"en","value":"New Place","primary":true}],"traveler_ratings":{}}`)
+	}))
+	defer srv.Close()
+
+	c := tripadvisor.NewWithBase("k", srv.URL)
+	got, err := c.LocationDetails(context.Background(), "222")
+	if err != nil {
+		t.Fatalf("LocationDetails: %v", err)
+	}
+	if got.Phone != "" || got.Subratings != (tripadvisor.Subratings{}) {
+		t.Fatalf("got %+v, want zero-value Phone/Subratings for a location that returns neither", got)
 	}
 }
 

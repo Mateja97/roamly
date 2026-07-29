@@ -844,7 +844,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			slog.Warn("tripadvisor location details failed", "location_id", s.LocationID, "error", err)
 			continue
 		}
-		review := a.featuredReview(syncCtx, details)
+		reviews := a.tripadvisorReviews(syncCtx, details)
 
 		// One provisional photo at ingest time, the rest resolved later on
 		// first view via GetPhotos — same pattern as cmd/scrapecity's Google
@@ -857,7 +857,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 		}
 
 		for _, category := range categories {
-			if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, review, photos)); err != nil {
+			if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, photos)); err != nil {
 				slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "category", category, "error", err)
 			}
 		}
@@ -881,24 +881,34 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 // value.
 const terraNearbySearchCategory = "RESTAURANT"
 
-// featuredReview returns the one quoted review eligible under compliance
-// rule 04 (5-bubble, place rated >= 4.0), or nil when none qualifies —
-// never a live reviews call for a place below the rating bar.
-func (a *Activities) featuredReview(ctx context.Context, details tripadvisor.LocationDetails) *activitiessvc.TripadvisorReview {
+// maxFeaturedReviews caps the quoted reviews surfaced on a Tripadvisor
+// detail page (frame 5b's swipeable review row).
+const maxFeaturedReviews = 3
+
+// tripadvisorReviews returns up to maxFeaturedReviews quoted reviews
+// eligible under compliance rule 04 (5-bubble, place rated >= 4.0), or nil
+// when none qualify — never a live reviews call for a place below the
+// rating bar.
+func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor.LocationDetails) []activitiessvc.TripadvisorReview {
 	if details.Rating < 4.0 {
 		return nil
 	}
-	reviews, err := a.tripadvisor.LocationReviews(ctx, details.LocationID)
+	fetched, err := a.tripadvisor.LocationReviews(ctx, details.LocationID)
 	if err != nil {
 		slog.Warn("tripadvisor location reviews failed", "location_id", details.LocationID, "error", err)
 		return nil
 	}
-	for _, r := range reviews {
-		if r.Rating == 5 {
-			return &activitiessvc.TripadvisorReview{Rating: r.Rating, Date: r.Date, Text: r.Text}
+	var out []activitiessvc.TripadvisorReview
+	for _, r := range fetched {
+		if r.Rating != 5 {
+			continue
+		}
+		out = append(out, activitiessvc.TripadvisorReview{Rating: r.Rating, Date: r.Date, Text: r.Text})
+		if len(out) == maxFeaturedReviews {
+			break
 		}
 	}
-	return nil
+	return out
 }
 
 // tripadvisorIngestActivity maps a resolved Tripadvisor location into the
@@ -906,13 +916,22 @@ func (a *Activities) featuredReview(ctx context.Context, details tripadvisor.Loc
 // the whole point of an on-demand sync is that the requesting user sees
 // results now). RankingText is always "" — the real API returns no ranking
 // data at all (see LocationDetails' doc).
-func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, review *activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
+func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
 		RatingImageURL: d.RatingImageURL,
 		ReviewCount:    d.ReviewCount,
 		WebURL:         d.WebURL,
+		Phone:          d.Phone,
 	}
-	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, review))
+	if d.Subratings != (tripadvisor.Subratings{}) {
+		attribution.Subratings = &activitiessvc.TripadvisorSubratings{
+			Food:       d.Subratings.Food,
+			Service:    d.Subratings.Service,
+			Value:      d.Subratings.Value,
+			Atmosphere: d.Subratings.Atmosphere,
+		}
+	}
+	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, reviews))
 
 	return activitiessvc.IngestActivity{
 		Title:      d.Name,
@@ -939,9 +958,9 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 	}
 }
 
-func tripadvisorDetailsPayload(category activitiessvc.Category, attribution *activitiessvc.TripadvisorAttribution, review *activitiessvc.TripadvisorReview) any {
+func tripadvisorDetailsPayload(category activitiessvc.Category, attribution *activitiessvc.TripadvisorAttribution, reviews []activitiessvc.TripadvisorReview) any {
 	if category == activitiessvc.CategoryBars {
-		return activitiessvc.BarDetails{Tripadvisor: attribution, FeaturedReview: review}
+		return activitiessvc.BarDetails{Tripadvisor: attribution, Reviews: reviews}
 	}
-	return activitiessvc.RestaurantDetails{Tripadvisor: attribution, FeaturedReview: review}
+	return activitiessvc.RestaurantDetails{Tripadvisor: attribution, Reviews: reviews}
 }

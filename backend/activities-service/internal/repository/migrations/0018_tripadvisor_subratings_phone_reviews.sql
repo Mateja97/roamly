@@ -1,0 +1,14 @@
+-- T3: subratings, phone, and up to 3 reviews for a Tripadvisor-sourced row
+-- all land as new keys under the existing per-category `details` JSONB
+-- blob (0007_activity_details.sql) -- `tripadvisor.phone`,
+-- `tripadvisor.subratings`, and `reviews` on RestaurantDetails/BarDetails --
+-- exactly the same additive-key pattern as the Tripadvisor attribution
+-- block and the (now-renamed) featured review already used with zero
+-- schema change (see 0009_action_url.sql, 0010_badge_subtype.sql). No
+-- ALTER TABLE: `details` is already schema-free and NOT NULL DEFAULT '{}',
+-- so a pre-T3 row simply decodes the new fields as absent, same contract as
+-- every other details extension in this history. This file exists only to
+-- record that decision in migration history, matching the task's explicit
+-- ask for one; there is nothing to backfill since Tripadvisor-sourced rows
+-- are populated live by the sync (not seed data) and will pick up these
+-- fields on their next scheduled re-sync.

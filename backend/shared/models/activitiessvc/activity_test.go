@@ -2,6 +2,7 @@ package activitiessvc
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -44,9 +45,9 @@ func TestValidSubcategory(t *testing.T) {
 }
 
 // TestBarDetails_RoundTripsTripadvisorAttribution proves the Tripadvisor/
-// FeaturedReview additions are additive-only JSONB fields, same precedent
-// as every other details extension in this package: absent on a pre-change
-// row, populated end-to-end when set.
+// Reviews/Phone/Subratings additions are additive-only JSONB fields, same
+// precedent as every other details extension in this package: absent on a
+// pre-change row, populated end-to-end when set.
 func TestBarDetails_RoundTripsTripadvisorAttribution(t *testing.T) {
 	want := BarDetails{
 		Tripadvisor: &TripadvisorAttribution{
@@ -54,8 +55,13 @@ func TestBarDetails_RoundTripsTripadvisorAttribution(t *testing.T) {
 			ReviewCount:    612,
 			RankingText:    "#12 of 1,780 Restaurants in Belgrade, as rated by Tripadvisor travelers as of July 2026",
 			WebURL:         "https://www.tripadvisor.com/Restaurant_Review-x",
+			Phone:          "+381 11 234 5678",
+			Subratings:     &TripadvisorSubratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5},
 		},
-		FeaturedReview: &TripadvisorReview{Rating: 5, Date: "2026-06-14", Text: "Great rakia."},
+		Reviews: []TripadvisorReview{
+			{Rating: 5, Date: "2026-06-14", Text: "Great rakia."},
+			{Rating: 5, Date: "2026-05-02", Text: "Loved the terrace."},
+		},
 	}
 
 	data, err := json.Marshal(want)
@@ -66,7 +72,10 @@ func TestBarDetails_RoundTripsTripadvisorAttribution(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("Unmarshal() error: %v", err)
 	}
-	if *got.Tripadvisor != *want.Tripadvisor || *got.FeaturedReview != *want.FeaturedReview {
+	// Tripadvisor now carries a pointer field (Subratings), so a plain !=
+	// would compare pointer identity rather than value — reflect.DeepEqual
+	// is the right tool here, not a struct literal comparison.
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip = %+v, want %+v", got, want)
 	}
 }
@@ -78,7 +87,7 @@ func TestRestaurantDetails_LegacyRowWithNoTripadvisorFieldDecodesCleanly(t *test
 	if err := json.Unmarshal([]byte(raw), &d); err != nil {
 		t.Fatalf("Unmarshal() error: %v", err)
 	}
-	if d.Tripadvisor != nil || d.FeaturedReview != nil {
-		t.Errorf("RestaurantDetails = %+v, want Tripadvisor/FeaturedReview nil for a pre-change row", d)
+	if d.Tripadvisor != nil || d.Reviews != nil {
+		t.Errorf("RestaurantDetails = %+v, want Tripadvisor/Reviews nil for a pre-change row", d)
 	}
 }

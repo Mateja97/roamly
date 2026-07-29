@@ -18,14 +18,16 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {
 				LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, Rating: 4.5,
-				City: "Belgrade", Country: "Serbia",
+				City: "Belgrade", Country: "Serbia", Phone: "+381 11 328 6637",
 				WebURL: "https://ta/1", RatingImageURL: "https://ta/img/4.5.svg", ReviewCount: 1204,
+				Subratings: tripadvisor.Subratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5},
 			},
 		},
 		reviewsOut: map[string][]tripadvisor.Review{
 			"111": {
 				{Rating: 4, Date: "2026-01-01", Text: "It was fine."},
 				{Rating: 5, Date: "2026-03-03", Text: "Loved it."},
+				{Rating: 5, Date: "2026-02-02", Text: "Great rakia."},
 			},
 		},
 	}
@@ -69,10 +71,25 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != "" {
 		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = \"\" (the real API returns no ranking data)", details.Tripadvisor)
 	}
+	if details.Tripadvisor.Phone != "+381 11 328 6637" {
+		t.Errorf("details.Tripadvisor.Phone = %q, want +381 11 328 6637", details.Tripadvisor.Phone)
+	}
+	wantSubratings := &activitiessvc.TripadvisorSubratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5}
+	if details.Tripadvisor.Subratings == nil || *details.Tripadvisor.Subratings != *wantSubratings {
+		t.Errorf("details.Tripadvisor.Subratings = %+v, want %+v", details.Tripadvisor.Subratings, wantSubratings)
+	}
 
-	wantReview := &activitiessvc.TripadvisorReview{Rating: 5, Date: "2026-03-03", Text: "Loved it."}
-	if details.FeaturedReview == nil || *details.FeaturedReview != *wantReview {
-		t.Errorf("details.FeaturedReview = %+v, want %+v — proves FeaturedReview survives the actual json.Marshal/tripadvisorDetailsPayload upsert path, not just the isolated featuredReview() unit test", details.FeaturedReview, wantReview)
+	wantReviews := []activitiessvc.TripadvisorReview{
+		{Rating: 5, Date: "2026-03-03", Text: "Loved it."},
+		{Rating: 5, Date: "2026-02-02", Text: "Great rakia."},
+	}
+	if len(details.Reviews) != len(wantReviews) {
+		t.Fatalf("details.Reviews = %+v, want %+v — proves Reviews survives the actual json.Marshal/tripadvisorDetailsPayload upsert path, not just the isolated tripadvisorReviews() unit test", details.Reviews, wantReviews)
+	}
+	for i := range wantReviews {
+		if details.Reviews[i] != wantReviews[i] {
+			t.Errorf("details.Reviews[%d] = %+v, want %+v", i, details.Reviews[i], wantReviews[i])
+		}
 	}
 }
 
@@ -312,16 +329,50 @@ func TestActivities_Query_TripadvisorSync_OneBadDetailsCallDoesNotSinkTheRest(t 
 	}
 }
 
-func TestFeaturedReview_OnlyForRatingAtLeast4WithA5BubbleReview(t *testing.T) {
+func TestTripadvisorReviews_FilterAndTruncation(t *testing.T) {
 	tests := []struct {
 		name    string
 		rating  float64
 		reviews []tripadvisor.Review
-		want    *activitiessvc.TripadvisorReview
+		want    []activitiessvc.TripadvisorReview
 	}{
 		{"below 4.0 never calls reviews", 3.5, []tripadvisor.Review{{Rating: 5, Date: "2026-01-01", Text: "x"}}, nil},
-		{"4.0 with a 5-bubble review", 4.0, []tripadvisor.Review{{Rating: 4, Date: "2026-01-01", Text: "ok"}, {Rating: 5, Date: "2026-02-02", Text: "great"}}, &activitiessvc.TripadvisorReview{Rating: 5, Date: "2026-02-02", Text: "great"}},
+		{
+			"4.0 with one 5-bubble review",
+			4.0,
+			[]tripadvisor.Review{{Rating: 4, Date: "2026-01-01", Text: "ok"}, {Rating: 5, Date: "2026-02-02", Text: "great"}},
+			[]activitiessvc.TripadvisorReview{{Rating: 5, Date: "2026-02-02", Text: "great"}},
+		},
 		{"rated high but no 5-bubble review", 4.8, []tripadvisor.Review{{Rating: 4, Date: "2026-01-01", Text: "ok"}}, nil},
+		{
+			"non-5-bubble reviews are skipped, not just truncated off the end",
+			4.5,
+			[]tripadvisor.Review{
+				{Rating: 5, Date: "2026-01-01", Text: "a"},
+				{Rating: 3, Date: "2026-01-02", Text: "b"},
+				{Rating: 5, Date: "2026-01-03", Text: "c"},
+			},
+			[]activitiessvc.TripadvisorReview{
+				{Rating: 5, Date: "2026-01-01", Text: "a"},
+				{Rating: 5, Date: "2026-01-03", Text: "c"},
+			},
+		},
+		{
+			"more than 3 eligible reviews truncates to 3, most-recent-first order preserved",
+			4.5,
+			[]tripadvisor.Review{
+				{Rating: 5, Date: "2026-01-01", Text: "a"},
+				{Rating: 5, Date: "2026-01-02", Text: "b"},
+				{Rating: 5, Date: "2026-01-03", Text: "c"},
+				{Rating: 5, Date: "2026-01-04", Text: "d"},
+				{Rating: 5, Date: "2026-01-05", Text: "e"},
+			},
+			[]activitiessvc.TripadvisorReview{
+				{Rating: 5, Date: "2026-01-01", Text: "a"},
+				{Rating: 5, Date: "2026-01-02", Text: "b"},
+				{Rating: 5, Date: "2026-01-03", Text: "c"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -329,12 +380,14 @@ func TestFeaturedReview_OnlyForRatingAtLeast4WithA5BubbleReview(t *testing.T) {
 			ta := &fakeTripadvisor{reviewsOut: map[string][]tripadvisor.Review{"x": tt.reviews}}
 			svc := New(repo).WithTripadvisor(ta)
 
-			got := svc.featuredReview(context.Background(), tripadvisor.LocationDetails{LocationID: "x", Rating: tt.rating})
-			if (got == nil) != (tt.want == nil) {
-				t.Fatalf("featuredReview() = %v, want %v", got, tt.want)
+			got := svc.tripadvisorReviews(context.Background(), tripadvisor.LocationDetails{LocationID: "x", Rating: tt.rating})
+			if len(got) != len(tt.want) {
+				t.Fatalf("tripadvisorReviews() = %+v, want %+v", got, tt.want)
 			}
-			if got != nil && *got != *tt.want {
-				t.Errorf("featuredReview() = %+v, want %+v", *got, *tt.want)
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("tripadvisorReviews()[%d] = %+v, want %+v", i, got[i], tt.want[i])
+				}
 			}
 		})
 	}

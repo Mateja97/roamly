@@ -222,6 +222,18 @@ type OpeningHours struct {
 	Periods    []Period `json:"periods,omitempty"`
 }
 
+// TripadvisorSubratings is Tripadvisor's per-category rating breakdown (T3):
+// Food/Service/Value/Atmosphere, each on Tripadvisor's usual 1-5 scale.
+// Nil on TripadvisorAttribution when Tripadvisor returned no subratings for
+// the location at all (optional per the API) — never a fabricated all-zero
+// grid.
+type TripadvisorSubratings struct {
+	Food       float64 `json:"food,omitempty"`
+	Service    float64 `json:"service,omitempty"`
+	Value      float64 `json:"value,omitempty"`
+	Atmosphere float64 `json:"atmosphere,omitempty"`
+}
+
 // TripadvisorAttribution is the required on-card/detail attribution for a
 // Tripadvisor-sourced Restaurants/Bars row (design doc
 // "tripadvisor-restaurants-bars", compliance rules 01-03/05/08).
@@ -230,15 +242,19 @@ type OpeningHours struct {
 // pre-formatted with month/year at sync time (rule 05), e.g. "#12 of 1,780
 // restaurants in Belgrade, as rated by Tripadvisor travelers as of July
 // 2026"; empty when Tripadvisor returned no ranking data. WebURL is the
-// deep-link-out target (rule 08).
+// deep-link-out target (rule 08). Phone and Subratings (T3) are both
+// optional per the Terra API and omitted (not a fabricated ""/zero value)
+// when Tripadvisor didn't return them for this location.
 type TripadvisorAttribution struct {
-	RatingImageURL string `json:"rating_image_url"`
-	ReviewCount    int    `json:"review_count"`
-	RankingText    string `json:"ranking_text,omitempty"`
-	WebURL         string `json:"web_url"`
+	RatingImageURL string                 `json:"rating_image_url"`
+	ReviewCount    int                    `json:"review_count"`
+	RankingText    string                 `json:"ranking_text,omitempty"`
+	WebURL         string                 `json:"web_url"`
+	Phone          string                 `json:"phone,omitempty"`
+	Subratings     *TripadvisorSubratings `json:"subratings,omitempty"`
 }
 
-// TripadvisorReview is the one quoted traveler review shown on a
+// TripadvisorReview is one quoted traveler review shown on a
 // Tripadvisor-sourced detail page (compliance rule 04): only ever
 // populated at sync time when Rating is 5 and the place itself is rated
 // >= 4.0.
@@ -264,9 +280,9 @@ type RestaurantDetails struct {
 	// Tripadvisor is the required attribution block for a
 	// Tripadvisor-sourced row; nil for Google/admin-sourced rows.
 	Tripadvisor *TripadvisorAttribution `json:"tripadvisor,omitempty"`
-	// FeaturedReview is the one quoted 5-bubble review shown when the place
-	// is rated >= 4.0; nil otherwise.
-	FeaturedReview *TripadvisorReview `json:"featured_review,omitempty"`
+	// Reviews (T3) is up to 3 quoted 5-bubble reviews, shown when the place
+	// is rated >= 4.0; empty/omitted otherwise.
+	Reviews []TripadvisorReview `json:"reviews,omitempty"`
 }
 
 // BarDetails is CategoryBars' detail payload.
@@ -283,9 +299,9 @@ type BarDetails struct {
 	// Tripadvisor is the required attribution block for a
 	// Tripadvisor-sourced row; nil for Google/admin-sourced rows.
 	Tripadvisor *TripadvisorAttribution `json:"tripadvisor,omitempty"`
-	// FeaturedReview is the one quoted 5-bubble review shown when the place
-	// is rated >= 4.0; nil otherwise.
-	FeaturedReview *TripadvisorReview `json:"featured_review,omitempty"`
+	// Reviews (T3) is up to 3 quoted 5-bubble reviews, shown when the place
+	// is rated >= 4.0; empty/omitted otherwise.
+	Reviews []TripadvisorReview `json:"reviews,omitempty"`
 }
 
 // CafeDetails is CategoryCafes' detail payload.
