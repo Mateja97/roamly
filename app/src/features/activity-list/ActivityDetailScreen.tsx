@@ -160,6 +160,16 @@ export function ActivityDetailScreen({
   // §5b: eyebrow line above the title — undefined (no render) for a
   // non-Tripadvisor row.
   const eyebrow = tripadvisorEyebrow(activity, metaText);
+  // §5b: the eyebrow replaces the meta row's distance segment for a
+  // Tripadvisor row (never both — same fact shown once). `metaExtras` is
+  // structurally always [] here (only ever populated for `entertainment`,
+  // which can never carry `tripadvisor` — see `tripadvisorAttribution`'s
+  // switch), so the only thing the meta row can still uniquely carry for a
+  // Tripadvisor row is the legacy free-text Open/Closed `status` (when
+  // `opening_hours` isn't usable and the FactStrip's Hours chip — gated by
+  // `todayRow` — isn't already showing it). The whole row collapses when
+  // even that isn't true, so no empty row/gap survives it.
+  const showMetaRow = !tripadvisor || Boolean(status && !todayRow);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -272,46 +282,51 @@ export function ActivityDetailScreen({
         />
 
         <View style={styles.titleBlock}>
-          <View style={styles.badgeGroup}>
-            {attribution && (
-              <Text style={styles.attributionLine}>
-                {[
-                  attribution.artist && <Text key="artist">{attribution.artist}</Text>,
-                  attribution.workYear && (
-                    <Text key="workYear" style={styles.attributionItalic}>
-                      {attribution.workYear}
-                    </Text>
-                  ),
-                  attribution.medium && <Text key="medium">{attribution.medium}</Text>,
-                ]
-                  .filter(Boolean)
-                  .flatMap((node, i) => (i === 0 ? [node] : [' · ', node]))}
-              </Text>
-            )}
+          {/* §5b: the badge pill (category · qualifier) and the gold-star
+              rating are both suppressed for a Tripadvisor row — the eyebrow
+              carries category, the TripadvisorBlock below carries rating
+              (compliance rule 03). `attribution` (art's artist/work/medium
+              line) never co-occurs with `tripadvisor` (art can't be a
+              Tripadvisor category), so the whole group is safely omitted
+              rather than left as an empty View + phantom gap. */}
+          {(attribution || !tripadvisor) && (
+            <View style={styles.badgeGroup}>
+              {attribution && (
+                <Text style={styles.attributionLine}>
+                  {[
+                    attribution.artist && <Text key="artist">{attribution.artist}</Text>,
+                    attribution.workYear && (
+                      <Text key="workYear" style={styles.attributionItalic}>
+                        {attribution.workYear}
+                      </Text>
+                    ),
+                    attribution.medium && <Text key="medium">{attribution.medium}</Text>,
+                  ]
+                    .filter(Boolean)
+                    .flatMap((node, i) => (i === 0 ? [node] : [' · ', node]))}
+                </Text>
+              )}
 
-            <View style={styles.row}>
-              <View style={styles.badge}>
-                <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
-              </View>
-              {/* design-spec.md T8 (Tripadvisor initiative), compliance rule 03:
-                  no Roamly gold star/numeric rating on a Tripadvisor-treated
-                  row — the TripadvisorBlock below carries its own rating
-                  presentation instead. */}
               {!tripadvisor && (
-                <View style={styles.rating}>
-                  <Star
-                    size={16}
-                    color={colors.primary}
-                    strokeWidth={1.75}
-                    fill={colors.primary}
-                  />
-                  <Text style={styles.ratingLabel}>
-                    {activity.rating.toFixed(1)}
-                  </Text>
+                <View style={styles.row}>
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
+                  </View>
+                  <View style={styles.rating}>
+                    <Star
+                      size={16}
+                      color={colors.primary}
+                      strokeWidth={1.75}
+                      fill={colors.primary}
+                    />
+                    <Text style={styles.ratingLabel}>
+                      {activity.rating.toFixed(1)}
+                    </Text>
+                  </View>
                 </View>
               )}
             </View>
-          </View>
+          )}
 
           <View style={styles.titleGroup}>
             {eyebrow && <Text style={styles.tripadvisorEyebrow}>{eyebrow}</Text>}
@@ -321,59 +336,72 @@ export function ActivityDetailScreen({
             )}
           </View>
 
-          <View style={styles.metaRow}>
-            {activity.category === 'nightlife' && status && !todayRow ? (
-              // design-spec.md T8 addendum #9: the status dot + label is the
-              // only place a leading status dot appears, and sits first,
-              // before the usual "·"-separated items.
-              <>
-                <View style={styles.statusGroup}>
-                  {status.isOpen && (
-                    <View
-                      style={styles.statusDot}
-                      accessibilityElementsHidden
-                      importantForAccessibility="no"
-                    />
-                  )}
-                  <Text
-                    style={
-                      status.isOpen ? styles.statusOpen : styles.statusClosed
-                    }
-                  >
-                    {status.text}
-                  </Text>
-                </View>
-                <Text style={styles.metaSeparator}>·</Text>
-                <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-                <Text style={styles.metaText}>{metaText}</Text>
-              </>
-            ) : (
-              <>
-                <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-                <Text style={styles.metaText}>{metaText}</Text>
-                {metaExtras.map((extra) => (
-                  <View key={extra} style={styles.metaExtraGroup}>
-                    <Text style={styles.metaSeparator}>·</Text>
-                    <Text style={styles.metaText}>{extra}</Text>
-                  </View>
-                ))}
-                {status && !todayRow && (
-                  <View style={styles.metaExtraGroup}>
-                    <Text style={styles.metaSeparator}>·</Text>
+          {showMetaRow && (
+            <View style={styles.metaRow}>
+              {activity.category === 'nightlife' && status && !todayRow ? (
+                // design-spec.md T8 addendum #9: the status dot + label is the
+                // only place a leading status dot appears, and sits first,
+                // before the usual "·"-separated items. (Nightlife can never
+                // carry `tripadvisor` — see `tripadvisorAttribution`'s
+                // switch — so this branch is unaffected by the §5b change.)
+                <>
+                  <View style={styles.statusGroup}>
+                    {status.isOpen && (
+                      <View
+                        style={styles.statusDot}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      />
+                    )}
                     <Text
                       style={
-                        status.isOpen
-                          ? styles.statusOpen
-                          : styles.statusClosed
+                        status.isOpen ? styles.statusOpen : styles.statusClosed
                       }
                     >
                       {status.text}
                     </Text>
                   </View>
-                )}
-              </>
-            )}
-          </View>
+                  <Text style={styles.metaSeparator}>·</Text>
+                  <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
+                  <Text style={styles.metaText}>{metaText}</Text>
+                </>
+              ) : (
+                <>
+                  {/* §5b: distance is now the eyebrow's trailing segment for
+                      a Tripadvisor row — never shown here too. */}
+                  {!tripadvisor && (
+                    <>
+                      <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
+                      <Text style={styles.metaText}>{metaText}</Text>
+                    </>
+                  )}
+                  {metaExtras.map((extra) => (
+                    <View key={extra} style={styles.metaExtraGroup}>
+                      <Text style={styles.metaSeparator}>·</Text>
+                      <Text style={styles.metaText}>{extra}</Text>
+                    </View>
+                  ))}
+                  {status && !todayRow && (
+                    <View style={styles.metaExtraGroup}>
+                      {/* No leading "·" when this is the row's only content
+                          (the Tripadvisor case — distance/metaExtras both
+                          suppressed/empty above). */}
+                      {!tripadvisor && <Text style={styles.metaSeparator}>·</Text>}
+                      <Text
+                        style={
+                          status.isOpen
+                            ? styles.statusOpen
+                            : styles.statusClosed
+                        }
+                      >
+                        {status.text}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+          )}
 
           {tripadvisor && (
             <TripadvisorBlock

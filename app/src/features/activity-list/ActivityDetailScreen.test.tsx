@@ -1127,6 +1127,61 @@ describe('ActivityDetailScreen', () => {
       });
     });
 
+    // §5b: the eyebrow *replaces* the badge pill (category) and the meta
+    // row's distance segment for a Tripadvisor row — each fact shows
+    // exactly once, never twice. Non-Tripadvisor rows must stay untouched.
+    describe('§5b eyebrow replaces the badge pill + meta-row distance (no duplicate facts)', () => {
+      it('shows category exactly once for a Tripadvisor row (eyebrow only, badge pill suppressed)', () => {
+        render(
+          <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+        );
+        expect(screen.getByText(`Restaurant · ${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+        // The badge pill would render exactly "Restaurant" alone (no
+        // qualifier data on this fixture) — a separate, shorter string from
+        // the eyebrow's full text, so this only passes if the pill itself
+        // is gone, not just coincidentally out-matched.
+        expect(screen.queryByText('Restaurant')).toBeNull();
+      });
+
+      it('shows distance exactly once for a Tripadvisor row (eyebrow only, meta-row MapPin+distance suppressed)', () => {
+        render(
+          <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+        );
+        const distanceMatches = screen.getAllByText(
+          new RegExp(`${activity.distance_km.toFixed(1)} km away`),
+        );
+        expect(distanceMatches).toHaveLength(1);
+      });
+
+      it('keeps the badge pill, rating star, and full meta-row distance unchanged for a non-Tripadvisor row', () => {
+        render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Restaurant')).toBeTruthy();
+        expect(screen.getByText('4.6')).toBeTruthy();
+        expect(screen.getByText(`${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+      });
+
+      it('keeps showing the legacy Open/Closed status for a Tripadvisor row when present, with no dangling leading separator', () => {
+        const withStatus: Activity = {
+          ...activity,
+          details: {
+            category: 'restaurants',
+            open_status: 'Open now',
+            tripadvisor: {
+              rating_image_url: 'https://tripadvisor.example/bubble.png',
+              review_count: 1204,
+              web_url: 'https://tripadvisor.example/place',
+            },
+          },
+        };
+        render(<ActivityDetailScreen activity={withStatus} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Open now')).toBeTruthy();
+        expect(screen.queryByText('·')).toBeNull();
+        expect(
+          screen.getAllByText(new RegExp(`${activity.distance_km.toFixed(1)} km away`)),
+        ).toHaveLength(1);
+      });
+    });
+
     it('drops the Cuisine/Price fact-strip chips for a Tripadvisor row (carried by the eyebrow/subtitle instead)', () => {
       const taWithLegacyFields: Activity = {
         ...activity,
