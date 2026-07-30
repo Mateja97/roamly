@@ -156,7 +156,7 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 			ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySport,
 			Location: activitiessvc.Point{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
 			Rating: 4.8,
-			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com", ThumbURL: "img1_t", Caption: "Sunset"}},
+			Photos: []activitiessvc.Photo{{URL: "img1", Author: "Jane Doe", AuthorLink: "https://example.com", ThumbURL: "img1_t", Caption: "Sunset", Provider: activitiessvc.ProviderGoogle}},
 			Tags:   []string{"sports"}, DistanceKM: 3.2,
 			Details: []byte(`{"difficulty":3}`),
 			City:    "Belgrade", Address: "Ada Ciganlija bb", Status: activitiessvc.StatusPublished,
@@ -188,6 +188,9 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	}
 	if got.GetPhotos()[0].GetThumbUrl() != "img1_t" || got.GetPhotos()[0].GetCaption() != "Sunset" {
 		t.Errorf("unexpected thumb_url/caption translation: %+v", got.GetPhotos())
+	}
+	if got.GetPhotos()[0].GetProvider() != "google" {
+		t.Errorf("provider = %q, want google", got.GetPhotos()[0].GetProvider())
 	}
 	if got.GetDetails() != `{"difficulty":3}` {
 		t.Errorf("details = %q, want passthrough of the domain JSON", got.GetDetails())

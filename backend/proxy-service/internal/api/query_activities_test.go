@@ -42,7 +42,7 @@ func TestQueryActivitiesHandler_HappyPath(t *testing.T) {
 			Location: &activitiesv1.Location{Lat: 44.8, Lng: 20.4}, Country: "Serbia",
 			Rating: 4.8,
 			Photos: []*activitiesv1.Photo{
-				{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane", ThumbUrl: "img1_t", Caption: "Sunset view"},
+				{Url: "img1", Author: "Jane Doe", AuthorLink: "https://example.com/jane", ThumbUrl: "img1_t", Caption: "Sunset view", Provider: "google"},
 				{Url: "img2"}, // unresolved: no author, attribution must be omitted
 			},
 			Tags: []string{"sports"}, DistanceKm: 3.2,
@@ -311,6 +311,40 @@ func TestNonNilTags(t *testing.T) {
 	}
 	if got := nonNilTags([]string{"a"}); len(got) != 1 || got[0] != "a" {
 		t.Errorf("nonNilTags([a]) = %#v, want [a]", got)
+	}
+}
+
+// TestToPhotoDTOs_AttributionGatedToGoogleProvider covers the bug fix: only
+// a google-sourced photo gets the Google-Photos-style attribution caption.
+// Tripadvisor's author field holds the reviewer's username, not a Google
+// Photos contributor, and must not be rendered the same way; admin/user
+// photos (and any future provider) are equally excluded — allow-list, not
+// deny-list.
+func TestToPhotoDTOs_AttributionGatedToGoogleProvider(t *testing.T) {
+	tests := []struct {
+		name        string
+		provider    string
+		wantAttribd bool
+	}{
+		{"google photo gets attribution", "google", true},
+		{"tripadvisor photo omits attribution", "tripadvisor", false},
+		{"admin photo omits attribution", "admin", false},
+		{"user photo omits attribution", "user", false},
+		{"empty provider omits attribution", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			photos := toPhotoDTOs([]*activitiesv1.Photo{
+				{Url: "img1", Author: "someone", AuthorLink: "https://example.com", Provider: tt.provider},
+			})
+			if len(photos) != 1 {
+				t.Fatalf("got %d photos, want 1", len(photos))
+			}
+			hasAttrib := photos[0].Attribution != nil
+			if hasAttrib != tt.wantAttribd {
+				t.Errorf("provider %q: attribution present = %v, want %v", tt.provider, hasAttrib, tt.wantAttribd)
+			}
+		})
 	}
 }
 

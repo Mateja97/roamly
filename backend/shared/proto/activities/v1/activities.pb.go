@@ -281,8 +281,14 @@ type Photo struct {
 	// a Google-sourced one) gets a real 256px thumbnail at an explicit URL
 	// (never derived by a naming convention) and an optional caption,
 	// independent of attribution. Both are empty for a Google-sourced photo.
-	ThumbUrl      string `protobuf:"bytes,4,opt,name=thumb_url,json=thumbUrl,proto3" json:"thumb_url,omitempty"`
-	Caption       string `protobuf:"bytes,5,opt,name=caption,proto3" json:"caption,omitempty"`
+	ThumbUrl string `protobuf:"bytes,4,opt,name=thumb_url,json=thumbUrl,proto3" json:"thumb_url,omitempty"`
+	Caption  string `protobuf:"bytes,5,opt,name=caption,proto3" json:"caption,omitempty"`
+	// provider is the raw activitiessvc.Provider string ("google",
+	// "tripadvisor", "admin", "user"). Only a "google" photo gets the
+	// Google-Photos-style attribution caption client-side — Tripadvisor's
+	// author field holds the reviewer's username, not a Google Photos
+	// contributor, and must not be rendered the same way.
+	Provider      string `protobuf:"bytes,6,opt,name=provider,proto3" json:"provider,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -348,6 +354,13 @@ func (x *Photo) GetThumbUrl() string {
 func (x *Photo) GetCaption() string {
 	if x != nil {
 		return x.Caption
+	}
+	return ""
+}
+
+func (x *Photo) GetProvider() string {
+	if x != nil {
+		return x.Provider
 	}
 	return ""
 }
@@ -1679,14 +1692,15 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\x1eactivities/v1/activities.proto\x12\ractivities.v1\".\n" +
 	"\bLocation\x12\x10\n" +
 	"\x03lat\x18\x01 \x01(\x01R\x03lat\x12\x10\n" +
-	"\x03lng\x18\x02 \x01(\x01R\x03lng\"\x89\x01\n" +
+	"\x03lng\x18\x02 \x01(\x01R\x03lng\"\xa5\x01\n" +
 	"\x05Photo\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
 	"\x06author\x18\x02 \x01(\tR\x06author\x12\x1f\n" +
 	"\vauthor_link\x18\x03 \x01(\tR\n" +
 	"authorLink\x12\x1b\n" +
 	"\tthumb_url\x18\x04 \x01(\tR\bthumbUrl\x12\x18\n" +
-	"\acaption\x18\x05 \x01(\tR\acaption\"\x9a\x03\n" +
+	"\acaption\x18\x05 \x01(\tR\acaption\x12\x1a\n" +
+	"\bprovider\x18\x06 \x01(\tR\bprovider\"\x9a\x03\n" +
 	"\x16QueryActivitiesRequest\x12*\n" +
 	"\x05scope\x18\x01 \x01(\x0e2\x14.activities.v1.ScopeR\x05scope\x12B\n" +
 	"\x10current_location\x18\x02 \x01(\v2\x17.activities.v1.LocationR\x0fcurrentLocation\x127\n" +
