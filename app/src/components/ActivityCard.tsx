@@ -142,7 +142,9 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
               </Text>
             ) : null}
 
-            {tripadvisor && <TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="card" />}
+            {tripadvisor && (
+              <TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={activity.rating} variant="card" />
+            )}
 
             <View style={styles.metaRow}>
               <View style={styles.metaLeft}>

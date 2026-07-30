@@ -9,14 +9,20 @@ const tripadvisor: TripadvisorAttribution = {
 };
 
 describe('TripadvisorAttributionPlate', () => {
-  it('card variant: shows the review count next to the rating image, no context line', () => {
-    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="card" />);
-    expect(screen.getByText('1,204 reviews')).toBeTruthy();
+  it('card variant: shows the numeric rating and review count together, no context line', () => {
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4.5} variant="card" />);
+    expect(screen.getByText('4.5 · 1,204')).toBeTruthy();
     expect(screen.queryByText(/on Tripadvisor/)).toBeNull();
   });
 
-  it('detail variant: shows a context line with review count + "on Tripadvisor", no ranking when absent', () => {
-    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="detail" />);
+  it('card variant: rounds the rating to one decimal place', () => {
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4} variant="card" />);
+    expect(screen.getByText('4.0 · 1,204')).toBeTruthy();
+  });
+
+  it('detail variant: shows the bold numeric rating plus a context line with review count + "on Tripadvisor", no ranking when absent', () => {
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4.5} variant="detail" />);
+    expect(screen.getByText('4.5')).toBeTruthy();
     expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
   });
 
@@ -24,6 +30,7 @@ describe('TripadvisorAttributionPlate', () => {
     render(
       <TripadvisorAttributionPlate
         tripadvisor={{ ...tripadvisor, ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026' }}
+        rating={4.5}
         variant="detail"
       />,
     );
@@ -32,14 +39,15 @@ describe('TripadvisorAttributionPlate', () => {
     ).toBeTruthy();
   });
 
-  it('card variant: never renders ranking_text even when present (mock shows count only)', () => {
+  it('card variant: never renders ranking_text even when present (mock shows rating · count only)', () => {
     render(
       <TripadvisorAttributionPlate
         tripadvisor={{ ...tripadvisor, ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026' }}
+        rating={4.5}
         variant="card"
       />,
     );
-    expect(screen.getByText('1,204 reviews')).toBeTruthy();
+    expect(screen.getByText('4.5 · 1,204')).toBeTruthy();
     expect(screen.queryByText(/#3 of 512/)).toBeNull();
   });
 
@@ -47,6 +55,7 @@ describe('TripadvisorAttributionPlate', () => {
     render(
       <TripadvisorAttributionPlate
         tripadvisor={{ ...tripadvisor, award: { name: "Travelers' Choice", year: 2026 } }}
+        rating={4.5}
         variant="detail"
       />,
     );
@@ -54,7 +63,7 @@ describe('TripadvisorAttributionPlate', () => {
   });
 
   it('detail variant: omits the badge entirely when award is absent (no empty badge)', () => {
-    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="detail" />);
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4.5} variant="detail" />);
     expect(screen.queryByText(/Travelers' Choice/)).toBeNull();
   });
 
@@ -62,6 +71,7 @@ describe('TripadvisorAttributionPlate', () => {
     render(
       <TripadvisorAttributionPlate
         tripadvisor={{ ...tripadvisor, award: { name: "Travelers' Choice", year: 2026 } }}
+        rating={4.5}
         variant="card"
       />,
     );
@@ -69,11 +79,11 @@ describe('TripadvisorAttributionPlate', () => {
   });
 
   it('reserves the rating image width so a broken load keeps the count in place', () => {
-    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="card" />);
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4.5} variant="card" />);
     const image = screen.getByTestId('tripadvisor-rating-image');
     fireEvent(image, 'error', { nativeEvent: { error: 'load failed' } });
     // No bespoke broken-image UI (per design-spec.md, out of scope) — the
-    // logo + review count still render regardless of the image's own state.
-    expect(screen.getByText('1,204 reviews')).toBeTruthy();
+    // logo + rating + review count still render regardless of the image's own state.
+    expect(screen.getByText('4.5 · 1,204')).toBeTruthy();
   });
 });

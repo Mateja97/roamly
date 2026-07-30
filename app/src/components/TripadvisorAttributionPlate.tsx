@@ -8,6 +8,12 @@ import { TripadvisorLogo } from './TripadvisorLogo';
 
 type TripadvisorAttributionPlateProps = {
   tripadvisor: TripadvisorAttribution;
+  // Tripadvisor's own numeric rating for this row — carried on `Activity.rating`
+  // (never on the wire-level `TripadvisorAttribution`, which has no rating
+  // field of its own; see api/activities.ts). Compliance rule 03 only forbids
+  // a *Roamly*-drawn star/score next to a partner row — Tripadvisor's own
+  // rating beside Tripadvisor's own bubbles/count is fine.
+  rating: number;
   /** `card` = full-bleed band inside ActivityCard's body (§5a); `detail` = inset block on the detail screen (§5b). */
   variant: 'card' | 'detail';
 };
@@ -26,8 +32,9 @@ function reviewCountLabel(count: number): string {
 // bubble (never a local copy/Roamly gold star); its width is reserved so a
 // slow/broken load never reflows the count text beside it — plain
 // expo-image load/broken behavior, no bespoke fallback UI (out of scope).
-export function TripadvisorAttributionPlate({ tripadvisor, variant }: TripadvisorAttributionPlateProps) {
+export function TripadvisorAttributionPlate({ tripadvisor, rating, variant }: TripadvisorAttributionPlateProps) {
   const logoHeight = variant === 'card' ? 20 : 24;
+  const ratingText = rating.toFixed(1);
   // §5b: the detail variant's context line carries the review count and,
   // when Tripadvisor returned one, the dated ranking sentence — rendered
   // verbatim (never reformatted/truncated, compliance rule 05's month+year
@@ -53,7 +60,13 @@ export function TripadvisorAttributionPlate({ tripadvisor, variant }: Tripadviso
           contentFit="contain"
           accessibilityIgnoresInvertColors
         />
-        {variant === 'card' && <Text style={styles.countText}>{reviewCountLabel(tripadvisor.review_count)}</Text>}
+        {/* §5b: detail row is logo → bubbles → bold numeric rating; §5a's card
+            row folds the same number into the count text ("4.5 · 1,204") —
+            the rating never renders without its review count (rule 02). */}
+        {variant === 'detail' && <Text style={styles.ratingNumber}>{ratingText}</Text>}
+        {variant === 'card' && (
+          <Text style={styles.countText}>{`${ratingText} · ${tripadvisor.review_count.toLocaleString('en-US')}`}</Text>
+        )}
       </View>
       {contextLine && <Text style={styles.contextText}>{contextLine}</Text>}
       {/* §5b: Travelers' Choice badge — detail only, omitted when the
@@ -99,6 +112,14 @@ const styles = StyleSheet.create({
   countText: {
     fontSize: fontSize.xs,
     fontWeight: '600',
+    color: colors.ink,
+    fontVariant: ['tabular-nums'],
+  },
+  // §5b: the detail plate's standalone numeric rating — bold, `--ink`, per
+  // the design's logo → bubbles → "4.5" → context-line order.
+  ratingNumber: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
     color: colors.ink,
     fontVariant: ['tabular-nums'],
   },

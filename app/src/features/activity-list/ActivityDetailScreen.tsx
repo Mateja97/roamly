@@ -406,6 +406,7 @@ export function ActivityDetailScreen({
           {tripadvisor && (
             <TripadvisorBlock
               tripadvisor={tripadvisor}
+              rating={activity.rating}
               reviews={reviews}
               address={address}
               ctaBusy={ctaBusy}
