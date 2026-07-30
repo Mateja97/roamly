@@ -268,6 +268,37 @@ describe('ActivityDetailScreen', () => {
     ).toBeTruthy();
   });
 
+  it('tracks the hero carousel: swiping to a different photo updates the attribution caption to that photo\'s author', () => {
+    const multiPhoto = {
+      ...activity,
+      image_refs: [
+        {
+          uri: 'https://example.com/1.jpg',
+          attribution: { author: 'First Author', link: 'https://maps.google.com/maps/contrib/1' },
+        },
+        {
+          uri: 'https://example.com/2.jpg',
+          attribution: { author: 'Second Author', link: 'https://maps.google.com/maps/contrib/2' },
+        },
+      ],
+    };
+    render(
+      <ActivityDetailScreen
+        activity={multiPhoto}
+        showDistance
+        onBack={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Photo by First Author' })).toBeTruthy();
+
+    fireEvent(screen.getByTestId('activity-detail-hero-pager'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 320 } },
+    });
+
+    expect(screen.getByRole('link', { name: 'Photo by Second Author' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Photo by First Author' })).toBeNull();
+  });
+
   describe('category-specific fact strip, unique section, badge, CTA (T4)', () => {
     it('renders fact strip, badge qualifier, open status, and the Shape A unique section for a fully-detailed Restaurants activity', () => {
       const withDetails: Activity = {
