@@ -670,19 +670,80 @@ the detail screen's gold star + numeric rating) untouched.
     aggregate lockup, holding a **2×2 grid** of the place's category subratings
     (Food / Service / Value / Atmosphere). Each cell: the subrating's localized
     name (`--ink`, `--font-size-sm`, left) beside its **own API-hosted
-    `rating_image_url`** (right — the per-subrating bubble image, ≥55px wide, its
-    width reserved so a slow/failed load doesn't reflow the grid; `contain`). The
-    bubble image is never redrawn or recolored (compliance rule 02), which is why
-    it sits on white and not on the wine page (where the mock's hand-drawn green
-    bubbles would violate "page background must not show through"). When a
-    subrating carries only a numeric `value` and no image URL, show the value as
-    `--ink` text (e.g. "4.5") — a number is not a redrawn bubble, so it stays
-    compliant; never substitute drawn bubbles. Cell gap `--space-3`
-    row / `--space-4` column, plate padding as the detail inset block. Renders
-    **only** when the place carries subratings; omitted entirely otherwise (no
-    empty grid). Collapses to one column at large dynamic-text sizes.
-    Non-interactive; the bubble images are decorative (excluded from the a11y
-    tree — the name + rating carry it).
+    `icon_url`** (right — Terra's `SubRating.icon_url`, a distinct field from
+    the lockup's aggregate `rating_image_url`; ≥55px wide, its width reserved
+    so a slow/failed load doesn't reflow the grid; `contain`). The image is
+    the **primary** rendering, shown as-is — never redrawn or recolored
+    (compliance rule 02) — and is decorative, excluded from the a11y tree (the
+    cell's own accessible name, "{name} rated {rating}", carries the meaning).
+    Only when an individual aspect has a `rating` but **no** `icon_url` does
+    that one cell fall back to the numeric value as plain `--ink` text (e.g.
+    "4.5") — a number is not a redrawn bubble, so it stays compliant. The
+    fallback is decided **per cell, independently**: one place's grid can show
+    three bubble images and one number if that's what Tripadvisor returned.
+    Cell gap `--space-3` row / `--space-4` column, plate padding as the detail
+    inset block. Renders **only** when the place carries subratings; omitted
+    entirely otherwise (no empty grid). Collapses to one column at large
+    dynamic-text sizes. Non-interactive.
+  - *Subratings grid — white plate vs. the mock's maroon (reconciliation)* —
+    `Roamly Tripadvisor Sources.dc.html` §5b draws this grid on the page's
+    wine/maroon background with hand-drawn `#84E9BD` bubbles. That art is the
+    mock's own placeholder, standing in for an asset the mock's author didn't
+    have — it is not the partner's rating image. The real `icon_url` bubbles
+    Terra returns are green-on-light, and compliance rule 02 forbids
+    recoloring a partner image to fit a background it wasn't designed for, so
+    the grid stays on the white `--attribution-plate` (same surface as the
+    lockup above it) instead of the mock's maroon. This is a deliberate,
+    permanent deviation from the mock, not a bug to "fix" back later — the
+    white plate is what makes the real bubbles renderable at all without
+    violating rule 02.
+  - *Ranking sentence (detail context line)* — the detail variant's context
+    line (review count) appends the **ranking sentence** (`ranking_text`) via
+    " · " when Tripadvisor returned one, rendered **verbatim** — no
+    reformatting, no truncation, no ellipsis (it wraps like the rest of the
+    context text, see below). The backend pre-composes the month + year stamp
+    per compliance rule 05 (e.g. "#12 of 1,780 Restaurants in Belgrade, as
+    rated by Tripadvisor travelers as of July 2026"); the client never invents
+    or appends its own date. Omitted (no dangling " · ") when the location
+    carries no ranking. Card variant (§5a) never shows a ranking, matching the
+    mock.
+  - *Travelers' Choice badge (detail only)* — a small `Award` icon + "{award
+    name} {award year}" (e.g. "Travelers' Choice 2026"), `--space-2` below the
+    context line. Icon and text are both `--ink`, not the partner's brand
+    green — this recipe's own "all plate text is `--ink`, hierarchy from
+    weight/size, never a second color" rule applies here too: the badge is
+    Roamly-drawn chrome around a fact, not the partner's rating asset, so
+    rule 02 (which governs the rating image specifically) doesn't compel a
+    second color for it. Renders only when the location carries a Travelers'
+    Choice award; every other award type (e.g. Certificate of Excellence) is
+    filtered out server-side and never reaches the client.
+  - *Eyebrow line + cuisine subtitle (§5b, detail screen title block — not the
+    plate)* — above a Tripadvisor row's title, an overline eyebrow: "{category}
+    · {price level} · {distance}" (`--font-size-xs`, uppercase, this app's
+    standard overline `letter-spacing: 0.08em`, in `--primary` gold — matching
+    the mock's own gold eyebrow, distinct from the review carousel's
+    `--text-muted` section-label overline that shares the same size/spacing).
+    `price_level` is Terra's own exact string
+    ("Cheap Eats" / "Mid Range" / "Fine Dining"), never reformatted into `$`
+    symbols; dropped from the eyebrow (never a dangling `·`) when the location
+    carries no price level. Below the title, a **cuisine subtitle** in
+    `--text-muted` (`--font-size-sm`) renders `cuisine` — Tripadvisor's own
+    category label, distinct from the row's free-text `cuisine` field used by
+    admin/Google rows — when present; omitted entirely otherwise. Because the
+    eyebrow and subtitle now carry Cuisine and Price, the FactStrip's
+    Cuisine/Price chips are **dropped** for a Tripadvisor row so the same two
+    facts don't appear twice on one screen; every non-Tripadvisor row keeps
+    those chips untouched.
+  - *Absent means omitted, never a placeholder* — the ranking sentence, the
+    award badge, the eyebrow's price-level segment, and the cuisine subtitle
+    each render **only** when the API actually supplied that field; when it
+    didn't, the element is omitted outright — never an empty state, a zero, or
+    a "—" placeholder. The one exception in this recipe is the bubble-image
+    fallback (subratings grid, review cards below): there, absence of the
+    *image* still renders the aspect, just as a number instead of a bubble,
+    because rule 02 sanctions the number as a compliant substitute — that
+    fallback is about *how* to render a value that exists, not a workaround
+    for a missing one.
 - **Context text wraps, never truncates** (it can carry a long dated-ranking
   string rendered verbatim from the data — no reformatting, no ellipsis); the
   plate grows in height and honors dynamic text scaling.
@@ -721,9 +782,14 @@ bubbles" rule.
   the only sanctioned white-plate text color); hierarchy comes from weight/size,
   never from a second color.
 - **Content stack** (`--space-2`/`--space-3` between lines):
-  - *Top row* — the review's **API-hosted 5-bubble `rating_image_url`** image
-    (left, ≥55px wide, `contain`, width reserved) + the review **date**
+  - *Top row* — the review's own **API-hosted 5-bubble `rating_image_url`**
+    image (left, ≥55px wide, `contain`, width reserved) + the review **date**
     (`--font-size-xs`, weight 400, verbatim from the API, e.g. "14 June 2026").
+    Same per-cell fallback rule as the Subratings grid above: when this
+    specific review carries no `rating_image_url`, the card shows the numeric
+    rating as `--ink` text in the image's place instead — decided
+    independently per review (one carousel can mix bubble-image and numeric
+    cards), never an empty space or a placeholder image.
   - *Quoted title* — `--font-size-sm`, weight 700, in quotation marks.
   - *Quoted body* — `--font-size-sm`, weight 400, line-height 1.5, in quotation
     marks; **wraps, never truncates** (reviews render verbatim — no ellipsis).

@@ -1,6 +1,8 @@
+import { Image } from 'expo-image';
 import { StyleSheet, Text, View } from 'react-native';
 import type { TripadvisorSubratings } from '../api/activities';
 import { colors, fontSize, radius, space } from '../theme/tokens';
+import { RATING_BUBBLE_ASPECT_RATIO, RATING_BUBBLE_WIDTH } from '../theme/tripadvisorBubble';
 
 type TripadvisorSubratingsPlateProps = {
   subratings: TripadvisorSubratings | undefined;
@@ -13,26 +15,46 @@ const CELLS: { key: keyof TripadvisorSubratings; label: string }[] = [
   { key: 'atmosphere', label: 'Atmosphere' },
 ];
 
-// design-spec.md T4's "Partner attribution plate — Subratings grid
+// DESIGN_STANDARDS.md's "Partner attribution plate — Subratings grid
 // placement": a second inset white plate below the aggregate rating lockup,
-// a 2x2 grid of Food/Service/Value/Atmosphere. Compliance rule 02 forbids
-// hand-drawing Tripadvisor's rating bubbles ourselves, and the Terra API
-// returns no per-subrating `rating_image_url` (confirmed against T3's
-// backend model) — so this renders the numeric 1-5 value as plain --ink
-// text per cell rather than a redrawn bubble (design-spec.md's documented
-// fallback: "a number is compliant, never draw substitute bubbles").
+// a 2x2 grid of Food/Service/Value/Atmosphere. Each cell renders its own
+// API-hosted `icon_url` bubble image (compliance rule 02: real asset, never
+// redrawn/recolored) and falls back to the plain --ink numeric value only
+// when that aspect carries no image URL — a number is compliant, a
+// hand-drawn substitute bubble isn't. The image is decorative (excluded
+// from the a11y tree); the cell's own accessibilityLabel carries the name +
+// rating so nothing is lost for AT users when the image renders.
 export function TripadvisorSubratingsPlate({ subratings }: TripadvisorSubratingsPlateProps) {
   const cells = CELLS.filter((c) => subratings?.[c.key] !== undefined);
   if (cells.length === 0) return null;
 
   return (
     <View style={styles.plate}>
-      {cells.map((cell) => (
-        <View key={cell.key} style={styles.cell}>
-          <Text style={styles.name}>{cell.label}</Text>
-          <Text style={styles.value}>{subratings![cell.key]!.toFixed(1)}</Text>
-        </View>
-      ))}
+      {cells.map((cell) => {
+        const aspect = subratings![cell.key]!;
+        return (
+          <View
+            key={cell.key}
+            style={styles.cell}
+            accessible
+            accessibilityLabel={`${cell.label} rated ${aspect.rating.toFixed(1)}`}
+          >
+            <Text style={styles.name}>{cell.label}</Text>
+            {aspect.icon_url ? (
+              <Image
+                testID={`subrating-bubble-${cell.key}`}
+                source={{ uri: aspect.icon_url }}
+                style={styles.bubble}
+                contentFit="contain"
+                accessibilityIgnoresInvertColors
+                importantForAccessibility="no"
+              />
+            ) : (
+              <Text style={styles.value}>{aspect.rating.toFixed(1)}</Text>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -69,5 +91,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.ink,
     fontVariant: ['tabular-nums'],
+  },
+  bubble: {
+    width: RATING_BUBBLE_WIDTH,
+    aspectRatio: RATING_BUBBLE_ASPECT_RATIO,
   },
 });

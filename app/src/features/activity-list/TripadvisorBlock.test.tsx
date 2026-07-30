@@ -52,7 +52,17 @@ describe('TripadvisorBlock', () => {
   });
 
   it('renders the subratings plate when present', () => {
-    renderBlock({ tripadvisor: { ...tripadvisor, subratings: { food: 4.5, service: 4.0, value: 3.5, atmosphere: 5.0 } } });
+    renderBlock({
+      tripadvisor: {
+        ...tripadvisor,
+        subratings: {
+          food: { rating: 4.5 },
+          service: { rating: 4.0 },
+          value: { rating: 3.5 },
+          atmosphere: { rating: 5.0 },
+        },
+      },
+    });
     expect(screen.getByText('Food')).toBeTruthy();
     expect(screen.getByText('4.5')).toBeTruthy();
   });

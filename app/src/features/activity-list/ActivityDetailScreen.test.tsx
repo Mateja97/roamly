@@ -979,11 +979,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('4.6')).toBeTruthy();
     });
 
-    // design-spec.md T4: "Travellers' Choice 2026" badge / dated ranking
-    // text is mock-only (no Terra API ranking data) — never rendered even
-    // if a caller sets `ranking_text` (the field stays on the wire type but
-    // the UI ignores it, see TripadvisorAttributionPlate.test.tsx).
-    it('never renders ranking_text (mock-only, out of scope)', () => {
+    it('renders the dated ranking sentence verbatim, appended to the review count context line', () => {
       const withRanking: Activity = {
         ...activity,
         details: {
@@ -997,8 +993,40 @@ describe('ActivityDetailScreen', () => {
         },
       };
       render(<ActivityDetailScreen activity={withRanking} showDistance onBack={jest.fn()} />);
-      expect(screen.getByText('88 reviews on Tripadvisor')).toBeTruthy();
-      expect(screen.queryByText(/#3 of 512/)).toBeNull();
+      expect(
+        screen.getByText('88 reviews on Tripadvisor · #3 of 512 Restaurants in Belgrade, June 2026'),
+      ).toBeTruthy();
+    });
+
+    it('omits the ranking sentence when absent (no dangling separator)', () => {
+      render(
+        <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
+    });
+
+    it('renders the Travelers\' Choice badge when award is present', () => {
+      const withAward: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            web_url: 'https://tripadvisor.example/place',
+            award: { name: "Travelers' Choice", year: 2026 },
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={withAward} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText("Travelers' Choice 2026")).toBeTruthy();
+    });
+
+    it('omits the Travelers\' Choice badge when award is absent (no empty badge)', () => {
+      render(
+        <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByText(/Travelers' Choice/)).toBeNull();
     });
 
     it('renders the subratings grid when tripadvisor.subratings is present', () => {
@@ -1010,13 +1038,169 @@ describe('ActivityDetailScreen', () => {
             rating_image_url: 'https://tripadvisor.example/bubble.png',
             review_count: 1204,
             web_url: 'https://tripadvisor.example/place',
-            subratings: { food: 4.5, service: 4.0, value: 3.5, atmosphere: 5.0 },
+            subratings: {
+              food: { rating: 4.5 },
+              service: { rating: 4.0 },
+              value: { rating: 3.5 },
+              atmosphere: { rating: 5.0 },
+            },
           },
         },
       };
       render(<ActivityDetailScreen activity={withSubratings} showDistance onBack={jest.fn()} />);
       expect(screen.getByText('Food')).toBeTruthy();
       expect(screen.getByText('4.5')).toBeTruthy();
+    });
+
+    it('renders the subrating bubble image (compliance rule 02) when the aspect carries an icon_url', () => {
+      const withImage: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            web_url: 'https://tripadvisor.example/place',
+            subratings: {
+              food: { rating: 4.5, icon_url: 'https://tripadvisor.example/food-bubble.png' },
+            },
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={withImage} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('subrating-bubble-food')).toBeTruthy();
+      expect(screen.queryByText('4.5')).toBeNull();
+    });
+
+    describe('§5b eyebrow line + cuisine subtitle', () => {
+      it('renders category · price level · distance above the title', () => {
+        const withPriceLevel: Activity = {
+          ...activity,
+          details: {
+            category: 'restaurants',
+            tripadvisor: {
+              rating_image_url: 'https://tripadvisor.example/bubble.png',
+              review_count: 1204,
+              web_url: 'https://tripadvisor.example/place',
+              price_level: 'Mid Range',
+            },
+          },
+        };
+        render(<ActivityDetailScreen activity={withPriceLevel} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText(`Restaurant · Mid Range · ${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+      });
+
+      it('omits price level from the eyebrow when absent (category + distance only, no dangling separator)', () => {
+        render(
+          <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+        );
+        expect(screen.getByText(`Restaurant · ${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+      });
+
+      it('renders no eyebrow at all for a non-Tripadvisor row', () => {
+        render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+        expect(screen.queryByText(new RegExp(`^Restaurant · `))).toBeNull();
+      });
+
+      it('renders the cuisine subtitle beneath the title when present', () => {
+        const withCuisine: Activity = {
+          ...activity,
+          details: {
+            category: 'restaurants',
+            tripadvisor: {
+              rating_image_url: 'https://tripadvisor.example/bubble.png',
+              review_count: 1204,
+              web_url: 'https://tripadvisor.example/place',
+              cuisine: 'Fine Dining',
+            },
+          },
+        };
+        render(<ActivityDetailScreen activity={withCuisine} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Fine Dining')).toBeTruthy();
+      });
+
+      it('omits the cuisine subtitle when absent (no empty line)', () => {
+        render(
+          <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+        );
+        expect(screen.queryByText('Fine Dining')).toBeNull();
+      });
+    });
+
+    // §5b: the eyebrow *replaces* the badge pill (category) and the meta
+    // row's distance segment for a Tripadvisor row — each fact shows
+    // exactly once, never twice. Non-Tripadvisor rows must stay untouched.
+    describe('§5b eyebrow replaces the badge pill + meta-row distance (no duplicate facts)', () => {
+      it('shows category exactly once for a Tripadvisor row (eyebrow only, badge pill suppressed)', () => {
+        render(
+          <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+        );
+        expect(screen.getByText(`Restaurant · ${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+        // The badge pill would render exactly "Restaurant" alone (no
+        // qualifier data on this fixture) — a separate, shorter string from
+        // the eyebrow's full text, so this only passes if the pill itself
+        // is gone, not just coincidentally out-matched.
+        expect(screen.queryByText('Restaurant')).toBeNull();
+      });
+
+      it('shows distance exactly once for a Tripadvisor row (eyebrow only, meta-row MapPin+distance suppressed)', () => {
+        render(
+          <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+        );
+        const distanceMatches = screen.getAllByText(
+          new RegExp(`${activity.distance_km.toFixed(1)} km away`),
+        );
+        expect(distanceMatches).toHaveLength(1);
+      });
+
+      it('keeps the badge pill, rating star, and full meta-row distance unchanged for a non-Tripadvisor row', () => {
+        render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Restaurant')).toBeTruthy();
+        expect(screen.getByText('4.6')).toBeTruthy();
+        expect(screen.getByText(`${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+      });
+
+      it('keeps showing the legacy Open/Closed status for a Tripadvisor row when present, with no dangling leading separator', () => {
+        const withStatus: Activity = {
+          ...activity,
+          details: {
+            category: 'restaurants',
+            open_status: 'Open now',
+            tripadvisor: {
+              rating_image_url: 'https://tripadvisor.example/bubble.png',
+              review_count: 1204,
+              web_url: 'https://tripadvisor.example/place',
+            },
+          },
+        };
+        render(<ActivityDetailScreen activity={withStatus} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Open now')).toBeTruthy();
+        expect(screen.queryByText('·')).toBeNull();
+        expect(
+          screen.getAllByText(new RegExp(`${activity.distance_km.toFixed(1)} km away`)),
+        ).toHaveLength(1);
+      });
+    });
+
+    it('drops the Cuisine/Price fact-strip chips for a Tripadvisor row (carried by the eyebrow/subtitle instead)', () => {
+      const taWithLegacyFields: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          cuisine: 'Italian',
+          price_tier: '€€',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            web_url: 'https://tripadvisor.example/place',
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={taWithLegacyFields} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('Cuisine')).toBeNull();
+      expect(screen.queryByText('Italian')).toBeNull();
+      expect(screen.queryByText('Price')).toBeNull();
+      expect(screen.queryByText('€€')).toBeNull();
     });
 
     it('omits the subratings grid when absent (no empty grid)', () => {

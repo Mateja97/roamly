@@ -128,23 +128,61 @@ func (c *Client) NearbySearch(ctx context.Context, lat, lng, radiusKM float64, c
 	return out, nil
 }
 
-// Subratings is Tripadvisor's per-category rating breakdown (T3):
-// Food/Service/Value/Atmosphere, each on Tripadvisor's usual 1-5 scale. A
-// zero field means Tripadvisor returned no subrating for that category
-// (optional per the API, same zero-means-absent convention as
-// LocationDetails.Rating) — never a fabricated 0-bubble score.
-type Subratings struct {
-	Food       float64
-	Service    float64
-	Value      float64
-	Atmosphere float64
+// Aspect is one subrating category's value (e.g. Food) — a rating plus the
+// API-hosted bubble image for it. Compliance rule 02 (design doc §5c):
+// that image must be rendered as-is, never redrawn or recolored.
+type Aspect struct {
+	Rating  float64
+	IconURL string
 }
 
+// Subratings is Tripadvisor's per-category rating breakdown (T3):
+// Food/Service/Value/Atmosphere, each on Tripadvisor's usual 1-5 scale. A
+// nil field means Tripadvisor returned no subrating for that category —
+// never a fabricated zero-value Aspect (a zero would render as a real
+// "0.0" bubble downstream).
+type Subratings struct {
+	Food       *Aspect
+	Service    *Aspect
+	Value      *Aspect
+	Atmosphere *Aspect
+}
+
+// Ranking is one entry from Tripadvisor's rankings[] — the Location's rank
+// within a Geo/category, e.g. "#23 of 500 Restaurants in Belgrade".
+type Ranking struct {
+	DisplayText string
+	Rank        int
+	Total       int
+	Category    string
+}
+
+// Award is a Tripadvisor accolade for the Location. LocationDetails only
+// ever carries the Travelers' Choice award (Certificate of Excellence is
+// filtered out at parse time — see LocationDetails), most recent year.
+type Award struct {
+	Name     string
+	Year     int
+	ImageURL string
+}
+
+// Category is one entry from Tripadvisor's categories[] — a classification
+// with its hierarchy path, e.g. Hierarchy "restaurants > fine_dining".
+type Category struct {
+	DisplayName string
+	Hierarchy   string
+}
+
+// travelersChoice is the one Award.Type value LocationDetails keeps; the
+// API's other enum member ("Certificate of Excellence") isn't shown by the
+// design (§5c rule 03: no non-Tripadvisor badge treatment either way, but
+// Travelers' Choice is the only award frame 5b calls for).
+const travelersChoice = "Travelers' Choice"
+
 // LocationDetails is one Tripadvisor location's full detail record — a
-// second call per NearbySearch candidate. The real API carries no ranking
-// text and no category/subcategory/cuisine data (see the fields' absence
-// here, deliberate not an oversight). Phone and Subratings are both
-// optional per the API and zero-value when Tripadvisor didn't return them.
+// second call per NearbySearch candidate. Phone, Subratings, Rankings,
+// Award, PriceLevel, and Categories are all optional per the API and
+// absent/zero-value when Tripadvisor didn't return them.
 type LocationDetails struct {
 	LocationID     string
 	Name           string
@@ -158,6 +196,10 @@ type LocationDetails struct {
 	RatingImageURL string
 	WebURL         string
 	Subratings     Subratings
+	Rankings       []Ranking
+	Award          *Award
+	PriceLevel     string
+	Categories     []Category
 }
 
 func (c *Client) LocationDetails(ctx context.Context, locationID string) (LocationDetails, error) {
@@ -183,9 +225,14 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 				Count   int     `json:"count"`
 				IconURL string  `json:"icon_url"`
 			} `json:"overall"`
+			// Real schema (Terra OpenAPI spec's SubRating): type,
+			// type_name, rating, count, icon_url. Never name/rating_value —
+			// those don't exist on this API.
 			Subratings []struct {
-				Name   string  `json:"name"`
-				Rating float64 `json:"rating_value"`
+				Type     string  `json:"type"`
+				TypeName string  `json:"type_name"`
+				Rating   float64 `json:"rating"`
+				IconURL  string  `json:"icon_url"`
 			} `json:"subratings"`
 		} `json:"traveler_ratings"`
 		URLs struct {
@@ -193,6 +240,25 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 				Main string `json:"main"`
 			} `json:"tripadvisor"`
 		} `json:"urls"`
+		Rankings []struct {
+			DisplayText string `json:"display_text"`
+			Rank        int    `json:"rank"`
+			Total       int    `json:"total"`
+			Category    string `json:"category"`
+		} `json:"rankings"`
+		Awards []struct {
+			Name  string `json:"name"`
+			Type  string `json:"type"`
+			Year  int    `json:"year"`
+			Image struct {
+				URL string `json:"url"`
+			} `json:"image"`
+		} `json:"awards"`
+		PriceLevel string `json:"price_level"`
+		Categories []struct {
+			DisplayName string `json:"display_name"`
+			Hierarchy   string `json:"hierarchy"`
+		} `json:"categories"`
 	}
 	if err := c.doJSON(ctx, c.base+"/locations/"+locationID+"?"+q.Encode(), &parsed); err != nil {
 		return LocationDetails{}, fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
@@ -207,6 +273,7 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 		ReviewCount:    parsed.TravelerRatings.Overall.Count,
 		RatingImageURL: parsed.TravelerRatings.Overall.IconURL,
 		WebURL:         parsed.URLs.Tripadvisor.Main,
+		PriceLevel:     parsed.PriceLevel,
 	}
 	if len(parsed.Addresses) > 0 {
 		details.Address = parsed.Addresses[0].Formatted
@@ -217,18 +284,54 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 		details.Phone = parsed.PhoneNumbers[0].Value
 	}
 	for _, sr := range parsed.TravelerRatings.Subratings {
-		switch strings.ToLower(sr.Name) {
+		aspect := &Aspect{Rating: sr.Rating, IconURL: sr.IconURL}
+		// type is the machine key (spec doesn't enumerate its values) and
+		// type_name is locale-dependent (client sends locale=en-US) — match
+		// against either so neither field's exact form can break this.
+		switch aspectKey(sr.Type, sr.TypeName) {
 		case "food":
-			details.Subratings.Food = sr.Rating
+			details.Subratings.Food = aspect
 		case "service":
-			details.Subratings.Service = sr.Rating
+			details.Subratings.Service = aspect
 		case "value":
-			details.Subratings.Value = sr.Rating
+			details.Subratings.Value = aspect
 		case "atmosphere":
-			details.Subratings.Atmosphere = sr.Rating
+			details.Subratings.Atmosphere = aspect
 		}
 	}
+	for _, r := range parsed.Rankings {
+		details.Rankings = append(details.Rankings, Ranking{
+			DisplayText: r.DisplayText,
+			Rank:        r.Rank,
+			Total:       r.Total,
+			Category:    r.Category,
+		})
+	}
+	for _, a := range parsed.Awards {
+		if a.Type != travelersChoice {
+			continue
+		}
+		if details.Award == nil || a.Year > details.Award.Year {
+			details.Award = &Award{Name: a.Name, Year: a.Year, ImageURL: a.Image.URL}
+		}
+	}
+	for _, c := range parsed.Categories {
+		details.Categories = append(details.Categories, Category{DisplayName: c.DisplayName, Hierarchy: c.Hierarchy})
+	}
 	return details, nil
+}
+
+// aspectKey returns which of the 4 grid aspects (food/service/value/
+// atmosphere) typ or typeName names, case-insensitively, "" if neither
+// matches (e.g. "Cleanliness" — present in the API but not on the grid).
+func aspectKey(typ, typeName string) string {
+	for _, s := range []string{strings.ToLower(typ), strings.ToLower(typeName)} {
+		switch s {
+		case "food", "service", "value", "atmosphere":
+			return s
+		}
+	}
+	return ""
 }
 
 // LocationPhotos resolves up to limit Tripadvisor-hosted photos for
@@ -263,11 +366,15 @@ func (c *Client) LocationPhotos(ctx context.Context, locationID string, limit in
 	return out, nil
 }
 
-// Review is one Tripadvisor traveler review.
+// Review is one Tripadvisor traveler review. RatingImageURL is the
+// API-hosted bubble image for the review's overall rating (Review.
+// rating_icon_url in the spec) — same compliance rule as Subratings'
+// per-aspect images: render as-is, never redrawn or recolored.
 type Review struct {
-	Rating int
-	Date   string
-	Text   string
+	Rating         int
+	Date           string
+	Text           string
+	RatingImageURL string
 }
 
 // reviewsPageSize bounds LocationReviews — callers only need up to the
@@ -282,9 +389,12 @@ func (c *Client) LocationReviews(ctx context.Context, locationID string) ([]Revi
 	q := url.Values{"language": {"en"}, "size": {strconv.Itoa(reviewsPageSize)}}
 	var parsed struct {
 		Data []struct {
-			Rating    int              `json:"rating"`
-			PublishTs string           `json:"publish_ts"`
-			Text      []localizedValue `json:"text"`
+			Rating        int              `json:"rating"`
+			PublishTs     string           `json:"publish_ts"`
+			Text          []localizedValue `json:"text"`
+			RatingIconURL struct {
+				URL string `json:"url"`
+			} `json:"rating_icon_url"`
 		} `json:"data"`
 	}
 	if err := c.doJSON(ctx, c.base+"/locations/"+locationID+"/reviews?"+q.Encode(), &parsed); err != nil {
@@ -292,7 +402,7 @@ func (c *Client) LocationReviews(ctx context.Context, locationID string) ([]Revi
 	}
 	out := make([]Review, 0, len(parsed.Data))
 	for _, r := range parsed.Data {
-		out = append(out, Review{Rating: r.Rating, Date: r.PublishTs, Text: primaryValue(r.Text)})
+		out = append(out, Review{Rating: r.Rating, Date: r.PublishTs, Text: primaryValue(r.Text), RatingImageURL: r.RatingIconURL.URL})
 	}
 	return out, nil
 }

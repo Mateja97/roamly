@@ -222,16 +222,37 @@ type OpeningHours struct {
 	Periods    []Period `json:"periods,omitempty"`
 }
 
+// TripadvisorAspectRating is one subrating category's value: a 1-5 rating
+// plus the API-hosted bubble image asset for that aspect (compliance rule
+// 02 — the image renders as-is, never redrawn or recolored). A nil field on
+// TripadvisorSubratings means Tripadvisor returned no rating for that
+// aspect — never a fabricated zero.
+type TripadvisorAspectRating struct {
+	Rating  float64 `json:"rating"`
+	IconURL string  `json:"icon_url,omitempty"`
+}
+
 // TripadvisorSubratings is Tripadvisor's per-category rating breakdown (T3):
 // Food/Service/Value/Atmosphere, each on Tripadvisor's usual 1-5 scale.
 // Nil on TripadvisorAttribution when Tripadvisor returned no subratings for
 // the location at all (optional per the API) — never a fabricated all-zero
-// grid.
+// grid. Each aspect is itself an optional pointer (see
+// TripadvisorAspectRating) for the same reason: an aspect Tripadvisor
+// didn't rate must stay absent, not render as a real "0.0" bubble.
 type TripadvisorSubratings struct {
-	Food       float64 `json:"food,omitempty"`
-	Service    float64 `json:"service,omitempty"`
-	Value      float64 `json:"value,omitempty"`
-	Atmosphere float64 `json:"atmosphere,omitempty"`
+	Food       *TripadvisorAspectRating `json:"food,omitempty"`
+	Service    *TripadvisorAspectRating `json:"service,omitempty"`
+	Value      *TripadvisorAspectRating `json:"value,omitempty"`
+	Atmosphere *TripadvisorAspectRating `json:"atmosphere,omitempty"`
+}
+
+// TripadvisorAward is a Travelers' Choice accolade (the only award type the
+// sync keeps, most recent year — see internal/tripadvisor.LocationDetails'
+// doc). Nil on TripadvisorAttribution when Tripadvisor returned no
+// Travelers' Choice award for the location.
+type TripadvisorAward struct {
+	Name string `json:"name"`
+	Year int    `json:"year"`
 }
 
 // TripadvisorAttribution is the required on-card/detail attribution for a
@@ -242,9 +263,13 @@ type TripadvisorSubratings struct {
 // pre-formatted with month/year at sync time (rule 05), e.g. "#12 of 1,780
 // restaurants in Belgrade, as rated by Tripadvisor travelers as of July
 // 2026"; empty when Tripadvisor returned no ranking data. WebURL is the
-// deep-link-out target (rule 08). Phone and Subratings (T3) are both
-// optional per the Terra API and omitted (not a fabricated ""/zero value)
-// when Tripadvisor didn't return them for this location.
+// deep-link-out target (rule 08). Phone, Subratings, Award, PriceLevel, and
+// Cuisine are all optional per the Terra API and omitted (not a fabricated
+// ""/zero value) when Tripadvisor didn't return them for this location.
+// PriceLevel is one of Terra's own three strings ("Cheap Eats"/"Mid
+// Range"/"Fine Dining"), never reformatted. Cuisine is the location's
+// primary categories[] display name (e.g. "Fine Dining"), distinct from
+// RestaurantDetails.Cuisine (a free-text field admin/Google rows also use).
 type TripadvisorAttribution struct {
 	RatingImageURL string                 `json:"rating_image_url"`
 	ReviewCount    int                    `json:"review_count"`
@@ -252,16 +277,22 @@ type TripadvisorAttribution struct {
 	WebURL         string                 `json:"web_url"`
 	Phone          string                 `json:"phone,omitempty"`
 	Subratings     *TripadvisorSubratings `json:"subratings,omitempty"`
+	Award          *TripadvisorAward      `json:"award,omitempty"`
+	PriceLevel     string                 `json:"price_level,omitempty"`
+	Cuisine        string                 `json:"cuisine,omitempty"`
 }
 
 // TripadvisorReview is one quoted traveler review shown on a
 // Tripadvisor-sourced detail page (compliance rule 04): only ever
 // populated at sync time when Rating is 5 and the place itself is rated
-// >= 4.0.
+// >= 4.0. RatingImageURL is the review's own API-hosted bubble image
+// (Terra's rating_icon_url) — real, not a gap in the API; omitted only
+// when Tripadvisor didn't supply one for that specific review.
 type TripadvisorReview struct {
-	Rating int    `json:"rating"`
-	Date   string `json:"date"`
-	Text   string `json:"text"`
+	Rating         int    `json:"rating"`
+	Date           string `json:"date"`
+	Text           string `json:"text"`
+	RatingImageURL string `json:"rating_image_url,omitempty"`
 }
 
 // RestaurantDetails is CategoryRestaurants' detail payload.

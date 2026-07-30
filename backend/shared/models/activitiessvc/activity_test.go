@@ -56,10 +56,18 @@ func TestBarDetails_RoundTripsTripadvisorAttribution(t *testing.T) {
 			RankingText:    "#12 of 1,780 Restaurants in Belgrade, as rated by Tripadvisor travelers as of July 2026",
 			WebURL:         "https://www.tripadvisor.com/Restaurant_Review-x",
 			Phone:          "+381 11 234 5678",
-			Subratings:     &TripadvisorSubratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5},
+			Subratings: &TripadvisorSubratings{
+				Food:       &TripadvisorAspectRating{Rating: 4.5, IconURL: "https://ta/food.svg"},
+				Service:    &TripadvisorAspectRating{Rating: 4.0, IconURL: "https://ta/service.svg"},
+				Value:      &TripadvisorAspectRating{Rating: 4.0, IconURL: "https://ta/value.svg"},
+				Atmosphere: &TripadvisorAspectRating{Rating: 4.5, IconURL: "https://ta/atmosphere.svg"},
+			},
+			Award:      &TripadvisorAward{Name: "Travelers' Choice", Year: 2026},
+			PriceLevel: "Mid Range",
+			Cuisine:    "Fine Dining",
 		},
 		Reviews: []TripadvisorReview{
-			{Rating: 5, Date: "2026-06-14", Text: "Great rakia."},
+			{Rating: 5, Date: "2026-06-14", Text: "Great rakia.", RatingImageURL: "https://ta/review1.svg"},
 			{Rating: 5, Date: "2026-05-02", Text: "Loved the terrace."},
 		},
 	}

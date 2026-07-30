@@ -6,6 +6,7 @@ import {
   todayHoursRow,
   tripadvisorAddressLine,
   tripadvisorAttribution,
+  tripadvisorEyebrow,
   tripadvisorReviews,
   weekView,
 } from './activityDetailConfig';
@@ -434,6 +435,63 @@ describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
     const activity = baseActivity(undefined);
     expect(tripadvisorAttribution(activity)).toBeUndefined();
     expect(tripadvisorReviews(activity)).toEqual([]);
+  });
+});
+
+describe('factStripFields — Tripadvisor rows drop Cuisine/Price (§5b eyebrow carries them instead)', () => {
+  it('omits the Cuisine/Price chips for a Tripadvisor-sourced restaurant row, even when the legacy fields are populated', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      cuisine: 'Italian',
+      price_tier: '€€',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 1204,
+        web_url: 'https://tripadvisor.example/place',
+      },
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).not.toContain('Cuisine');
+    expect(labels).not.toContain('Price');
+  });
+
+  it('keeps the Cuisine/Price chips for a non-Tripadvisor restaurant row, unchanged', () => {
+    const activity = baseActivity({ category: 'restaurants', cuisine: 'Italian', price_tier: '€€' });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toContain('Cuisine');
+    expect(labels).toContain('Price');
+  });
+});
+
+describe('tripadvisorEyebrow (§5b)', () => {
+  it('joins category · price level · distance when price_level is present', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 1204,
+        web_url: 'https://tripadvisor.example/place',
+        price_level: 'Mid Range',
+      },
+    });
+    expect(tripadvisorEyebrow(activity, '1.2 km away')).toBe('Restaurant · Mid Range · 1.2 km away');
+  });
+
+  it('omits price level from the line when absent (no dangling separator, never fabricated)', () => {
+    const activity = baseActivity({
+      category: 'bars',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 88,
+        web_url: 'https://tripadvisor.example/place',
+      },
+    });
+    expect(tripadvisorEyebrow(activity, '2.4 km away')).toBe('Bar · 2.4 km away');
+  });
+
+  it('is undefined for a non-Tripadvisor row (no eyebrow renders)', () => {
+    const activity = baseActivity({ category: 'restaurants', cuisine: 'Serbian' });
+    expect(tripadvisorEyebrow(activity, '1.2 km away')).toBeUndefined();
   });
 });
 
