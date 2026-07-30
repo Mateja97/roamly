@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -20,7 +21,16 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 				LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, Rating: 4.5,
 				City: "Belgrade", Country: "Serbia", Phone: "+381 11 328 6637",
 				WebURL: "https://ta/1", RatingImageURL: "https://ta/img/4.5.svg", ReviewCount: 1204,
-				Subratings: tripadvisor.Subratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5},
+				Subratings: tripadvisor.Subratings{
+					Food:       &tripadvisor.Aspect{Rating: 4.5, IconURL: "https://ta/food.svg"},
+					Service:    &tripadvisor.Aspect{Rating: 4.0, IconURL: "https://ta/service.svg"},
+					Value:      &tripadvisor.Aspect{Rating: 4.0, IconURL: "https://ta/value.svg"},
+					Atmosphere: &tripadvisor.Aspect{Rating: 4.5, IconURL: "https://ta/atmosphere.svg"},
+				},
+				Rankings:   []tripadvisor.Ranking{{DisplayText: "#12 of 1,780 Restaurants in Belgrade", Rank: 12, Total: 1780, Category: "restaurants"}},
+				Award:      &tripadvisor.Award{Name: "Travelers' Choice", Year: 2026},
+				PriceLevel: "Mid Range",
+				Categories: []tripadvisor.Category{{DisplayName: "Fine Dining", Hierarchy: "restaurants > fine_dining"}},
 			},
 		},
 		reviewsOut: map[string][]tripadvisor.Review{
@@ -67,15 +77,33 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if details.Tripadvisor == nil {
 		t.Fatal("details.Tripadvisor = nil, want the attribution block populated")
 	}
+	wantRankingText := "#12 of 1,780 Restaurants in Belgrade, as rated by Tripadvisor travelers as of " + time.Now().Format("January 2006")
 	if details.Tripadvisor.WebURL != "https://ta/1" || details.Tripadvisor.RatingImageURL != "https://ta/img/4.5.svg" ||
-		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != "" {
-		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = \"\" (the real API returns no ranking data)", details.Tripadvisor)
+		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != wantRankingText {
+		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = %q (Terra's display_text + dated suffix, rule 05)", details.Tripadvisor, wantRankingText)
 	}
 	if details.Tripadvisor.Phone != "+381 11 328 6637" {
 		t.Errorf("details.Tripadvisor.Phone = %q, want +381 11 328 6637", details.Tripadvisor.Phone)
 	}
-	wantSubratings := &activitiessvc.TripadvisorSubratings{Food: 4.5, Service: 4.0, Value: 4.0, Atmosphere: 4.5}
-	if details.Tripadvisor.Subratings == nil || *details.Tripadvisor.Subratings != *wantSubratings {
+	if details.Tripadvisor.Award == nil || *details.Tripadvisor.Award != (activitiessvc.TripadvisorAward{Name: "Travelers' Choice", Year: 2026}) {
+		t.Errorf("details.Tripadvisor.Award = %+v, want Travelers' Choice 2026", details.Tripadvisor.Award)
+	}
+	if details.Tripadvisor.PriceLevel != "Mid Range" {
+		t.Errorf("details.Tripadvisor.PriceLevel = %q, want Mid Range", details.Tripadvisor.PriceLevel)
+	}
+	if details.Tripadvisor.Cuisine != "Fine Dining" {
+		t.Errorf("details.Tripadvisor.Cuisine = %q, want Fine Dining", details.Tripadvisor.Cuisine)
+	}
+	if repo.gotUpsert.Subcategory != "fine_dining" {
+		t.Errorf("gotUpsert.Subcategory = %q, want fine_dining (mapped from categories[]'s hierarchy)", repo.gotUpsert.Subcategory)
+	}
+	wantSubratings := &activitiessvc.TripadvisorSubratings{
+		Food:       &activitiessvc.TripadvisorAspectRating{Rating: 4.5, IconURL: "https://ta/food.svg"},
+		Service:    &activitiessvc.TripadvisorAspectRating{Rating: 4.0, IconURL: "https://ta/service.svg"},
+		Value:      &activitiessvc.TripadvisorAspectRating{Rating: 4.0, IconURL: "https://ta/value.svg"},
+		Atmosphere: &activitiessvc.TripadvisorAspectRating{Rating: 4.5, IconURL: "https://ta/atmosphere.svg"},
+	}
+	if !reflect.DeepEqual(details.Tripadvisor.Subratings, wantSubratings) {
 		t.Errorf("details.Tripadvisor.Subratings = %+v, want %+v", details.Tripadvisor.Subratings, wantSubratings)
 	}
 

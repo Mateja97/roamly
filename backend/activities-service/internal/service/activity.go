@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -903,7 +904,7 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 		if r.Rating != 5 {
 			continue
 		}
-		out = append(out, activitiessvc.TripadvisorReview{Rating: r.Rating, Date: r.Date, Text: r.Text})
+		out = append(out, activitiessvc.TripadvisorReview{Rating: r.Rating, Date: r.Date, Text: r.Text, RatingImageURL: r.RatingImageURL})
 		if len(out) == maxFeaturedReviews {
 			break
 		}
@@ -914,22 +915,32 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 // tripadvisorIngestActivity maps a resolved Tripadvisor location into the
 // shape repo.Upsert expects: auto-published (no admin moderation step —
 // the whole point of an on-demand sync is that the requesting user sees
-// results now). RankingText is always "" — the real API returns no ranking
-// data at all (see LocationDetails' doc).
+// results now). RankingText, Award, PriceLevel, and Cuisine are all sourced
+// from the real rankings[]/awards[]/price_level/categories[] fields Terra
+// returns (see LocationDetails' doc) — each stays empty/nil only when
+// Tripadvisor itself returned nothing for it, never a fabricated value.
 func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
 		RatingImageURL: d.RatingImageURL,
 		ReviewCount:    d.ReviewCount,
+		RankingText:    rankingText(d.Rankings),
 		WebURL:         d.WebURL,
 		Phone:          d.Phone,
+		PriceLevel:     d.PriceLevel,
 	}
 	if d.Subratings != (tripadvisor.Subratings{}) {
 		attribution.Subratings = &activitiessvc.TripadvisorSubratings{
-			Food:       d.Subratings.Food,
-			Service:    d.Subratings.Service,
-			Value:      d.Subratings.Value,
-			Atmosphere: d.Subratings.Atmosphere,
+			Food:       toAspectRating(d.Subratings.Food),
+			Service:    toAspectRating(d.Subratings.Service),
+			Value:      toAspectRating(d.Subratings.Value),
+			Atmosphere: toAspectRating(d.Subratings.Atmosphere),
 		}
+	}
+	if d.Award != nil {
+		attribution.Award = &activitiessvc.TripadvisorAward{Name: d.Award.Name, Year: d.Award.Year}
+	}
+	if len(d.Categories) > 0 {
+		attribution.Cuisine = d.Categories[0].DisplayName
 	}
 	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, reviews))
 
@@ -948,14 +959,59 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 		Source:     "tripadvisor",
 		SourceURL:  d.WebURL,
 		ExternalID: d.LocationID,
-		// ponytail: the real API returns no subcategory/cuisine data at all
-		// (Terra's location detail response has nothing that maps to it), so
-		// tripadvisormap.Subtype always sees a nil input and returns "" —
-		// correct per its contract, not broken. The mapper stays unused-for-
-		// now in case Terra ever adds a category field, or a future task
-		// derives a subtype from the search category param itself.
-		Subcategory: tripadvisormap.Subtype(category, nil),
+		// categoryTags derives tripadvisormap's expected leaf-tag shape
+		// ("fine_dining") from categories[]'s "restaurants > fine_dining"
+		// hierarchy strings; Subtype itself never guesses beyond its curated
+		// lookup — an unmapped tag leaves Subcategory "" (see its own doc).
+		Subcategory: tripadvisormap.Subtype(category, categoryTags(d.Categories)),
 	}
+}
+
+// toAspectRating converts one optional tripadvisor.Aspect into its wire
+// counterpart, nil staying nil — an aspect Tripadvisor didn't rate must
+// never become a fabricated zero-value bubble downstream.
+func toAspectRating(a *tripadvisor.Aspect) *activitiessvc.TripadvisorAspectRating {
+	if a == nil {
+		return nil
+	}
+	return &activitiessvc.TripadvisorAspectRating{Rating: a.Rating, IconURL: a.IconURL}
+}
+
+// categoryTags extracts the leaf hierarchy segment from each of categories
+// (e.g. "restaurants > fine_dining" -> "fine_dining") — the flat tag shape
+// tripadvisormap.Subtype's curated lookup expects.
+func categoryTags(categories []tripadvisor.Category) []string {
+	var tags []string
+	for _, c := range categories {
+		parts := strings.Split(c.Hierarchy, ">")
+		if leaf := strings.TrimSpace(parts[len(parts)-1]); leaf != "" {
+			tags = append(tags, leaf)
+		}
+	}
+	return tags
+}
+
+// rankingDateRe matches a full month name followed by a 4-digit year (e.g.
+// "July 2026") — the exact stamp rankingText itself would append, so it
+// doubles as the "does display_text already carry a date" check.
+var rankingDateRe = regexp.MustCompile(`(?i)\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b`)
+
+// rankingText composes attribution rule 05's dated ranking sentence: Terra's
+// own display_text for rankings[0] (never invented — see LocationDetails'
+// doc, Terra doesn't enumerate which of possibly several rankings is
+// "primary", so the first entry is used as-is), plus a
+// ", as rated by Tripadvisor travelers as of <Month YYYY>" suffix (sync
+// time) unless display_text already carries a date. Empty when Tripadvisor
+// returned no ranking at all.
+func rankingText(rankings []tripadvisor.Ranking) string {
+	if len(rankings) == 0 || rankings[0].DisplayText == "" {
+		return ""
+	}
+	text := rankings[0].DisplayText
+	if rankingDateRe.MatchString(text) {
+		return text
+	}
+	return text + ", as rated by Tripadvisor travelers as of " + time.Now().Format("January 2006")
 }
 
 func tripadvisorDetailsPayload(category activitiessvc.Category, attribution *activitiessvc.TripadvisorAttribution, reviews []activitiessvc.TripadvisorReview) any {
