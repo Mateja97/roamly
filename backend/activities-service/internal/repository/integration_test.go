@@ -1182,3 +1182,74 @@ func TestDeleteLegacyRestaurantsBars_Predicate(t *testing.T) {
 		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, otherCategory.ID) })
 	}
 }
+
+// TestDeleteTripadvisorJunkVenues_Predicate proves 0019's cleanup DELETE
+// matches service.hasFoodDrinkSignal exactly: rows with no price_level, no
+// subratings, and under 10 reviews are removed; a row with any one of those
+// three signals survives, mirroring the sync-time gate this migration is a
+// one-time catch-up for.
+func TestDeleteTripadvisorJunkVenues_Predicate(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	details := func(t *testing.T, priceLevel string, subratings bool, reviewCount int) json.RawMessage {
+		t.Helper()
+		ta := map[string]any{"review_count": reviewCount}
+		if priceLevel != "" {
+			ta["price_level"] = priceLevel
+		}
+		if subratings {
+			ta["subratings"] = map[string]any{"food": map[string]any{"rating": 4.0}}
+		}
+		raw, err := json.Marshal(map[string]any{"tripadvisor": ta})
+		if err != nil {
+			t.Fatalf("marshaling details: %v", err)
+		}
+		return raw
+	}
+
+	seed := func(t *testing.T, title string, sourceURL string, d json.RawMessage) activitiessvc.Activity {
+		t.Helper()
+		got, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+			Title: title, Category: activitiessvc.CategoryRestaurants,
+			Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPublished,
+			Source: "tripadvisor", SourceURL: sourceURL, Details: d,
+		})
+		if err != nil {
+			t.Fatalf("seeding %q: %v", title, err)
+		}
+		return got
+	}
+
+	junkNoSignal := seed(t, "Game Centar", "http://ta/junk1", details(t, "", false, 3))
+	junkFewReviews := seed(t, "Belgrade By Night", "http://ta/junk2", details(t, "", false, 0))
+	legitPrice := seed(t, "Inferno Pizza", "http://ta/legit1", details(t, "$$ - $$$", false, 4))
+	legitSubrating := seed(t, "Gradska Pivnica Terazije", "http://ta/legit2", details(t, "", true, 8))
+	legitReviewCount := seed(t, "Aviator Coffee Explorer", "http://ta/legit3", details(t, "", false, 40))
+	legitAtFloor := seed(t, "Chips & Love", "http://ta/legit4", details(t, "", false, 10))
+
+	const deleteJunkSQL = `
+DELETE FROM activities
+WHERE source = 'tripadvisor'
+  AND category IN ('restaurants', 'bars')
+  AND COALESCE(details -> 'tripadvisor' ->> 'price_level', '') = ''
+  AND details -> 'tripadvisor' -> 'subratings' IS NULL
+  AND COALESCE((details -> 'tripadvisor' ->> 'review_count')::int, 0) < 10`
+	if _, err := db.Exec(ctx, deleteJunkSQL); err != nil {
+		t.Fatalf("running 0019's delete: %v", err)
+	}
+
+	for _, junk := range []activitiessvc.Activity{junkNoSignal, junkFewReviews} {
+		if _, err := repo.GetByID(ctx, junk.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+			t.Errorf("junk row %q: GetByID() error = %v, want ErrNotFound", junk.Title, err)
+		}
+	}
+	for _, legit := range []activitiessvc.Activity{legitPrice, legitSubrating, legitReviewCount, legitAtFloor} {
+		if _, err := repo.GetByID(ctx, legit.ID); err != nil {
+			t.Errorf("legit row %q: GetByID() error = %v, want it to survive the delete", legit.Title, err)
+		} else {
+			t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, legit.ID) })
+		}
+	}
+}

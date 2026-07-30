@@ -188,7 +188,7 @@ func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsBothCategoriesWith
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1"},
+			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -216,7 +216,7 @@ func TestActivities_Query_TripadvisorSync_BothCategoriesDueShareOneSearchButUpse
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1"},
+			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -337,7 +337,7 @@ func TestActivities_Query_TripadvisorSync_OneBadDetailsCallDoesNotSinkTheRest(t 
 		nearbyOut:   []tripadvisor.LocationSummary{{LocationID: "bad"}, {LocationID: "good"}},
 		detailsErrs: map[string]error{"bad": context.DeadlineExceeded},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"good": {LocationID: "good", Name: "Fine Place", Rating: 4.0, WebURL: "https://ta/good"},
+			"good": {LocationID: "good", Name: "Fine Place", Rating: 4.0, WebURL: "https://ta/good", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)

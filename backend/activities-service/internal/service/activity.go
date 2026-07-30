@@ -845,6 +845,10 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			slog.Warn("tripadvisor location details failed", "location_id", s.LocationID, "error", err)
 			continue
 		}
+		if !hasFoodDrinkSignal(details) {
+			slog.Info("skipping tripadvisor location: no food/drink signal", "location_id", details.LocationID, "name", details.Name, "review_count", details.ReviewCount)
+			continue
+		}
 		reviews := a.tripadvisorReviews(syncCtx, details)
 
 		// One provisional photo at ingest time, the rest resolved later on
@@ -881,6 +885,39 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 // is decided by the caller's own due-category list, unaffected by this
 // value.
 const terraNearbySearchCategory = "RESTAURANT"
+
+// tripadvisorJunkReviewFloor is a tunable product heuristic, not a
+// documented Tripadvisor fact — see hasFoodDrinkSignal. Adjust if the
+// junk/false-reject rate drifts; nothing else depends on this exact value.
+const tripadvisorJunkReviewFloor = 10
+
+// hasFoodDrinkSignal reports whether d shows at least one signal Tripadvisor
+// only populates for actual eateries. terraNearbySearchCategory's
+// category=RESTAURANT parameter doesn't actually filter Terra's
+// nearby-search results (verified live) — car rentals, transport, photo
+// studios, monuments, and 0-review venues all come back alongside real
+// restaurants and would otherwise get upserted as one. Terra's
+// categories[]/rankings[]/awards[] fields are documented but never returned
+// on our API entitlement (also verified live), so they can't be used here;
+// this checks the fields LocationDetails does carry instead:
+//   - PriceLevel, which Terra documents as applicable to restaurants
+//   - any Food/Service/Value/Atmosphere subrating, meaningful only for an
+//     eatery
+//   - ReviewCount at or above tripadvisorJunkReviewFloor, as a fallback for
+//     a real venue Tripadvisor left both of the above blank for
+//
+// The review-count fallback only applies when neither stronger signal is
+// present, so a genuinely new restaurant with a set price_level or
+// subrating but few reviews still passes.
+func hasFoodDrinkSignal(d tripadvisor.LocationDetails) bool {
+	if d.PriceLevel != "" {
+		return true
+	}
+	if d.Subratings != (tripadvisor.Subratings{}) {
+		return true
+	}
+	return d.ReviewCount >= tripadvisorJunkReviewFloor
+}
 
 // maxFeaturedReviews caps the quoted reviews surfaced on a Tripadvisor
 // detail page (frame 5b's swipeable review row).
