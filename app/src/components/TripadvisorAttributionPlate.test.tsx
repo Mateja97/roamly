@@ -20,18 +20,52 @@ describe('TripadvisorAttributionPlate', () => {
     expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
   });
 
-  // design-spec.md T4: the ranking sentence is mock-only (no Terra API
-  // ranking data exists) — `ranking_text` is never rendered even when a
-  // caller sets it, so a stray value on the wire can never leak through.
-  it('detail variant: never renders ranking_text even when present (mock-only, out of scope)', () => {
+  it('detail variant: appends the dated ranking sentence to the context line, verbatim, when present', () => {
     render(
       <TripadvisorAttributionPlate
         tripadvisor={{ ...tripadvisor, ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026' }}
         variant="detail"
       />,
     );
-    expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
+    expect(
+      screen.getByText('1,204 reviews on Tripadvisor · #3 of 512 Restaurants in Belgrade, June 2026'),
+    ).toBeTruthy();
+  });
+
+  it('card variant: never renders ranking_text even when present (mock shows count only)', () => {
+    render(
+      <TripadvisorAttributionPlate
+        tripadvisor={{ ...tripadvisor, ranking_text: '#3 of 512 Restaurants in Belgrade, June 2026' }}
+        variant="card"
+      />,
+    );
+    expect(screen.getByText('1,204 reviews')).toBeTruthy();
     expect(screen.queryByText(/#3 of 512/)).toBeNull();
+  });
+
+  it('detail variant: renders the Travelers\' Choice badge when award is present', () => {
+    render(
+      <TripadvisorAttributionPlate
+        tripadvisor={{ ...tripadvisor, award: { name: "Travelers' Choice", year: 2026 } }}
+        variant="detail"
+      />,
+    );
+    expect(screen.getByText("Travelers' Choice 2026")).toBeTruthy();
+  });
+
+  it('detail variant: omits the badge entirely when award is absent (no empty badge)', () => {
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="detail" />);
+    expect(screen.queryByText(/Travelers' Choice/)).toBeNull();
+  });
+
+  it('card variant: never renders the award badge even when present (mock shows no badge on the card)', () => {
+    render(
+      <TripadvisorAttributionPlate
+        tripadvisor={{ ...tripadvisor, award: { name: "Travelers' Choice", year: 2026 } }}
+        variant="card"
+      />,
+    );
+    expect(screen.queryByText(/Travelers' Choice/)).toBeNull();
   });
 
   it('reserves the rating image width so a broken load keeps the count in place', () => {

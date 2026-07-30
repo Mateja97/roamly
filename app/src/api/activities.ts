@@ -52,28 +52,43 @@ export type OpeningHours = {
 // exhibition" unique sections share this shape (mirrors backend's Banner).
 export type DetailBanner = { title: string; description?: string };
 
+// fix/tripadvisor-design-fidelity: one subrating aspect's value — mirrors
+// backend's `TripadvisorAspectRating`. `icon_url` is the real API-hosted
+// bubble image for that aspect (Terra does return it; a prior version of
+// this comment claimed otherwise — that was never checked against the live
+// API). `icon_url` absent (Tripadvisor didn't supply an image for this
+// aspect) is the sanctioned trigger for the numeric-fallback rendering
+// (compliance rule 02: a number is compliant, a hand-redrawn bubble isn't).
+export type TripadvisorAspectRating = { rating: number; icon_url?: string };
+
 // T4: Tripadvisor's per-category rating breakdown — mirrors backend's
 // `TripadvisorSubratings` (backend/shared/models/activitiessvc/activity.go).
-// Numeric 1-5 values only; the Terra API's per-subrating `rating_image_url`
-// doesn't exist (confirmed against the backend model), so the subratings
-// grid renders these as plain text rather than a redrawn bubble image
-// (compliance rule 02 forbids hand-drawing partner bubbles). `omitempty` on
-// the wire means an absent key here — never a real 0 rating.
+// Each aspect is its own optional object; `omitempty` on the wire means an
+// absent key here — never a fabricated 0 rating.
 export type TripadvisorSubratings = {
-  food?: number;
-  service?: number;
-  value?: number;
-  atmosphere?: number;
+  food?: TripadvisorAspectRating;
+  service?: TripadvisorAspectRating;
+  value?: TripadvisorAspectRating;
+  atmosphere?: TripadvisorAspectRating;
 };
+
+// fix/tripadvisor-design-fidelity: Travelers' Choice accolade — mirrors
+// backend's `TripadvisorAward`. Only ever the Travelers' Choice type (the
+// backend filters out every other award type at sync time).
+export type TripadvisorAward = { name: string; year: number };
 
 // T8: Tripadvisor's required attribution for a Tripadvisor-sourced
 // Restaurant/Bar row — mirrors backend's `TripadvisorAttribution`
 // (backend/shared/models/activitiessvc/activity.go). Present only for
 // Tripadvisor-sourced rows, never for any other row. No aggregate numeric
 // rating field on the wire — the rating is carried entirely by the
-// API-hosted `rating_image_url` bubble image. Phone/Subratings are T3/T4
-// additions, both optional (absent when Tripadvisor returned none for the
-// location).
+// API-hosted `rating_image_url` bubble image. Award/PriceLevel/Cuisine are
+// fix/tripadvisor-design-fidelity additions; `price_level` is one of
+// Terra's own exact strings ("Cheap Eats"/"Mid Range"/"Fine Dining"), never
+// reformatted. `cuisine` is Tripadvisor's own category label, distinct from
+// `ActivityDetails`'s `cuisine` field (free-text, admin/Google rows too).
+// Every optional field is omitted (never a placeholder) when Tripadvisor
+// didn't return it for this location.
 export type TripadvisorAttribution = {
   rating_image_url: string;
   review_count: number;
@@ -81,16 +96,21 @@ export type TripadvisorAttribution = {
   web_url: string;
   phone?: string;
   subratings?: TripadvisorSubratings;
+  award?: TripadvisorAward;
+  price_level?: string;
+  cuisine?: string;
 };
 
 // T4: a backend-gated quoted traveler review — only ever populated for a
 // 5-bubble review on a place rated >=4.0 (compliance rule 04). Up to 3 ship
-// per place (T3); no per-review `rating_image_url` on the wire (mirrors
-// TripadvisorSubratings above — numeric only).
+// per place (T3). `rating_image_url` (fix/tripadvisor-design-fidelity) is
+// the review's own real API-hosted bubble image, omitted when Tripadvisor
+// didn't supply one for that specific review.
 export type TripadvisorReview = {
   rating: number;
   date: string;
   text: string;
+  rating_image_url?: string;
 };
 
 // T3: per-category structured detail payload (T4 consumes this for the

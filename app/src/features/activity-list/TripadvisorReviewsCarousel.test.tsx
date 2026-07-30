@@ -34,9 +34,21 @@ describe('TripadvisorReviewsCarousel', () => {
     expect(screen.getByRole('button', { name: 'Next review' })).toBeTruthy();
   });
 
-  it('shows the numeric rating and verbatim date on each card (no rating-image, no bubble asset)', () => {
+  it('shows the numeric rating and verbatim date when the review carries no rating_image_url', () => {
     render(<TripadvisorReviewsCarousel reviews={[reviews[0]]} />);
     expect(screen.getByText('Rated 5.0')).toBeTruthy();
+    expect(screen.getByText('14 June 2026')).toBeTruthy();
+  });
+
+  it('renders the API-hosted bubble image (compliance rule 02) in place of the numeric rating when rating_image_url is present', () => {
+    render(
+      <TripadvisorReviewsCarousel
+        reviews={[{ ...reviews[0], rating_image_url: 'https://tripadvisor.example/review-bubble.png' }]}
+      />,
+    );
+    expect(screen.getByTestId('review-rating-bubble')).toBeTruthy();
+    expect(screen.queryByText('Rated 5.0')).toBeNull();
+    expect(screen.getByLabelText('Rated 5.0')).toBeTruthy();
     expect(screen.getByText('14 June 2026')).toBeTruthy();
   });
 

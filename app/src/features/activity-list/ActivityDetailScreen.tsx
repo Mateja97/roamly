@@ -47,6 +47,7 @@ import {
   todayHoursRow,
   tripadvisorAddressLine,
   tripadvisorAttribution,
+  tripadvisorEyebrow,
   tripadvisorReviews,
   uniqueSection,
   weekHoursModalData,
@@ -156,6 +157,9 @@ export function ActivityDetailScreen({
   const tripadvisor = tripadvisorAttribution(activity);
   const reviews = tripadvisorReviews(activity);
   const address = tripadvisorAddressLine(activity);
+  // §5b: eyebrow line above the title — undefined (no render) for a
+  // non-Tripadvisor row.
+  const eyebrow = tripadvisorEyebrow(activity, metaText);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -309,7 +313,13 @@ export function ActivityDetailScreen({
             </View>
           </View>
 
-          <Text style={styles.title}>{activity.title}</Text>
+          <View style={styles.titleGroup}>
+            {eyebrow && <Text style={styles.tripadvisorEyebrow}>{eyebrow}</Text>}
+            <Text style={styles.title}>{activity.title}</Text>
+            {tripadvisor?.cuisine && (
+              <Text style={styles.tripadvisorCuisineSubtitle}>{tripadvisor.cuisine}</Text>
+            )}
+          </View>
 
           <View style={styles.metaRow}>
             {activity.category === 'nightlife' && status && !todayRow ? (
@@ -635,6 +645,25 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
+  },
+  // §5b: wraps eyebrow/title/cuisine-subtitle as one tight cluster — a
+  // smaller gap than titleBlock's own space[6] between its top-level
+  // sections, matching the mock's close eyebrow→h2→subtitle spacing.
+  titleGroup: {
+    gap: space[1],
+  },
+  // §5b: eyebrow (category · price level · distance) — same overline
+  // treatment as TripadvisorReviewsCarousel's section label.
+  tripadvisorEyebrow: {
+    fontSize: fontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: fontSize.xs * 0.08,
+    color: colors.primary,
+  },
+  tripadvisorCuisineSubtitle: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    lineHeight: fontSize.sm * 1.5,
   },
   title: {
     // Marcellus loads once, globally, gated by ScopePickerScreen at the

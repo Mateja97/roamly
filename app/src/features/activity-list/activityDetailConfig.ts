@@ -254,6 +254,19 @@ function categoryNoun(category: Category): string {
   return SINGULAR_NOUN[category] ?? CATEGORY_LABELS[category];
 }
 
+// §5b: the eyebrow line above a Tripadvisor row's title — category · price
+// level · distance. `price_level` is Terra's own exact string ("Cheap
+// Eats"/"Mid Range"/"Fine Dining"), rendered verbatim, never reformatted to
+// $ symbols; omitted from the line (not blanked) when Tripadvisor didn't
+// return one. `undefined` for a non-Tripadvisor row (no eyebrow at all).
+export function tripadvisorEyebrow(activity: Activity, distanceText: string): string | undefined {
+  const tripadvisor = tripadvisorAttribution(activity);
+  if (!tripadvisor) return undefined;
+  return [categoryNoun(activity.category), tripadvisor.price_level, distanceText]
+    .filter((v): v is string => Boolean(v))
+    .join(' · ');
+}
+
 // Per-category subtype qualifier, pulled from an existing `details` field —
 // omitted (no dangling "·") when that field is absent, per the
 // omit-rather-than-blank rule.
@@ -553,11 +566,18 @@ export function factStripFields(
   }
   switch (d.category) {
     case 'restaurants':
+      // §5b: a Tripadvisor-sourced row now carries its own cuisine (eyebrow
+      // subtitle) and price level (eyebrow line) via `tripadvisorEyebrow`
+      // above — the generic Cuisine/Price chips would just repeat that, so
+      // they're dropped for Tripadvisor rows only; every other restaurant
+      // row keeps them exactly as before.
       return withHours(
-        buildChips([
-          [Utensils, 'Cuisine', d.cuisine],
-          [Euro, 'Price', d.price_tier],
-        ]),
+        d.tripadvisor
+          ? []
+          : buildChips([
+              [Utensils, 'Cuisine', d.cuisine],
+              [Euro, 'Price', d.price_tier],
+            ]),
         d.hours,
       );
     case 'bars':

@@ -9,10 +9,12 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import type { TripadvisorReview } from '../../api/activities';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { RATING_BUBBLE_ASPECT_RATIO, RATING_BUBBLE_WIDTH } from '../../theme/tripadvisorBubble';
 
 type TripadvisorReviewsCarouselProps = {
   reviews: TripadvisorReview[];
@@ -27,13 +29,12 @@ const CARD_GAP = space[3];
 // snap via `snapToInterval` rather than `pagingEnabled` (each page is
 // narrower than the screen here, unlike a full-bleed photo page).
 //
-// No per-review `rating_image_url` exists on the wire (only a numeric
-// `rating`, confirmed against T3's backend model, same gap as the
-// subratings grid) and the API returns no separate review title (only
-// `{rating, date, text}`) — so each card shows the numeric rating + date,
-// then the quote as the card's one body block, matching the shipped
-// single-review layout this replaces (TripadvisorBlock's old
-// `featuredReview` block) rather than inventing an unbacked title line.
+// Each review's own `rating_image_url` (fix/tripadvisor-design-fidelity —
+// real, per-review API-hosted bubble image, compliance rule 02) renders in
+// place of the numeric rating when Tripadvisor supplied one; the numeric
+// text is the fallback when it's absent for that specific review. The API
+// returns no separate review title (only `{rating, date, text}`), so the
+// quote is still the card's one body block.
 export function TripadvisorReviewsCarousel({ reviews }: TripadvisorReviewsCarouselProps) {
   const { width } = useWindowDimensions();
   const cardWidth = Math.round(width * CARD_WIDTH_RATIO);
@@ -146,7 +147,20 @@ function ReviewCard({ review, width }: { review: TripadvisorReview; width: numbe
   return (
     <View style={[styles.card, { width }]}>
       <View style={styles.cardTopRow}>
-        <Text style={styles.cardRating}>{`Rated ${review.rating.toFixed(1)}`}</Text>
+        {review.rating_image_url ? (
+          <View accessible accessibilityLabel={`Rated ${review.rating.toFixed(1)}`}>
+            <Image
+              testID="review-rating-bubble"
+              source={{ uri: review.rating_image_url }}
+              style={styles.cardRatingImage}
+              contentFit="contain"
+              accessibilityIgnoresInvertColors
+              importantForAccessibility="no"
+            />
+          </View>
+        ) : (
+          <Text style={styles.cardRating}>{`Rated ${review.rating.toFixed(1)}`}</Text>
+        )}
         <Text style={styles.cardDate}>{review.date}</Text>
       </View>
       <Text style={styles.cardQuote}>{`“${review.text}”`}</Text>
@@ -226,6 +240,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.ink,
     fontVariant: ['tabular-nums'],
+  },
+  cardRatingImage: {
+    width: RATING_BUBBLE_WIDTH,
+    aspectRatio: RATING_BUBBLE_ASPECT_RATIO,
   },
   cardDate: {
     fontSize: fontSize.xs,

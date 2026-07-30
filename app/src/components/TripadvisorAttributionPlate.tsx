@@ -1,7 +1,9 @@
 import { Image } from 'expo-image';
+import { Award } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import type { TripadvisorAttribution } from '../api/activities';
 import { colors, fontSize, radius, space } from '../theme/tokens';
+import { RATING_BUBBLE_ASPECT_RATIO, RATING_BUBBLE_WIDTH } from '../theme/tripadvisorBubble';
 import { TripadvisorLogo } from './TripadvisorLogo';
 
 type TripadvisorAttributionPlateProps = {
@@ -9,12 +11,6 @@ type TripadvisorAttributionPlateProps = {
   /** `card` = full-bleed band inside ActivityCard's body (§5a); `detail` = inset block on the detail screen (§5b). */
   variant: 'card' | 'detail';
 };
-
-const RATING_IMAGE_WIDTH = 55;
-// Tripadvisor's rating-bubble strip images run roughly 5:1 wide — reserving
-// this ratio at a fixed 55px width approximates the spec's "height auto,
-// contentFit contain" without needing the real image's intrinsic size.
-const RATING_IMAGE_ASPECT_RATIO = 5;
 
 function reviewCountLabel(count: number): string {
   return `${count.toLocaleString('en-US')} reviews`;
@@ -32,13 +28,16 @@ function reviewCountLabel(count: number): string {
 // expo-image load/broken behavior, no bespoke fallback UI (out of scope).
 export function TripadvisorAttributionPlate({ tripadvisor, variant }: TripadvisorAttributionPlateProps) {
   const logoHeight = variant === 'card' ? 20 : 24;
-  // design-spec.md T4: the ranking sentence ("#N of M restaurants...") and
-  // the "Travellers' Choice 2026" badge are mock-only — the Terra API
-  // returns no ranking/award data at all, so `ranking_text` never actually
-  // populates (T3 confirmed). Context line is review count only now.
+  // §5b: the detail variant's context line carries the review count and,
+  // when Tripadvisor returned one, the dated ranking sentence — rendered
+  // verbatim (never reformatted/truncated, compliance rule 05's month+year
+  // stamp is composed server-side). The card variant (§5a) never shows
+  // ranking/award — count only, matching the mock.
   const contextLine =
     variant === 'detail'
-      ? `${reviewCountLabel(tripadvisor.review_count)} on Tripadvisor`
+      ? [`${reviewCountLabel(tripadvisor.review_count)} on Tripadvisor`, tripadvisor.ranking_text]
+          .filter(Boolean)
+          .join(' · ')
       : null;
 
   return (
@@ -57,6 +56,14 @@ export function TripadvisorAttributionPlate({ tripadvisor, variant }: Tripadviso
         {variant === 'card' && <Text style={styles.countText}>{reviewCountLabel(tripadvisor.review_count)}</Text>}
       </View>
       {contextLine && <Text style={styles.contextText}>{contextLine}</Text>}
+      {/* §5b: Travelers' Choice badge — detail only, omitted when the
+          location carries no award (compliance: never fabricated). */}
+      {variant === 'detail' && tripadvisor.award && (
+        <View style={styles.awardRow}>
+          <Award size={13} color={colors.ink} strokeWidth={2} />
+          <Text style={styles.awardText}>{`${tripadvisor.award.name} ${tripadvisor.award.year}`}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -86,8 +93,8 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   ratingImage: {
-    width: RATING_IMAGE_WIDTH,
-    aspectRatio: RATING_IMAGE_ASPECT_RATIO,
+    width: RATING_BUBBLE_WIDTH,
+    aspectRatio: RATING_BUBBLE_ASPECT_RATIO,
   },
   countText: {
     fontSize: fontSize.xs,
@@ -99,5 +106,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.ink,
     lineHeight: fontSize.xs * 1.5,
+  },
+  awardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+  },
+  awardText: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    color: colors.ink,
   },
 });
