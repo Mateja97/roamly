@@ -39,20 +39,19 @@ var fieldMask = strings.Join([]string{
 	"places.primaryType", "places.types", "nextPageToken",
 }, ",")
 
-// categoryQueries maps each of the remaining 10 Google-sourced taxonomy
+// categoryQueries maps each of the remaining 9 Google-sourced taxonomy
 // categories to the Places Text Search term used to discover its venues.
-// Restaurants and Bars are deliberately absent — they're sourced
+// Restaurants, Cafés and Bars are deliberately absent — they're sourced
 // exclusively from the Tripadvisor Content API via
 // service.Activities.Query's lazy sync, not this batch pipeline (see
-// docs/superpowers/specs/2026-07-29-tripadvisor-restaurants-bars-design.md).
-// One term per remaining category keeps the request budget small; add
-// variants later if coverage of a thin category (kids, art) proves too
-// sparse.
+// docs/superpowers/specs/2026-07-29-tripadvisor-restaurants-bars-design.md
+// and tripadvisormap.Category). One term per remaining category keeps the
+// request budget small; add variants later if coverage of a thin category
+// (kids, art) proves too sparse.
 var categoryQueries = []struct {
 	category activitiessvc.Category
 	term     string
 }{
-	{activitiessvc.CategoryCafes, "coffee shops"},
 	{activitiessvc.CategoryNightlife, "night clubs"},
 	{activitiessvc.CategoryNature, "parks and nature"},
 	{activitiessvc.CategorySport, "sports and recreation"},

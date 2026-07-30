@@ -178,12 +178,12 @@ func TestActivities_Query_TripadvisorSync_NonTripadvisorCategoryNeverSyncs(t *te
 	}
 }
 
-func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsBothCategoriesWithOneSearch(t *testing.T) {
-	// Restaurants and Bars are both due for the one anchor here. Terra has no
-	// bars-specific category, so a NearbySearch(RESTAURANT) covers both — the
-	// fix under test is that this now costs exactly one NearbySearch call
-	// (not one per due category) fanned out into one Upsert per category, so
-	// the two categories' rows don't collide on (source_url, category).
+func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsOneSearchOneRow(t *testing.T) {
+	// Restaurants, Cafés and Bars are all due for the one anchor here. Terra
+	// has no per-category search distinction, so a NearbySearch(RESTAURANT)
+	// covers all three — but the venue's name (tripadvisormap.Category)
+	// decides its one true category, so it gets exactly one Upsert, not one
+	// per due category.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
@@ -198,25 +198,28 @@ func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsBothCategoriesWith
 		t.Fatalf("Query() error: %v", err)
 	}
 	if ta.nearbyCalls != 1 {
-		t.Errorf("NearbySearch calls = %d, want 1 (restaurants + bars share one search, unfiltered query)", ta.nearbyCalls)
+		t.Errorf("NearbySearch calls = %d, want 1 (restaurants + cafes + bars share one search, unfiltered query)", ta.nearbyCalls)
 	}
-	if repo.upsertCalls != 2 {
-		t.Errorf("Upsert calls = %d, want 2 (one per due category for the one candidate)", repo.upsertCalls)
+	if repo.upsertCalls != 1 {
+		t.Errorf("Upsert calls = %d, want 1 (exactly one row per venue, regardless of how many categories were due)", repo.upsertCalls)
+	}
+	if repo.gotUpsert.Category != activitiessvc.CategoryRestaurants {
+		t.Errorf("Category = %q, want restaurants ('Ambar Beograd' matches no cafe/bar keyword)", repo.gotUpsert.Category)
 	}
 }
 
-func TestActivities_Query_TripadvisorSync_BothCategoriesDueShareOneSearchButUpsertSeparately(t *testing.T) {
+func TestActivities_Query_TripadvisorSync_OneVenueOneRowInvariant(t *testing.T) {
 	// The core bug fix: before, a Restaurants sync and a Bars sync for the
-	// same anchor each ran their own NearbySearch and their own Upsert
-	// keyed only on source_url, so the second upsert clobbered the first's
-	// category. Now one NearbySearch serves both due categories and each
-	// gets its own Upsert call, so both rows survive with the same
-	// ExternalID/SourceURL but a different Category.
+	// same anchor each upserted the same venue under their own category, so
+	// one real-world venue produced two rows with the same source_url. Now
+	// tripadvisormap.Category derives the venue's one true category from its
+	// name, so even when both Restaurants and Bars are due, a bar-named
+	// venue produces exactly one row, filed as Bars.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
+			"111": {LocationID: "111", Name: "Gradska Pivnica Terazije", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -233,26 +236,50 @@ func TestActivities_Query_TripadvisorSync_BothCategoriesDueShareOneSearchButUpse
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
 	}
-	if len(repo.gotUpserts) != 2 {
-		t.Fatalf("Upsert calls = %d, want 2", len(repo.gotUpserts))
+	if len(repo.gotUpserts) != 1 {
+		t.Fatalf("Upsert calls = %d, want exactly 1 — one venue must produce exactly one row", len(repo.gotUpserts))
 	}
-
-	first, second := repo.gotUpserts[0], repo.gotUpserts[1]
-	if first.ExternalID != second.ExternalID || first.ExternalID != "111" {
-		t.Errorf("ExternalID mismatch: %q, %q, want both = 111", first.ExternalID, second.ExternalID)
+	if repo.gotUpserts[0].Category != activitiessvc.CategoryBars {
+		t.Errorf("Category = %q, want bars ('Gradska Pivnica Terazije' matches the pivnica keyword)", repo.gotUpserts[0].Category)
 	}
-	if first.SourceURL != second.SourceURL || first.SourceURL != "https://ta/1" {
-		t.Errorf("SourceURL mismatch: %q, %q, want both = https://ta/1", first.SourceURL, second.SourceURL)
-	}
-	if first.Category == second.Category {
-		t.Errorf("Category = %q for both upserts, want one Restaurants and one Bars", first.Category)
-	}
-	gotCategories := map[activitiessvc.Category]bool{first.Category: true, second.Category: true}
-	if !gotCategories[activitiessvc.CategoryRestaurants] || !gotCategories[activitiessvc.CategoryBars] {
-		t.Errorf("categories = %v, want exactly {restaurants, bars}", gotCategories)
-	}
+	// MarkSynced still runs for every due category — this anchor's search
+	// did cover both, even though only one produced a row.
 	if len(repo.markSynced) != 2 {
 		t.Errorf("markSynced calls = %d, want 2 (one per due category, not per candidate)", len(repo.markSynced))
+	}
+}
+
+func TestActivities_Query_TripadvisorSync_CandidateSkippedWhenClassifiedCategoryNotDue(t *testing.T) {
+	// Only Bars is due at this anchor (Restaurants/Cafés are still fresh).
+	// The single NearbySearch still finds a restaurant-named candidate, but
+	// it must be skipped rather than upserted under a category that wasn't
+	// due — that category's cached row is already fresh.
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Inferno Pizza", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
+		},
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	req := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryBars},
+	}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+
+	if ta.nearbyCalls != 1 {
+		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
+	}
+	if repo.upsertCalls != 0 {
+		t.Errorf("Upsert calls = %d, want 0 ('Inferno Pizza' classifies as restaurants, not the due bars)", repo.upsertCalls)
+	}
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != "44.8,20.5|bars" {
+		t.Errorf("markSynced = %v, want exactly one call for cell 44.8,20.5/bars", repo.markSynced)
 	}
 }
 
