@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,9 +32,10 @@ type repository interface {
 	Create(ctx context.Context, in activitiessvc.NewActivity) (activitiessvc.Activity, error)
 	Update(ctx context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error)
 	// Upsert inserts or updates an ingested activity, keyed on
-	// (source_url, category) — the same source_url may legitimately exist
-	// under two different categories (T4's Restaurants/Bars lazy sync
-	// reuses the same upsert the batch Google pipeline already relies on).
+	// (source_url, category) — T4's Restaurants/Cafés/Bars lazy sync (see
+	// syncTripadvisorAnchor) reuses the same upsert the batch Google
+	// pipeline already relies on. Each source_url now maps to exactly one
+	// category, decided by tripadvisormap.Category before Upsert is called.
 	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
 	// SyncedAt reports the last successful Tripadvisor sync time for
 	// (cellKey, category), and whether one has happened at all.
@@ -52,7 +54,7 @@ type placesClient interface {
 
 // tripadvisorClient is the subset of internal/tripadvisor.Client the
 // service layer needs: GetPhotos uses LocationPhotos; the lazy
-// Restaurants/Bars sync (below) uses the other three. Optional (see
+// Restaurants/Cafés/Bars sync (below) uses the other three. Optional (see
 // WithTripadvisor) — a server with none configured never triggers a live
 // sync and GetPhotos falls back to whatever's already cached.
 type tripadvisorClient interface {
@@ -567,7 +569,7 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	if !validCategory(in.Category) {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, in.Category)
 	}
-	if in.Category == activitiessvc.CategoryRestaurants || in.Category == activitiessvc.CategoryBars {
+	if in.Category == activitiessvc.CategoryRestaurants || in.Category == activitiessvc.CategoryCafes || in.Category == activitiessvc.CategoryBars {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: category %q is sourced exclusively from Tripadvisor and cannot be admin-created", sharederrors.ErrInvalidInput, in.Category)
 	}
 	if !activitiessvc.ValidSubcategory(in.Category, in.Subcategory) {
@@ -714,22 +716,22 @@ const tripadvisorSyncTimeout = 6 * time.Second
 // can trigger a live sync for — an Anywhere query with many selected cities
 // must not fan out into a dozen live Tripadvisor calls at once. One anchor
 // costs exactly one Terra NearbySearch call regardless of how many of its
-// due categories it covers (Restaurants and Bars share the same search —
-// see syncTripadvisorAnchor), so this is a true per-anchor cap: staleness is
+// due categories it covers (Restaurants, Cafés and Bars share the same
+// search — see syncTripadvisorAnchor), so this is a true per-anchor cap: staleness is
 // still checked per (anchor, category) pair before the cap is applied (see
 // syncTripadvisorIfNeeded), but the cap itself counts distinct anchors, not
 // (anchor, category) pairs.
 const maxSyncAnchorsPerQuery = 3
 
-// syncCategories returns which of requested (or, if empty, both) of
-// Restaurants/Bars a lazy sync should cover for this query.
+// syncCategories returns which of requested (or, if empty, all three) of
+// Restaurants/Cafés/Bars a lazy sync should cover for this query.
 func syncCategories(requested []activitiessvc.Category) []activitiessvc.Category {
 	if len(requested) == 0 {
-		return []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars}
+		return []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars}
 	}
 	var out []activitiessvc.Category
 	for _, c := range requested {
-		if c == activitiessvc.CategoryRestaurants || c == activitiessvc.CategoryBars {
+		if c == activitiessvc.CategoryRestaurants || c == activitiessvc.CategoryCafes || c == activitiessvc.CategoryBars {
 			out = append(out, c)
 		}
 	}
@@ -766,7 +768,7 @@ type syncGroup struct {
 }
 
 // syncTripadvisorIfNeeded triggers a live Tripadvisor sync for req's
-// Restaurants/Bars anchors when the resolved category filter could include
+// Restaurants/Cafés/Bars anchors when the resolved category filter could include
 // them and their cached data is missing or stale. Never fails Query — a
 // sync problem at any step is logged and simply leaves the DB as-is; the
 // SQL query that follows just sees whatever's already cached (possibly
@@ -814,21 +816,28 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 	}
 }
 
-// syncTripadvisorAnchor syncs one anchor for every category in categories:
-// a single live NearbySearch (Terra has no per-category distinction — see
+// syncTripadvisorAnchor syncs one anchor for categories (the due
+// Restaurants/Cafés/Bars subset — see syncTripadvisorIfNeeded): a single
+// live NearbySearch (Terra has no per-category distinction — see
 // terraNearbySearchCategory), then one LocationDetails/LocationReviews/
 // LocationPhotos pass per candidate (venue-level facts, identical regardless
-// of which Roamly category the venue ends up filed under), then one
-// repo.Upsert per candidate per due category — so a venue due for both
-// Restaurants and Bars gets two upserts, same details/review/photos,
-// different Category, avoiding the source_url collision a per-category
-// NearbySearch used to cause. A NearbySearch failure aborts this anchor's
-// sync entirely (no upserts, no MarkSynced calls); a single candidate's
+// of Roamly category), then tripadvisormap.Category classifies the venue
+// from its own name — Terra gives no per-venue category signal (see that
+// function's doc) — so exactly one Roamly category is decided per venue,
+// never the caller's due-category loop. A candidate only gets a repo.Upsert
+// when its classified category is itself due at this anchor; a candidate
+// classified into an already-fresh category is left alone; that category's
+// data is untouched until its own turn comes due. This is what keeps a
+// venue to exactly one row instead of the one-row-per-due-category
+// duplication the old per-category upsert loop caused (see 0017/0021's
+// migration comments). A NearbySearch failure aborts this anchor's sync
+// entirely (no upserts, no MarkSynced calls); a single candidate's
 // LocationDetails failure only skips that candidate — the rest of the
 // anchor's candidates and its MarkSynced calls still proceed, same rule
 // internal/places.ResolvePhotos already follows. MarkSynced is called once
 // per due category after all candidates are processed, not once per
-// candidate.
+// candidate, regardless of whether that category matched any candidate this
+// round.
 func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitiessvc.Point, categories []activitiessvc.Category) {
 	syncCtx, cancel := context.WithTimeout(ctx, tripadvisorSyncTimeout)
 	defer cancel()
@@ -846,9 +855,20 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			continue
 		}
 		if !hasFoodDrinkSignal(details) {
-			slog.Info("skipping tripadvisor location: no food/drink signal", "location_id", details.LocationID, "name", details.Name, "review_count", details.ReviewCount)
+			slog.Info("skipping tripadvisor location: not a Restaurant_Review venue", "location_id", details.LocationID, "name", details.Name, "web_url", details.WebURL)
 			continue
 		}
+
+		// The venue's own name decides its one true Roamly category (see
+		// tripadvisormap.Category) — not this anchor's due-category list.
+		// Skip the candidate entirely when its classified category isn't
+		// due here: that category's cached row (if any) is already fresh
+		// and this candidate's data would just be a no-op rewrite of it.
+		category := tripadvisormap.Category(details.Name)
+		if !slices.Contains(categories, category) {
+			continue
+		}
+
 		reviews := a.tripadvisorReviews(syncCtx, details)
 
 		// One provisional photo at ingest time, the rest resolved later on
@@ -861,10 +881,8 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			photos = p
 		}
 
-		for _, category := range categories {
-			if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, photos)); err != nil {
-				slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "category", category, "error", err)
-			}
+		if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, photos)); err != nil {
+			slog.Warn("upserting tripadvisor activity failed", "location_id", s.LocationID, "category", category, "error", err)
 		}
 	}
 
@@ -886,37 +904,42 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 // value.
 const terraNearbySearchCategory = "RESTAURANT"
 
-// tripadvisorJunkReviewFloor is a tunable product heuristic, not a
-// documented Tripadvisor fact — see hasFoodDrinkSignal. Adjust if the
-// junk/false-reject rate drifts; nothing else depends on this exact value.
-const tripadvisorJunkReviewFloor = 10
+// restaurantReviewPathPrefix is the path segment Tripadvisor's own web_url
+// carries for every restaurant/eatery review page, e.g.
+// ".../Restaurant_Review-g295424-d1911226-Reviews-Little_Bay-Belgrade.html"
+// — Attraction_Review and Hotel_Review are the same shape for those venue
+// types. See hasFoodDrinkSignal.
+const restaurantReviewPathPrefix = "Restaurant_Review-"
 
-// hasFoodDrinkSignal reports whether d shows at least one signal Tripadvisor
-// only populates for actual eateries. terraNearbySearchCategory's
-// category=RESTAURANT parameter doesn't actually filter Terra's
-// nearby-search results (verified live) — car rentals, transport, photo
-// studios, monuments, and 0-review venues all come back alongside real
-// restaurants and would otherwise get upserted as one. Terra's
-// categories[]/rankings[]/awards[] fields are documented but never returned
-// on our API entitlement (also verified live), so they can't be used here;
-// this checks the fields LocationDetails does carry instead:
-//   - PriceLevel, which Terra documents as applicable to restaurants
-//   - any Food/Service/Value/Atmosphere subrating, meaningful only for an
-//     eatery
-//   - ReviewCount at or above tripadvisorJunkReviewFloor, as a fallback for
-//     a real venue Tripadvisor left both of the above blank for
-//
-// The review-count fallback only applies when neither stronger signal is
-// present, so a genuinely new restaurant with a set price_level or
-// subrating but few reviews still passes.
+// hasFoodDrinkSignal reports whether d is Tripadvisor's own idea of a
+// restaurant/eatery. terraNearbySearchCategory's category=RESTAURANT
+// parameter doesn't actually filter Terra's nearby-search results (verified
+// live) — car rentals, transport, photo studios, monuments, hotels and
+// attractions all come back alongside real restaurants and would otherwise
+// get upserted as one. Terra's categories[]/rankings[]/awards[] fields are
+// documented but never returned on our API entitlement (also verified
+// live), so they can't be used here; PriceLevel/subratings used to stand in
+// for them, but Tripadvisor only populates those for a venue with existing
+// reviews, so a brand-new restaurant with neither would have been wrongly
+// rejected. web_url doesn't have that gap: Tripadvisor stamps every review
+// page with its own venue-type path segment
+// (restaurantReviewPathPrefix/Attraction_Review-/Hotel_Review-) regardless
+// of review history, so this is Tripadvisor's own classification rather
+// than an inferred one. Matched as a full URL path segment, not a raw
+// substring of the URL, so a venue name that happens to contain the text
+// can't spoof a match; an empty or unparseable WebURL is rejected, not
+// assumed food-related by default.
 func hasFoodDrinkSignal(d tripadvisor.LocationDetails) bool {
-	if d.PriceLevel != "" {
-		return true
+	u, err := url.Parse(d.WebURL)
+	if err != nil {
+		return false
 	}
-	if d.Subratings != (tripadvisor.Subratings{}) {
-		return true
+	for _, seg := range strings.Split(u.Path, "/") {
+		if strings.HasPrefix(seg, restaurantReviewPathPrefix) {
+			return true
+		}
 	}
-	return d.ReviewCount >= tripadvisorJunkReviewFloor
+	return false
 }
 
 // maxFeaturedReviews caps the quoted reviews surfaced on a Tripadvisor

@@ -13,9 +13,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/fs"
 	"os/exec"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,7 +29,11 @@ import (
 	"backend/shared/models/activitiessvc"
 )
 
-func startTestPostgres(t *testing.T) *pgxpool.Pool {
+// startTestPostgresPool starts a throwaway Postgres container and returns a
+// connected, unmigrated pool — the part startTestPostgres and
+// TestMigration0021DedupePreservesUniqueConstraint (which needs to seed rows
+// mid-chain, before 0019-0021 run) both need.
+func startTestPostgresPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not available, skipping integration test")
@@ -64,10 +71,40 @@ func startTestPostgres(t *testing.T) *pgxpool.Pool {
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+	return db
+}
+
+func startTestPostgres(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	db := startTestPostgresPool(t)
 	if err := shareddb.Migrate(context.Background(), db, Migrations()); err != nil {
 		t.Fatalf("running migrations: %v", err)
 	}
 	return db
+}
+
+// migrationsThrough returns the embedded migration set truncated to the
+// files up to and including cutoff (by filename, sorted the same way
+// shareddb.Migrate applies them) — lets a test seed rows between two
+// migrations instead of only before or after the whole chain.
+func migrationsThrough(cutoff string) fs.FS {
+	full := Migrations()
+	entries, err := fs.ReadDir(full, ".")
+	if err != nil {
+		panic(err)
+	}
+	out := fstest.MapFS{}
+	for _, e := range entries {
+		if e.Name() > cutoff {
+			continue
+		}
+		data, err := fs.ReadFile(full, e.Name())
+		if err != nil {
+			panic(err)
+		}
+		out[e.Name()] = &fstest.MapFile{Data: data}
+	}
+	return out
 }
 
 func TestMigration0012IngestionColumns(t *testing.T) {
@@ -286,12 +323,12 @@ func TestActivities_Query_Integration(t *testing.T) {
 
 	t.Run("city column is backfilled and queryable per T1", func(t *testing.T) {
 		wantCounts := map[string]int{
-			"Belgrade":  109, // 7 from 0002_seed.sql - 1 (Skadarlija recategorized to restaurants) + 6 demo from 0008 - 1 bar + 118 from 0011_import_belgrade_listings - 20 restaurants/bars (0016 deletes legacy non-Tripadvisor)
-			"Rome":      1,   // history_and_culture (survives 0016)
-			"Paris":     0,   // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
-			"Tokyo":     0,   // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
-			"New York":  1,   // sports (survives 0016)
-			"Barcelona": 1,   // art_and_design (survives 0016)
+			"Belgrade":  98, // 7 from 0002_seed.sql - 1 (Skadarlija recategorized to restaurants) + 6 demo from 0008 - 1 bar - 1 cafe (0022 deletes legacy non-Tripadvisor cafes) + 118 from 0011_import_belgrade_listings - 20 restaurants/bars - 10 cafes (0016/0022 delete legacy non-Tripadvisor)
+			"Rome":      1,  // history_and_culture (survives 0016)
+			"Paris":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"Tokyo":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
+			"New York":  1,  // sports (survives 0016)
+			"Barcelona": 1,  // art_and_design (survives 0016)
 		}
 		for city, want := range wantCounts {
 			var got int
@@ -477,10 +514,10 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 
 		wantCategories := []activitiessvc.Category{
-			// restaurants and bars demo activities are deleted by 0016 (legacy non-Tripadvisor).
-			// All seeded restaurants/bars were sourced from Google or created by hand; 0016 is
-			// the cutover to Tripadvisor-exclusive for these categories.
-			activitiessvc.CategoryCafes,
+			// restaurants, cafes and bars demo activities are deleted by 0016/0022 (legacy
+			// non-Tripadvisor). All seeded restaurants/cafes/bars were sourced from Google or
+			// created by hand; 0016/0022 are the cutover to Tripadvisor-exclusive for these
+			// three categories.
 			activitiessvc.CategoryNightlife, activitiessvc.CategoryNature, activitiessvc.CategorySport,
 			activitiessvc.CategoryKids, activitiessvc.CategoryCulture, activitiessvc.CategoryArt,
 			activitiessvc.CategoryWellness, activitiessvc.CategoryShopping, activitiessvc.CategoryEntertainment,
@@ -1250,6 +1287,220 @@ WHERE source = 'tripadvisor'
 			t.Errorf("legit row %q: GetByID() error = %v, want it to survive the delete", legit.Title, err)
 		} else {
 			t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, legit.ID) })
+		}
+	}
+}
+
+// TestMigration0021DedupePreservesUniqueConstraint reproduces the exact bug
+// a live rebase caught: the old per-due-category upsert loop left a real
+// venue as two rows sharing one external_id/source_url but different
+// categories (0017 allows that: UNIQUE is on (source_url, category), not
+// source_url alone). Reassigning both rows to the classifier's single
+// category before deleting the surplus one collides with that same index
+// mid-migration (SQLSTATE 23505). This runs the real 0019-0021 migration
+// files (not an inlined SQL copy) against a seeded duplicate pair, so a
+// regression in delete-before-reclassify ordering fails this test with the
+// same error a real deploy hit.
+func TestMigration0021DedupePreservesUniqueConstraint(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgresPool(t)
+	if err := shareddb.Migrate(ctx, db, migrationsThrough("0018_tripadvisor_subratings_phone_reviews.sql")); err != nil {
+		t.Fatalf("running migrations through 0018: %v", err)
+	}
+
+	repo := New(db)
+	details, err := json.Marshal(map[string]any{"tripadvisor": map[string]any{"price_level": "Mid Range"}})
+	if err != nil {
+		t.Fatalf("marshaling details: %v", err)
+	}
+	// Same venue, same external_id/source_url, two categories — exactly
+	// what the pre-fix per-due-category upsert loop produced for a venue
+	// due for both Restaurants and Bars.
+	for _, cat := range []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars} {
+		if _, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+			Title: "Gradska Pivnica Terazije", Category: cat,
+			Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.3, Status: activitiessvc.StatusPublished,
+			Source: "tripadvisor", SourceURL: "https://www.tripadvisor.com/Restaurant_Review-g1-d1-Reviews-dup1.html", ExternalID: "dup-1", Details: details,
+		}); err != nil {
+			t.Fatalf("seeding duplicate row (category=%s): %v", cat, err)
+		}
+	}
+
+	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
+		t.Fatalf("running 0019-0021 against a seeded duplicate pair: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM activities WHERE external_id = 'dup-1' AND source = 'tripadvisor'`).Scan(&count); err != nil {
+		t.Fatalf("counting rows: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("rows for external_id=dup-1 = %d, want exactly 1", count)
+	}
+
+	var category string
+	if err := db.QueryRow(ctx, `SELECT category FROM activities WHERE external_id = 'dup-1' AND source = 'tripadvisor'`).Scan(&category); err != nil {
+		t.Fatalf("reading surviving row's category: %v", err)
+	}
+	if category != "bars" {
+		t.Errorf("category = %q, want bars ('Gradska Pivnica Terazije' matches the pivnica keyword)", category)
+	}
+
+	// Idempotency: re-running 0021's own SQL against the now-deduped table
+	// (the migration runner never does this itself — filename already
+	// recorded in schema_migrations — but a fixed-up deploy that re-applies
+	// the file by hand must not error or resurrect a second row).
+	raw, err := fs.ReadFile(Migrations(), "0021_dedupe_tripadvisor_venues.sql")
+	if err != nil {
+		t.Fatalf("reading 0021's SQL: %v", err)
+	}
+	if _, err := db.Exec(ctx, string(raw)); err != nil {
+		t.Fatalf("re-running 0021 against an already-deduped table: %v", err)
+	}
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM activities WHERE external_id = 'dup-1' AND source = 'tripadvisor'`).Scan(&count); err != nil {
+		t.Fatalf("counting rows after re-run: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("rows for external_id=dup-1 after re-running 0021 = %d, want still exactly 1", count)
+	}
+}
+
+// TestMigrationChain0019Through0022_EndToEnd exercises the real 0019-0022
+// files together against a realistic pre-fix snapshot: the nine legitimate
+// venues named in the classification task (mis-filed under Restaurants, as
+// the old sync would do for every result Terra's non-filtering
+// nearby-search returned), the four junk venues that must be gone
+// (Disney Store, Spa in Hotel Moskva, Hotel Zelos, citizenM San Francisco
+// Union Square), a legacy Google-sourced café row that 0022 must remove,
+// and a legacy Google-sourced row in an unrelated category that must
+// survive untouched.
+func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgresPool(t)
+	if err := shareddb.Migrate(ctx, db, migrationsThrough("0018_tripadvisor_subratings_phone_reviews.sql")); err != nil {
+		t.Fatalf("running migrations through 0018: %v", err)
+	}
+	repo := New(db)
+
+	// Every seeded row carries a review_count >= 10 in its details JSON so it
+	// survives 0019's still-shipped, unmodified rule (price_level/
+	// subratings/review-count-floor) unchanged — exactly the real-world
+	// state the coordinator found (0019 already ran on deployed databases
+	// and left these rows behind); 0020's web_url-based Restaurant_Review
+	// gate is what actually separates legit venues from junk here.
+	seedDetails, err := json.Marshal(map[string]any{"tripadvisor": map[string]any{"review_count": 50}})
+	if err != nil {
+		t.Fatalf("marshaling seed details: %v", err)
+	}
+	seedTA := func(t *testing.T, title, externalID, webURL string) activitiessvc.Activity {
+		t.Helper()
+		got, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+			Title: title, Category: activitiessvc.CategoryRestaurants, // pre-fix: everything landed here first
+			Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.3, Status: activitiessvc.StatusPublished,
+			Source: "tripadvisor", SourceURL: webURL, ExternalID: externalID, Details: seedDetails,
+		})
+		if err != nil {
+			t.Fatalf("seeding %q: %v", title, err)
+		}
+		return got
+	}
+
+	legit := map[string]activitiessvc.Activity{}
+	for i, v := range []struct{ title, wantCategory string }{
+		{"Gradska Pivnica Terazije", "bars"},
+		{"Aviator Coffee Explorer", "cafes"},
+		{"Inferno Pizza", "restaurants"},
+		{"John's Grill", "restaurants"},
+		{"Tad's Steakhouse", "restaurants"},
+		{"Chips & Love", "restaurants"},
+		{"Mashallah Halal Pakistani Food Restaurant", "restaurants"},
+		{"O' By Claude Le Tohic", "restaurants"},
+		{"Bodega SF", "restaurants"},
+	} {
+		webURL := fmt.Sprintf("https://www.tripadvisor.com/Restaurant_Review-g1-d%d-Reviews-x.html", i)
+		legit[v.title] = seedTA(t, v.title, fmt.Sprintf("legit-%d", i), webURL)
+	}
+
+	junk := map[string]activitiessvc.Activity{
+		"Disney Store":                        seedTA(t, "Disney Store", "junk-0", "https://www.tripadvisor.com/Attraction_Review-g1-d100-Reviews-Disney_Store.html"),
+		"Spa in Hotel Moskva":                 seedTA(t, "Spa in Hotel Moskva", "junk-1", "https://www.tripadvisor.com/Attraction_Review-g1-d101-Reviews-Spa.html"),
+		"Hotel Zelos":                         seedTA(t, "Hotel Zelos", "junk-2", "https://www.tripadvisor.com/Hotel_Review-g1-d102-Reviews-Hotel_Zelos.html"),
+		"citizenM San Francisco Union Square": seedTA(t, "citizenM San Francisco Union Square", "junk-3", "https://www.tripadvisor.com/Hotel_Review-g1-d103-Reviews-citizenM.html"),
+	}
+
+	legacyGoogleCafe, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Legacy Google Cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "http://google/cafe1",
+	})
+	if err != nil {
+		t.Fatalf("seeding legacy google cafe: %v", err)
+	}
+	legacyGoogleOther, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Legacy Google Park", Category: activitiessvc.CategoryNature,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
+		Source: "google_places", SourceURL: "http://google/park1",
+	})
+	if err != nil {
+		t.Fatalf("seeding legacy google other-category row: %v", err)
+	}
+
+	// The pre-existing schema seed data (0002/0008) already has its own
+	// demo Google-sourced cafés — 0022 removes those too, same as 0016
+	// already does for demo restaurants/bars, so the count only drops. The
+	// specific-row checks below (legacyGoogleCafe gone, Aviator Coffee
+	// Explorer present as cafes) are what actually proves 0022 is scoped
+	// correctly, not this count.
+	var cafesBefore int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM activities WHERE category = 'cafes'`).Scan(&cafesBefore); err != nil {
+		t.Fatalf("counting cafes before: %v", err)
+	}
+
+	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
+		t.Fatalf("running 0019-0022: %v", err)
+	}
+
+	var cafesAfter int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM activities WHERE category = 'cafes'`).Scan(&cafesAfter); err != nil {
+		t.Fatalf("counting cafes after: %v", err)
+	}
+	t.Logf("cafés before migrating: %d, after: %d", cafesBefore, cafesAfter)
+	if cafesAfter >= cafesBefore {
+		t.Errorf("cafes after migrating = %d, want fewer than before (%d) — 0022 must have removed at least the legacy Google row", cafesAfter, cafesBefore)
+	}
+
+	if _, err := repo.GetByID(ctx, legacyGoogleCafe.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+		t.Errorf("Legacy Google Cafe: GetByID() error = %v, want ErrNotFound (0022)", err)
+	}
+	if _, err := repo.GetByID(ctx, legacyGoogleOther.ID); err != nil {
+		t.Errorf("Legacy Google Park: GetByID() error = %v, want it to survive (0022 only scopes category=cafes)", err)
+	} else {
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, legacyGoogleOther.ID) })
+	}
+
+	for name, row := range junk {
+		if _, err := repo.GetByID(ctx, row.ID); !errors.Is(err, sharederrors.ErrNotFound) {
+			t.Errorf("junk venue %q: GetByID() error = %v, want ErrNotFound (0020)", name, err)
+		}
+	}
+
+	wantCategory := map[string]string{
+		"Gradska Pivnica Terazije": "bars", "Aviator Coffee Explorer": "cafes",
+		"Inferno Pizza": "restaurants", "John's Grill": "restaurants", "Tad's Steakhouse": "restaurants",
+		"Chips & Love": "restaurants", "Mashallah Halal Pakistani Food Restaurant": "restaurants",
+		"O' By Claude Le Tohic": "restaurants", "Bodega SF": "restaurants",
+	}
+	for title, row := range legit {
+		got, err := repo.GetByID(ctx, row.ID)
+		if err != nil {
+			t.Errorf("legit venue %q: GetByID() error = %v, want it to survive", title, err)
+			continue
+		}
+		t.Cleanup(func(id string) func() {
+			return func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, id) }
+		}(row.ID))
+		if string(got.Category) != wantCategory[title] {
+			t.Errorf("legit venue %q: Category = %q, want %q", title, got.Category, wantCategory[title])
 		}
 	}
 }

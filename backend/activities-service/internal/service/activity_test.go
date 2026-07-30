@@ -878,8 +878,8 @@ func TestActivities_Update(t *testing.T) {
 	})
 }
 
-func TestActivities_Create_BlocksRestaurantsAndBars(t *testing.T) {
-	for _, cat := range []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars} {
+func TestActivities_Create_BlocksTripadvisorSourcedCategories(t *testing.T) {
+	for _, cat := range []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars} {
 		t.Run(string(cat), func(t *testing.T) {
 			repo := &fakeRepo{}
 			svc := New(repo)
