@@ -1504,3 +1504,77 @@ func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// TestMigration0023ClearsGooglePlacesDetailsOnly proves T4's compliance fix:
+// only source='google_places' rows get their details wiped to '{}'. A
+// Tripadvisor-sourced row (Cafes/Restaurants/Bars can legitimately carry
+// that source, per 0016/0022) and an admin-created row (Create never sets
+// source, so it's NULL) must both keep their stored details untouched — the
+// positive predicate, not IS DISTINCT FROM 'tripadvisor'.
+func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgresPool(t)
+	if err := shareddb.Migrate(ctx, db, migrationsThrough("0022_delete_legacy_cafes.sql")); err != nil {
+		t.Fatalf("running migrations through 0022: %v", err)
+	}
+	repo := New(db)
+
+	googleRow, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Ada Ciganlija Beach", Category: activitiessvc.CategoryNature,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "google_places", SourceURL: "http://google/ada-ciganlija",
+		Details: json.RawMessage(`{"hours":"9-5","amenities":["parking"]}`),
+	})
+	if err != nil {
+		t.Fatalf("seeding google_places row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, googleRow.ID) })
+
+	tripadvisorRow, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Koffein Tripadvisor Cafe", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://www.tripadvisor.com/Restaurant_Review-g1-d999-Reviews-x.html",
+		Details: json.RawMessage(`{"tripadvisor":{"price_level":"Mid Range"}}`),
+	})
+	if err != nil {
+		t.Fatalf("seeding tripadvisor row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, tripadvisorRow.ID) })
+
+	adminRow, err := repo.Create(ctx, activitiessvc.NewActivity{
+		Title: "Admin Hand-Created Sport Venue", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusDraft,
+		Details: json.RawMessage(`{"difficulty":3}`),
+	})
+	if err != nil {
+		t.Fatalf("seeding admin (empty-source) row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, adminRow.ID) })
+
+	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
+		t.Fatalf("running 0023: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, googleRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(google_places row): %v", err)
+	}
+	if string(got.Details) != "{}" {
+		t.Errorf("google_places row details = %s, want cleared to {}", got.Details)
+	}
+
+	got, err = repo.GetByID(ctx, tripadvisorRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(tripadvisor row): %v", err)
+	}
+	if string(got.Details) == "{}" {
+		t.Errorf("tripadvisor row details = %s, want untouched (0023 must not clear non-google_places rows)", got.Details)
+	}
+
+	got, err = repo.GetByID(ctx, adminRow.ID)
+	if err != nil {
+		t.Fatalf("GetByID(admin row): %v", err)
+	}
+	if string(got.Details) == "{}" {
+		t.Errorf("admin (empty-source) row details = %s, want untouched", got.Details)
+	}
+}
