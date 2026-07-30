@@ -457,7 +457,7 @@ export function ActivityDetailScreen({
                 <Text style={styles.tripadvisorLinkLabel}>
                   Read all reviews on Tripadvisor
                 </Text>
-                <ArrowUpRight size={16} color={colors.text} strokeWidth={1.75} />
+                <ArrowUpRight size={16} color={colors.ink} strokeWidth={1.75} />
               </Pressable>
 
               <Text style={styles.tripadvisorDisclaimer}>
@@ -687,24 +687,25 @@ const styles = StyleSheet.create({
     gap: space[4],
   },
   tripadvisorLinkButton: {
+    // design-spec.md's updated 5b footer: sole footer CTA, filled Primary
+    // (DESIGN_STANDARDS.md's Buttons table) — was Secondary/outlined.
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: space[2],
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: colors.border,
+    minHeight: 54,
     borderRadius: radius.default,
+    backgroundColor: colors.primary,
     outlineStyle: 'solid',
     outlineWidth: 0,
   },
   tripadvisorLinkButtonFocused: {
-    backgroundColor: colors.surfaceHover,
-    borderColor: colors.primary,
+    backgroundColor: colors.primaryHover,
   },
   tripadvisorLinkLabel: {
     fontSize: fontSize.md,
-    color: colors.text,
+    fontWeight: '700',
+    color: colors.ink,
   },
   tripadvisorDisclaimer: {
     fontSize: fontSize.xs,

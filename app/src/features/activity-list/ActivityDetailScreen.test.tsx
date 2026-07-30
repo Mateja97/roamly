@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react-native';
-import { AccessibilityInfo, Linking, Modal, Share } from 'react-native';
+import { AccessibilityInfo, Linking, Modal, Share, StyleSheet } from 'react-native';
 import type { Activity } from '../../api/activities';
 import { getActivityPhotos } from '../../api/activities';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
@@ -1059,6 +1059,21 @@ describe('ActivityDetailScreen', () => {
         expect(screen.getByText('Could not open the link. Please try again.')).toBeTruthy(),
       );
       openURLSpy.mockRestore();
+    });
+
+    it('renders the deep-link button as a filled Primary CTA, not Secondary/outlined', () => {
+      render(
+        <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
+      );
+      const button = screen.getByRole('button', { name: 'Read all reviews on Tripadvisor' });
+      const buttonStyle = StyleSheet.flatten(button.props.style);
+      expect(buttonStyle).toMatchObject({ backgroundColor: '#CE9042', minHeight: 54 });
+      expect(buttonStyle).not.toHaveProperty('borderWidth');
+      const label = screen.getByText('Read all reviews on Tripadvisor');
+      expect(StyleSheet.flatten(label.props.style)).toMatchObject({
+        color: '#2A0E11',
+        fontWeight: '700',
+      });
     });
 
     it('renders the compliance disclaimer for a Tripadvisor row', () => {
