@@ -78,6 +78,15 @@ describe('TripadvisorAttributionPlate', () => {
     expect(screen.queryByText(/Travelers' Choice/)).toBeNull();
   });
 
+  it('card variant: is an inset content-hugging pill, not a full-bleed band', () => {
+    render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4.5} variant="card" />);
+    const plate = screen.getByTestId('tripadvisor-attribution-plate');
+    const style = Array.isArray(plate.props.style) ? Object.assign({}, ...plate.props.style) : plate.props.style;
+    expect(style.alignSelf).toBe('flex-start');
+    expect(style.borderRadius).toBeGreaterThanOrEqual(999);
+    expect(style.marginHorizontal).toBeUndefined();
+  });
+
   it('reserves the rating image width so a broken load keeps the count in place', () => {
     render(<TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={4.5} variant="card" />);
     const image = screen.getByTestId('tripadvisor-rating-image');

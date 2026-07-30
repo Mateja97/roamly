@@ -654,13 +654,20 @@ the detail screen's gold star + numeric rating) untouched.
   three. The rating image and count always travel together (a rating never shows
   without its review count).
 - **Placements:**
-  - *In a list card* — a **full-bleed band**: the plate spans the card's full inner
-    width (touches both inner edges; its corners are clipped by the card's own
-    radius), no plate radius of its own, padding `--space-2` vertical /
-    `--space-4` horizontal. It sits in the card body between the description and
-    the distance/go row; the card's own gold `Star` rating pill is **omitted** for
-    a partner row (never both — no blended/adjacent Roamly star). `--space-3`
-    separates it from the elements above and below.
+  - *In a list card* — an **inset, content-hugging pill**: `--radius-full`
+    corners, sized to its own content (not the card's width) so a maroon gutter
+    stays visible on both sides — never a full-bleed band. Padding approximates
+    5px top / 11px right / 5px bottom / 9px left (asymmetric: the logo's own
+    whitespace already covers part of the left inset). It sits in the card body
+    between the description and the distance/go row; the card's own gold `Star`
+    rating pill is **omitted** for a partner row (never both — no blended/
+    adjacent Roamly star). `--space-3` separates it from the elements above and
+    below. The card's logo stays at the **≥20px** minimum from the Contents
+    bullet above, not the mock's own 15px — `Roamly Tripadvisor Sources.dc.html`
+    §5a draws the card lockup's logo at 15px tall, which undercuts compliance
+    rule 01's own "at least 20px tall" floor; rule 01 wins, so the card variant
+    matches the detail variant's floor instead of the mock's smaller art. This is
+    a deliberate, permanent deviation from the mock, not a bug to "fix" back later.
   - *On a detail screen* — an **inset block**: `--radius` (8px) corners, inset
     within the body's horizontal padding, padding `--space-3` vertical /
     `--space-4` horizontal, `--space-2` between its logo/rating row and the

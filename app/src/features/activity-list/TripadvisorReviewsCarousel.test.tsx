@@ -3,9 +3,9 @@ import type { TripadvisorReview } from '../../api/activities';
 import { TripadvisorReviewsCarousel } from './TripadvisorReviewsCarousel';
 
 const reviews: TripadvisorReview[] = [
-  { rating: 5, date: '14 June 2026', text: 'Fantastic evening, could not fault it.' },
-  { rating: 5, date: '2 June 2026', text: 'Best meal we had all trip.' },
-  { rating: 5, date: '28 May 2026', text: 'Loud but the food made up for it.' },
+  { rating: 5, date: '2026-06-14T11:37:12.673Z', text: 'Fantastic evening, could not fault it.' },
+  { rating: 5, date: '2026-06-02T09:00:00.000Z', text: 'Best meal we had all trip.' },
+  { rating: 5, date: '2026-05-28T18:22:00.000Z', text: 'Loud but the food made up for it.' },
 ];
 
 describe('TripadvisorReviewsCarousel', () => {
@@ -34,10 +34,17 @@ describe('TripadvisorReviewsCarousel', () => {
     expect(screen.getByRole('button', { name: 'Next review' })).toBeTruthy();
   });
 
-  it('shows the numeric rating and verbatim date when the review carries no rating_image_url', () => {
+  it('shows the numeric rating and a human-formatted date (not the raw ISO timestamp) when the review carries no rating_image_url', () => {
     render(<TripadvisorReviewsCarousel reviews={[reviews[0]]} />);
     expect(screen.getByText('Rated 5.0')).toBeTruthy();
     expect(screen.getByText('14 June 2026')).toBeTruthy();
+    expect(screen.queryByText(reviews[0].date)).toBeNull();
+  });
+
+  it('renders no date text when the date is missing or unparseable, instead of "Invalid Date" or the raw string', () => {
+    render(<TripadvisorReviewsCarousel reviews={[{ ...reviews[0], date: 'not-a-date' }]} />);
+    expect(screen.queryByText('not-a-date')).toBeNull();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
   });
 
   it('renders the API-hosted bubble image (compliance rule 02) in place of the numeric rating when rating_image_url is present', () => {

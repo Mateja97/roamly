@@ -23,6 +23,19 @@ type TripadvisorReviewsCarouselProps = {
 const CARD_WIDTH_RATIO = 0.78; // design-spec.md: "~78% of the content width (~300px)".
 const CARD_GAP = space[3];
 
+// §5b review cards show "14 June 2026", not the API's raw ISO-8601
+// timestamp. `keyExtractor` still keys off the raw `review.date` string
+// (unaffected by this display-only reformat) — a missing/unparseable date
+// degrades to no date text rather than "Invalid Date" or the raw string.
+function formatReviewDate(date: string | undefined): string | null {
+  if (!date) return null;
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+    parsed,
+  );
+}
+
 // design-spec.md T4's "Tripadvisor review card" recipe + paged carousel: up
 // to 3 white review cards, same paged-`FlatList` approach as the hero photo
 // carousel (T2) and this app's own Fullscreen photo viewer — peeking-card
@@ -144,6 +157,7 @@ export function TripadvisorReviewsCarousel({ reviews }: TripadvisorReviewsCarous
 // async work per card (unlike PhotoViewerModal's PhotoPage, which memoizes
 // around its own image-load state).
 function ReviewCard({ review, width }: { review: TripadvisorReview; width: number }) {
+  const formattedDate = formatReviewDate(review.date);
   return (
     <View style={[styles.card, { width }]}>
       <View style={styles.cardTopRow}>
@@ -161,7 +175,7 @@ function ReviewCard({ review, width }: { review: TripadvisorReview; width: numbe
         ) : (
           <Text style={styles.cardRating}>{`Rated ${review.rating.toFixed(1)}`}</Text>
         )}
-        <Text style={styles.cardDate}>{review.date}</Text>
+        {formattedDate && <Text style={styles.cardDate}>{formattedDate}</Text>}
       </View>
       <Text style={styles.cardQuote}>{`“${review.text}”`}</Text>
       <Text style={styles.cardByline}>A Tripadvisor traveler review</Text>

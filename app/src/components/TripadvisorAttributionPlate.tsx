@@ -14,7 +14,7 @@ type TripadvisorAttributionPlateProps = {
   // a *Roamly*-drawn star/score next to a partner row — Tripadvisor's own
   // rating beside Tripadvisor's own bubbles/count is fine.
   rating: number;
-  /** `card` = full-bleed band inside ActivityCard's body (§5a); `detail` = inset block on the detail screen (§5b). */
+  /** `card` = inset content-hugging pill inside ActivityCard's body (§5a); `detail` = inset block on the detail screen (§5b). */
   variant: 'card' | 'detail';
 };
 
@@ -33,6 +33,10 @@ function reviewCountLabel(count: number): string {
 // slow/broken load never reflows the count text beside it — plain
 // expo-image load/broken behavior, no bespoke fallback UI (out of scope).
 export function TripadvisorAttributionPlate({ tripadvisor, rating, variant }: TripadvisorAttributionPlateProps) {
+  // §5a's card mock draws the logo at 15px, which conflicts with §5c
+  // compliance rule 01 ("logo sits immediately left of every aggregate
+  // bubble rating, at least 20px tall") — rule 01 wins, so the card logo
+  // stays at 20px rather than shrinking to match the mock literally.
   const logoHeight = variant === 'card' ? 20 : 24;
   const ratingText = rating.toFixed(1);
   // §5b: the detail variant's context line carries the review count and,
@@ -48,7 +52,7 @@ export function TripadvisorAttributionPlate({ tripadvisor, rating, variant }: Tr
       : null;
 
   return (
-    <View style={variant === 'card' ? styles.cardPlate : styles.detailPlate}>
+    <View testID="tripadvisor-attribution-plate" style={variant === 'card' ? styles.cardPlate : styles.detailPlate}>
       <View style={styles.row}>
         <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
           <TripadvisorLogo height={logoHeight} />
@@ -82,16 +86,21 @@ export function TripadvisorAttributionPlate({ tripadvisor, rating, variant }: Tr
 }
 
 const styles = StyleSheet.create({
-  // Full-bleed: bleeds past ActivityCard body's own `space[4]` horizontal
-  // padding (clipped by the card's own overflow:hidden + radius-lg corners).
-  // Vertical margin `space[1]` combines with the body's own flex `gap`
-  // (space[2]) to net the spec's `space[3]` separation above/below.
+  // Inset pill (§5a) — content-hugging, not full-bleed: `alignSelf:
+  // 'flex-start'` overrides the body's default `alignItems: 'stretch'` so
+  // the plate sizes to its row instead of stretching to the card's width,
+  // leaving the maroon body gutter visible on both sides. Padding
+  // approximates the mock's 5/11/5/9 (top/right/bottom/left) with the
+  // nearest spacing tokens — asymmetric because the logo's own whitespace
+  // already covers part of the left inset.
   cardPlate: {
     backgroundColor: colors.attributionPlate,
-    marginHorizontal: -space[4],
+    alignSelf: 'flex-start',
+    borderRadius: radius.full,
     marginVertical: space[1],
-    paddingVertical: space[2],
-    paddingHorizontal: space[4],
+    paddingVertical: space[1],
+    paddingLeft: space[2],
+    paddingRight: space[3],
   },
   detailPlate: {
     backgroundColor: colors.attributionPlate,
