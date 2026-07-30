@@ -20,7 +20,7 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 			"111": {
 				LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, Rating: 4.5,
 				City: "Belgrade", Country: "Serbia", Phone: "+381 11 328 6637",
-				WebURL: "https://ta/1", RatingImageURL: "https://ta/img/4.5.svg", ReviewCount: 1204,
+				WebURL: "https://ta/Restaurant_Review-1", RatingImageURL: "https://ta/img/4.5.svg", ReviewCount: 1204,
 				Subratings: tripadvisor.Subratings{
 					Food:       &tripadvisor.Aspect{Rating: 4.5, IconURL: "https://ta/food.svg"},
 					Service:    &tripadvisor.Aspect{Rating: 4.0, IconURL: "https://ta/service.svg"},
@@ -78,7 +78,7 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 		t.Fatal("details.Tripadvisor = nil, want the attribution block populated")
 	}
 	wantRankingText := "#12 of 1,780 Restaurants in Belgrade, as rated by Tripadvisor travelers as of " + time.Now().Format("January 2006")
-	if details.Tripadvisor.WebURL != "https://ta/1" || details.Tripadvisor.RatingImageURL != "https://ta/img/4.5.svg" ||
+	if details.Tripadvisor.WebURL != "https://ta/Restaurant_Review-1" || details.Tripadvisor.RatingImageURL != "https://ta/img/4.5.svg" ||
 		details.Tripadvisor.ReviewCount != 1204 || details.Tripadvisor.RankingText != wantRankingText {
 		t.Errorf("details.Tripadvisor = %+v, want WebURL/RatingImageURL/ReviewCount matching the fixture and RankingText = %q (Terra's display_text + dated suffix, rule 05)", details.Tripadvisor, wantRankingText)
 	}
@@ -188,7 +188,7 @@ func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsOneSearchOneRow(t 
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
+			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -219,7 +219,7 @@ func TestActivities_Query_TripadvisorSync_OneVenueOneRowInvariant(t *testing.T) 
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"111": {LocationID: "111", Name: "Gradska Pivnica Terazije", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
+			"111": {LocationID: "111", Name: "Gradska Pivnica Terazije", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -258,7 +258,7 @@ func TestActivities_Query_TripadvisorSync_CandidateSkippedWhenClassifiedCategory
 	ta := &fakeTripadvisor{
 		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"111": {LocationID: "111", Name: "Inferno Pizza", WebURL: "https://ta/1", PriceLevel: "Mid Range"},
+			"111": {LocationID: "111", Name: "Inferno Pizza", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -364,7 +364,7 @@ func TestActivities_Query_TripadvisorSync_OneBadDetailsCallDoesNotSinkTheRest(t 
 		nearbyOut:   []tripadvisor.LocationSummary{{LocationID: "bad"}, {LocationID: "good"}},
 		detailsErrs: map[string]error{"bad": context.DeadlineExceeded},
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"good": {LocationID: "good", Name: "Fine Place", Rating: 4.0, WebURL: "https://ta/good", PriceLevel: "Mid Range"},
+			"good": {LocationID: "good", Name: "Fine Place", Rating: 4.0, WebURL: "https://ta/Restaurant_Review-good", PriceLevel: "Mid Range"},
 		},
 	}
 	svc := New(repo).WithTripadvisor(ta)

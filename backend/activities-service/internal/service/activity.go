@@ -829,7 +829,7 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 // classified into an already-fresh category is left alone; that category's
 // data is untouched until its own turn comes due. This is what keeps a
 // venue to exactly one row instead of the one-row-per-due-category
-// duplication the old per-category upsert loop caused (see 0017/0020's
+// duplication the old per-category upsert loop caused (see 0017/0021's
 // migration comments). A NearbySearch failure aborts this anchor's sync
 // entirely (no upserts, no MarkSynced calls); a single candidate's
 // LocationDetails failure only skips that candidate — the rest of the
@@ -855,7 +855,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			continue
 		}
 		if !hasFoodDrinkSignal(details) {
-			slog.Info("skipping tripadvisor location: no food/drink signal", "location_id", details.LocationID, "name", details.Name, "review_count", details.ReviewCount)
+			slog.Info("skipping tripadvisor location: not a Restaurant_Review venue", "location_id", details.LocationID, "name", details.Name, "web_url", details.WebURL)
 			continue
 		}
 
@@ -904,27 +904,42 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 // value.
 const terraNearbySearchCategory = "RESTAURANT"
 
-// hasFoodDrinkSignal reports whether d shows at least one signal Tripadvisor
-// only populates for actual eateries. terraNearbySearchCategory's
-// category=RESTAURANT parameter doesn't actually filter Terra's
-// nearby-search results (verified live) — car rentals, transport, photo
-// studios, monuments, and even genuinely popular non-food venues (a
-// department store, a hotel spa) all come back alongside real restaurants
-// and would otherwise get upserted as one. Terra's
-// categories[]/rankings[]/awards[] fields are documented but never returned
-// on our API entitlement (also verified live), so they can't be used here;
-// this checks the two fields LocationDetails does carry that Tripadvisor
-// only ever populates for an eatery: PriceLevel (documented as applicable
-// to restaurants) and any Food/Service/Value/Atmosphere subrating. A raw
-// review-count floor used to stand in as a fallback for venues Tripadvisor
-// left both of these blank for, but that let review-heavy non-food venues
-// (a department store, a hotel spa) through with zero food/drink signal —
-// removed; ReviewCount plays no role here anymore.
+// restaurantReviewPathPrefix is the path segment Tripadvisor's own web_url
+// carries for every restaurant/eatery review page, e.g.
+// ".../Restaurant_Review-g295424-d1911226-Reviews-Little_Bay-Belgrade.html"
+// — Attraction_Review and Hotel_Review are the same shape for those venue
+// types. See hasFoodDrinkSignal.
+const restaurantReviewPathPrefix = "Restaurant_Review-"
+
+// hasFoodDrinkSignal reports whether d is Tripadvisor's own idea of a
+// restaurant/eatery. terraNearbySearchCategory's category=RESTAURANT
+// parameter doesn't actually filter Terra's nearby-search results (verified
+// live) — car rentals, transport, photo studios, monuments, hotels and
+// attractions all come back alongside real restaurants and would otherwise
+// get upserted as one. Terra's categories[]/rankings[]/awards[] fields are
+// documented but never returned on our API entitlement (also verified
+// live), so they can't be used here; PriceLevel/subratings used to stand in
+// for them, but Tripadvisor only populates those for a venue with existing
+// reviews, so a brand-new restaurant with neither would have been wrongly
+// rejected. web_url doesn't have that gap: Tripadvisor stamps every review
+// page with its own venue-type path segment
+// (restaurantReviewPathPrefix/Attraction_Review-/Hotel_Review-) regardless
+// of review history, so this is Tripadvisor's own classification rather
+// than an inferred one. Matched as a full URL path segment, not a raw
+// substring of the URL, so a venue name that happens to contain the text
+// can't spoof a match; an empty or unparseable WebURL is rejected, not
+// assumed food-related by default.
 func hasFoodDrinkSignal(d tripadvisor.LocationDetails) bool {
-	if d.PriceLevel != "" {
-		return true
+	u, err := url.Parse(d.WebURL)
+	if err != nil {
+		return false
 	}
-	return d.Subratings != (tripadvisor.Subratings{})
+	for _, seg := range strings.Split(u.Path, "/") {
+		if strings.HasPrefix(seg, restaurantReviewPathPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxFeaturedReviews caps the quoted reviews surfaced on a Tripadvisor

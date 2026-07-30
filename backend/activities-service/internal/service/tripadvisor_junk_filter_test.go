@@ -6,48 +6,52 @@ import (
 	"activities-service/internal/tripadvisor"
 )
 
-// TestHasFoodDrinkSignal covers the live-verified junk sample from the
-// nearby-search category=RESTAURANT bug (Terra's category param doesn't
-// actually filter), the nine legitimate venues the classification task
-// named that must not be rejected alongside them, and the two review-heavy
-// non-food venues (Disney Store, Spa in Hotel Moskva) the now-removed
-// review-count fallback used to wrongly admit.
+// TestHasFoodDrinkSignal covers Tripadvisor's own venue-type classification
+// as carried in web_url's path: the nine legitimate venues named in the
+// classification task (all Restaurant_Review), the junk venues a
+// price_level/subrating-based gate used to admit or reject inconsistently
+// (Disney Store and Spa in Hotel Moskva are Attraction_Review; Hotel Zelos
+// and citizenM San Francisco Union Square are Hotel_Review), and the
+// false-negative case the old gate got wrong: a brand-new restaurant with
+// zero reviews and no price_level/subratings, which still carries a
+// Restaurant_Review URL and must survive.
 func TestHasFoodDrinkSignal(t *testing.T) {
-	food := &tripadvisor.Aspect{Rating: 4.0}
-
 	tests := []struct {
 		name string
 		d    tripadvisor.LocationDetails
 		want bool
 	}{
-		// Live junk sample: no price_level, no subratings.
-		{"junk: Tim Kombi Prevoz Putnika (van transport)", tripadvisor.LocationDetails{Name: "Tim Kombi Prevoz Putnika", ReviewCount: 2}, false},
-		{"junk: La Liberte Premium Car Solution (car rental)", tripadvisor.LocationDetails{Name: "La Liberte Premium Car Solution", ReviewCount: 1}, false},
-		{"junk: Belgrade Photo & Video Studio", tripadvisor.LocationDetails{Name: "Belgrade Photo & Video Studio", ReviewCount: 3}, false},
-		{"junk: Game Centar", tripadvisor.LocationDetails{Name: "Game Centar", ReviewCount: 0}, false},
-		{"junk: Spomenik Obesenima Na Terazijama (monument)", tripadvisor.LocationDetails{Name: "Spomenik Obesenima Na Terazijama", ReviewCount: 5}, false},
-		{"junk: Belgrade By Night (0 reviews)", tripadvisor.LocationDetails{Name: "Belgrade By Night", ReviewCount: 0}, false},
+		// The nine legitimate venues named in the classification task —
+		// every real eatery is Restaurant_Review regardless of what
+		// price_level/subratings/review_count happen to be set.
+		{"legit: Gradska Pivnica Terazije", tripadvisor.LocationDetails{Name: "Gradska Pivnica Terazije", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g295424-d1-Reviews-Gradska_Pivnica_Terazije-Belgrade.html"}, true},
+		{"legit: Aviator Coffee Explorer", tripadvisor.LocationDetails{Name: "Aviator Coffee Explorer", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g295424-d2-Reviews-Aviator_Coffee_Explorer-Belgrade.html"}, true},
+		{"legit: Inferno Pizza", tripadvisor.LocationDetails{Name: "Inferno Pizza", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g295424-d3-Reviews-Inferno_Pizza-Belgrade.html"}, true},
+		{"legit: John's Grill", tripadvisor.LocationDetails{Name: "John's Grill", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g60713-d4-Reviews-Johns_Grill-San_Francisco.html"}, true},
+		{"legit: Tad's Steakhouse", tripadvisor.LocationDetails{Name: "Tad's Steakhouse", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g60713-d5-Reviews-Tads_Steakhouse-San_Francisco.html"}, true},
+		{"legit: Chips & Love", tripadvisor.LocationDetails{Name: "Chips & Love", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g295424-d6-Reviews-Chips_Love-Belgrade.html"}, true},
+		{"legit: Mashallah Halal Pakistani Food Restaurant", tripadvisor.LocationDetails{Name: "Mashallah Halal Pakistani Food Restaurant", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g60713-d7-Reviews-Mashallah-San_Francisco.html"}, true},
+		{"legit: O' By Claude Le Tohic", tripadvisor.LocationDetails{Name: "O' By Claude Le Tohic", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g60713-d8-Reviews-O_By_Claude_Le_Tohic-San_Francisco.html"}, true},
+		{"legit: Bodega SF", tripadvisor.LocationDetails{Name: "Bodega SF", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g60713-d9-Reviews-Bodega_SF-San_Francisco.html"}, true},
 
-		// Live junk sample the removed review-count fallback used to wrongly
-		// admit: real, review-heavy venues with zero food/drink signal.
-		{"junk: Disney Store (41 reviews, no food signal)", tripadvisor.LocationDetails{Name: "Disney Store", ReviewCount: 41}, false},
-		{"junk: Spa in Hotel Moskva (10 reviews, no food signal)", tripadvisor.LocationDetails{Name: "Spa in Hotel Moskva", ReviewCount: 10}, false},
+		// The junk sample: real venues Terra's non-filtering nearby-search
+		// returns, correctly rejected by their own Tripadvisor venue type.
+		{"junk: Disney Store (Attraction_Review)", tripadvisor.LocationDetails{Name: "Disney Store", ReviewCount: 41, WebURL: "https://www.tripadvisor.com/Attraction_Review-g60713-d10-Reviews-Disney_Store-San_Francisco.html"}, false},
+		{"junk: Spa in Hotel Moskva (Attraction_Review)", tripadvisor.LocationDetails{Name: "Spa in Hotel Moskva", ReviewCount: 10, WebURL: "https://www.tripadvisor.com/Attraction_Review-g295424-d11-Reviews-Spa_in_Hotel_Moskva-Belgrade.html"}, false},
+		{"junk: Hotel Zelos (Hotel_Review)", tripadvisor.LocationDetails{Name: "Hotel Zelos", WebURL: "https://www.tripadvisor.com/Hotel_Review-g60713-d12-Reviews-Hotel_Zelos-San_Francisco.html"}, false},
+		{"junk: citizenM San Francisco Union Square (Hotel_Review)", tripadvisor.LocationDetails{Name: "citizenM San Francisco Union Square", WebURL: "https://www.tripadvisor.com/Hotel_Review-g60713-d13-Reviews-citizenM-San_Francisco.html"}, false},
+		{"junk: Tim Kombi Prevoz Putnika (no web_url at all)", tripadvisor.LocationDetails{Name: "Tim Kombi Prevoz Putnika", ReviewCount: 2}, false},
 
-		// The nine legitimate venues named in the classification task.
-		{"legit: Gradska Pivnica Terazije (subrating)", tripadvisor.LocationDetails{Name: "Gradska Pivnica Terazije", Subratings: tripadvisor.Subratings{Food: food}, ReviewCount: 8}, true},
-		{"legit: Aviator Coffee Explorer (price_level)", tripadvisor.LocationDetails{Name: "Aviator Coffee Explorer", PriceLevel: "Cheap Eats", ReviewCount: 40}, true},
-		{"legit: Inferno Pizza (price_level)", tripadvisor.LocationDetails{Name: "Inferno Pizza", PriceLevel: "$$ - $$$", ReviewCount: 4}, true},
-		{"legit: John's Grill (subrating)", tripadvisor.LocationDetails{Name: "John's Grill", Subratings: tripadvisor.Subratings{Food: food}, ReviewCount: 20}, true},
-		{"legit: Tad's Steakhouse (price_level)", tripadvisor.LocationDetails{Name: "Tad's Steakhouse", PriceLevel: "Fine Dining", ReviewCount: 30}, true},
-		{"legit: Chips & Love (price_level)", tripadvisor.LocationDetails{Name: "Chips & Love", PriceLevel: "$", ReviewCount: 6}, true},
-		{"legit: Mashallah Halal Pakistani Food Restaurant (subrating)", tripadvisor.LocationDetails{Name: "Mashallah Halal Pakistani Food Restaurant", Subratings: tripadvisor.Subratings{Food: food}, ReviewCount: 12}, true},
-		{"legit: O' By Claude Le Tohic (price_level)", tripadvisor.LocationDetails{Name: "O' By Claude Le Tohic", PriceLevel: "Fine Dining", ReviewCount: 5}, true},
-		{"legit: Bodega SF (subrating)", tripadvisor.LocationDetails{Name: "Bodega SF", Subratings: tripadvisor.Subratings{Service: food}, ReviewCount: 15}, true},
+		// The case a price_level/subrating gate got wrong: a brand-new
+		// restaurant with zero reviews and neither field populated still
+		// carries a Restaurant_Review URL, so it must survive.
+		{"boundary: brand-new restaurant, zero reviews, no price_level/subratings, still kept", tripadvisor.LocationDetails{Name: "Brand New Place", WebURL: "https://www.tripadvisor.com/Restaurant_Review-g295424-d14-Reviews-Brand_New_Place-Belgrade.html"}, true},
 
-		// Boundary cases.
-		{"boundary: price_level present but zero reviews still passes", tripadvisor.LocationDetails{Name: "Brand New Place", PriceLevel: "$$", ReviewCount: 0}, true},
-		{"boundary: subrating present but nothing else still passes", tripadvisor.LocationDetails{Name: "Just Opened", Subratings: tripadvisor.Subratings{Atmosphere: food}, ReviewCount: 0}, true},
-		{"boundary: high review count alone, no signal, now rejected", tripadvisor.LocationDetails{Name: "Popular But Not Food", ReviewCount: 1000}, false},
+		// Defensive parsing: malformed/empty web_url rejected, not a
+		// substring match on the venue name.
+		{"boundary: empty web_url rejected", tripadvisor.LocationDetails{Name: "No URL At All"}, false},
+		{"boundary: malformed web_url rejected", tripadvisor.LocationDetails{Name: "Broken URL", WebURL: "://not a url"}, false},
+		{"boundary: venue name containing the keyword doesn't spoof a match", tripadvisor.LocationDetails{Name: "The Restaurant_Review Lounge", WebURL: "https://www.tripadvisor.com/Attraction_Review-g295424-d15-Reviews-The_Restaurant_Review_Lounge-Belgrade.html"}, false},
 	}
 
 	for _, tt := range tests {
