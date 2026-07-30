@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"activities-service/internal/tripadvisor"
@@ -56,7 +57,9 @@ func TestNearbySearch_Decoding(t *testing.T) {
 func TestNearbySearch_PagesUntilShortPage(t *testing.T) {
 	// Page 1 is full (20 items) so paging must continue; page 2 is short so
 	// paging must stop there — no page 3 request. WebURL must come through
-	// from urls.tripadvisor.main.
+	// from urls.tripadvisor.main. Page 2 re-serves page 1's last venue (the
+	// rating-sorted listing can shift between requests), which must be
+	// deduped by location ID rather than returned twice.
 	var gotPages []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		page := r.URL.Query().Get("page")
@@ -75,7 +78,7 @@ func TestNearbySearch_PagesUntilShortPage(t *testing.T) {
 			io.WriteString(w, `]}`)
 			return
 		}
-		io.WriteString(w, `{"data":[{"location":{"id":21,"names":[{"language":"en","value":"Last Venue","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Hotel_Review-21.html"}}}}]}`)
+		io.WriteString(w, `{"data":[{"location":{"id":20,"names":[{"language":"en","value":"Venue 20","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-20.html"}}}},{"location":{"id":21,"names":[{"language":"en","value":"Last Venue","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Hotel_Review-21.html"}}}}]}`)
 	}))
 	defer srv.Close()
 
@@ -101,12 +104,13 @@ func TestNearbySearch_PageCapStopsPaging(t *testing.T) {
 	var pages int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pages++
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		io.WriteString(w, `{"data":[`)
 		for i := range 20 {
 			if i > 0 {
 				io.WriteString(w, ",")
 			}
-			fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"V","primary":true}]}}`, i+1)
+			fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"V","primary":true}]}}`, page*100+i)
 		}
 		io.WriteString(w, `]}`)
 	}))

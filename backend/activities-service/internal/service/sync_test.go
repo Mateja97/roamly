@@ -447,6 +447,40 @@ func TestActivities_Query_TripadvisorSync_DeadlineTruncatedSweepLeavesAreaUnmark
 	if len(repo.markSynced) != 0 {
 		t.Errorf("markSynced = %v, want none — a deadline-truncated sweep must leave the area unmarked to resume next query", repo.markSynced)
 	}
+	// The truncated sweep's partial work is kept, not rolled back — the
+	// fake's details call outlives the deadline but still returns, so its
+	// upsert must have landed.
+	if repo.upsertCalls != 1 {
+		t.Errorf("Upsert calls = %d, want 1 — partial results survive a truncated sweep", repo.upsertCalls)
+	}
+}
+
+func TestActivities_Query_TripadvisorSync_AllSummariesMissingWebURLAbortsUnmarked(t *testing.T) {
+	// The junk gate reads the summary's WebURL. If Terra stops returning
+	// urls.tripadvisor.main entirely, every candidate would drop silently
+	// and an empty "successful" sweep would freeze the cell at zero venues
+	// for the TTL. A result set with no URLs at all means the gate signal
+	// is broken: abort before per-venue calls, leave the cell unmarked.
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{
+			{LocationID: "1", Name: "Restoran Taverna"},
+			{LocationID: "2", Name: "Kafana Znak Pitanja"},
+		},
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+
+	if ta.detailsCalls != 0 {
+		t.Errorf("LocationDetails calls = %d, want 0", ta.detailsCalls)
+	}
+	if len(repo.markSynced) != 0 {
+		t.Errorf("markSynced = %v, want none — a URL-less result set must not stamp the cell synced", repo.markSynced)
+	}
 }
 
 func TestTripadvisorReviews_FilterAndTruncation(t *testing.T) {

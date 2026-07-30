@@ -118,12 +118,17 @@ const nearbySearchMaxPages = 5
 
 // NearbySearch finds Tripadvisor locations of category (e.g.
 // "RESTAURANT") within radiusKM of lat/lng, paging through up to
-// nearbySearchMaxPages catalog pages. A short page means the last page:
+// nearbySearchMaxPages catalog pages. Page numbering is 1-based per the
+// Partner API spec's "Page index (1-based)" (and verified live: page=1 and
+// page=2 return distinct result sets). A short page means the last page:
 // paging stops there. Any page failing fails the whole call — a partial
 // result would let the caller mark the area synced on a fraction of its
-// venues.
+// venues. Results are deduped by location ID across pages: pages are
+// snapshots of a rating-sorted listing, so a venue can straddle a page
+// boundary between two requests.
 func (c *Client) NearbySearch(ctx context.Context, lat, lng, radiusKM float64, category string) ([]LocationSummary, error) {
 	var out []LocationSummary
+	seen := make(map[int64]bool)
 	for page := 1; page <= nearbySearchMaxPages; page++ {
 		q := url.Values{
 			"lat":      {fmt.Sprintf("%f", lat)},
@@ -152,6 +157,10 @@ func (c *Client) NearbySearch(ctx context.Context, lat, lng, radiusKM float64, c
 			return nil, fmt.Errorf("tripadvisor nearby search: %w", err)
 		}
 		for _, d := range parsed.Data {
+			if seen[d.Location.ID] {
+				continue
+			}
+			seen[d.Location.ID] = true
 			out = append(out, LocationSummary{
 				LocationID: strconv.FormatInt(d.Location.ID, 10),
 				Name:       primaryValue(d.Location.Names),
