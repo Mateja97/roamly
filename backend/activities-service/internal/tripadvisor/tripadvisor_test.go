@@ -2,10 +2,12 @@ package tripadvisor_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"activities-service/internal/tripadvisor"
@@ -49,6 +51,81 @@ func TestNearbySearch_Decoding(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].LocationID != "26453069" || got[0].Name != "Yugo Verse" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestNearbySearch_PagesUntilShortPage(t *testing.T) {
+	// Page 1 is full (20 items) so paging must continue; page 2 is short so
+	// paging must stop there — no page 3 request. WebURL must come through
+	// from urls.tripadvisor.main. Page 2 re-serves page 1's last venue (the
+	// rating-sorted listing can shift between requests), which must be
+	// deduped by location ID rather than returned twice.
+	var gotPages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		gotPages = append(gotPages, page)
+		if r.URL.Query().Get("size") != "20" {
+			t.Errorf("size = %q, want 20", r.URL.Query().Get("size"))
+		}
+		if page == "1" {
+			io.WriteString(w, `{"data":[`)
+			for i := range 20 {
+				if i > 0 {
+					io.WriteString(w, ",")
+				}
+				fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"Venue %d","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-%d.html"}}}}`, i+1, i+1, i+1)
+			}
+			io.WriteString(w, `]}`)
+			return
+		}
+		io.WriteString(w, `{"data":[{"location":{"id":20,"names":[{"language":"en","value":"Venue 20","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-20.html"}}}},{"location":{"id":21,"names":[{"language":"en","value":"Last Venue","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Hotel_Review-21.html"}}}}]}`)
+	}))
+	defer srv.Close()
+
+	c := tripadvisor.NewWithBase("k", srv.URL)
+	got, err := c.NearbySearch(context.Background(), 44.81, 20.46, 8, "RESTAURANT")
+	if err != nil {
+		t.Fatalf("NearbySearch: %v", err)
+	}
+	if !reflect.DeepEqual(gotPages, []string{"1", "2"}) {
+		t.Errorf("requested pages = %v, want [1 2]", gotPages)
+	}
+	if len(got) != 21 {
+		t.Fatalf("len = %d, want 21", len(got))
+	}
+	if got[0].WebURL != "https://ta/Restaurant_Review-1.html" || got[20].WebURL != "https://ta/Hotel_Review-21.html" {
+		t.Errorf("WebURLs not parsed: first %q last %q", got[0].WebURL, got[20].WebURL)
+	}
+}
+
+func TestNearbySearch_PageCapStopsPaging(t *testing.T) {
+	// Every page comes back full — paging must still stop at the cap
+	// instead of walking Terra's 50+ pages.
+	var pages int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		io.WriteString(w, `{"data":[`)
+		for i := range 20 {
+			if i > 0 {
+				io.WriteString(w, ",")
+			}
+			fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"V","primary":true}]}}`, page*100+i)
+		}
+		io.WriteString(w, `]}`)
+	}))
+	defer srv.Close()
+
+	c := tripadvisor.NewWithBase("k", srv.URL)
+	got, err := c.NearbySearch(context.Background(), 0, 0, 1, "RESTAURANT")
+	if err != nil {
+		t.Fatalf("NearbySearch: %v", err)
+	}
+	if pages != 5 {
+		t.Errorf("pages requested = %d, want 5", pages)
+	}
+	if len(got) != 100 {
+		t.Errorf("len = %d, want 100", len(got))
 	}
 }
 

@@ -68,9 +68,14 @@ func NewWithBase(apiKey, base string) *Client {
 // LocationSummary is one Nearby Search result. Deliberately thin —
 // Terra's /catalog/locations/nearby endpoint returns only identity, never
 // rating/photos/ranking; LocationDetails resolves the rest per candidate.
+// WebURL (urls.tripadvisor.main in the catalog projection) is carried so
+// the sync can gate on Tripadvisor's own venue-type path segment
+// (Restaurant_Review-/Hotel_Review-/...) before paying a LocationDetails
+// call for the candidate.
 type LocationSummary struct {
 	LocationID string
 	Name       string
+	WebURL     string
 }
 
 // localizedValue is the shape shared by names/descriptions/title/text
@@ -96,34 +101,75 @@ func primaryValue(vs []localizedValue) string {
 	return ""
 }
 
+// nearbySearchPageSize is Terra's per-page maximum (and default) for
+// /catalog/locations/nearby — asking for more is rejected, so depth comes
+// only from paging.
+const nearbySearchPageSize = 20
+
+// nearbySearchMaxPages caps how deep NearbySearch pages. Terra's category
+// parameter doesn't filter server-side (see terraNearbySearchCategory's doc
+// in internal/service), so each 20-result page is mostly hotels/apartments/
+// attractions noise; a single page left a city with ~2 real restaurants
+// (the Belgrade bug). 5 pages ≈ 100 candidates gives the food-venue gate
+// enough raw material. The endpoint serves 50+ pages for a dense city, so
+// this is a cost cap, not a data limit; raise it if cities still come up
+// thin.
+const nearbySearchMaxPages = 5
+
 // NearbySearch finds Tripadvisor locations of category (e.g.
-// "RESTAURANT") within radiusKM of lat/lng.
+// "RESTAURANT") within radiusKM of lat/lng, paging through up to
+// nearbySearchMaxPages catalog pages. Page numbering is 1-based per the
+// Partner API spec's "Page index (1-based)" (and verified live: page=1 and
+// page=2 return distinct result sets). A short page means the last page:
+// paging stops there. Any page failing fails the whole call — a partial
+// result would let the caller mark the area synced on a fraction of its
+// venues. Results are deduped by location ID across pages: pages are
+// snapshots of a rating-sorted listing, so a venue can straddle a page
+// boundary between two requests.
 func (c *Client) NearbySearch(ctx context.Context, lat, lng, radiusKM float64, category string) ([]LocationSummary, error) {
-	q := url.Values{
-		"lat":      {fmt.Sprintf("%f", lat)},
-		"lon":      {fmt.Sprintf("%f", lng)},
-		"radius":   {fmt.Sprintf("%f", radiusKM)},
-		"unit":     {"KM"},
-		"category": {category},
-		"locale":   {locale},
-	}
-	var parsed struct {
-		Data []struct {
-			Location struct {
-				ID    int64            `json:"id"`
-				Names []localizedValue `json:"names"`
-			} `json:"location"`
-		} `json:"data"`
-	}
-	if err := c.doJSON(ctx, c.base+"/catalog/locations/nearby?"+q.Encode(), &parsed); err != nil {
-		return nil, fmt.Errorf("tripadvisor nearby search: %w", err)
-	}
-	out := make([]LocationSummary, 0, len(parsed.Data))
-	for _, d := range parsed.Data {
-		out = append(out, LocationSummary{
-			LocationID: strconv.FormatInt(d.Location.ID, 10),
-			Name:       primaryValue(d.Location.Names),
-		})
+	var out []LocationSummary
+	seen := make(map[int64]bool)
+	for page := 1; page <= nearbySearchMaxPages; page++ {
+		q := url.Values{
+			"lat":      {fmt.Sprintf("%f", lat)},
+			"lon":      {fmt.Sprintf("%f", lng)},
+			"radius":   {fmt.Sprintf("%f", radiusKM)},
+			"unit":     {"KM"},
+			"category": {category},
+			"locale":   {locale},
+			"page":     {strconv.Itoa(page)},
+			"size":     {strconv.Itoa(nearbySearchPageSize)},
+		}
+		var parsed struct {
+			Data []struct {
+				Location struct {
+					ID    int64            `json:"id"`
+					Names []localizedValue `json:"names"`
+					URLs  struct {
+						Tripadvisor struct {
+							Main string `json:"main"`
+						} `json:"tripadvisor"`
+					} `json:"urls"`
+				} `json:"location"`
+			} `json:"data"`
+		}
+		if err := c.doJSON(ctx, c.base+"/catalog/locations/nearby?"+q.Encode(), &parsed); err != nil {
+			return nil, fmt.Errorf("tripadvisor nearby search: %w", err)
+		}
+		for _, d := range parsed.Data {
+			if seen[d.Location.ID] {
+				continue
+			}
+			seen[d.Location.ID] = true
+			out = append(out, LocationSummary{
+				LocationID: strconv.FormatInt(d.Location.ID, 10),
+				Name:       primaryValue(d.Location.Names),
+				WebURL:     d.Location.URLs.Tripadvisor.Main,
+			})
+		}
+		if len(parsed.Data) < nearbySearchPageSize {
+			break
+		}
 	}
 	return out, nil
 }

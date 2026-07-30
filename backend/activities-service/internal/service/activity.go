@@ -721,6 +721,13 @@ const tripadvisorSyncTTL = 14 * 24 * time.Hour
 // unmarked so the next query resumes it (see the MarkSynced gate there).
 const tripadvisorSyncTimeout = 15 * time.Second
 
+// tripadvisorSyncTotalTimeout caps one Query call's whole sync pass across
+// every due anchor (see syncTripadvisorIfNeeded). Without it, worst-case
+// search latency would be maxSyncAnchorsPerQuery × tripadvisorSyncTimeout
+// (45s); with it, a multi-anchor pass degrades to truncated anchors that
+// resume on later queries instead of a blocked search.
+const tripadvisorSyncTotalTimeout = 20 * time.Second
+
 // syncVenueConcurrency is how many candidates one anchor sweep resolves at
 // once (LocationDetails/LocationReviews/LocationPhotos per candidate).
 // Serial resolution of a paginated sweep's ~20-40 food venues would blow
@@ -828,8 +835,15 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 	if len(groups) > maxSyncAnchorsPerQuery {
 		groups = groups[:maxSyncAnchorsPerQuery]
 	}
+	// One shared budget across all of this query's anchors, so worst-case
+	// query latency is bounded by tripadvisorSyncTotalTimeout rather than
+	// maxSyncAnchorsPerQuery × the per-anchor timeout. An anchor cut off by
+	// the shared budget behaves exactly like one cut off by its own: partial
+	// upserts kept, cell left unmarked, re-swept on a later query.
+	totalCtx, cancel := context.WithTimeout(ctx, tripadvisorSyncTotalTimeout)
+	defer cancel()
 	for _, g := range groups {
-		a.syncTripadvisorAnchor(ctx, g.anchor, g.categories)
+		a.syncTripadvisorAnchor(totalCtx, g.anchor, g.categories)
 	}
 }
 
@@ -860,7 +874,10 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 // freeze that prefix for the whole tripadvisorSyncTTL (exactly how
 // Belgrade got stuck at 2 restaurants for 14 days). Left unmarked, the
 // upserted prefix stays (Upsert is idempotent) and the next query for the
-// area picks the sweep back up.
+// area re-runs the whole sweep from scratch — no checkpoint, so
+// already-ingested venues are re-resolved and re-upserted; the cost of a
+// retried sweep, accepted for the simplicity of not persisting per-venue
+// progress.
 func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitiessvc.Point, categories []activitiessvc.Category) {
 	syncCtx, cancel := context.WithTimeout(ctx, a.syncTimeout)
 	defer cancel()
@@ -876,49 +893,72 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 		category activitiessvc.Category
 	}
 	var candidates []candidate
+	var withURL, food int
 	for _, s := range summaries {
+		if s.WebURL != "" {
+			withURL++
+		}
 		if !hasFoodDrinkSignal(s.WebURL) {
 			continue
 		}
+		food++
 		category := tripadvisormap.Category(s.Name)
 		if !slices.Contains(categories, category) {
 			continue
 		}
 		candidates = append(candidates, candidate{summary: s, category: category})
 	}
+	slog.Info("tripadvisor sync sweep filtered", "summaries", len(summaries), "with_web_url", withURL, "food_venues", food, "candidates", len(candidates), "categories", categories)
 
+	// The whole gate hangs on the summary's WebURL. If Terra stops
+	// returning urls.tripadvisor.main (entitlement or schema change), every
+	// candidate would drop silently, the empty sweep would "succeed", and
+	// MarkSynced would freeze the cell at zero venues for the whole TTL —
+	// the Belgrade failure through a different door. A genuinely food-free
+	// area is fine to mark (its summaries carry URLs, they're just not
+	// Restaurant_Review); a URL-less result set means the signal itself is
+	// broken, so bail before any per-venue work and leave the cell unmarked.
+	if len(summaries) > 0 && withURL == 0 {
+		slog.Warn("tripadvisor sync aborted: no summary carried a web URL; gate signal unavailable", "summaries", len(summaries), "categories", categories)
+		return
+	}
+
+	work := make(chan candidate)
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, syncVenueConcurrency)
-	for _, c := range candidates {
+	for range min(syncVenueConcurrency, len(candidates)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			for c := range work {
+				details, err := a.tripadvisor.LocationDetails(syncCtx, c.summary.LocationID)
+				if err != nil {
+					slog.Warn("tripadvisor location details failed", "location_id", c.summary.LocationID, "error", err)
+					continue
+				}
 
-			details, err := a.tripadvisor.LocationDetails(syncCtx, c.summary.LocationID)
-			if err != nil {
-				slog.Warn("tripadvisor location details failed", "location_id", c.summary.LocationID, "error", err)
-				return
-			}
+				reviews := a.tripadvisorReviews(syncCtx, details)
 
-			reviews := a.tripadvisorReviews(syncCtx, details)
+				// One provisional photo at ingest time, the rest resolved later on
+				// first view via GetPhotos — same pattern as cmd/scrapecity's Google
+				// seed (minPhotos = 1). LocationDetails carries no photo of its own
+				// in the real API, so this is the only source for it. A failure or
+				// empty result here must never block the sync.
+				photos, err := a.tripadvisor.LocationPhotos(syncCtx, details.LocationID, 1)
+				if err != nil {
+					slog.Warn("tripadvisor location photos failed", "location_id", details.LocationID, "error", err)
+					photos = nil
+				}
 
-			// One provisional photo at ingest time, the rest resolved later on
-			// first view via GetPhotos — same pattern as cmd/scrapecity's Google
-			// seed (minPhotos = 1). LocationDetails carries no photo of its own
-			// in the real API, so this is the only source for it. A failure or
-			// empty result here must never block the sync.
-			var photos []activitiessvc.Photo
-			if p, err := a.tripadvisor.LocationPhotos(syncCtx, details.LocationID, 1); err == nil && len(p) > 0 {
-				photos = p
-			}
-
-			if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, details, reviews, photos)); err != nil {
-				slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
+				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, details, reviews, photos)); err != nil {
+					slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
+				}
 			}
 		}()
 	}
+	for _, c := range candidates {
+		work <- c
+	}
+	close(work)
 	wg.Wait()
 
 	if syncCtx.Err() != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,7 @@ type fakeRepo struct {
 	updateOut      activitiessvc.Activity
 	updateErr      error
 
+	upsertMu    sync.Mutex                     // Upsert runs syncVenueConcurrency-wide during a sweep
 	gotUpsert   activitiessvc.IngestActivity   // most recent call
 	gotUpserts  []activitiessvc.IngestActivity // every call, in call order
 	upsertCalls int
@@ -81,6 +83,8 @@ func (f *fakeRepo) Update(_ context.Context, id string, patch activitiessvc.Upda
 }
 
 func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
+	f.upsertMu.Lock()
+	defer f.upsertMu.Unlock()
 	f.gotUpsert = in
 	f.gotUpserts = append(f.gotUpserts, in)
 	f.upsertCalls++
