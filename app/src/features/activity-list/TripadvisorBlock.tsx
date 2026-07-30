@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ArrowUpRight, MapPin, Phone } from 'lucide-react-native';
+import { MapPin, Phone } from 'lucide-react-native';
 import type { TripadvisorAttribution, TripadvisorReview } from '../../api/activities';
 import { TripadvisorAttributionPlate } from '../../components/TripadvisorAttributionPlate';
 import { TripadvisorSubratingsPlate } from '../../components/TripadvisorSubratingsPlate';
@@ -12,26 +12,25 @@ type TripadvisorBlockProps = {
   reviews: TripadvisorReview[];
   address: string | undefined;
   ctaBusy: boolean;
-  onOpenWebUrl: () => void;
   onCallPhone: (phone: string) => void;
 };
 
 // design-spec.md's T8/T4 §5b: the contiguous Tripadvisor block on the detail
 // screen — aggregate rating plate, subratings grid, a traveler-reviews
-// carousel, address/phone facts rows, a deep-link-out row to Tripadvisor's
-// own review page, and a compliance disclaimer. The caller renders this in
-// place of the screen's usual gold star + numeric rating, only for a
+// carousel, address/phone facts rows. The caller renders this in place of
+// the screen's usual gold star + numeric rating, only for a
 // Tripadvisor-sourced row, immediately after the meta row and before the
-// per-category body sections.
+// per-category body sections. The "Read all reviews on Tripadvisor" deep
+// link + disclaimer are the *trailing* elements of the scrollable content
+// (design-spec.md T4's Footer CTAs + disclaimer section) — the caller
+// renders those itself, after the map, right before the pinned footer.
 export function TripadvisorBlock({
   tripadvisor,
   reviews,
   address,
   ctaBusy,
-  onOpenWebUrl,
   onCallPhone,
 }: TripadvisorBlockProps) {
-  const linkFocus = useFocusable();
   const phoneFocus = useFocusable();
   const phone = tripadvisor.phone;
   const showFacts = Boolean(address || phone);
@@ -76,24 +75,6 @@ export function TripadvisorBlock({
           )}
         </View>
       )}
-
-      <Pressable
-        onPress={onOpenWebUrl}
-        onFocus={linkFocus.onFocus}
-        onBlur={linkFocus.onBlur}
-        disabled={ctaBusy}
-        accessibilityRole="button"
-        accessibilityLabel="Read all reviews on Tripadvisor"
-        style={[styles.linkButton, linkFocus.focused && styles.linkButtonFocused]}
-      >
-        <Text style={styles.linkLabel}>Read all reviews on Tripadvisor</Text>
-        <ArrowUpRight size={16} color={colors.text} strokeWidth={1.75} />
-      </Pressable>
-
-      <Text style={styles.disclaimer}>
-        Ratings, reviews and photos for restaurants and bars are sourced from Tripadvisor and refreshed
-        periodically. Roamly does not rate these places.
-      </Text>
     </View>
   );
 }
@@ -136,30 +117,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.text,
     textDecorationLine: 'underline',
-  },
-  linkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space[2],
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.default,
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  linkButtonFocused: {
-    backgroundColor: colors.surfaceHover,
-    borderColor: colors.primary,
-  },
-  linkLabel: {
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  disclaimer: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-    lineHeight: fontSize.xs * 1.55,
   },
 });

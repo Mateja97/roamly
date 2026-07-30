@@ -20,7 +20,6 @@ function renderBlock(overrides: Partial<ComponentProps<typeof TripadvisorBlock>>
       reviews={[]}
       address={undefined}
       ctaBusy={false}
-      onOpenWebUrl={jest.fn()}
       onCallPhone={jest.fn()}
       {...overrides}
     />,
@@ -28,15 +27,23 @@ function renderBlock(overrides: Partial<ComponentProps<typeof TripadvisorBlock>>
 }
 
 describe('TripadvisorBlock', () => {
-  it('always renders the aggregate plate + deep-link row + disclaimer', () => {
+  it('always renders the aggregate plate', () => {
     renderBlock();
     expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeTruthy();
+  });
+
+  // Bug fix: the "Read all reviews on Tripadvisor" deep-link button + its
+  // disclaimer moved out of this component — they're now the trailing
+  // elements of the parent screen's scrollable content, after the
+  // FactStrip/map (see ActivityDetailScreen.test.tsx), not mid-block here.
+  it('does not render the deep-link button or the disclaimer (moved to the parent screen)', () => {
+    renderBlock();
     expect(
-      screen.getByText(
-        'Ratings, reviews and photos for restaurants and bars are sourced from Tripadvisor and refreshed periodically. Roamly does not rate these places.',
-      ),
-    ).toBeTruthy();
+      screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' }),
+    ).toBeNull();
+    expect(
+      screen.queryByText(/Roamly does not rate these places/),
+    ).toBeNull();
   });
 
   it('omits the subratings plate when tripadvisor.subratings is absent (no empty grid)', () => {
@@ -80,16 +87,4 @@ describe('TripadvisorBlock', () => {
     expect(onCallPhone).toHaveBeenCalledWith('+381 11 123 4567');
   });
 
-  it('calls onOpenWebUrl when the deep-link row is pressed', () => {
-    const onOpenWebUrl = jest.fn();
-    renderBlock({ onOpenWebUrl });
-    fireEvent.press(screen.getByRole('button', { name: 'Read all reviews on Tripadvisor' }));
-    expect(onOpenWebUrl).toHaveBeenCalledTimes(1);
-  });
-
-  it('disables the deep-link row while a link handoff is already in flight (ctaBusy)', () => {
-    renderBlock({ ctaBusy: true });
-    const button = screen.getByRole('button', { name: 'Read all reviews on Tripadvisor' });
-    expect(button.props.accessibilityState?.disabled ?? button.props.disabled).toBeTruthy();
-  });
 });
