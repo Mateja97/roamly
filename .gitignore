@@ -19,6 +19,11 @@ bin/
 *.test
 coverage.out
 
+# Local DB backups and one-off data exports/imports — machine-local scratch
+backend/activities-service/backups/
+*.dump
+/belgrade.json
+
 # Superpowers process artifacts (plans, specs, scratch) — not shipped
 docs/superpowers/
 .superpowers/
