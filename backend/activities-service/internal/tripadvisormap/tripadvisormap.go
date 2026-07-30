@@ -56,7 +56,7 @@ func Subtype(cat activitiessvc.Category, subcategories []string) string {
 // honestly rather than dressed up as something smarter. Replace with real
 // category data if Tripadvisor ever grants the categories[] entitlement.
 var (
-	cafeRe = regexp.MustCompile(`\b(coffee|cafe|kafe|espresso|roastery|poslasticarnica)\b`)
+	cafeRe = regexp.MustCompile(`\b(coffee|cafe|kafe|espresso|roastery|poslasticarnica|tea|tearoom)\b`)
 	barRe  = regexp.MustCompile(`\b(bar|pub|pivnica|brewery|tavern|kafana|cocktail|wine)\b`)
 )
 

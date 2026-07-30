@@ -55,6 +55,14 @@ func TestCategory(t *testing.T) {
 		{"diacritic cafe keyword: accented cafe", "Café de Paris", activitiessvc.CategoryCafes},
 		{"diacritic cafe keyword: poslastičarnica", "Poslastičarnica Trpković", activitiessvc.CategoryCafes},
 		{"cafe checked before bar when both keywords present", "Coffee & Wine Bar", activitiessvc.CategoryCafes},
+
+		// BUSINESS_STANDARDS.md lists "Tea House" as a Cafés subtype, so the
+		// keyword set has to cover it. The word-boundary anchors are what keep
+		// "tea" from matching inside "S-tea-khouse" — the Steakhouse case above
+		// is the regression guard for that, don't drop it.
+		{"cafe: tea house", "Belgrade Tea House", activitiessvc.CategoryCafes},
+		{"cafe: tearoom (one word)", "The Old Tearoom", activitiessvc.CategoryCafes},
+		{"restaurant: 'tea' inside another word must not match", "Steakhouse Nikola", activitiessvc.CategoryRestaurants},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
