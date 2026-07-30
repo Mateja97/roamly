@@ -31,6 +31,22 @@ describe('HeroCarousel', () => {
     expect(screen.getByText('Second photo')).toBeTruthy();
   });
 
+  it('reports the swiped-to page via onIndexChange', () => {
+    const onIndexChange = jest.fn();
+    render(
+      <HeroCarousel
+        photos={photos}
+        onBack={jest.fn()}
+        onOpenViewer={jest.fn()}
+        onIndexChange={onIndexChange}
+      />,
+    );
+    fireEvent(screen.getByTestId('activity-detail-hero-pager'), 'momentumScrollEnd', {
+      nativeEvent: { contentOffset: { x: 320 } },
+    });
+    expect(onIndexChange).toHaveBeenCalledWith(1);
+  });
+
   it("opens the viewer at the carousel's current (swiped-to) page, not always 0", () => {
     const onOpenViewer = jest.fn();
     render(<HeroCarousel photos={photos} onBack={jest.fn()} onOpenViewer={onOpenViewer} />);

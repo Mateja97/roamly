@@ -111,6 +111,11 @@ export function ActivityDetailScreen({
   // .../>}`), never swaps `activity` on an already-mounted instance, so
   // there's no reset-on-prop-change case to handle here.
   const [photos, setPhotos] = useState<ActivityPhoto[]>(activity.image_refs);
+  // bugfix: HeroCarousel pages through `photos` internally — this mirrors its
+  // current page so the below-hero attribution caption tracks the photo
+  // actually being viewed, not always photos[0] (attribution must travel
+  // with the photo, per api/activities.ts's PhotoAttribution doc).
+  const [heroIndex, setHeroIndex] = useState(0);
   useEffect(() => {
     let cancelled = false;
     getActivityPhotos(activity.id).then((result) => {
@@ -120,7 +125,7 @@ export function ActivityDetailScreen({
       cancelled = true;
     };
   }, [activity.id]);
-  const heroPhoto = photos[0];
+  const heroPhoto = photos[heroIndex];
   const metaText = showDistance
     ? `${activity.distance_km.toFixed(1)} km away`
     : activity.country;
@@ -254,6 +259,7 @@ export function ActivityDetailScreen({
           photos={photos}
           onBack={onBack}
           onOpenViewer={setViewerIndex}
+          onIndexChange={setHeroIndex}
         />
 
         <PhotoAttributionCaption

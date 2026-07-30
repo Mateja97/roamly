@@ -28,6 +28,8 @@ type HeroCarouselProps = {
   onBack: () => void;
   /** Opens PhotoViewerModal at the carousel's current page (continuity). */
   onOpenViewer: (index: number) => void;
+  /** Reports the current page on swipe, so the parent's below-hero attribution caption (PhotoAttributionCaption) tracks it. */
+  onIndexChange?: (index: number) => void;
 };
 
 // DESIGN_STANDARDS.md's Detail hero recipe: the full-bleed, swipeable
@@ -37,7 +39,7 @@ type HeroCarouselProps = {
 // pagingEnabled covers a single-row horizontal carousel. Owns the back
 // control and the "Photos N" pill (both overlaid on the hero), so this is
 // the one place the detail screen's back navigation and gallery entry live.
-export function HeroCarousel({ photos, onBack, onOpenViewer }: HeroCarouselProps) {
+export function HeroCarousel({ photos, onBack, onOpenViewer, onIndexChange }: HeroCarouselProps) {
   const insets = useSafeAreaInsets();
   const { width } = useSafeAreaFrame();
   const [index, setIndex] = useState(0);
@@ -47,9 +49,11 @@ export function HeroCarousel({ photos, onBack, onOpenViewer }: HeroCarouselProps
 
   const onMomentumScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
+      const next = Math.round(e.nativeEvent.contentOffset.x / width);
+      setIndex(next);
+      onIndexChange?.(next);
     },
-    [width],
+    [width, onIndexChange],
   );
 
   const renderPage = useCallback(
