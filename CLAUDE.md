@@ -39,3 +39,4 @@ configure a `claude_design` MCP server for it. The project's
 - The frontend and the app talk to the backend only through `proxy-service`'s public HTTP API.
 - The whole stack runs from a single root `docker-compose.yaml` (`docker compose up`); every runnable component registers itself there.
 - Don't push to origin unless explicitly asked.
+- When bumping a pinned dependency/runtime version, update every place that pins it (package.json across `frontend/`/`app/`, lockfiles, Dockerfiles, CI config) in the same change — a version bumped in only one place is a skew that `npm install`/local dev can mask but `npm ci`/Docker builds will hard-fail on.
