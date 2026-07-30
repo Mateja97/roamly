@@ -689,7 +689,10 @@ describe('ActivityDetailScreen', () => {
       ]);
 
       fireEvent.press(screen.getByLabelText('View 3 photos'));
-      expect(screen.getByText('1 / 3')).toBeTruthy();
+      // The opened PhotoViewerModal's FlatLists schedule their own cell-render
+      // update on a timer — wait for it to settle instead of asserting
+      // immediately, so it doesn't land outside act() after the test returns.
+      await waitFor(() => expect(screen.getByText('1 / 3')).toBeTruthy());
     });
 
     it('stays on the provisional photo with no error UI when the fetch fails', async () => {
@@ -930,7 +933,7 @@ describe('ActivityDetailScreen', () => {
       expect(onBack).not.toHaveBeenCalled();
     });
 
-    it('shows no tap affordance and no modal for the legacy-only fallback (no usable structured opening_hours)', () => {
+    it('shows no tap affordance and no modal for the legacy-only fallback (no usable structured opening_hours)', async () => {
       const legacyOnly: Activity = {
         ...activity,
         details: { category: 'restaurants', hours: '9am–11pm', open_status: 'Open now' },
@@ -941,6 +944,10 @@ describe('ActivityDetailScreen', () => {
       expect(
         screen.queryByRole('button', { name: 'See full opening hours' }),
       ).toBeNull();
+      // The map preview's Skeleton mounts a reduce-motion effect that
+      // resolves asynchronously — flush it before the test ends so it
+      // doesn't land outside act() during the next test.
+      await flush();
     });
   });
 

@@ -184,6 +184,10 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
 
     pressBackHandler(addBackListener);
+    // Popping back remounts NearbySearchSetupScreen, which re-triggers its
+    // live-count mount effect — flush it before the test ends so its
+    // setCount/setError doesn't fire outside act().
+    await flush();
     expect(screen.getByText('Refine your search')).toBeTruthy();
     addBackListener.mockRestore();
   });

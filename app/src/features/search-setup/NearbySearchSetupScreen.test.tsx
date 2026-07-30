@@ -85,6 +85,11 @@ describe('NearbySearchSetupScreen', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Reset' }));
     expect(screen.getByText('0 selected')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /sport, selected/i })).toBeNull();
+
+    // Reset re-triggers the live-count effect (selected changed back to []) —
+    // wait for it to settle so its setCount/setError isn't left dangling
+    // outside act() past the end of the test.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show 1 activities' })).toBeTruthy());
   });
 
   it('disables the CTA and reads "Show 0 activities" when the filter yields no results', async () => {
@@ -128,11 +133,14 @@ describe('NearbySearchSetupScreen', () => {
     expect(screen.getByRole('button', { name: /show \d+ activities/i })).toBeTruthy();
   });
 
-  it('calls onBack on Android hardware back press — no custom navigator', () => {
+  it('calls onBack on Android hardware back press — no custom navigator', async () => {
     mockedQuery.mockResolvedValue(successResult([]));
     const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
     const onBack = jest.fn();
     render(<NearbySearchSetupScreen selection={SELECTION} onConfirm={jest.fn()} onBack={onBack} />);
+    // Let the mount-time live-count effect settle before asserting, so its
+    // setCount/setError doesn't land outside act() after the test returns.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show 0 activities' })).toBeTruthy());
 
     const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
     expect(registration).toBeTruthy();
