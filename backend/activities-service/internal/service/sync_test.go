@@ -15,7 +15,7 @@ import (
 func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
-		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Ambar Beograd"}},
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {
 				LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, Rating: 4.5,
@@ -186,7 +186,7 @@ func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsOneSearchOneRow(t 
 	// per due category.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
-		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
@@ -217,7 +217,7 @@ func TestActivities_Query_TripadvisorSync_OneVenueOneRowInvariant(t *testing.T) 
 	// venue produces exactly one row, filed as Bars.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
-		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Gradska Pivnica Terazije", WebURL: "https://ta/Restaurant_Review-1"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {LocationID: "111", Name: "Gradska Pivnica Terazije", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
@@ -256,7 +256,7 @@ func TestActivities_Query_TripadvisorSync_CandidateSkippedWhenClassifiedCategory
 	// due — that category's cached row is already fresh.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
-		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111"}},
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Inferno Pizza", WebURL: "https://ta/Restaurant_Review-1"}},
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {LocationID: "111", Name: "Inferno Pizza", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
@@ -361,7 +361,10 @@ func TestActivities_Query_TripadvisorSync_NearbySearchErrorFallsThrough(t *testi
 func TestActivities_Query_TripadvisorSync_OneBadDetailsCallDoesNotSinkTheRest(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
-		nearbyOut:   []tripadvisor.LocationSummary{{LocationID: "bad"}, {LocationID: "good"}},
+		nearbyOut: []tripadvisor.LocationSummary{
+			{LocationID: "bad", Name: "Bad Place", WebURL: "https://ta/Restaurant_Review-bad"},
+			{LocationID: "good", Name: "Fine Place", WebURL: "https://ta/Restaurant_Review-good"},
+		},
 		detailsErrs: map[string]error{"bad": context.DeadlineExceeded},
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"good": {LocationID: "good", Name: "Fine Place", Rating: 4.0, WebURL: "https://ta/Restaurant_Review-good", PriceLevel: "Mid Range"},
@@ -381,6 +384,68 @@ func TestActivities_Query_TripadvisorSync_OneBadDetailsCallDoesNotSinkTheRest(t 
 	}
 	if len(repo.markSynced) != 1 {
 		t.Errorf("markSynced = %v, want the area still marked synced despite one bad candidate", repo.markSynced)
+	}
+}
+
+func TestActivities_Query_TripadvisorSync_NonFoodSummariesNeverCostDetailsCalls(t *testing.T) {
+	// Terra's unfiltered nearby search buries the food venues in hotels,
+	// apartments and attractions. The summary's own WebURL identifies those,
+	// so junk candidates must be dropped before any LocationDetails call —
+	// with paginated sweeps of ~100 candidates, paying a details call per
+	// junk venue is most of the sweep's cost.
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{
+			{LocationID: "hotel", Name: "Hotel Zelos", WebURL: "https://ta/Hotel_Review-hotel"},
+			{LocationID: "monument", Name: "Njegos Monument", WebURL: "https://ta/Attraction_Review-monument"},
+			{LocationID: "nourl", Name: "Tim Kombi Prevoz Putnika"},
+			{LocationID: "food", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-food"},
+		},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"food": {LocationID: "food", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-food", PriceLevel: "Mid Range"},
+		},
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+
+	if ta.detailsCalls != 1 {
+		t.Errorf("LocationDetails calls = %d, want 1 — only the Restaurant_Review candidate may cost a details call", ta.detailsCalls)
+	}
+	if repo.upsertCalls != 1 || repo.gotUpsert.ExternalID != "food" {
+		t.Errorf("upserts = %d (ExternalID %q), want exactly the food venue", repo.upsertCalls, repo.gotUpsert.ExternalID)
+	}
+}
+
+func TestActivities_Query_TripadvisorSync_DeadlineTruncatedSweepLeavesAreaUnmarked(t *testing.T) {
+	// A sweep the deadline cuts short ingested only a prefix of its
+	// candidates. Marking the area synced would freeze that prefix for the
+	// whole 14-day TTL — exactly how Belgrade got stuck at 2 restaurants.
+	// The partial upserts stay, but the cell must remain unmarked so the
+	// next query resumes the sweep.
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{
+			{LocationID: "111", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-1"},
+		},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
+		},
+		detailsDelay: 50 * time.Millisecond,
+	}
+	svc := New(repo).WithTripadvisor(ta)
+	svc.syncTimeout = 10 * time.Millisecond
+
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+
+	if len(repo.markSynced) != 0 {
+		t.Errorf("markSynced = %v, want none — a deadline-truncated sweep must leave the area unmarked to resume next query", repo.markSynced)
 	}
 }
 

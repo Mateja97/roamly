@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
+	"time"
 
 	"activities-service/internal/tripadvisor"
 
@@ -149,8 +151,12 @@ type nearbySearchCall struct {
 
 // fakeTripadvisor is a fake tripadvisorClient. Task 5 (the lazy sync) adds
 // NearbySearch/LocationDetails/LocationReviews fields and methods to this
-// same struct as the tripadvisorClient interface it implements grows.
+// same struct as the tripadvisorClient interface it implements grows. The
+// per-venue methods run syncVenueConcurrency-wide during a sweep, so every
+// method is mutex-guarded to keep the race detector quiet.
 type fakeTripadvisor struct {
+	mu sync.Mutex
+
 	photosOut   []activitiessvc.Photo
 	photosErr   error
 	photosCalls int
@@ -160,24 +166,39 @@ type fakeTripadvisor struct {
 	nearbyCalls     int
 	gotNearbySearch []nearbySearchCall
 
-	detailsOut  map[string]tripadvisor.LocationDetails
-	detailsErrs map[string]error // per-locationID error, so one bad candidate can be simulated without failing every candidate
+	detailsOut   map[string]tripadvisor.LocationDetails
+	detailsErrs  map[string]error // per-locationID error, so one bad candidate can be simulated without failing every candidate
+	detailsCalls int
+	detailsDelay time.Duration // per-call sleep, to force a sweep past a shrunken sync timeout
 
 	reviewsOut map[string][]tripadvisor.Review
 }
 
 func (f *fakeTripadvisor) LocationPhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.photosCalls++
 	return f.photosOut, f.photosErr
 }
 
 func (f *fakeTripadvisor) NearbySearch(_ context.Context, lat, lng, radiusKM float64, category string) ([]tripadvisor.LocationSummary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.nearbyCalls++
 	f.gotNearbySearch = append(f.gotNearbySearch, nearbySearchCall{lat: lat, lng: lng, radiusKM: radiusKM, category: category})
 	return f.nearbyOut, f.nearbyErr
 }
 
 func (f *fakeTripadvisor) LocationDetails(_ context.Context, locationID string) (tripadvisor.LocationDetails, error) {
+	f.mu.Lock()
+	f.detailsCalls++
+	delay := f.detailsDelay
+	f.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if err, ok := f.detailsErrs[locationID]; ok {
 		return tripadvisor.LocationDetails{}, err
 	}
@@ -185,6 +206,8 @@ func (f *fakeTripadvisor) LocationDetails(_ context.Context, locationID string) 
 }
 
 func (f *fakeTripadvisor) LocationReviews(_ context.Context, locationID string) ([]tripadvisor.Review, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.reviewsOut[locationID], nil
 }
 
