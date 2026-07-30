@@ -9,6 +9,10 @@ import { TripadvisorReviewsCarousel } from './TripadvisorReviewsCarousel';
 
 type TripadvisorBlockProps = {
   tripadvisor: TripadvisorAttribution;
+  // Tripadvisor's own numeric rating (`Activity.rating` for a TA-sourced
+  // row) — the wire-level `tripadvisor` object carries no rating field of
+  // its own, so the caller threads it through from the parent Activity.
+  rating: number;
   reviews: TripadvisorReview[];
   address: string | undefined;
   ctaBusy: boolean;
@@ -26,6 +30,7 @@ type TripadvisorBlockProps = {
 // renders those itself, after the map, right before the pinned footer.
 export function TripadvisorBlock({
   tripadvisor,
+  rating,
   reviews,
   address,
   ctaBusy,
@@ -37,7 +42,7 @@ export function TripadvisorBlock({
 
   return (
     <View style={styles.block}>
-      <TripadvisorAttributionPlate tripadvisor={tripadvisor} variant="detail" />
+      <TripadvisorAttributionPlate tripadvisor={tripadvisor} rating={rating} variant="detail" />
 
       <TripadvisorSubratingsPlate subratings={tripadvisor.subratings} />
 

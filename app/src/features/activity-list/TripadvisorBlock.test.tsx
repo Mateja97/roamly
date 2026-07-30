@@ -17,6 +17,7 @@ function renderBlock(overrides: Partial<ComponentProps<typeof TripadvisorBlock>>
   return render(
     <TripadvisorBlock
       tripadvisor={tripadvisor}
+      rating={4.6}
       reviews={[]}
       address={undefined}
       ctaBusy={false}
@@ -27,8 +28,9 @@ function renderBlock(overrides: Partial<ComponentProps<typeof TripadvisorBlock>>
 }
 
 describe('TripadvisorBlock', () => {
-  it('always renders the aggregate plate', () => {
+  it('always renders the aggregate plate, including the numeric rating', () => {
     renderBlock();
+    expect(screen.getByText('4.6')).toBeTruthy();
     expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
   });
 

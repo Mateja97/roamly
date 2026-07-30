@@ -964,11 +964,14 @@ describe('ActivityDetailScreen', () => {
       },
     };
 
-    it('suppresses the Roamly gold star + numeric rating, replacing it with the aggregate plate', () => {
+    it('suppresses the Roamly gold star, replacing it with the aggregate plate (Tripadvisor\'s own rating + count)', () => {
       render(
         <ActivityDetailScreen activity={tripadvisorActivity} showDistance onBack={jest.fn()} />,
       );
-      expect(screen.queryByText('4.6')).toBeNull();
+      // "4.6" now comes from the plate itself (activity.rating, threaded
+      // through as Tripadvisor's own rating for a TA-sourced row) — not from
+      // the suppressed gold-star row, which never renders for a Tripadvisor row.
+      expect(screen.getByText('4.6')).toBeTruthy();
       expect(screen.getByText('1,204 reviews on Tripadvisor')).toBeTruthy();
     });
 

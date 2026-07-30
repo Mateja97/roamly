@@ -128,9 +128,10 @@ describe('ActivityCard', () => {
       },
     };
 
-    it('renders the attribution plate (review count) instead of the gold rating pill', () => {
+    it('renders the attribution plate (rating · review count) instead of the gold rating pill', () => {
       render(<ActivityCard activity={tripadvisorActivity} showDistance onPress={jest.fn()} />);
-      expect(screen.getByText('1,204 reviews')).toBeTruthy();
+      expect(screen.getByText('4.6 · 1,204')).toBeTruthy();
+      // Gold pill's standalone "4.6" text node must not also render (rule 03).
       expect(screen.queryByText('4.6', { includeHiddenElements: true })).toBeNull();
     });
 
