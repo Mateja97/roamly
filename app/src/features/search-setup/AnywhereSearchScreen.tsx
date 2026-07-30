@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
 import { ChevronLeft, Globe, Search, SearchX, X } from 'lucide-react-native';
@@ -169,132 +169,134 @@ export function AnywhereSearchScreen({ selection, onBack, onSearchComplete }: An
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.titleBlock}>
-          <Text style={styles.title}>Refine your search</Text>
-          <Text style={styles.subtitle}>Set a distance, pick cities, and choose what you&apos;re into.</Text>
-        </View>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>Refine your search</Text>
+            <Text style={styles.subtitle}>Set a distance, pick cities, and choose what you&apos;re into.</Text>
+          </View>
 
-        <View style={styles.section}>
-          <View style={styles.labelRow}>
-            <Text style={styles.sectionLabel}>MAX DISTANCE</Text>
-            <Text style={styles.distanceValue}>{state.maxDistanceKm} km</Text>
-          </View>
-          <Slider
-            style={styles.slider}
-            minimumValue={MIN_DISTANCE_KM}
-            maximumValue={MAX_DISTANCE_KM}
-            step={5}
-            value={state.maxDistanceKm}
-            minimumTrackTintColor={colors.primary}
-            maximumTrackTintColor={colors.border}
-            thumbTintColor={colors.primary}
-            onValueChange={(maxDistanceKm) => setState((prev) => ({ ...prev, maxDistanceKm }))}
-            accessibilityLabel="Max distance"
-            accessibilityValue={{ text: `${state.maxDistanceKm} kilometres` }}
-          />
-          <View style={styles.endLabelsRow}>
-            <Text style={styles.endLabel}>{MIN_DISTANCE_KM} km</Text>
-            <Text style={styles.endLabel}>{MAX_DISTANCE_KM} km</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.labelRow}>
-            <Text style={styles.sectionLabel}>CITIES</Text>
-            <Text style={styles.countLabel}>{state.cities.length} selected</Text>
-          </View>
-          <View style={styles.inputRow}>
-            <Search size={16} color={colors.textMuted} strokeWidth={1.75} />
-            <TextInput
-              value={cityQuery}
-              onChangeText={setCityQuery}
-              placeholder="Search cities"
-              placeholderTextColor={colors.textDisabled}
-              style={styles.input}
-              accessibilityLabel="Search cities"
+          <View style={styles.section}>
+            <View style={styles.labelRow}>
+              <Text style={styles.sectionLabel}>MAX DISTANCE</Text>
+              <Text style={styles.distanceValue}>{state.maxDistanceKm} km</Text>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={MIN_DISTANCE_KM}
+              maximumValue={MAX_DISTANCE_KM}
+              step={5}
+              value={state.maxDistanceKm}
+              minimumTrackTintColor={colors.primary}
+              maximumTrackTintColor={colors.border}
+              thumbTintColor={colors.primary}
+              onValueChange={(maxDistanceKm) => setState((prev) => ({ ...prev, maxDistanceKm }))}
+              accessibilityLabel="Max distance"
+              accessibilityValue={{ text: `${state.maxDistanceKm} kilometres` }}
             />
-            {cityQuery.length > 0 && (
-              <Pressable
-                onPress={() => setCityQuery('')}
-                accessibilityRole="button"
-                accessibilityLabel="Clear search"
-                style={styles.clearButton}
-              >
-                <X size={16} color={colors.textMuted} strokeWidth={1.75} />
-              </Pressable>
+            <View style={styles.endLabelsRow}>
+              <Text style={styles.endLabel}>{MIN_DISTANCE_KM} km</Text>
+              <Text style={styles.endLabel}>{MAX_DISTANCE_KM} km</Text>
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <View style={styles.labelRow}>
+              <Text style={styles.sectionLabel}>CITIES</Text>
+              <Text style={styles.countLabel}>{state.cities.length} selected</Text>
+            </View>
+            <View style={styles.inputRow}>
+              <Search size={16} color={colors.textMuted} strokeWidth={1.75} />
+              <TextInput
+                value={cityQuery}
+                onChangeText={setCityQuery}
+                placeholder="Search cities"
+                placeholderTextColor={colors.textDisabled}
+                style={styles.input}
+                accessibilityLabel="Search cities"
+              />
+              {cityQuery.length > 0 && (
+                <Pressable
+                  onPress={() => setCityQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  style={styles.clearButton}
+                >
+                  <X size={16} color={colors.textMuted} strokeWidth={1.75} />
+                </Pressable>
+              )}
+            </View>
+
+            {trimmedCityQuery.length > 0 && (
+              <View style={styles.resultsPanel}>
+                {panelState === 'loading' &&
+                  [0, 1, 2].map((i) => <Skeleton key={i} width="100%" height={44} style={styles.skeletonRow} />)}
+                {panelState === 'results' &&
+                  cityFetch.results.map((city) => (
+                    <Pressable
+                      key={cityKey(city)}
+                      onPress={() => selectCity(city)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${city.city}, ${city.country}`}
+                      style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowActive]}
+                    >
+                      <Text style={styles.resultCity}>{city.city}</Text>
+                      <Text style={styles.resultCountry}>{city.country}</Text>
+                    </Pressable>
+                  ))}
+                {panelState === 'no-match' && (
+                  <View style={styles.resultMessage}>
+                    <SearchX size={16} color={colors.textMuted} strokeWidth={1.75} />
+                    <Text style={styles.resultMessageText}>No cities found</Text>
+                  </View>
+                )}
+                {panelState === 'error' && (
+                  <View style={styles.resultMessage}>
+                    <Text style={styles.resultErrorText}>{cityFetch.error}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {state.cities.length > 0 && (
+              <View style={styles.chipsRow}>
+                {state.cities.map((city) => (
+                  <FilterChip key={cityKey(city)} variant="remove" label={`${city.city}, ${city.country}`} onPress={() => removeCity(city)} />
+                ))}
+              </View>
             )}
           </View>
 
-          {trimmedCityQuery.length > 0 && (
-            <View style={styles.resultsPanel}>
-              {panelState === 'loading' &&
-                [0, 1, 2].map((i) => <Skeleton key={i} width="100%" height={44} style={styles.skeletonRow} />)}
-              {panelState === 'results' &&
-                cityFetch.results.map((city) => (
-                  <Pressable
-                    key={cityKey(city)}
-                    onPress={() => selectCity(city)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${city.city}, ${city.country}`}
-                    style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowActive]}
-                  >
-                    <Text style={styles.resultCity}>{city.city}</Text>
-                    <Text style={styles.resultCountry}>{city.country}</Text>
-                  </Pressable>
-                ))}
-              {panelState === 'no-match' && (
-                <View style={styles.resultMessage}>
-                  <SearchX size={16} color={colors.textMuted} strokeWidth={1.75} />
-                  <Text style={styles.resultMessageText}>No cities found</Text>
-                </View>
-              )}
-              {panelState === 'error' && (
-                <View style={styles.resultMessage}>
-                  <Text style={styles.resultErrorText}>{cityFetch.error}</Text>
-                </View>
-              )}
+          <View style={styles.section}>
+            <View style={styles.labelRow}>
+              <Text style={styles.sectionLabel}>ACTIVITIES</Text>
+              <Text style={styles.countLabel}>{state.categories.length} selected</Text>
             </View>
-          )}
-
-          {state.cities.length > 0 && (
             <View style={styles.chipsRow}>
-              {state.cities.map((city) => (
-                <FilterChip key={cityKey(city)} variant="remove" label={`${city.city}, ${city.country}`} onPress={() => removeCity(city)} />
+              {CATEGORY_OPTIONS.map((option) => (
+                <FilterChip
+                  key={option.value}
+                  variant="select"
+                  label={option.label}
+                  selected={state.categories.includes(option.value)}
+                  onPress={() => toggleCategory(option.value)}
+                />
               ))}
             </View>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.labelRow}>
-            <Text style={styles.sectionLabel}>ACTIVITIES</Text>
-            <Text style={styles.countLabel}>{state.categories.length} selected</Text>
           </View>
-          <View style={styles.chipsRow}>
-            {CATEGORY_OPTIONS.map((option) => (
-              <FilterChip
-                key={option.value}
-                variant="select"
-                label={option.label}
-                selected={state.categories.includes(option.value)}
-                onPress={() => toggleCategory(option.value)}
-              />
-            ))}
-          </View>
-        </View>
 
-        <View style={styles.errorRegion}>
-          {submitError && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>{submitError}</Text>
-              <Pressable onPress={() => setSubmitError(null)} accessibilityRole="button" accessibilityLabel="Dismiss error" style={styles.dismissButton}>
-                <X size={16} color={colors.error} strokeWidth={1.75} />
-              </Pressable>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+          <View style={styles.errorRegion}>
+            {submitError && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{submitError}</Text>
+                <Pressable onPress={() => setSubmitError(null)} accessibilityRole="button" accessibilityLabel="Dismiss error" style={styles.dismissButton}>
+                  <X size={16} color={colors.error} strokeWidth={1.75} />
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={[styles.footer, { paddingBottom: space[4] + insets.bottom }]}>
         <Pressable
@@ -333,6 +335,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  flex: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
