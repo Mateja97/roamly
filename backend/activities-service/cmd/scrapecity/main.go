@@ -39,19 +39,31 @@ var fieldMask = strings.Join([]string{
 	"places.primaryType", "places.types", "nextPageToken",
 }, ",")
 
-// categoryQueries maps each of the remaining 9 Google-sourced taxonomy
-// categories to the Places Text Search term used to discover its venues.
-// Restaurants, Cafés and Bars are deliberately absent — they're sourced
+// categoryQueries maps each Google-sourced taxonomy category to the Places
+// Text Search term used to discover its venues.
+//
+// Restaurants and Bars are deliberately absent — they're sourced
 // exclusively from the Tripadvisor Content API via
 // service.Activities.Query's lazy sync, not this batch pipeline (see
 // docs/superpowers/specs/2026-07-29-tripadvisor-restaurants-bars-design.md
-// and tripadvisormap.Category). One term per remaining category keeps the
-// request budget small; add variants later if coverage of a thin category
-// (kids, art) proves too sparse.
+// and tripadvisormap.Category).
+//
+// Cafés are the one dual-sourced category: Google here *and* Tripadvisor's
+// lazy sync. Tripadvisor's café coverage turned out far too thin to stand
+// alone — a Belgrade sync yielded 2 cafés against 58 from Google — so
+// dropping Google would have emptied the category. Restaurants/Bars don't
+// have that problem, which is why only Cafés is dual-sourced. Venues found
+// by both providers are separate rows (distinct source_url), so a popular
+// café can appear twice; de-duplicate across providers if that becomes
+// visible in the UI.
+//
+// One term per category keeps the request budget small; add variants later
+// if coverage of a thin category (kids, art) proves too sparse.
 var categoryQueries = []struct {
 	category activitiessvc.Category
 	term     string
 }{
+	{activitiessvc.CategoryCafes, "coffee shops"},
 	{activitiessvc.CategoryNightlife, "night clubs"},
 	{activitiessvc.CategoryNature, "parks and nature"},
 	{activitiessvc.CategorySport, "sports and recreation"},
