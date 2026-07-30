@@ -21,3 +21,17 @@ jest.mock('react-native-safe-area-context', () => {
     initialWindowMetrics: { insets, frame },
   };
 });
+
+// AccessibilityInfo.isReduceMotionEnabled() returns undefined (not a Promise) in
+// the Jest environment — every reduce-motion effect across the app calls
+// `.isReduceMotionEnabled().then(...)`, which throws synchronously without this.
+// Assigned as plain functions (not jest.fn()) so `jest.resetAllMocks()` /
+// `jest.restoreAllMocks()` in individual test files' afterEach hooks can't wipe
+// them back to undefined mid-suite — React Native's own jest preset already
+// auto-mocks AccessibilityInfo.addEventListener as a jest.fn() (returning a
+// `{ remove }` subscription by default), and a resetAllMocks() call anywhere in
+// the same test file strips that default, making it return undefined and
+// crashing the same reduce-motion effect's unmount cleanup (`sub.remove()`).
+const { AccessibilityInfo } = require('react-native');
+AccessibilityInfo.isReduceMotionEnabled = () => Promise.resolve(false);
+AccessibilityInfo.addEventListener = () => ({ remove: () => {} });
