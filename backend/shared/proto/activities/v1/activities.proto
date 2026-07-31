@@ -27,6 +27,15 @@ service ActivitiesService {
   // already stored, at minimum the provisional listing photo. Public
   // surface (not admin-only): this is what the app's detail screen calls.
   rpc GetActivityPhotos(GetActivityPhotosRequest) returns (GetActivityPhotosResponse);
+  // GetActivityWithLiveDetails (T3, places-live-details) is the public
+  // detail-page surface: same request/response shapes as GetActivity, but
+  // backed by service.Activities.GetByIDWithLiveDetails, which merges fresh
+  // Google Place Details onto a Places-sourced row's Details/Description
+  // and populates GoogleReviews/ReviewCount below — never persisted (Places
+  // Terms §14.3). GetActivity itself (the admin RPC) is deliberately
+  // unchanged and keeps calling plain GetByID: an admin's edit-save
+  // round-trip must never write live Google content back into storage.
+  rpc GetActivityWithLiveDetails(GetActivityRequest) returns (Activity);
   rpc CreateActivity(CreateActivityRequest) returns (Activity);
   rpc UpdateActivity(UpdateActivityRequest) returns (Activity);
   // ListAdminCities returns every distinct city with at least one activity,
@@ -189,6 +198,35 @@ message Activity {
   // (activitiessvc.Subcategories), e.g. "fine_dining" under "restaurants".
   // "" = not set; always valid.
   string subcategory = 16;
+
+  // google_reviews and review_count (T3, places-live-details) are only ever
+  // populated on a GetActivityWithLiveDetails response for a Places-sourced
+  // row — always empty/0 on QueryActivities/GetActivity, since neither is
+  // ever stored. review_count is Google's live userRatingCount, merged
+  // alongside rating above.
+  repeated GoogleReview google_reviews = 17;
+  int32 review_count = 18;
+}
+
+// GoogleAuthorAttribution is the Places API's mandatory per-review
+// attribution (T3, places-live-details) — avatar, display name, profile
+// link. photo_uri is "" when Google returned no reviewer avatar.
+message GoogleAuthorAttribution {
+  string display_name = 1;
+  string photo_uri = 2;
+  string uri = 3;
+}
+
+// GoogleReview is one live Google Place Details review (T3,
+// places-live-details), merged onto Activity.google_reviews on detail-page
+// open for a Places-sourced row; never persisted. publish_time is Places'
+// raw timestamp string, not pre-formatted — the client formats it for
+// display.
+message GoogleReview {
+  GoogleAuthorAttribution author_attribution = 1;
+  double rating = 2;
+  string text = 3;
+  string publish_time = 4;
 }
 
 message QueryActivitiesResponse {
