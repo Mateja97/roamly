@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"activities-service/internal/service"
+
 	"backend/shared/models/activitiessvc"
 )
 
@@ -75,6 +77,17 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 				if _, ok := m[k]; !ok {
 					t.Errorf("missing key %q in %v", k, m)
 				}
+			}
+			// ToursExperiences has no activitiessvc details struct at all
+			// (service.detailsTarget's switch has no case for it, pre-existing,
+			// not a T1 concern) — every other category's output must strict-decode
+			// into its own struct, catching a renamed/misspelled json key that a
+			// plain map[string]any comparison above wouldn't.
+			if tt.cat == activitiessvc.CategoryToursExperiences {
+				return
+			}
+			if err := service.ValidateDetails(tt.cat, raw); err != nil {
+				t.Errorf("%s: ValidateDetails(%s) = %v", tt.cat, raw, err)
 			}
 		})
 	}

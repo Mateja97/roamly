@@ -1010,50 +1010,6 @@ func TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource(t *testing.T) {
 	}
 }
 
-func TestRawRowsReturnsIDCategoryRaw(t *testing.T) {
-	ctx := context.Background()
-	db := startTestPostgres(t)
-	repo := New(db)
-
-	a, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
-		Title:    "Raw Row Venue",
-		Category: activitiessvc.CategoryRestaurants,
-		Lat:      44.8, Lng: 20.4,
-		City:      "Belgrade",
-		Status:    activitiessvc.StatusPending,
-		Source:    "google_places",
-		SourceURL: "https://example.com/rawrow",
-		Raw:       json.RawMessage(`{"priceLevel":"PRICE_LEVEL_MODERATE"}`),
-	})
-	if err != nil {
-		t.Fatalf("upsert: %v", err)
-	}
-	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, a.ID) })
-
-	rows, err := repo.RawRows(ctx)
-	if err != nil {
-		t.Fatalf("RawRows: %v", err)
-	}
-	var found bool
-	for _, row := range rows {
-		if row.ID == a.ID {
-			found = true
-			if row.Category != activitiessvc.CategoryRestaurants {
-				t.Errorf("category = %q, want restaurants", row.Category)
-			}
-			if row.City != "Belgrade" {
-				t.Errorf("city = %q, want Belgrade", row.City)
-			}
-			if string(row.Raw) == "" {
-				t.Error("raw is empty")
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("RawRows did not return upserted row %s", a.ID)
-	}
-}
-
 // TestMigration0015TripadvisorSyncRegions proves the freshness table exists
 // with the (cell_key, category) composite primary key the lazy sync relies
 // on: one row per area+category, a duplicate rejected, a different

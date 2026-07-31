@@ -30,44 +30,27 @@ func TestPlace_UnmarshalsMachineType(t *testing.T) {
 	}
 }
 
-func TestPriceTier(t *testing.T) {
-	for in, want := range map[string]string{
-		"PRICE_LEVEL_INEXPENSIVE":    "$",
-		"PRICE_LEVEL_MODERATE":       "$$",
-		"PRICE_LEVEL_EXPENSIVE":      "$$$",
-		"PRICE_LEVEL_VERY_EXPENSIVE": "$$$",
-		"":                           "",
-		"PRICE_LEVEL_UNSPECIFIED":    "",
-	} {
-		if got := PriceTier(in); got != want {
-			t.Errorf("PriceTier(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-// weekdayPlace builds a Place open 09:00–17:00 every day, in Belgrade.
-func weekdayPlace() Place {
-	var p Place
-	p.PriceLevel = "PRICE_LEVEL_MODERATE"
-	p.PrimaryTypeDisplayName.Text = "Museum"
-	p.RegularOpeningHours.WeekdayDescriptions = []string{"Monday: 9AM-5PM"}
+// weekdayHours builds a RegularOpeningHours open 09:00–17:00 every day.
+func weekdayHours() RegularOpeningHours {
+	var roh RegularOpeningHours
+	roh.WeekdayDescriptions = []string{"Monday: 9AM-5PM"}
 	for d := 0; d < 7; d++ {
-		p.RegularOpeningHours.Periods = append(p.RegularOpeningHours.Periods, placePeriod{
+		roh.Periods = append(roh.Periods, placePeriod{
 			Open:  placeDayTime{Day: d, Hour: 9, Minute: 0},
 			Close: &placeDayTime{Day: d, Hour: 17, Minute: 0},
 		})
 	}
-	return p
+	return roh
 }
 
 func TestBuildOpeningHours(t *testing.T) {
 	// Unknown city -> nil.
-	if oh := buildOpeningHours("Atlantis", weekdayPlace().RegularOpeningHours); oh != nil {
+	if oh := buildOpeningHours("Atlantis", weekdayHours()); oh != nil {
 		t.Errorf("unknown city: got %+v, want nil", oh)
 	}
 
 	// Normal week -> 7 valid periods, correct zero-padding + day name.
-	oh := buildOpeningHours("Belgrade", weekdayPlace().RegularOpeningHours)
+	oh := buildOpeningHours("Belgrade", weekdayHours())
 	if oh == nil {
 		t.Fatal("Belgrade weekday place: got nil")
 	}
@@ -107,7 +90,10 @@ func TestBuildOpeningHours(t *testing.T) {
 // category or input. See buildlivedetails_test.go for the live, on-view
 // mapper that replaces this output.
 func TestBuildDetails(t *testing.T) {
-	p := weekdayPlace()
+	// BuildDetails ignores every argument now (see its doc comment) — a
+	// zero-value Place proves that, rather than a populated fixture that
+	// would misleadingly imply some field still drives the output.
+	var p Place
 	removed := []string{"hours", "price_tier", "venue_type", "opening_hours"}
 
 	for _, cat := range []activitiessvc.Category{

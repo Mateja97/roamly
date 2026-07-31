@@ -7,7 +7,6 @@ package repository
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -515,42 +514,6 @@ func (r *Activities) MarkSynced(ctx context.Context, cellKey, category string) e
 		return fmt.Errorf("marking tripadvisor sync region %s/%s: %w", cellKey, category, err)
 	}
 	return nil
-}
-
-// BackfillRow is one row's category plus its stored Places payload, the input
-// a details backfill needs to recompute the details column from raw.
-type BackfillRow struct {
-	ID       string
-	Category activitiessvc.Category
-	City     string
-	Raw      json.RawMessage
-}
-
-// RawRows returns (id, category, city, raw) for every activity, for one-off
-// backfills that re-derive the details payload from each row's stored Places
-// raw. raw is not part of adminColumns, so it needs its own read; city drives
-// the opening_hours timezone.
-func (r *Activities) RawRows(ctx context.Context) ([]BackfillRow, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, category, COALESCE(city, ''), COALESCE(raw, '{}'::jsonb) FROM activities`)
-	if err != nil {
-		return nil, fmt.Errorf("querying raw rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []BackfillRow
-	for rows.Next() {
-		var b BackfillRow
-		var cat string
-		if err := rows.Scan(&b.ID, &cat, &b.City, &b.Raw); err != nil {
-			return nil, fmt.Errorf("scanning raw row: %w", err)
-		}
-		b.Category = activitiessvc.Category(cat)
-		out = append(out, b)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating raw rows: %w", err)
-	}
-	return out, nil
 }
 
 // Update applies a partial update (T2): only patch's non-nil fields appear

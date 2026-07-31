@@ -209,9 +209,9 @@ func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) (
 // reviews, editorial summary, price, hours, amenities) via one Place Details
 // call — the T2 live-merge caller's data source for BuildLiveDetails. Per the
 // package doc comment, this is a live, per-request call: the caller must wrap
-// ctx with its own short, request-scoped timeout of its own; PlaceDetails
-// itself just takes ctx and respects it. Never cached, never persisted
-// downstream (Places Terms §14.3).
+// ctx with its own short, request-scoped timeout; PlaceDetails itself just
+// takes ctx and respects it. Never cached, never persisted downstream
+// (Places Terms §14.3).
 func (c *Client) PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error) {
 	url := fmt.Sprintf("%s/v1/places/%s", c.base, placeID)
 	var parsed placesmap.PlaceDetail

@@ -1,14 +1,16 @@
 // Package placesmap maps a Google Places (New) place onto the category-specific
-// details payload each activity category defines (activitiessvc). Shared by
-// cmd/scrapecity (at scrape time) and cmd/fixdetails (backfill from stored raw)
-// so the "which field, which category" rule lives in exactly one place.
+// details payload each activity category defines (activitiessvc), so the
+// "which field, which category" rule lives in exactly one place.
 //
 // T1 (places-live-details): Places Terms §14.3 forbids caching anything but
-// place_id/lat-lng, so BuildDetails (scrape time) no longer stores hours,
-// price, venue-type or rating — see BuildLiveDetails, the on-view sibling
-// that maps a live Place Details response (PlaceDetail) into the same
-// per-category shapes, fetched fresh on every detail-page open and never
-// persisted.
+// place_id/lat-lng, so BuildDetails (cmd/scrapecity's scrape-time mapper) no
+// longer stores hours, price, venue-type or rating — see BuildLiveDetails,
+// the on-view sibling that maps a live Place Details response (PlaceDetail)
+// into the same per-category shapes, fetched fresh on every detail-page open
+// and never persisted. (cmd/fixdetails, the old backfill-from-stored-raw
+// tool, is gone — its only remaining job would have been re-running
+// BuildDetails to blank fields, which T4's migration already does directly
+// and more narrowly in the DB.)
 package placesmap
 
 import (
@@ -40,15 +42,19 @@ type localizedText struct {
 	Text string `json:"text"`
 }
 
-// RegularOpeningHours is a place's regular weekly hours, the same wire shape
-// consumed by Place (scrape time, discovery only) and PlaceDetail (live) —
-// named so both can share it instead of duplicating the struct.
+// RegularOpeningHours is a place's regular weekly hours (PlaceDetail's live
+// wire shape) — named rather than inline so buildOpeningHours takes it
+// directly.
 type RegularOpeningHours struct {
 	WeekdayDescriptions []string      `json:"weekdayDescriptions"`
 	Periods             []placePeriod `json:"periods"`
 }
 
-// Place is the subset of a Places API (New) place the pipeline consumes.
+// Place is the subset of a Places API (New) place the pipeline consumes at
+// scrape time. Places Terms §14.3 forbids storing hours/price/venue-type
+// (BuildDetails no longer emits them — see its doc comment), so Place itself
+// carries none of those fields; only what discovery/filtering/photos still
+// need.
 type Place struct {
 	ID          string `json:"id"`
 	DisplayName struct {
@@ -61,7 +67,6 @@ type Place struct {
 	FormattedAddress string  `json:"formattedAddress"`
 	Rating           float64 `json:"rating"`
 	UserRatingCount  int     `json:"userRatingCount"`
-	PriceLevel       string  `json:"priceLevel"`
 	GoogleMapsURI    string  `json:"googleMapsUri"`
 	Photos           []struct {
 		Name               string `json:"name"`
@@ -70,12 +75,9 @@ type Place struct {
 			URI         string `json:"uri"`
 		} `json:"authorAttributions"`
 	} `json:"photos"`
-	RegularOpeningHours    RegularOpeningHours `json:"regularOpeningHours"`
-	PrimaryTypeDisplayName localizedText       `json:"primaryTypeDisplayName"`
 	// PrimaryType and Types are the machine-readable Places type taxonomy
-	// (e.g. "fine_dining_restaurant"), distinct from PrimaryTypeDisplayName's
-	// localized label. Captured for a future subtype mapping (see T2); not
-	// consumed by BuildDetails.
+	// (e.g. "fine_dining_restaurant"), distinct from a localized display
+	// label. Consumed by Subtype (subtype.go), not by BuildDetails.
 	PrimaryType string   `json:"primaryType"`
 	Types       []string `json:"types"`
 }
@@ -101,20 +103,6 @@ func hhmm(t placeDayTime) string { return fmt.Sprintf("%02d:%02d", t.Hour, t.Min
 
 func validClock(t placeDayTime) bool {
 	return t.Day >= 0 && t.Day <= 6 && t.Hour >= 0 && t.Hour <= 23 && t.Minute >= 0 && t.Minute <= 59
-}
-
-// PriceTier maps the Places priceLevel enum onto the $/$$/$$$ tiers the
-// food/drink detail shapes use; unknown/absent → "".
-func PriceTier(level string) string {
-	switch level {
-	case "PRICE_LEVEL_INEXPENSIVE":
-		return "$"
-	case "PRICE_LEVEL_MODERATE":
-		return "$$"
-	case "PRICE_LEVEL_EXPENSIVE", "PRICE_LEVEL_VERY_EXPENSIVE":
-		return "$$$"
-	}
-	return ""
 }
 
 // buildOpeningHours converts a Places regularOpeningHours block into the
@@ -158,8 +146,8 @@ func buildOpeningHours(city string, roh RegularOpeningHours) *activitiessvc.Open
 // BuildDetails is the scrape-time mapper. Places Terms §14.3 permits caching
 // only place_id and lat/lng — hours, price tier, venue type and structured
 // opening hours (this function's entire former output) are not storable, so
-// it now always returns "{}". Kept, rather than deleted or inlined at its two
-// call sites (cmd/scrapecity, cmd/fixdetails), so neither needs a change; see
+// it now always returns "{}". Kept, rather than deleted or inlined, so its
+// one remaining call site (cmd/scrapecity) needs no change; see
 // BuildLiveDetails for the live, on-view mapper that replaces what this used
 // to store.
 func BuildDetails(_ activitiessvc.Category, _ string, _ Place) json.RawMessage {
