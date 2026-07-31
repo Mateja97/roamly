@@ -1184,6 +1184,45 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 	return out
 }
 
+// RefreshTripadvisorLocation re-fetches locationID's current Tripadvisor
+// details/reviews/photo and re-upserts it under category — the direct,
+// discovery-free counterpart to syncTripadvisorAnchor's NearbySearch-bounded
+// sweep. syncTripadvisorAnchor only ever re-touches whichever locations a
+// fresh NearbySearch snapshot happens to resurface (capped at
+// nearbySearchMaxPages pages); a full backfill of every already-known
+// location (see cmd/backfilltripadvisor) needs to hit each one directly by
+// ID instead, bypassing that discovery step and its cap entirely.
+//
+// Deliberately NOT reused by syncTripadvisorAnchor's sweep, despite the
+// near-identical body: that loop's Upsert call intentionally runs on the
+// caller's outer ctx rather than the sweep's own syncCtx, so a
+// deadline-truncated sweep's already-fetched results still get written
+// (see TestActivities_Query_TripadvisorSync_DeadlineTruncatedSweepLeavesAreaUnmarked).
+// A shared single-context helper would collapse that distinction. This
+// method's one ctx param is the right shape for its one caller (a backfill
+// script has no analogous sweep-deadline-vs-write split to preserve), so
+// the ~10 lines of overlap stay duplicated rather than forcing an
+// unnatural two-context signature onto the simpler caller.
+func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category activitiessvc.Category, locationID string) error {
+	if a.tripadvisor == nil {
+		return fmt.Errorf("tripadvisor client not configured")
+	}
+	details, err := a.tripadvisor.LocationDetails(ctx, locationID)
+	if err != nil {
+		return fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
+	}
+	reviews := a.tripadvisorReviews(ctx, details)
+	// Same never-block-on-photos contract as syncTripadvisorAnchor.
+	photos, err := a.tripadvisor.LocationPhotos(ctx, details.LocationID, 1)
+	if err != nil {
+		photos = nil
+	}
+	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, photos)); err != nil {
+		return fmt.Errorf("upserting tripadvisor activity %s: %w", locationID, err)
+	}
+	return nil
+}
+
 // tripadvisorIngestActivity maps a resolved Tripadvisor location into the
 // shape repo.Upsert expects: auto-published (no admin moderation step —
 // the whole point of an on-demand sync is that the requesting user sees
