@@ -34,6 +34,19 @@ var ErrNoPhoto = errors.New("no place/photo found")
 // defaultBase is the production Places API (New) host.
 const defaultBase = "https://places.googleapis.com"
 
+// detailFieldMask selects the live atmosphere/review fields PlaceDetails
+// needs for BuildLiveDetails (T1, places-live-details) — distinct from
+// scrapecity's scrape mask (cmd/scrapecity/main.go's fieldMask), which feeds
+// discovery and is unchanged by this. This mask sits in the Enterprise /
+// Enterprise+Atmosphere SKU tiers (reviews, editorialSummary, priceLevel,
+// amenities) and is never persisted (Places Terms §14.3) — fetched fresh on
+// every detail-page open.
+const detailFieldMask = "rating,userRatingCount,reviews,reviews.authorAttribution," +
+	"editorialSummary,generativeSummary,priceLevel,priceRange,regularOpeningHours," +
+	"primaryTypeDisplayName,websiteUri,googleMapsUri,goodForChildren,goodForGroups," +
+	"allowsDogs,restroom,outdoorSeating,liveMusic,parkingOptions,accessibilityOptions," +
+	"servesCoffee,servesVegetarianFood,menuForChildren,dineIn,takeout,reservable"
+
 // maxAttempts caps retries on transient (429/5xx) failures. Small and fixed:
 // this is a seed-time tool, not a service under load.
 const maxAttempts = 4
@@ -190,6 +203,25 @@ func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) (
 		out = append(out, activitiessvc.Photo{URL: uri, Author: author, AuthorLink: authorLink, Provider: activitiessvc.ProviderGoogle})
 	}
 	return out, nil
+}
+
+// PlaceDetails fetches the live, on-view-only fields for placeID (rating,
+// reviews, editorial summary, price, hours, amenities) via one Place Details
+// call — the T2 live-merge caller's data source for BuildLiveDetails. Per the
+// package doc comment, this is a live, per-request call: the caller must wrap
+// ctx with its own short, request-scoped timeout; PlaceDetails itself just
+// takes ctx and respects it. Never cached, never persisted downstream
+// (Places Terms §14.3).
+func (c *Client) PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error) {
+	url := fmt.Sprintf("%s/v1/places/%s", c.base, placeID)
+	var parsed placesmap.PlaceDetail
+	if err := c.doJSON(ctx, http.MethodGet, url, nil, map[string]string{
+		"X-Goog-Api-Key":   c.key,
+		"X-Goog-FieldMask": detailFieldMask,
+	}, &parsed); err != nil {
+		return placesmap.PlaceDetail{}, fmt.Errorf("fetching place %s details: %w", placeID, err)
+	}
+	return parsed, nil
 }
 
 // doJSON sends one request, retrying on 429/5xx with capped, jittered

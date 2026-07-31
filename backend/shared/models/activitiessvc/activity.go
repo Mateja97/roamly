@@ -344,6 +344,11 @@ type CafeDetails struct {
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text Hours field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
+	// KnownFor (places-live-details T1) is the live "Known for" pills,
+	// sourced from Places amenity booleans (servesCoffee, outdoorSeating,
+	// ...) on detail-page open — replaces the unsourceable on-the-bar list
+	// for Places-sourced rows; never persisted.
+	KnownFor []string `json:"known_for,omitempty"`
 }
 
 // LineupItem is one entry in Nightlife's tonight lineup.

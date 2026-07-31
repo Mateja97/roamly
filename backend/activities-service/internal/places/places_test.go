@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"activities-service/internal/places"
 )
@@ -226,6 +227,170 @@ func TestResolvePhotos_RespectsLimit(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("got %d photos, want 1", len(got))
+	}
+}
+
+// wantDetailFieldMask is places.go's detailFieldMask, duplicated here (an
+// external test package can't reference the unexported const) so the
+// assertion below is a real behavioral check, not a tautology against the
+// implementation.
+const wantDetailFieldMask = "rating,userRatingCount,reviews,reviews.authorAttribution," +
+	"editorialSummary,generativeSummary,priceLevel,priceRange,regularOpeningHours," +
+	"primaryTypeDisplayName,websiteUri,googleMapsUri,goodForChildren,goodForGroups," +
+	"allowsDogs,restroom,outdoorSeating,liveMusic,parkingOptions,accessibilityOptions," +
+	"servesCoffee,servesVegetarianFood,menuForChildren,dineIn,takeout,reservable"
+
+func TestPlaceDetails(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		body       string
+		wantErr    bool
+		wantRating float64
+		wantVenue  string
+	}{
+		{
+			name:   "full response",
+			status: http.StatusOK,
+			body: `{
+				"rating": 4.6,
+				"userRatingCount": 214,
+				"priceLevel": "PRICE_LEVEL_MODERATE",
+				"googleMapsUri": "https://maps.google.com/?cid=1",
+				"websiteUri": "https://example.com",
+				"primaryTypeDisplayName": {"text": "Museum"},
+				"editorialSummary": {"text": "A lovely museum."},
+				"reviews": [{
+					"rating": 5,
+					"text": {"text": "Great place"},
+					"publishTime": "2026-01-01T00:00:00Z",
+					"authorAttribution": {"displayName": "Jane", "photoUri": "http://img/jane.jpg", "uri": "http://profile/jane"}
+				}],
+				"goodForChildren": true,
+				"servesCoffee": true,
+				"parkingOptions": {"freeParkingLot": true},
+				"accessibilityOptions": {"wheelchairAccessibleEntrance": true}
+			}`,
+			wantRating: 4.6,
+			wantVenue:  "Museum",
+		},
+		{
+			name:       "partial response, fields absent",
+			status:     http.StatusOK,
+			body:       `{"rating": 4.1}`,
+			wantRating: 4.1,
+		},
+		{
+			name:    "non-200",
+			status:  http.StatusNotFound,
+			body:    `{"error": "not found"}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1/places/place-1" {
+					t.Errorf("path = %q", r.URL.Path)
+				}
+				if got := r.Header.Get("X-Goog-FieldMask"); got != wantDetailFieldMask {
+					t.Errorf("fieldMask = %q, want %q", got, wantDetailFieldMask)
+				}
+				w.WriteHeader(tt.status)
+				io.WriteString(w, tt.body)
+			}))
+			defer srv.Close()
+
+			c := places.NewWithBase("k", srv.URL)
+			got, err := c.PlaceDetails(context.Background(), "place-1")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("PlaceDetails(): %v", err)
+			}
+			if got.Rating != tt.wantRating {
+				t.Errorf("Rating = %v, want %v", got.Rating, tt.wantRating)
+			}
+			if got.PrimaryTypeDisplayName.Text != tt.wantVenue {
+				t.Errorf("PrimaryTypeDisplayName.Text = %q, want %q", got.PrimaryTypeDisplayName.Text, tt.wantVenue)
+			}
+		})
+	}
+}
+
+func TestPlaceDetails_FullResponseDecodesEverything(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{
+			"rating": 4.6,
+			"userRatingCount": 214,
+			"reviews": [{
+				"rating": 5,
+				"text": {"text": "Great place"},
+				"publishTime": "2026-01-01T00:00:00Z",
+				"authorAttribution": {"displayName": "Jane", "photoUri": "http://img/jane.jpg", "uri": "http://profile/jane"}
+			}],
+			"editorialSummary": {"text": "A lovely museum."},
+			"generativeSummary": {"overview": {"text": "AI-written overview."}},
+			"priceRange": {"startPrice": {"currencyCode": "EUR", "units": "10"}, "endPrice": {"currencyCode": "EUR", "units": "20"}},
+			"websiteUri": "https://example.com",
+			"googleMapsUri": "https://maps.google.com/?cid=1",
+			"goodForChildren": true,
+			"allowsDogs": true,
+			"parkingOptions": {"freeParkingLot": true},
+			"accessibilityOptions": {"wheelchairAccessibleEntrance": true}
+		}`)
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	got, err := c.PlaceDetails(context.Background(), "place-1")
+	if err != nil {
+		t.Fatalf("PlaceDetails(): %v", err)
+	}
+	if len(got.Reviews) != 1 || got.Reviews[0].AuthorAttribution.DisplayName != "Jane" || got.Reviews[0].Text.Text != "Great place" {
+		t.Errorf("Reviews = %+v", got.Reviews)
+	}
+	if got.EditorialSummary.Text != "A lovely museum." {
+		t.Errorf("EditorialSummary.Text = %q", got.EditorialSummary.Text)
+	}
+	if got.GenerativeSummary.Overview.Text != "AI-written overview." {
+		t.Errorf("GenerativeSummary.Overview.Text = %q", got.GenerativeSummary.Overview.Text)
+	}
+	if got.PriceRange.StartPrice.Units != "10" || got.PriceRange.EndPrice.Units != "20" {
+		t.Errorf("PriceRange = %+v", got.PriceRange)
+	}
+	if !got.GoodForChildren || !got.AllowsDogs {
+		t.Errorf("amenity booleans not decoded: %+v", got)
+	}
+	if !got.ParkingOptions["freeParkingLot"] {
+		t.Errorf("ParkingOptions = %+v", got.ParkingOptions)
+	}
+	if !got.AccessibilityOptions["wheelchairAccessibleEntrance"] {
+		t.Errorf("AccessibilityOptions = %+v", got.AccessibilityOptions)
+	}
+}
+
+func TestPlaceDetails_Timeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(200 * time.Millisecond):
+			io.WriteString(w, `{"rating": 4.5}`)
+		}
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	if _, err := c.PlaceDetails(ctx, "place-1"); err == nil {
+		t.Fatal("expected timeout error")
 	}
 }
 

@@ -14,13 +14,19 @@ import (
 )
 
 // TestFieldMask_RequestsMachineTypes proves the field mask asks Google for
-// the machine-readable type fields, not just the localized display label —
-// the T1 gap: primaryTypeDisplayName alone can't be mapped to a subtype.
+// the machine-readable type fields (primaryType/types) Subtype needs.
+// primaryTypeDisplayName is deliberately absent (places-live-details T1
+// review round 2): Place no longer decodes it — it's fetched live instead
+// (places.detailFieldMask) — so requesting it here would be a paid-for
+// no-op.
 func TestFieldMask_RequestsMachineTypes(t *testing.T) {
-	for _, want := range []string{"places.primaryType", "places.types", "places.primaryTypeDisplayName"} {
+	for _, want := range []string{"places.primaryType", "places.types"} {
 		if !strings.Contains(fieldMask, want) {
 			t.Errorf("fieldMask = %q, want it to contain %q", fieldMask, want)
 		}
+	}
+	if strings.Contains(fieldMask, "primaryTypeDisplayName") {
+		t.Errorf("fieldMask = %q, must not request primaryTypeDisplayName (never decoded)", fieldMask)
 	}
 }
 

@@ -31,11 +31,14 @@ import (
 
 // fieldMask selects the place fields scrapecity needs for its 12-category
 // scrape; other Places call sites (e.g. a photo-only lookup) ask for less.
+// places.priceLevel/regularOpeningHours/primaryTypeDisplayName were removed
+// (T1, places-live-details review round 2): Place no longer decodes them —
+// they're fetched live instead (see places.detailFieldMask) — so requesting
+// them here was a paid-for no-op.
 var fieldMask = strings.Join([]string{
 	"places.id", "places.displayName", "places.location",
 	"places.formattedAddress", "places.rating", "places.userRatingCount",
-	"places.priceLevel", "places.googleMapsUri", "places.photos",
-	"places.regularOpeningHours", "places.primaryTypeDisplayName",
+	"places.googleMapsUri", "places.photos",
 	"places.primaryType", "places.types", "nextPageToken",
 }, ",")
 
