@@ -1,36 +1,53 @@
-package placesmap
+// External (black-box) test package deliberately: this file imports
+// activities-service/internal/service (for the ValidateDetails strict-decode
+// check below), and T2 makes service import placesmap to call
+// BuildLiveDetails. An in-package `package placesmap` test file importing
+// service would then form an import cycle in the test binary; package
+// placesmap_test isn't placesmap itself, so it can import both with no
+// cycle.
+package placesmap_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"activities-service/internal/placesmap"
 	"activities-service/internal/service"
 
 	"backend/shared/models/activitiessvc"
 )
 
 // fullPlaceDetail is a PlaceDetail with every field BuildLiveDetails reads
-// populated, for the one-case-per-category table below.
-func fullPlaceDetail() PlaceDetail {
-	var d PlaceDetail
-	d.PrimaryTypeDisplayName.Text = "Museum"
-	d.RegularOpeningHours.WeekdayDescriptions = []string{"Monday: 9AM-5PM"}
-	d.RegularOpeningHours.Periods = []placePeriod{
-		{Open: placeDayTime{Day: 1, Hour: 9, Minute: 0}, Close: &placeDayTime{Day: 1, Hour: 17, Minute: 0}},
+// populated, for the one-case-per-category table below. Built via JSON
+// (matching how places_test.go already builds PlaceDetail fixtures) rather
+// than a Go struct literal: RegularOpeningHours.Periods' element type is
+// unexported, so an external test package can't construct it directly.
+func fullPlaceDetail(t *testing.T) placesmap.PlaceDetail {
+	t.Helper()
+	raw := []byte(`{
+		"primaryTypeDisplayName": {"text": "Museum"},
+		"regularOpeningHours": {
+			"weekdayDescriptions": ["Monday: 9AM-5PM"],
+			"periods": [{"open": {"day": 1, "hour": 9, "minute": 0}, "close": {"day": 1, "hour": 17, "minute": 0}}]
+		},
+		"goodForChildren": true,
+		"goodForGroups": true,
+		"allowsDogs": true,
+		"restroom": true,
+		"outdoorSeating": true,
+		"servesCoffee": true,
+		"servesVegetarianFood": true,
+		"menuForChildren": true,
+		"dineIn": true,
+		"takeout": true,
+		"reservable": true,
+		"parkingOptions": {"freeParkingLot": true},
+		"accessibilityOptions": {"wheelchairAccessibleEntrance": true}
+	}`)
+	var d placesmap.PlaceDetail
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
 	}
-	d.GoodForChildren = true
-	d.GoodForGroups = true
-	d.AllowsDogs = true
-	d.Restroom = true
-	d.OutdoorSeating = true
-	d.ServesCoffee = true
-	d.ServesVegetarianFood = true
-	d.MenuForChildren = true
-	d.DineIn = true
-	d.Takeout = true
-	d.Reservable = true
-	d.ParkingOptions = amenityBooleans{"freeParkingLot": true}
-	d.AccessibilityOptions = amenityBooleans{"wheelchairAccessibleEntrance": true}
 	return d
 }
 
@@ -44,7 +61,7 @@ func parseDetails(t *testing.T, raw json.RawMessage) map[string]any {
 }
 
 func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
-	d := fullPlaceDetail()
+	d := fullPlaceDetail(t)
 
 	tests := []struct {
 		cat      activitiessvc.Category
@@ -68,7 +85,7 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(string(tt.cat), func(t *testing.T) {
-			raw := BuildLiveDetails(tt.cat, "Belgrade", d)
+			raw := placesmap.BuildLiveDetails(tt.cat, "Belgrade", d)
 			m := parseDetails(t, raw)
 			if len(m) != len(tt.wantKeys) {
 				t.Fatalf("keys = %v, want exactly %v", m, tt.wantKeys)
@@ -94,14 +111,14 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 }
 
 func TestBuildLiveDetails_AmenitiesAllFalse_OmitsSection(t *testing.T) {
-	var d PlaceDetail // every amenity explicitly false (zero value)
-	d.ParkingOptions = amenityBooleans{"freeParkingLot": false}
-	d.AccessibilityOptions = amenityBooleans{"wheelchairAccessibleEntrance": false}
+	var d placesmap.PlaceDetail // every amenity explicitly false (zero value)
+	d.ParkingOptions = map[string]bool{"freeParkingLot": false}
+	d.AccessibilityOptions = map[string]bool{"wheelchairAccessibleEntrance": false}
 
 	for _, cat := range []activitiessvc.Category{
 		activitiessvc.CategoryNature, activitiessvc.CategoryKids, activitiessvc.CategoryCafes,
 	} {
-		raw := BuildLiveDetails(cat, "Belgrade", d)
+		raw := placesmap.BuildLiveDetails(cat, "Belgrade", d)
 		if string(raw) != "{}" {
 			t.Errorf("%s: all-amenities-false = %s, want {} (section omitted, not empty)", cat, raw)
 		}
@@ -109,12 +126,12 @@ func TestBuildLiveDetails_AmenitiesAllFalse_OmitsSection(t *testing.T) {
 }
 
 func TestBuildLiveDetails_AmenitiesAbsent_OmitsSection(t *testing.T) {
-	var d PlaceDetail // amenities entirely absent: bool zero value, nil pointers
+	var d placesmap.PlaceDetail // amenities entirely absent: bool zero value, nil maps
 
 	for _, cat := range []activitiessvc.Category{
 		activitiessvc.CategoryNature, activitiessvc.CategoryKids, activitiessvc.CategoryCafes,
 	} {
-		raw := BuildLiveDetails(cat, "Belgrade", d)
+		raw := placesmap.BuildLiveDetails(cat, "Belgrade", d)
 		var m map[string]any
 		if err := json.Unmarshal(raw, &m); err != nil {
 			t.Fatalf("%s: invalid json: %v", cat, err)
@@ -128,8 +145,8 @@ func TestBuildLiveDetails_AmenitiesAbsent_OmitsSection(t *testing.T) {
 }
 
 func TestBuildLiveDetails_NoCityTimezone_OmitsOpeningHours(t *testing.T) {
-	d := fullPlaceDetail()
-	raw := BuildLiveDetails(activitiessvc.CategoryCafes, "Atlantis", d)
+	d := fullPlaceDetail(t)
+	raw := placesmap.BuildLiveDetails(activitiessvc.CategoryCafes, "Atlantis", d)
 	m := parseDetails(t, raw)
 	if _, ok := m["opening_hours"]; ok {
 		t.Errorf("unknown city: opening_hours must be omitted, got %v", m)
@@ -144,7 +161,7 @@ func TestBuildLiveDetails_NeverPersistedShape_IsValidJSON(t *testing.T) {
 	// Sanity: every category returns parseable JSON, never nil/malformed,
 	// even for a zero-value PlaceDetail.
 	for cat := range activitiessvc.Subcategories {
-		raw := BuildLiveDetails(cat, "Belgrade", PlaceDetail{})
+		raw := placesmap.BuildLiveDetails(cat, "Belgrade", placesmap.PlaceDetail{})
 		if !json.Valid(raw) {
 			t.Errorf("%s: BuildLiveDetails returned invalid JSON: %s", cat, raw)
 		}
