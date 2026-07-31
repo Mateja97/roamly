@@ -193,6 +193,12 @@ type Activity struct {
 	// count inside TripadvisorAttribution.ReviewCount instead); never
 	// persisted, no DB column.
 	ReviewCount int
+	// GoogleMapsURI (T3, places-live-details) is a Places-sourced row's live
+	// Google Maps deep link, merged alongside GoogleReviews by
+	// service.Activities.GetByIDWithLiveDetails — the mandatory "View on
+	// Google Maps" attribution link target (Places API attribution policy);
+	// never persisted, no DB column.
+	GoogleMapsURI string
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar

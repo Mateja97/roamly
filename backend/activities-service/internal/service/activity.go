@@ -517,10 +517,19 @@ func (a *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Acti
 // contract. Reserved for the public detail-page path (T3's proxy route);
 // never call this from an admin or other internal read — see GetByID's doc
 // for why.
+//
+// Public surface, so it enforces the same published-only visibility
+// QueryActivities' repo query already does (T3 resolve, round 1): a
+// draft/pending row 404s here exactly like an unknown id, rather than
+// leaking unpublished catalog content and burning a billed Places call on a
+// row nobody should see yet.
 func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (activitiessvc.Activity, error) {
 	activity, err := a.GetByID(ctx, id)
 	if err != nil {
 		return activitiessvc.Activity{}, err
+	}
+	if activity.Status != activitiessvc.StatusPublished {
+		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, sharederrors.ErrNotFound)
 	}
 	return a.withLiveDetails(ctx, activity), nil
 }
@@ -576,6 +585,7 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		activity.ReviewCount = detail.UserRatingCount
 	}
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	activity.GoogleMapsURI = detail.GoogleMapsURI
 	return activity
 }
 

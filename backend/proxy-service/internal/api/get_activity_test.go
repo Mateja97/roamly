@@ -36,13 +36,14 @@ func doGetActivityRequest(t *testing.T, h *GetActivityHandler, id string) *httpt
 
 func TestGetActivityHandler_HappyPath(t *testing.T) {
 	fake := &fakeActivitiesLiveDetailsClient{resp: &activitiesv1.Activity{
-		Id:          "activity-1",
-		Title:       "Kayaking",
-		Category:    activitiesv1.Category_CATEGORY_SPORT,
-		Status:      activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED,
-		Details:     "{}",
-		Rating:      4.7,
-		ReviewCount: 214,
+		Id:            "activity-1",
+		Title:         "Kayaking",
+		Category:      activitiesv1.Category_CATEGORY_SPORT,
+		Status:        activitiesv1.ActivityStatus_ACTIVITY_STATUS_PUBLISHED,
+		Details:       "{}",
+		Rating:        4.7,
+		ReviewCount:   214,
+		GoogleMapsUri: "https://maps.google.com/?cid=123",
 		GoogleReviews: []*activitiesv1.GoogleReview{
 			{
 				AuthorAttribution: &activitiesv1.GoogleAuthorAttribution{DisplayName: "Jane Doe", PhotoUri: "https://example.com/jane.jpg", Uri: "https://example.com/jane"},
@@ -71,6 +72,9 @@ func TestGetActivityHandler_HappyPath(t *testing.T) {
 	}
 	if got.ReviewCount != 214 {
 		t.Errorf("ReviewCount = %d, want 214", got.ReviewCount)
+	}
+	if got.GoogleMapsURI != "https://maps.google.com/?cid=123" {
+		t.Errorf("GoogleMapsURI = %q, want the live URI", got.GoogleMapsURI)
 	}
 	if len(got.GoogleReviews) != 1 || got.GoogleReviews[0].AuthorAttribution.DisplayName != "Jane Doe" || got.GoogleReviews[0].Text != "Great spot" {
 		t.Errorf("unexpected google reviews: %+v", got.GoogleReviews)

@@ -15,11 +15,12 @@ import (
 
 func TestGetActivityWithLiveDetails_HappyPath(t *testing.T) {
 	fake := &fakeQueryService{liveOut: activitiessvc.Activity{
-		ID:          "1",
-		Title:       "Kayaking",
-		Status:      activitiessvc.StatusPublished,
-		Rating:      4.7,
-		ReviewCount: 214,
+		ID:            "1",
+		Title:         "Kayaking",
+		Status:        activitiessvc.StatusPublished,
+		Rating:        4.7,
+		ReviewCount:   214,
+		GoogleMapsURI: "https://maps.google.com/?cid=123",
 		GoogleReviews: []activitiessvc.GoogleReview{
 			{
 				AuthorAttribution: activitiessvc.GoogleAuthorAttribution{DisplayName: "Jane Doe", PhotoURI: "https://example.com/jane.jpg", URI: "https://example.com/jane"},
@@ -46,6 +47,9 @@ func TestGetActivityWithLiveDetails_HappyPath(t *testing.T) {
 	}
 	if resp.GetReviewCount() != 214 {
 		t.Errorf("ReviewCount = %d, want 214", resp.GetReviewCount())
+	}
+	if resp.GetGoogleMapsUri() != "https://maps.google.com/?cid=123" {
+		t.Errorf("GoogleMapsUri = %q, want the live URI", resp.GetGoogleMapsUri())
 	}
 	if len(resp.GetGoogleReviews()) != 1 {
 		t.Fatalf("GoogleReviews len = %d, want 1", len(resp.GetGoogleReviews()))

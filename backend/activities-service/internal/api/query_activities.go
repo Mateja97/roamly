@@ -164,11 +164,12 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		Address:     a.Address,
 		Status:      toProtoStatus(a.Status),
 		Subcategory: a.Subcategory,
-		// GoogleReviews/ReviewCount (T3, places-live-details) are always
-		// nil/0 for a plain GetByID row — only GetByIDWithLiveDetails's
-		// live-merge path ever populates them.
+		// GoogleReviews/ReviewCount/GoogleMapsURI (T3, places-live-details)
+		// are always nil/0/"" for a plain GetByID row — only
+		// GetByIDWithLiveDetails's live-merge path ever populates them.
 		GoogleReviews: toProtoGoogleReviews(a.GoogleReviews),
 		ReviewCount:   int32(a.ReviewCount),
+		GoogleMapsUri: a.GoogleMapsURI,
 	}
 }
 

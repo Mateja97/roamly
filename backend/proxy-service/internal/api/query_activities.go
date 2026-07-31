@@ -108,20 +108,26 @@ type activityDTO struct {
 	// string-of-a-string.
 	Details json.RawMessage `json:"details"`
 	// City, Address, and Status are T1 additions. Status is always
-	// "published" here: QueryActivities (the RPC this handler calls) only
-	// ever returns published activities.
+	// "published" here: both RPCs this DTO serves are published-only —
+	// QueryActivities always was; GetActivityWithLiveDetails (T3) 404s on a
+	// draft/pending row rather than returning it (see
+	// service.Activities.GetByIDWithLiveDetails's doc).
 	City    string `json:"city"`
 	Address string `json:"address"`
 	Status  string `json:"status"`
 	// Subcategory (T1) is the optional, category-validated subtype slug; ""
 	// when not set.
 	Subcategory string `json:"subcategory"`
-	// ReviewCount and GoogleReviews (T3, places-live-details) are only ever
-	// non-empty on a GET /activities/{id} response for a Places-sourced row
-	// (activities-service's GetActivityWithLiveDetails) — always 0/omitted
-	// from POST /activities/query, which never live-merges.
+	// ReviewCount, GoogleReviews, and GoogleMapsURI (T3, places-live-details)
+	// are only ever non-empty on a GET /activities/{id} response for a
+	// Places-sourced row (activities-service's GetActivityWithLiveDetails) —
+	// always 0/omitted from POST /activities/query, which never live-merges.
+	// GoogleMapsURI is the mandatory "View on Google Maps" attribution link
+	// target (Places API attribution policy); GoogleAttributionPlate's
+	// `footer` variant (T5) and ActivityDetailScreen (T6) both read it.
 	ReviewCount   int               `json:"review_count,omitempty"`
 	GoogleReviews []googleReviewDTO `json:"google_reviews,omitempty"`
+	GoogleMapsURI string            `json:"google_maps_uri,omitempty"`
 }
 
 // googleAuthorAttributionDTO is the Places API's mandatory per-review
@@ -276,6 +282,7 @@ func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 		Subcategory:   a.GetSubcategory(),
 		ReviewCount:   int(a.GetReviewCount()),
 		GoogleReviews: toGoogleReviewDTOs(a.GetGoogleReviews()),
+		GoogleMapsURI: a.GetGoogleMapsUri(),
 	}
 }
 

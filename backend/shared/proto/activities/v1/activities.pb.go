@@ -509,13 +509,16 @@ type Activity struct {
 	// (activitiessvc.Subcategories), e.g. "fine_dining" under "restaurants".
 	// "" = not set; always valid.
 	Subcategory string `protobuf:"bytes,16,opt,name=subcategory,proto3" json:"subcategory,omitempty"`
-	// google_reviews and review_count (T3, places-live-details) are only ever
-	// populated on a GetActivityWithLiveDetails response for a Places-sourced
-	// row — always empty/0 on QueryActivities/GetActivity, since neither is
-	// ever stored. review_count is Google's live userRatingCount, merged
-	// alongside rating above.
+	// google_reviews, review_count, and google_maps_uri (T3,
+	// places-live-details) are only ever populated on a
+	// GetActivityWithLiveDetails response for a Places-sourced row — always
+	// empty/0 on QueryActivities/GetActivity, since neither is ever stored.
+	// review_count is Google's live userRatingCount, merged alongside rating
+	// above. google_maps_uri is the mandatory "View on Google Maps"
+	// attribution link target (Places API attribution policy).
 	GoogleReviews []*GoogleReview `protobuf:"bytes,17,rep,name=google_reviews,json=googleReviews,proto3" json:"google_reviews,omitempty"`
 	ReviewCount   int32           `protobuf:"varint,18,opt,name=review_count,json=reviewCount,proto3" json:"review_count,omitempty"`
+	GoogleMapsUri string          `protobuf:"bytes,19,opt,name=google_maps_uri,json=googleMapsUri,proto3" json:"google_maps_uri,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -667,6 +670,13 @@ func (x *Activity) GetReviewCount() int32 {
 		return x.ReviewCount
 	}
 	return 0
+}
+
+func (x *Activity) GetGoogleMapsUri() string {
+	if x != nil {
+		return x.GoogleMapsUri
+	}
+	return ""
 }
 
 // GoogleAuthorAttribution is the Places API's mandatory per-review
@@ -1870,7 +1880,7 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\x06cities\x18\n" +
 	" \x03(\v2\x17.activities.v1.LocationR\x06cities\x12$\n" +
 	"\rsubcategories\x18\v \x03(\tR\rsubcategoriesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
-	"R\rhome_locationR\fhome_countryR\x04sort\"\xdf\x04\n" +
+	"R\rhome_locationR\fhome_countryR\x04sort\"\x87\x05\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -1890,7 +1900,8 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\x06status\x18\x0f \x01(\x0e2\x1d.activities.v1.ActivityStatusR\x06status\x12 \n" +
 	"\vsubcategory\x18\x10 \x01(\tR\vsubcategory\x12B\n" +
 	"\x0egoogle_reviews\x18\x11 \x03(\v2\x1b.activities.v1.GoogleReviewR\rgoogleReviews\x12!\n" +
-	"\freview_count\x18\x12 \x01(\x05R\vreviewCountJ\x04\b\a\x10\b\"k\n" +
+	"\freview_count\x18\x12 \x01(\x05R\vreviewCount\x12&\n" +
+	"\x0fgoogle_maps_uri\x18\x13 \x01(\tR\rgoogleMapsUriJ\x04\b\a\x10\b\"k\n" +
 	"\x17GoogleAuthorAttribution\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x1b\n" +
 	"\tphoto_uri\x18\x02 \x01(\tR\bphotoUri\x12\x10\n" +

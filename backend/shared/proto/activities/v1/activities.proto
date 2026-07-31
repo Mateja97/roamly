@@ -199,13 +199,16 @@ message Activity {
   // "" = not set; always valid.
   string subcategory = 16;
 
-  // google_reviews and review_count (T3, places-live-details) are only ever
-  // populated on a GetActivityWithLiveDetails response for a Places-sourced
-  // row — always empty/0 on QueryActivities/GetActivity, since neither is
-  // ever stored. review_count is Google's live userRatingCount, merged
-  // alongside rating above.
+  // google_reviews, review_count, and google_maps_uri (T3,
+  // places-live-details) are only ever populated on a
+  // GetActivityWithLiveDetails response for a Places-sourced row — always
+  // empty/0 on QueryActivities/GetActivity, since neither is ever stored.
+  // review_count is Google's live userRatingCount, merged alongside rating
+  // above. google_maps_uri is the mandatory "View on Google Maps"
+  // attribution link target (Places API attribution policy).
   repeated GoogleReview google_reviews = 17;
   int32 review_count = 18;
+  string google_maps_uri = 19;
 }
 
 // GoogleAuthorAttribution is the Places API's mandatory per-review
