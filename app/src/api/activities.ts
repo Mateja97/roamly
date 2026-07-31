@@ -113,6 +113,25 @@ export type TripadvisorReview = {
   rating_image_url?: string;
 };
 
+// T6: Google Places' per-review author attribution — canonical home for
+// this wire shape (T5 stubbed an identical copy inside
+// GoogleAttributionPlate.tsx ahead of this task, since T2 hadn't landed the
+// backend wire shape yet; that file now re-exports these instead of
+// declaring its own). Field names mirror the Places API's own camelCase
+// 1:1 (not this file's usual snake_case DTO convention) — same as T1's Go
+// `placesmap.Review`/`AuthorAttribution`, which pass Google's own field
+// names straight through rather than reformatting them.
+export type GoogleAuthorAttribution = { displayName: string; photoUri?: string; uri: string };
+export type GoogleReview = {
+  authorAttribution: GoogleAuthorAttribution;
+  rating: number;
+  text: string;
+  // Raw ISO-8601 (T1's `PublishTime`) or an already-human string —
+  // GoogleAttributionPlate's `formatReviewDate()` reformats the former,
+  // passes the latter through verbatim.
+  date: string;
+};
+
 // T3: per-category structured detail payload (T4 consumes this for the
 // Activity Detail screen's fact strip + unique section). Discriminated by
 // `category` so a consumer narrows to the right shape via
@@ -267,6 +286,15 @@ export type Activity = {
   // place-facts address row omits itself when both are absent.
   address?: string;
   city?: string;
+  // T6: Google Places live reviews + maps link, merged in by
+  // ActivityDetailScreen's `getActivity` upgrade fetch. Cross-cutting
+  // across all 10 Places-sourced categories (like `image_refs`), so it
+  // lives here rather than nested in the per-category `details` union —
+  // mirrors T2's backend reasoning for keeping `GoogleReviews` off
+  // `Details` on the Go side. Absent from a bare list-query row; only ever
+  // set after a successful live merge.
+  google_reviews?: GoogleReview[];
+  google_maps_uri?: string;
 };
 
 // The wire format today (pre-T3) is still a plain string[] of URLs; T3 will
@@ -409,6 +437,55 @@ export async function getActivityPhotos(id: string): Promise<ActivityPhotosResul
     try {
       const data = (await res.json()) as { image_refs: (string | ActivityPhoto)[] };
       return { status: 'success', image_refs: toActivityPhotos(data.image_refs) };
+    } catch {
+      return { status: 500, message: 'Something went wrong. Please try again.' };
+    }
+  }
+
+  let message = 'Something went wrong. Please try again.';
+  try {
+    const errorBody = (await res.json()) as { error?: string };
+    if (errorBody.error) message = errorBody.error;
+  } catch {
+    // ponytail: non-JSON error body falls back to the generic message above.
+  }
+
+  const status = KNOWN_ERROR_STATUSES.includes(res.status as (typeof KNOWN_ERROR_STATUSES)[number])
+    ? (res.status as (typeof KNOWN_ERROR_STATUSES)[number])
+    : 500;
+  return { status, message };
+}
+
+// T6: bounds ActivityDetailScreen's live-details upgrade fetch — same
+// "caller keeps showing what it already has either way" contract as
+// PHOTOS_FETCH_TIMEOUT_MS above, just a separate const per-endpoint per
+// product-tasks.md's T6 section.
+const ACTIVITY_FETCH_TIMEOUT_MS = 10000;
+
+export type ActivityResult =
+  | { status: 'success'; activity: Activity }
+  | { status: 400 | 403 | 404 | 409 | 500; message: string };
+
+// T6's `GET /activities/{id}` (T3, proxy-service's only public single-
+// activity route — never call activities-service directly, per
+// ARCHITECTURE.md) — the activity with any live-merged Places details
+// (rating/details/description/reviews/maps link) T2's service layer
+// resolved server-side. Same discriminated-result convention as
+// queryActivities/getActivityPhotos; the detail screen (only caller)
+// silently drops the error branch and keeps the seeded activity, per
+// design-spec.md.
+export async function getActivity(id: string): Promise<ActivityResult> {
+  let res: Response;
+  try {
+    res = await withTimeout(fetch(`${PROXY_URL}/activities/${encodeURIComponent(id)}`), ACTIVITY_FETCH_TIMEOUT_MS);
+  } catch {
+    return { status: 500, message: 'Could not reach the server. Check your connection and try again.' };
+  }
+
+  if (res.ok) {
+    try {
+      const raw = (await res.json()) as RawActivity;
+      return { status: 'success', activity: toActivity(raw) };
     } catch {
       return { status: 500, message: 'Something went wrong. Please try again.' };
     }

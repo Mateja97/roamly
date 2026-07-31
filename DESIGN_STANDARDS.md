@@ -249,6 +249,33 @@ bar at ~60% width; stat → one 2.5em bar; list → 3 rows). Animation: opacity
 static at opacity 0.7. Layout space identical to the loaded state — zero
 jump on arrival.
 
+**Progressive enrichment (seed → skeleton → merge).** For a screen that paints
+from data it already has and then upgrades in place from a slower fetch:
+
+- Skeleton **only** blocks that fetch can actually fill, and only while they
+  are genuinely empty. A block that already has seeded content renders that
+  content on frame one and is **never** covered by a placeholder — replacing
+  readable text with a pulse is a regression, not a loading state. A block the
+  fetch can never fill for that record is never skeletoned either; a
+  guaranteed flash-then-collapse reads as a bug.
+- All of a screen's placeholders resolve in **one** update — the screen settles
+  once, not as a cascade of per-block pops.
+- The swap is **instant** — no cross-fade between placeholder and content. The
+  pulse already carried the "loading" signal, and stacking a fading copy over
+  arriving content buys nothing this system needs. No artificial minimum
+  display time either: never delay content the user could already be reading.
+- A block whose data doesn't arrive **collapses** rather than sitting as an
+  empty frame (omit-rather-than-blank). When the seeded page is still complete
+  without it, the failure is **silent** — no error banner for content the user
+  never saw.
+- Placeholders are decorative and hidden from assistive tech, so the enriching
+  region carries **one polite "Loading…" status** while pending and announces
+  once when content settles; otherwise an AT user gets silence, then content
+  appearing under them unannounced.
+- Per-block placeholder dimensions live in the screen's own design-spec —
+  they're measured off that screen's real content — not in this recipe. They
+  match the loaded block's box so nothing jumps.
+
 ### Spinner (inline)
 
 16px circle, 2px stroke: `--border` track, `--primary` arc, 0.8s linear
@@ -880,7 +907,7 @@ Places content to attribute):
       `--text` link** to `AuthorAttribution.uri` (underlined so the link
       affordance never leans on gold, which fails normal-text contrast on
       `--surface`), then the **review date** (`--font-size-xs`, `--text-muted`,
-      verbatim/relative from the API). The avatar+name together are the one
+      formatted via `formatReviewDate()`, `app/src/utils/date.ts`). The avatar+name together are the one
       44×44 profile-link target. A small **14px `--primary` gold `Star`**
       (decorative) + the review's own numeric rating (`--font-size-xs` `--text`,
       `tabular-nums`) sit at the row's right — the star is decorative, the

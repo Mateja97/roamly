@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  AccessibilityInfo,
   Linking,
   Pressable,
   ScrollView,
@@ -16,13 +17,14 @@ import {
 } from 'react-native-safe-area-context';
 import { ArrowUpRight, Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity, ActivityPhoto } from '../../api/activities';
-import { getActivityPhotos } from '../../api/activities';
+import { getActivity, getActivityPhotos } from '../../api/activities';
 import {
   hasMapsKey,
   hasValidCoordinates,
   staticMapUrl,
 } from '../../api/staticMap';
 import { ErrorBanner } from '../../components/ErrorBanner';
+import { GoogleAttributionPlate } from '../../components/GoogleAttributionPlate';
 import { PhotoAttributionCaption } from '../../components/PhotoAttributionCaption';
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
@@ -55,6 +57,15 @@ import {
   type BodySection,
 } from './activityDetailConfig';
 import { DifficultyMeter } from './DifficultyMeter';
+import {
+  DescriptionSkeleton,
+  FactStripSkeleton,
+  factStripSkeletonCount,
+  PLACES_LIVE_CATEGORIES,
+  RatingSkeleton,
+  ReviewsSkeleton,
+  UniqueSectionSkeleton,
+} from './DetailSkeletons';
 import { FactStrip } from './FactStrip';
 import { HeroCarousel } from './HeroCarousel';
 import { PhotoViewerModal } from './PhotoViewerModal';
@@ -69,8 +80,11 @@ import { WeekHoursModal } from './WeekHoursModal';
 // ActivityListScreen (see there) — no router. Renders from the
 // already-loaded `Activity` immediately (no blocking loading/error/empty
 // state), then fires the T4 photo-set upgrade fetch in the background — see
-// the `photos` state below for that surface. Other async surfaces here:
-// hero/map images, CTA OS-handoff failures.
+// the `photos` state below for that surface — and T6's live-details
+// upgrade fetch (see the `activity` state below), which skeletons the
+// Places-backed blocks (rating/fact-strip/description/unique-section/
+// reviews) while pending and merges onto them on success. Other async
+// surfaces here: hero/map images, CTA OS-handoff failures.
 const DETAIL_MAP_WIDTH = 600;
 const DETAIL_MAP_HEIGHT = 400; // 3:2, per the map box's reserved aspect ratio.
 
@@ -81,7 +95,7 @@ type ActivityDetailScreenProps = {
 };
 
 export function ActivityDetailScreen({
-  activity,
+  activity: seedActivity,
   showDistance,
   onBack,
 }: ActivityDetailScreenProps) {
@@ -111,7 +125,7 @@ export function ActivityDetailScreen({
   // this screen fresh per open (`{selectedActivity && <ActivityDetailScreen
   // .../>}`), never swaps `activity` on an already-mounted instance, so
   // there's no reset-on-prop-change case to handle here.
-  const [photos, setPhotos] = useState<ActivityPhoto[]>(activity.image_refs);
+  const [photos, setPhotos] = useState<ActivityPhoto[]>(seedActivity.image_refs);
   // bugfix: HeroCarousel pages through `photos` internally — this mirrors its
   // current page so the below-hero attribution caption tracks the photo
   // actually being viewed, not always photos[0] (attribution must travel
@@ -119,13 +133,56 @@ export function ActivityDetailScreen({
   const [heroIndex, setHeroIndex] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    getActivityPhotos(activity.id).then((result) => {
+    getActivityPhotos(seedActivity.id).then((result) => {
       if (!cancelled && result.status === 'success') setPhotos(result.image_refs);
     });
     return () => {
       cancelled = true;
     };
-  }, [activity.id]);
+  }, [seedActivity.id]);
+
+  // T6: seeds `activity` state from the passed prop (frame one, no waiting
+  // — design-spec.md's "Progressive enrichment"), then merges the
+  // Places-backed fields (rating/details/description/reviews/maps link)
+  // onto it once getActivity(id) resolves. Every other field on `activity`
+  // below (title/tags/location/category/etc.) is never reassigned, so it's
+  // always identical to `seedActivity` — every existing read below that
+  // used to read the `activity` prop now reads this state instead, which is
+  // a strict upgrade over the seed, never a regression. Cancelled-effect
+  // guard mirrors the photos effect above; failure/timeout is silently
+  // dropped (design-spec.md: no error UI for content the user never saw).
+  const [activity, setActivity] = useState<Activity>(seedActivity);
+  const [detailsPending, setDetailsPending] = useState(true);
+  const isPlacesLive = PLACES_LIVE_CATEGORIES.has(seedActivity.category);
+  useEffect(() => {
+    let cancelled = false;
+    // design-spec.md's Accessibility notes: one polite loading status for
+    // the whole enriching region, only for a category the fetch can
+    // actually change anything on-screen for.
+    if (isPlacesLive) AccessibilityInfo.announceForAccessibility('Loading place details');
+    getActivity(seedActivity.id).then((result) => {
+      if (cancelled) return;
+      if (result.status === 'success') {
+        setActivity((prev) => ({
+          ...prev,
+          rating: result.activity.rating,
+          details: result.activity.details,
+          // Server-side merge already never blanks a good stored value
+          // (T2) — this `||` is belt-and-suspenders against the same
+          // mistake here.
+          description: result.activity.description || prev.description,
+          google_reviews: result.activity.google_reviews,
+          google_maps_uri: result.activity.google_maps_uri,
+        }));
+        if (isPlacesLive) AccessibilityInfo.announceForAccessibility('Place details added');
+      }
+      setDetailsPending(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [seedActivity.id, isPlacesLive]);
+
   const heroPhoto = photos[heroIndex];
   const metaText = showDistance
     ? `${activity.distance_km.toFixed(1)} km away`
@@ -242,10 +299,17 @@ export function ActivityDetailScreen({
   function renderBodySection(section: BodySection): ReactNode {
     switch (section) {
       case 'description':
-        return activity.description ? (
-          <Text key="description" style={styles.description}>
-            {activity.description}
-          </Text>
+        // T6 rule 1: only skeleton when the seed description is genuinely
+        // empty — never pulse over text the user could already be reading.
+        if (activity.description) {
+          return (
+            <Text key="description" style={styles.description}>
+              {activity.description}
+            </Text>
+          );
+        }
+        return isPlacesLive && detailsPending ? (
+          <DescriptionSkeleton key="description" />
         ) : null;
       case 'difficulty':
         return activity.details?.category === 'sport' &&
@@ -256,9 +320,17 @@ export function ActivityDetailScreen({
           />
         ) : null;
       case 'factstrip':
-        return <FactStrip key="factstrip" fields={fields} />;
+        return isPlacesLive && detailsPending && fields.length === 0 ? (
+          <FactStripSkeleton key="factstrip" count={factStripSkeletonCount(activity.category)} />
+        ) : (
+          <FactStrip key="factstrip" fields={fields} />
+        );
       case 'unique':
-        return <UniqueSection key="unique" data={unique} />;
+        return isPlacesLive && detailsPending && !unique ? (
+          <UniqueSectionSkeleton key="unique" category={activity.category} />
+        ) : (
+          <UniqueSection key="unique" data={unique} />
+        );
     }
   }
 
@@ -313,15 +385,24 @@ export function ActivityDetailScreen({
                     <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
                   </View>
                   <View style={styles.rating}>
-                    <Star
-                      size={16}
-                      color={colors.primary}
-                      strokeWidth={1.75}
-                      fill={colors.primary}
-                    />
-                    <Text style={styles.ratingLabel}>
-                      {activity.rating.toFixed(1)}
-                    </Text>
+                    {/* T6: "Rating value" placeholder — only while the live
+                        fetch is pending and the seed genuinely has nothing
+                        yet (rule 1: never pulse over an already-good value). */}
+                    {isPlacesLive && detailsPending && activity.rating <= 0 ? (
+                      <RatingSkeleton />
+                    ) : (
+                      <>
+                        <Star
+                          size={16}
+                          color={colors.primary}
+                          strokeWidth={1.75}
+                          fill={colors.primary}
+                        />
+                        <Text style={styles.ratingLabel}>
+                          {activity.rating.toFixed(1)}
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </View>
               )}
@@ -413,6 +494,23 @@ export function ActivityDetailScreen({
               onCallPhone={handleCallPhone}
             />
           )}
+
+          {/* T6: the Places-case analogue of the TripadvisorBlock spot
+              above — mutually exclusive with it (a Tripadvisor row is
+              never `isPlacesLive`). Skeletoned only while pending and
+              genuinely empty; GoogleAttributionPlate renders nothing on
+              its own once merged with no reviews/maps link (silent
+              degrade, no error UI). */}
+          {isPlacesLive &&
+            (detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri ? (
+              <ReviewsSkeleton />
+            ) : (
+              <GoogleAttributionPlate
+                variant="detail"
+                reviews={activity.google_reviews}
+                googleMapsUri={activity.google_maps_uri}
+              />
+            ))}
 
           {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 
@@ -511,6 +609,12 @@ export function ActivityDetailScreen({
               </Text>
             </View>
           )}
+
+          {/* T6: the Places-case analogue of the footer CTA above — never
+              skeletoned (design-spec.md: "a single link that either exists
+              after the merge or doesn't"); renders null on its own with no
+              maps link. */}
+          {isPlacesLive && <GoogleAttributionPlate variant="footer" googleMapsUri={activity.google_maps_uri} />}
         </View>
       </ScrollView>
 
