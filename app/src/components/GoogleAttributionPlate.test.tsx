@@ -47,11 +47,23 @@ describe('GoogleAttributionPlate', () => {
     expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
   });
 
-  it('detail variant: the review author name is a profile link to authorAttribution.uri', () => {
+  it('detail variant: the header carries the mandatory "Reviews from Google Maps" section name in the a11y tree', () => {
+    render(<GoogleAttributionPlate variant="detail" reviews={[review]} />);
+    expect(screen.getByRole('header', { name: 'Reviews from Google Maps' })).toBeTruthy();
+  });
+
+  it('detail variant: pressing the review author link opens authorAttribution.uri', () => {
     render(<GoogleAttributionPlate variant="detail" reviews={[review]} />);
     const link = screen.getByRole('link', { name: 'Review by Jordan Lee on Google Maps' });
     fireEvent.press(link);
-    expect(link).toBeTruthy();
+    expect(Linking.openURL).toHaveBeenCalledWith(review.authorAttribution.uri);
+  });
+
+  it('pressing the maps link opens googleMapsUri', () => {
+    render(<GoogleAttributionPlate variant="detail" reviews={[]} googleMapsUri="https://maps.example/place" />);
+    const link = screen.getByRole('link', { name: 'View on Google Maps' });
+    fireEvent.press(link);
+    expect(Linking.openURL).toHaveBeenCalledWith('https://maps.example/place');
   });
 
   it('detail variant: partial data — reviews without a maps link omits the footer link', () => {
@@ -93,14 +105,16 @@ describe('GoogleAttributionPlate', () => {
     expect(screen.queryByTestId('google-review-avatar')).toBeNull();
   });
 
-  it('renders each supplied review with no hairline before the first row (no pad-to-N)', () => {
+  it('renders each supplied review with a hairline above every row but the first (no pad-to-N)', () => {
     const second: GoogleReview = {
       ...review,
       authorAttribution: { ...review.authorAttribution, displayName: 'Ana Petrovic', uri: 'https://google.example/profile/ana' },
       text: 'Cozy and quiet.',
     };
     render(<GoogleAttributionPlate variant="detail" reviews={[review, second]} />);
-    expect(screen.getByText('Jordan Lee')).toBeTruthy();
-    expect(screen.getByText('Ana Petrovic')).toBeTruthy();
+    const rows = screen.getAllByTestId('google-review-row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).not.toHaveStyle({ borderTopWidth: 1 });
+    expect(rows[1]).toHaveStyle({ borderTopWidth: 1 });
   });
 });

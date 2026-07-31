@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { ExternalLink, MapPin, Star } from 'lucide-react-native';
+import { ExternalLink, Star } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusable } from '../hooks/useFocusable';
@@ -62,7 +62,7 @@ export function GoogleAttributionPlate({ variant, reviews = [], googleMapsUri }:
 
   return (
     <View testID="google-attribution-plate-detail" style={styles.card}>
-      <View accessibilityRole="header" accessibilityLabel="Reviews from Google Maps">
+      <View accessible accessibilityRole="header" accessibilityLabel="Reviews from Google Maps">
         <GoogleMapsMark height={18} />
       </View>
       {reviews.map((review, index) => (
@@ -80,21 +80,18 @@ export function GoogleAttributionPlate({ variant, reviews = [], googleMapsUri }:
 }
 
 // Google Maps branding is mandatory here — the literal words "Google Maps"
-// (never a bare "Google"), decorative pin icon. A hand-drawn approximation of
-// Google's actual pin/wordmark logotype risks being an inaccurate,
-// unofficial redraw of their trademark (worse than not having it); Google's
-// own attribution policy sanctions plain text as an alternative to the
-// logo, so this renders the words rather than fabricate a knockoff asset.
-// ponytail: text+icon mark, not the bundled official SVG TripadvisorLogo.tsx
-// uses — swap in the real brand asset if/when one is sourced.
+// (never a bare "Google"), never hidden/obscured/restyled away. Plain text,
+// no icon: a generic (non-Google) pin glyph next to the words would read as
+// an invented pseudo-lockup — exactly the "unofficial redraw" risk Google's
+// attribution policy exists to avoid. Words alone are a policy-sanctioned
+// alternative to a bundled logo asset (product-tasks.md's acceptance
+// criteria: "logo or the literal words 'Google Maps'").
+// ponytail: no bundled SVG asset (unlike TripadvisorLogo.tsx) — sourcing an
+// accurate copy of Google's actual brand mark is out of scope here; swap in
+// the real bundled asset if/when one is sourced, per DESIGN_STANDARDS.md.
 function GoogleMapsMark({ height }: { height: number }) {
   return (
-    <View
-      style={styles.markRow}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      <MapPin size={height} color={colors.text} strokeWidth={2} />
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       <Text style={[styles.markText, { fontSize: height === 16 ? fontSize.sm : fontSize.md }]}>Google Maps</Text>
     </View>
   );
@@ -105,7 +102,7 @@ function ReviewRow({ review, hairline }: { review: GoogleReview; hairline: boole
   const { authorAttribution, rating, text, date } = review;
 
   return (
-    <View style={[styles.reviewRow, hairline && styles.hairlineAbove]}>
+    <View testID="google-review-row" style={[styles.reviewRow, hairline && styles.hairlineAbove]}>
       <View style={styles.authorRow}>
         <Pressable
           onPress={() => {
@@ -118,7 +115,11 @@ function ReviewRow({ review, hairline }: { review: GoogleReview; hairline: boole
           onBlur={focus.onBlur}
           accessibilityRole="link"
           accessibilityLabel={`Review by ${authorAttribution.displayName} on Google Maps`}
-          style={[styles.profileLink, focus.focused && styles.profileLinkFocused]}
+          style={({ pressed }) => [
+            styles.profileLink,
+            pressed && styles.pressedDip,
+            focus.focused && styles.profileLinkFocused,
+          ]}
         >
           <ReviewAvatar photoUri={authorAttribution.photoUri} displayName={authorAttribution.displayName} />
           <View style={styles.nameColumn}>
@@ -180,7 +181,11 @@ function MapsLink({ googleMapsUri }: { googleMapsUri: string }) {
       onBlur={focus.onBlur}
       accessibilityRole="link"
       accessibilityLabel="View on Google Maps"
-      style={[styles.mapsLinkRow, focus.focused && styles.mapsLinkFocused]}
+      style={({ pressed }) => [
+        styles.mapsLinkRow,
+        pressed && styles.pressedDip,
+        focus.focused && styles.mapsLinkFocused,
+      ]}
     >
       <Text style={styles.mapsLinkText}>View on Google Maps</Text>
       <ExternalLink size={16} color={colors.text} strokeWidth={2} />
@@ -198,11 +203,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.default,
     padding: space[4],
     gap: space[3],
-  },
-  markRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
   },
   mark16Row: {
     flexDirection: 'row',
@@ -240,6 +240,13 @@ const styles = StyleSheet.create({
   profileLinkFocused: {
     borderWidth: 2,
     borderColor: colors.primary,
+  },
+  // design-spec.md's link press state: brief opacity dip. A plain style
+  // value (not an Animated timing) — matches HeroCarousel.tsx's pressedDip,
+  // which is instant either way and so already satisfies the
+  // prefers-reduced-motion "instant" fallback without a separate branch.
+  pressedDip: {
+    opacity: 0.7,
   },
   avatarBox: {
     width: 32,

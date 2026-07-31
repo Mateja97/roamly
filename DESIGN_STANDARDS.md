@@ -839,21 +839,21 @@ one carries Google's **reviews + Maps lockup + maps link**.
 
 **Not a white plate.** Unlike Tripadvisor's rating-bubble image (a fixed
 green-on-light asset that forces the white `--attribution-plate`), Google's
-content here is **text + user avatars**, and Google publishes an official
-**light/white monochrome "Google Maps" brand asset for dark UIs**. So this plate
-renders on the app's own **`--surface`** (dark), native to the theme — the
-white-plate exception does **not** apply. All plate text is `--text` /
-`--text-muted` on `--surface` (both pre-computed AA below); the brand mark is the
-white variant.
+content here is **text + user avatars**. So this plate renders on the app's
+own **`--surface`** (dark), native to the theme — the white-plate exception
+does **not** apply. All plate text, including the brand mark, is `--text` /
+`--text-muted` on `--surface` (both pre-computed AA below).
 
-- **Brand mark:** Google's official **white/light "Google Maps" logo asset**
-  (bundled, inlined like `TripadvisorLogo` — a brand-kit asset, never a token,
-  never redrawn/recolored/retinted; the white variant is Google's *own* dark-UI
-  asset, so using it is compliant, not a recolor). Rendered ≥16px tall for
-  legibility (detail 18px, footer 16px). White on `--surface` (#8A2C35) ≈6.1:1
-  and on `--bg` (#7D2027) ≈5.9:1 — both clear the 3:1 UI-element bar with margin.
-  Decorative in the a11y tree; the section/link accessible names carry
-  "Google Maps".
+- **Brand mark:** the literal words **"Google Maps"** (`--text`, weight 600,
+  never a bare "Google") — no icon or glyph beside it. Rendered ≥16px tall for
+  legibility (detail 18px, footer 16px). A bundled official Google Maps
+  logo/lockup asset (mirroring how `TripadvisorLogo` bundles Tripadvisor's own
+  brand-kit SVG) is the eventual upgrade **if and when one is sourced and
+  verified accurate** — until then, plain text is Google's own
+  policy-sanctioned alternative to a logo (never a hand-drawn approximation of
+  their mark: an unofficial redraw risks reading as an invented, non-Google
+  lockup, which is worse than no logo at all). Decorative in the a11y tree;
+  the section/link accessible names carry "Google Maps".
 - **Photo author credit is *not* re-implemented here** — a live Places photo's
   per-author credit is already the **Photo attribution (Google-sourced imagery)**
   recipe (`PhotoAttributionCaption`), rendered flush below each photo. This plate
@@ -869,7 +869,7 @@ Places content to attribute):
 - **`detail`** — the full block in the detail body, a **`--surface` card**: 1px
   `--border`, gold `--card-highlight` top edge, `--radius` (8px), `--space-4`
   padding, `--space-3` between internal groups.
-  - *Header:* the white "Google Maps" mark (18px), left-aligned. Section
+  - *Header:* the "Google Maps" text mark (18px), left-aligned. Section
     accessible name "Reviews from Google Maps".
   - *Review rows* (up to whatever the merge supplies — Places returns ≤5;
     render each, no pad-to-N), stacked, each separated from the next by a 1px
@@ -902,7 +902,7 @@ Places content to attribute):
     link + a trailing 16px `--text` `ExternalLink` icon (decorative), opening
     `googleMapsUri`. 44×44 target, ≥`--space-2` from the last review.
 - **`footer`** — the compact single-line attribution at the detail screen's
-  footer-CTA spot (on `--bg`): the white "Google Maps" mark (16px) + an
+  footer-CTA spot (on `--bg`): the "Google Maps" text mark (16px) + an
   underlined **`--text` "View on Google Maps"** link (8.5:1 on `--bg`) opening
   `googleMapsUri`, `--space-2` gap, 44×44 target. No reviews, no card surface.
 
@@ -941,14 +941,13 @@ Composes from `--surface`, `--border`, `--card-highlight`, `--text`,
 `--text-muted`, `--surface-hover`, `--primary`, `--radius`, `--font-size-xs`/
 `--font-size-sm`, `--space-2`/`--space-3`/`--space-4`, the platform `<Image>`,
 and reuses the Photo attribution recipe for photo credits. Pre-computed pairings:
-`--text` on `--surface` 7.1:1 ✓ / on `--bg` 8.5:1 ✓ · `--text-muted` on
-`--surface` 5.3:1 ✓ / on `--bg` 6.2:1 ✓ · `--primary` focus outline 3.1:1 on
-`--surface` / 3.65:1 on `--bg` (UI, clears 3:1) · white brand mark ≈6.1:1 on
-`--surface` / ≈5.9:1 on `--bg` (UI ✓). **No new token** — the Google Maps mark
-is a bundled brand-kit asset, not a token. ponytail: no `card` variant and no
-white plate — Places live content only lands on the detail screen, and Google
-ships its own dark-UI white mark, so neither the list-card lockup nor the
-white-plate surface has a reason to exist here.
+`--text` on `--surface` 7.1:1 ✓ / on `--bg` 8.5:1 ✓ (covers the "Google Maps"
+text mark, same token as the rest of the plate's text — no separate asset
+contrast to compute) · `--text-muted` on `--surface` 5.3:1 ✓ / on `--bg` 6.2:1
+✓ · `--primary` focus outline 3.1:1 on `--surface` / 3.65:1 on `--bg` (UI,
+clears 3:1). **No new token.** ponytail: no `card` variant and no white plate
+— Places live content only lands on the detail screen, so the list-card
+lockup and the white-plate surface both have no reason to exist here.
 
 ### Fullscreen photo viewer (+ hero photo-count pill)
 
