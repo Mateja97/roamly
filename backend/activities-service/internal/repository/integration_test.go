@@ -745,6 +745,66 @@ func TestActivities_Query_DedupesCrossCategoryDuplicatesWhenUnfiltered(t *testin
 	})
 }
 
+// TestActivities_Query_DedupeFallbackKeepsEmptyExternalIDRowsSeparate proves
+// the dedup key's fallback arm: coalesce(nullif(external_id, empty),
+// id::text). Every other dedup fixture carries a non-empty external_id, so
+// without this test the fallback to id::text — which is what keeps two
+// genuinely different rows from collapsing into each other once 0025 lets
+// rows with no external_id keep appearing — was never exercised. Two rows
+// with an empty external_id must both survive an unfiltered query, not
+// merge into one the way two rows sharing the SAME external_id legitimately
+// do (see TestActivities_Query_DedupesCrossCategoryDuplicatesWhenUnfiltered).
+// A separate container from that test and from
+// TestActivities_Query_Integration so these fixtures can't perturb either.
+func TestActivities_Query_DedupeFallbackKeepsEmptyExternalIDRowsSeparate(t *testing.T) {
+	db := startTestPostgres(t)
+	repo := New(db)
+	ctx := context.Background()
+
+	firstIn := activitiessvc.IngestActivity{
+		Title: "No External ID Fixture One", Description: "test fixture",
+		Lat: 44.81, Lng: 20.46, Country: "Serbia", City: "Belgrade",
+		Rating: 4.2, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "",
+		Category: activitiessvc.CategoryArt, SourceURL: "https://places/no-external-id-fixture-one",
+	}
+	firstRow, err := repo.Upsert(ctx, firstIn)
+	if err != nil {
+		t.Fatalf("upserting first no-external-id row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, firstRow.ID) })
+
+	secondIn := firstIn
+	secondIn.Title = "No External ID Fixture Two"
+	secondIn.SourceURL = "https://places/no-external-id-fixture-two"
+	secondRow, err := repo.Upsert(ctx, secondIn)
+	if err != nil {
+		t.Fatalf("upserting second no-external-id row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, secondRow.ID) })
+
+	if firstRow.ID == secondRow.ID {
+		t.Fatalf("two distinct upserts with empty external_id produced the same row ID %s", firstRow.ID)
+	}
+
+	got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+	if err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	var sawFirst, sawSecond bool
+	for _, a := range got {
+		if a.ID == firstRow.ID {
+			sawFirst = true
+		}
+		if a.ID == secondRow.ID {
+			sawSecond = true
+		}
+	}
+	if !sawFirst || !sawSecond {
+		t.Errorf("sawFirst=%v sawSecond=%v, want both — two rows with an empty external_id must fall back to id::text and never collapse into each other", sawFirst, sawSecond)
+	}
+}
+
 // TestActivities_AdminCRUD_Integration covers T2's first real write path
 // against real Postgres: JSONB details/photos round-trip through pgx's
 // automatic marshaling (never exercised before T2 — QueryActivities only
@@ -1156,6 +1216,58 @@ func TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource(t *testing.T) {
 	}
 }
 
+// TestUpsertEmptyCityDoesNotClobberStoredCity proves the ON CONFLICT
+// city/country fix: a Google reverse-geocode failure or ZERO_RESULTS sends
+// toIngest an empty city/country for the whole cell's sweep (see
+// service.cellLocation), and a re-upsert of an already-healed row must not
+// blank it back out — that would break TimezoneForCity and SuggestCities for
+// up to maxGoogleRowsPerQuery x ~20 venues in one bad sweep.
+func TestUpsertEmptyCityDoesNotClobberStoredCity(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	const sourceURL = "https://places/city-clobber-fixture"
+	in := activitiessvc.IngestActivity{
+		Title: "City Clobber Fixture", Category: activitiessvc.CategoryCafes,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "google_places", SourceURL: sourceURL, ExternalID: "city-clobber-1",
+	}
+	row, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, row.ID) })
+	if row.City != "Belgrade" || row.Country != "Serbia" {
+		t.Fatalf("seed row city/country = %q/%q, want Belgrade/Serbia", row.City, row.Country)
+	}
+
+	in.City = ""
+	in.Country = ""
+	reUpserted, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("re-upsert with empty city/country: %v", err)
+	}
+	if reUpserted.ID != row.ID {
+		t.Fatalf("re-upsert created a new row (%s != %s)", reUpserted.ID, row.ID)
+	}
+	if reUpserted.City != "Belgrade" {
+		t.Errorf("city after empty-city re-upsert = %q, want the original Belgrade to survive", reUpserted.City)
+	}
+	if reUpserted.Country != "Serbia" {
+		t.Errorf("country after empty-country re-upsert = %q, want the original Serbia to survive", reUpserted.Country)
+	}
+
+	got, err := repo.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	if got.City != "Belgrade" || got.Country != "Serbia" {
+		t.Errorf("persisted city/country = %q/%q, want Belgrade/Serbia to have survived the empty re-upsert", got.City, got.Country)
+	}
+}
+
 // TestSyncRegionsPrimaryKey proves 0024's widened composite primary key
 // (provider, cell_key, category, subtype) — generalized from Tripadvisor's
 // original (cell_key, category) — still rejects an exact duplicate while
@@ -1177,6 +1289,15 @@ func TestSyncRegionsPrimaryKey(t *testing.T) {
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('google', '44.8,20.5', 'nature', 'beach', now())`); err != nil {
 		t.Fatalf("different-provider/subtype insert at the same cell: %v", err)
+	}
+	// Varies subtype ALONE (same provider and category as the first insert,
+	// tripadvisor/restaurants) — the one case that actually discriminates a
+	// composite key that includes subtype from one that accidentally
+	// dropped it. The three inserts above each vary provider, category and
+	// subtype together, so a PK missing subtype entirely would still pass
+	// every one of them.
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', 'fine_dining', now())`); err != nil {
+		t.Fatalf("subtype-only-varying insert at the same cell/provider/category: %v", err)
 	}
 }
 
@@ -1227,10 +1348,12 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 		t.Fatal("SyncedAt() ok = true, want false for a never-synced cell")
 	}
 
-	// ponytail: small sleep to account for potential clock skew between
-	// container and host (database now() might be slightly earlier than Go time.Now()).
-	time.Sleep(time.Millisecond)
-	before := time.Now()
+	// A 1-second margin, not a real duration to wait out: it exists so
+	// "before" tolerates the database container's clock running behind the
+	// host's, not so the test takes longer. A sleep placed before this line
+	// would add no such headroom (the skew is between clocks, not time
+	// elapsed), and previously sat here doing nothing but flaking once.
+	before := time.Now().Add(-time.Second)
 	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}

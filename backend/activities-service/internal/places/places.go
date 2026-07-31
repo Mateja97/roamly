@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"math/rand"
 	"net/http"
@@ -261,6 +262,7 @@ func (c *Client) ReverseGeocodeCity(ctx context.Context, lat, lng float64) (stri
 	switch parsed.Status {
 	case "OK":
 	case "ZERO_RESULTS":
+		slog.Info("reverse geocode zero results", "lat", lat, "lng", lng)
 		return "", "", nil
 	default:
 		return "", "", fmt.Errorf("reverse geocoding %f,%f: %s: %s", lat, lng, parsed.Status, parsed.ErrorMessage)

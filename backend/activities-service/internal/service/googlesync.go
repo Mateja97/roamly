@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"activities-service/internal/places"
@@ -98,6 +99,72 @@ func googleDueRows(req Request, fresh func(cell, category, subtype string) bool)
 // forever.
 const googleSyncTimeout = 2 * time.Minute
 
+// googleSyncConcurrency bounds how many sweeps run at once across the whole
+// process. One sweep can run up to maxGoogleRowsPerQuery (8) searches, each
+// with up to 20 results, each costing up to 2 further Places calls
+// (provisional photo + upsert) plus one geocode call per cell — roughly 329
+// Google API calls worst case. Left unbounded, a 100-request burst spawns
+// 100 concurrent sweeps (~33k calls, 100 live goroutines) with nothing
+// shedding load, and doJSON's 429/5xx retry then multiplies quota pressure
+// instead of backing off. 4 keeps worst-case concurrent cost in the low
+// thousands of calls while still letting several distinct cells make
+// progress at once; raise it only alongside a real per-process Google API
+// budget (see the "out of scope" note on pgxpool.MaxConns — same shape of
+// problem, deliberately deferred).
+const googleSyncConcurrency = 4
+
+// googleSyncSem is a non-blocking semaphore: acquiring a slot is a buffered
+// channel send with a default case, so a sweep that finds it full is
+// dropped, not queued. Queueing would only move the pile-up from goroutines
+// to a channel buffer; dropping actually sheds load. A dropped sweep leaves
+// its rows unmarked, so a later query retries them — the same fallback a
+// failed row already gets (see syncGoogleRow's doc).
+var googleSyncSem = make(chan struct{}, googleSyncConcurrency)
+
+// googleSyncCellsInFlight is the set of sync cells with a sweep currently
+// running, guarded by googleSyncCellsMu. Without it, two concurrent queries
+// against the same uncovered cell both see the same stale rows from
+// SyncedAt and both sync them — doubling every search, upsert and photo
+// call for that sweep. Cells are claimed synchronously in
+// syncGoogleIfNeeded before its goroutine is spawned (so a second call for
+// the same cell sees the claim immediately, not just once the first
+// goroutine gets scheduled) and released via defer when the goroutine
+// returns on every exit path, including panic.
+var (
+	googleSyncCellsMu       sync.Mutex
+	googleSyncCellsInFlight = make(map[string]struct{})
+)
+
+// claimGoogleSyncCells claims every cell in cells atomically: either all are
+// free and all get claimed, or none are (some other sweep already covers at
+// least one of them) and nothing is claimed. All-or-nothing is simpler than
+// partial claiming and just as safe, since the caller drops the whole sweep
+// either way when the claim fails.
+func claimGoogleSyncCells(cells []string) bool {
+	googleSyncCellsMu.Lock()
+	defer googleSyncCellsMu.Unlock()
+	for _, c := range cells {
+		if _, busy := googleSyncCellsInFlight[c]; busy {
+			return false
+		}
+	}
+	for _, c := range cells {
+		googleSyncCellsInFlight[c] = struct{}{}
+	}
+	return true
+}
+
+// releaseGoogleSyncCells undoes claimGoogleSyncCells. Always called via
+// defer so a claimed cell is freed no matter how the sweep's goroutine
+// exits.
+func releaseGoogleSyncCells(cells []string) {
+	googleSyncCellsMu.Lock()
+	defer googleSyncCellsMu.Unlock()
+	for _, c := range cells {
+		delete(googleSyncCellsInFlight, c)
+	}
+}
+
 // syncGoogleIfNeeded schedules a background type-driven discovery pass for
 // req's anchors.
 //
@@ -110,10 +177,15 @@ const googleSyncTimeout = 2 * time.Minute
 //
 // googleDueRows itself — and every SyncedAt lookup it makes, up to ~53 per
 // anchor — runs inside the goroutine, not here. Only the "is a Places client
-// even configured" check stays on the caller's goroutine, so a server with
-// none spawns nothing; everything that touches the repo happens off the
-// request path entirely, matching the "background" contract this function
-// promises.
+// even configured" check, and the concurrency/in-flight gating below, stay
+// on the caller's goroutine, so a server with no Places client spawns
+// nothing; everything that touches the repo happens off the request path
+// entirely, matching the "background" contract this function promises.
+//
+// Gating happens in this order: claim this request's cells (cheap, no I/O —
+// see claimGoogleSyncCells), then acquire a concurrency slot. Either failing
+// drops the sweep entirely rather than queueing it; a dropped sweep's rows
+// stay stale and a later query retries them.
 //
 // Never fails Query: a sync problem at any step is logged and leaves the DB
 // as-is, exactly like syncTripadvisorIfNeeded.
@@ -122,9 +194,36 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		return
 	}
 
+	anchors := syncAnchors(req)
+	if len(anchors) == 0 {
+		return
+	}
+	cells := make([]string, 0, len(anchors))
+	seen := make(map[string]struct{}, len(anchors))
+	for _, anchor := range anchors {
+		key := syncCellKey(anchor.Lat, anchor.Lng)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		cells = append(cells, key)
+	}
+
+	if !claimGoogleSyncCells(cells) {
+		return
+	}
+	select {
+	case googleSyncSem <- struct{}{}:
+	default:
+		releaseGoogleSyncCells(cells)
+		return
+	}
+
 	a.googleSync.Add(1)
 	go func() {
 		defer a.googleSync.Done()
+		defer releaseGoogleSyncCells(cells)
+		defer func() { <-googleSyncSem }()
 		// Detached from the request context on purpose: the HTTP/gRPC
 		// request is already finishing, and inheriting its cancellation
 		// would abort every pass the moment Query returns.
@@ -144,21 +243,21 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		// not once per venue and not once per row. A geocode failure degrades
 		// to a zero-value cellLocation rather than dropping the sweep;
 		// toIngest falls back to per-venue extraction for that cell.
-		cells := make(map[string]cellLocation)
+		cellLocations := make(map[string]cellLocation)
 		for _, job := range jobs {
 			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
-			if _, ok := cells[key]; ok {
+			if _, ok := cellLocations[key]; ok {
 				continue
 			}
 			city, country, err := a.places.ReverseGeocodeCity(syncCtx, job.anchor.Lat, job.anchor.Lng)
 			if err != nil {
 				slog.Warn("google reverse geocode failed; falling back to per-venue city", "cell", key, "error", err)
 			}
-			cells[key] = cellLocation{City: city, Country: country}
+			cellLocations[key] = cellLocation{City: city, Country: country}
 		}
 
 		for _, job := range jobs {
-			a.syncGoogleRow(syncCtx, job, cells[syncCellKey(job.anchor.Lat, job.anchor.Lng)])
+			a.syncGoogleRow(syncCtx, job, cellLocations[syncCellKey(job.anchor.Lat, job.anchor.Lng)])
 		}
 	}()
 }
@@ -273,9 +372,11 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 // (placesmap.CityCountry) when the cell resolution came back empty (a
 // geocode failure or ZERO_RESULTS). Both are storable under Places Terms
 // §14.3 (only hours/price/venue-type are not) and City in particular is
-// load-bearing: BuildLiveDetails' opening-hours timezone lookup keys off it,
-// and Upsert's ON CONFLICT does "city = EXCLUDED.city", so leaving it blank
-// here would blank an existing legacy row's city on rediscovery.
+// load-bearing: BuildLiveDetails' opening-hours timezone lookup keys off it.
+// Falling back per-field here is belt-and-suspenders — Upsert's ON CONFLICT
+// also refuses to let an empty incoming city/country clobber a stored one —
+// but this fallback is what supplies a value at all when the cell-level
+// resolution is empty and the row is genuinely new.
 //
 // Details is deliberately empty — Places Terms §14.3 permits caching only
 // place_id and lat/lng, so hours, price and venue type are fetched live on

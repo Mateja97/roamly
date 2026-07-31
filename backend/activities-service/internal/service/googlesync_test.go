@@ -383,6 +383,37 @@ func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
 	}
 }
 
+// TestActivities_Query_GoogleSync_PassesRadiusAndTypesToClient pins the
+// three values that ARE the cost model item 1's concurrency cap is sized
+// against (see googleSyncConcurrency's doc): a regression that silently
+// widened RadiusM, MaxResults or dropped IncludedTypes filtering would blow
+// past that budget without any test noticing, since fakeGooglePlaces.gotNearby
+// was previously recorded but never asserted on.
+func TestActivities_Query_GoogleSync_PassesRadiusAndTypesToClient(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "p1", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/p1"}}}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"night_club"}},
+	}
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+
+	if gp.nearbyCalls != 1 {
+		t.Fatalf("nearbyCalls = %d, want 1", gp.nearbyCalls)
+	}
+	got := gp.gotNearby[0]
+	if got.RadiusM != googleSyncRadiusKM*1000 {
+		t.Errorf("RadiusM = %v, want %v (googleSyncRadiusKM * 1000)", got.RadiusM, googleSyncRadiusKM*1000)
+	}
+	if got.MaxResults != 20 {
+		t.Errorf("MaxResults = %d, want 20", got.MaxResults)
+	}
+	if !slices.Equal(got.IncludedTypes, job.row.Types) {
+		t.Errorf("IncludedTypes = %v, want the row's own types %v passed through unchanged", got.IncludedTypes, job.row.Types)
+	}
+}
+
 func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	gp := &fakeGooglePlaces{
@@ -398,5 +429,116 @@ func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a venue with no photo is still worth ingesting", len(repo.gotUpserts))
+	}
+}
+
+// The two tests below cover item 1's concurrency fix: an unbounded goroutine
+// per Query, with no per-cell in-flight guard, let two concurrent queries
+// against the same uncovered cell both see fresh()==false for the same rows
+// and both sync them — doubling every search/upsert/photo call for that
+// sweep. Both tests rely on cell claiming (claimGoogleSyncCells) happening
+// synchronously on the calling goroutine, inside syncGoogleIfNeeded, before
+// its sweep goroutine is even spawned — so a second call for an
+// already-claimed cell is dropped deterministically, not merely "usually" if
+// timing lines up. fakeGooglePlaces.blockNearby holds the first sweep
+// provably in flight (never returned from SearchNearby, so its defer
+// hasn't released the cell/semaphore) while the test issues the calls that
+// must be dropped, removing any dependence on goroutine scheduling.
+
+func TestSyncGoogleIfNeeded_ConcurrentSameCellOnlyOneSweep(t *testing.T) {
+	newFixture := func() (*Activities, *fakeGooglePlaces) {
+		repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+		gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "x", Rating: 4.5, UserRatingCount: 20, GoogleMapsURI: "https://maps.google/x"}}}
+		return New(repo).WithPlaces(gp), gp
+	}
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}}
+
+	// Reference: exactly one sweep's worth of SearchNearby calls for this
+	// (unfiltered, so budget-capped) request. Not hardcoded, since which of
+	// the capped rows are Types-based (SearchNearby) vs TextQuery-based
+	// (SearchTextInArea) is placesmap.DiscoveryRows' concern, not this
+	// test's.
+	refSvc, refGP := newFixture()
+	refSvc.syncGoogleIfNeeded(context.Background(), req)
+	refSvc.waitForGoogleSync()
+	wantCalls := refGP.nearbyCalls
+	if wantCalls == 0 {
+		t.Fatal("reference sweep made 0 SearchNearby calls; test fixture is broken")
+	}
+
+	block := make(chan struct{})
+	svc, gp := newFixture()
+	gp.blockNearby = block
+
+	// Sweep 1: claims the cell synchronously, then its goroutine blocks
+	// inside its first SearchNearby call until we close(block) below — so
+	// the cell claim is guaranteed still held for every line until then.
+	svc.syncGoogleIfNeeded(context.Background(), req)
+
+	// Sweep 2 and 3: same cell. The in-flight guard must drop these
+	// synchronously, before ever touching SyncedAt or the Places client —
+	// a saturated guard should keep dropping, not let a later call slip
+	// through once one is already denied.
+	svc.syncGoogleIfNeeded(context.Background(), req)
+	svc.syncGoogleIfNeeded(context.Background(), req)
+
+	close(block)
+	svc.waitForGoogleSync()
+
+	if gp.nearbyCalls != wantCalls {
+		t.Errorf("nearbyCalls = %d, want %d (one sweep's worth) — the concurrent calls for the same cell should have been dropped by the in-flight guard, not started their own sweeps", gp.nearbyCalls, wantCalls)
+	}
+}
+
+func TestSyncGoogleIfNeeded_SaturatedSemaphoreDropsWithoutBlockingCaller(t *testing.T) {
+	block := make(chan struct{})
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{
+		nearbyOut:   []placesmap.Place{{ID: "x", Rating: 4.5, UserRatingCount: 20, GoogleMapsURI: "https://maps.google/x"}},
+		blockNearby: block,
+	}
+	svc := New(repo).WithPlaces(gp)
+
+	// Fill every concurrency slot with a sweep against its own distinct
+	// cell, so the per-cell guard above isn't what's under test here. Each
+	// call's cell claim + semaphore acquire happens synchronously before
+	// this loop moves on, so by the time it exits, all googleSyncConcurrency
+	// slots are held — regardless of whether any sweep goroutine has
+	// actually been scheduled yet.
+	for i := range googleSyncConcurrency {
+		req := Request{
+			Scope:           activitiessvc.ScopeNearby,
+			CurrentLocation: &activitiessvc.Point{Lat: 10 + float64(i), Lng: 10},
+		}
+		svc.syncGoogleIfNeeded(context.Background(), req)
+	}
+
+	// One more, a distinct cell again: the semaphore is full, so this must
+	// be dropped rather than queued, and — the "without blocking" half of
+	// item 1's fix — syncGoogleIfNeeded itself must return immediately
+	// rather than waiting for a slot to free up.
+	const extraLat = 999.0
+	extraReq := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: extraLat, Lng: 10},
+	}
+	done := make(chan struct{})
+	go func() {
+		svc.syncGoogleIfNeeded(context.Background(), extraReq)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("syncGoogleIfNeeded blocked the caller instead of dropping the sweep when the semaphore was saturated")
+	}
+
+	close(block)
+	svc.waitForGoogleSync()
+
+	for _, r := range gp.gotNearby {
+		if r.Lat == extraLat {
+			t.Error("the semaphore-saturated sweep's cell was processed anyway — it should have been dropped, never run")
+		}
 	}
 }

@@ -129,6 +129,10 @@ type fakeGooglePlaces struct {
 	nearbyErr   error
 	nearbyCalls int
 	gotNearby   []places.NearbyRequest
+	// blockNearby, if non-nil, is received from inside SearchNearby after
+	// recording the call — lets concurrency tests hold a sweep "in flight"
+	// deterministically instead of racing on goroutine scheduling.
+	blockNearby chan struct{}
 
 	photosOut         []activitiessvc.Photo
 	photosErr         error
@@ -142,9 +146,13 @@ type fakeGooglePlaces struct {
 
 func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.nearbyCalls++
 	f.gotNearby = append(f.gotNearby, req)
+	block := f.blockNearby
+	f.mu.Unlock()
+	if block != nil {
+		<-block
+	}
 	return f.nearbyOut, f.nearbyErr
 }
 

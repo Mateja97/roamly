@@ -475,7 +475,12 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 // values with StatusPending, and applying that on conflict would silently
 // un-publish activities an admin already approved. New rows still insert with
 // their given (pending) status via the INSERT VALUES; only the conflict path
-// leaves status alone.
+// leaves status alone. city/country use COALESCE(NULLIF(EXCLUDED.x, empty),
+// x) rather than a bare EXCLUDED.x: a Google reverse-geocode failure or
+// ZERO_RESULTS (see places.Client.ReverseGeocodeCity) sends in an empty
+// string for the whole cell's sweep, and an empty incoming value must never
+// clobber an already-resolved stored one across up to
+// maxGoogleRowsPerQuery x ~20 venues.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
@@ -487,9 +492,9 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			description = EXCLUDED.description,
 			category = EXCLUDED.category,
 			location = EXCLUDED.location,
-			country = EXCLUDED.country,
+			country = COALESCE(NULLIF(EXCLUDED.country, ''), activities.country),
 			rating = EXCLUDED.rating,
-			city = EXCLUDED.city,
+			city = COALESCE(NULLIF(EXCLUDED.city, ''), activities.city),
 			address = EXCLUDED.address,
 			details = EXCLUDED.details,
 			source = EXCLUDED.source,
