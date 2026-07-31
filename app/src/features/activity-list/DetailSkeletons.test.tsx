@@ -28,12 +28,23 @@ describe('PLACES_LIVE_CATEGORIES', () => {
 });
 
 describe('factStripSkeletonCount', () => {
-  it('gives the max chip count for a category with a fact strip', () => {
-    expect(factStripSkeletonCount('cafes')).toBe(3);
-    expect(factStripSkeletonCount('shopping')).toBe(3);
+  it('gives the count of chips the live mapper can actually fill, not the config ceiling', () => {
+    // cafes: mapper emits hours/opening_hours only (feeds the Hours chip) —
+    // known_for_brew/wifi_quality are never emitted, so 1, not the config's 3.
+    expect(factStripSkeletonCount('cafes')).toBe(1);
+    // culture/art/shopping: mapper emits venue_type + hours — 2, not 3.
+    expect(factStripSkeletonCount('culture')).toBe(2);
+    expect(factStripSkeletonCount('art')).toBe(2);
+    expect(factStripSkeletonCount('shopping')).toBe(2);
   });
 
-  it('gives 0 for a category whose fact strip never produces a chip', () => {
+  it('gives 0 for a category whose fact-strip fields are never in the mapper output', () => {
+    expect(factStripSkeletonCount('nightlife')).toBe(0);
+    expect(factStripSkeletonCount('nature')).toBe(0);
+    expect(factStripSkeletonCount('sport')).toBe(0);
+  });
+
+  it('gives 0 for a category whose fact strip never produces a chip regardless of merge', () => {
     expect(factStripSkeletonCount('kids')).toBe(0);
     expect(factStripSkeletonCount('wellness')).toBe(0);
     expect(factStripSkeletonCount('entertainment')).toBe(0);
@@ -68,50 +79,30 @@ describe('DescriptionSkeleton', () => {
 });
 
 describe('UniqueSectionSkeleton', () => {
-  it('renders a heading bar + checklist body for nature/sport', () => {
+  it('renders a heading bar + checklist body for nature (its live-fillable shape)', () => {
     render(<UniqueSectionSkeleton category="nature" />);
     expect(screen.getByTestId('unique-section-skeleton')).toBeTruthy();
     expect(screen.getByTestId('unique-body-checklist')).toBeTruthy();
   });
 
-  it('renders a name+price body for cafes', () => {
-    render(<UniqueSectionSkeleton category="cafes" />);
-    expect(screen.getByTestId('unique-body-nameprice')).toBeTruthy();
-  });
-
-  it('renders a pills body for shopping', () => {
-    render(<UniqueSectionSkeleton category="shopping" />);
-    expect(screen.getByTestId('unique-body-pills')).toBeTruthy();
-  });
-
-  it('renders an icon-grid body for kids', () => {
+  it('renders a heading bar + icon-grid body for kids (its live-fillable shape)', () => {
     render(<UniqueSectionSkeleton category="kids" />);
+    expect(screen.getByTestId('unique-section-skeleton')).toBeTruthy();
     expect(screen.getByTestId('unique-body-icongrid')).toBeTruthy();
   });
 
-  it('renders a banner body with no heading bar for culture/art', () => {
-    render(<UniqueSectionSkeleton category="culture" />);
-    expect(screen.getByTestId('unique-body-banner')).toBeTruthy();
-    // The outer wrap's only child is the banner body — no heading bar
-    // rendered above it, per design-spec.md's "omitted for the banner shape".
-    const wrap = screen.getByTestId('unique-section-skeleton');
-    expect(wrap.children).toHaveLength(1);
-  });
-
-  it('renders a schedule-compact body for nightlife/wellness', () => {
-    render(<UniqueSectionSkeleton category="wellness" />);
-    expect(screen.getByTestId('unique-body-schedule-compact')).toBeTruthy();
-  });
-
-  it('renders a schedule-dateblock body for entertainment', () => {
-    render(<UniqueSectionSkeleton category="entertainment" />);
-    expect(screen.getByTestId('unique-body-schedule-dateblock')).toBeTruthy();
-  });
-
-  it('renders nothing for a category with no unique-section shape (restaurants)', () => {
-    const { toJSON } = render(<UniqueSectionSkeleton category="restaurants" />);
-    expect(toJSON()).toBeNull();
-  });
+  // Every other category's unique-section field is never in T1's live
+  // mapper output (design-spec.md rule 2: don't skeleton a guaranteed
+  // flash-then-collapse) — cafes/shopping/culture/art/nightlife/wellness/
+  // entertainment/restaurants all render nothing here, not their config
+  // shape.
+  it.each(['cafes', 'shopping', 'culture', 'art', 'nightlife', 'wellness', 'entertainment', 'restaurants'] as const)(
+    'renders nothing for %s (live mapper never fills its unique section)',
+    (category) => {
+      const { toJSON } = render(<UniqueSectionSkeleton category={category} />);
+      expect(toJSON()).toBeNull();
+    },
+  );
 });
 
 describe('ReviewsSkeleton', () => {

@@ -94,6 +94,21 @@ type ActivityDetailScreenProps = {
   onBack: () => void;
 };
 
+// T6: true when a live merge genuinely put something new on screen — used
+// to gate the "Place details added" a11y announcement (a merge that
+// collapsed every block, e.g. a category the mapper can't fill anything
+// for, has nothing to tell an AT user arrived).
+function hasLiveContent(a: Activity): boolean {
+  const detailKeys = Object.keys(a.details ?? {}).filter((key) => key !== 'category');
+  return (
+    a.rating > 0 ||
+    Boolean(a.description) ||
+    detailKeys.length > 0 ||
+    (a.google_reviews?.length ?? 0) > 0 ||
+    Boolean(a.google_maps_uri)
+  );
+}
+
 export function ActivityDetailScreen({
   activity: seedActivity,
   showDistance,
@@ -152,29 +167,37 @@ export function ActivityDetailScreen({
   // guard mirrors the photos effect above; failure/timeout is silently
   // dropped (design-spec.md: no error UI for content the user never saw).
   const [activity, setActivity] = useState<Activity>(seedActivity);
-  const [detailsPending, setDetailsPending] = useState(true);
   const isPlacesLive = PLACES_LIVE_CATEGORIES.has(seedActivity.category);
+  // A Tripadvisor/admin row is never skeletoned and the merge can't improve
+  // it (T2's own gate never live-merges these), so it starts (and stays)
+  // settled — the effect below skips the round trip entirely for it,
+  // rather than fetch-and-discard on every open.
+  const [detailsPending, setDetailsPending] = useState(isPlacesLive);
   useEffect(() => {
+    if (!isPlacesLive) return;
     let cancelled = false;
     // design-spec.md's Accessibility notes: one polite loading status for
-    // the whole enriching region, only for a category the fetch can
-    // actually change anything on-screen for.
-    if (isPlacesLive) AccessibilityInfo.announceForAccessibility('Loading place details');
+    // the whole enriching region.
+    AccessibilityInfo.announceForAccessibility('Loading place details');
     getActivity(seedActivity.id).then((result) => {
       if (cancelled) return;
       if (result.status === 'success') {
+        const merged = result.activity;
         setActivity((prev) => ({
           ...prev,
-          rating: result.activity.rating,
-          details: result.activity.details,
+          rating: merged.rating,
+          details: merged.details,
           // Server-side merge already never blanks a good stored value
           // (T2) — this `||` is belt-and-suspenders against the same
           // mistake here.
-          description: result.activity.description || prev.description,
-          google_reviews: result.activity.google_reviews,
-          google_maps_uri: result.activity.google_maps_uri,
+          description: merged.description || prev.description,
+          google_reviews: merged.google_reviews,
+          google_maps_uri: merged.google_maps_uri,
         }));
-        if (isPlacesLive) AccessibilityInfo.announceForAccessibility('Place details added');
+        // Only announce "added" when the merge genuinely put something new
+        // on screen — a merge that collapsed every block is nothing to
+        // tell an AT user arrived.
+        if (hasLiveContent(merged)) AccessibilityInfo.announceForAccessibility('Place details added');
       }
       setDetailsPending(false);
     });
@@ -384,26 +407,30 @@ export function ActivityDetailScreen({
                   <View style={styles.badge}>
                     <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
                   </View>
-                  <View style={styles.rating}>
-                    {/* T6: "Rating value" placeholder — only while the live
-                        fetch is pending and the seed genuinely has nothing
-                        yet (rule 1: never pulse over an already-good value). */}
-                    {isPlacesLive && detailsPending && activity.rating <= 0 ? (
+                  {/* T6: "Rating value" — skeletoned only while the live
+                      fetch is pending and the seed genuinely has nothing
+                      yet (rule 1: never pulse over an already-good value);
+                      once settled with no rating (failed/empty merge), the
+                      whole block collapses (rule 3: no fabricated "0.0",
+                      no empty frame) rather than falling back to a
+                      pre-T6-style zero. */}
+                  {isPlacesLive && detailsPending && activity.rating <= 0 ? (
+                    <View style={styles.rating}>
                       <RatingSkeleton />
-                    ) : (
-                      <>
-                        <Star
-                          size={16}
-                          color={colors.primary}
-                          strokeWidth={1.75}
-                          fill={colors.primary}
-                        />
-                        <Text style={styles.ratingLabel}>
-                          {activity.rating.toFixed(1)}
-                        </Text>
-                      </>
-                    )}
-                  </View>
+                    </View>
+                  ) : activity.rating > 0 ? (
+                    <View style={styles.rating}>
+                      <Star
+                        size={16}
+                        color={colors.primary}
+                        strokeWidth={1.75}
+                        fill={colors.primary}
+                      />
+                      <Text style={styles.ratingLabel}>
+                        {activity.rating.toFixed(1)}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               )}
             </View>

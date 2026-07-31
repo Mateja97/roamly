@@ -746,13 +746,25 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('0.2 km away')).toBeTruthy();
     });
 
-    it('skeletons every Places-backed block while the fetch is pending', () => {
+    it('skeletons the rating/fact-strip/description/reviews blocks while pending (cafes)', () => {
       render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
       expect(screen.getByTestId('rating-skeleton')).toBeTruthy();
       expect(screen.getByTestId('fact-strip-skeleton')).toBeTruthy();
       expect(screen.getByTestId('description-skeleton')).toBeTruthy();
-      expect(screen.getByTestId('unique-section-skeleton')).toBeTruthy();
       expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
+      // cafes' unique-section field (`on_the_bar`) is never in T1's live
+      // mapper output (design-spec.md rule 2) — no guaranteed
+      // flash-then-collapse skeleton for it.
+      expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
+    });
+
+    it('skeletons the unique-section block for a category the live mapper can actually fill (nature)', () => {
+      const natureActivity: Activity = { ...placesActivity, id: '3', category: 'nature', details: { category: 'nature' } };
+      render(<ActivityDetailScreen activity={natureActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('unique-section-skeleton')).toBeTruthy();
+      // nature's fact-strip fields (time_to_spend/best_time/cost) are never
+      // in the mapper's output either — no skeleton for that block.
+      expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
     });
 
     it('merges the live fields onto local state on success, replacing every skeleton with real content', async () => {
@@ -810,6 +822,10 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
       expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
       expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+      // The rating block genuinely collapses too — no fabricated "0.0",
+      // no leftover star, matching every other Places-backed block.
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.queryByText('0.0')).toBeNull();
       // The seeded page itself is unaffected.
       expect(screen.getByText('Kafeterija')).toBeTruthy();
       expect(screen.getByTestId('activity-detail-hero-image-0')).toBeTruthy();
@@ -821,6 +837,30 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
       expect(screen.queryByTestId('rating-skeleton')).toBeNull();
       expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+    });
+
+    it('never fires getActivity for a Tripadvisor-sourced row (no wasted round trip)', () => {
+      render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).not.toHaveBeenCalled();
+    });
+
+    it('announces the loading status only for a Places-live category, not a Tripadvisor row', () => {
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      expect(announce).toHaveBeenCalledWith('Loading place details');
+      announce.mockClear();
+      render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+      expect(announce).not.toHaveBeenCalled();
+    });
+
+    it('does not announce "added" when the merge collapses every block (nothing new arrived)', async () => {
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      mockedGetActivity.mockResolvedValue({ status: 'success', activity: { ...placesActivity } });
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(mockedGetActivity).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByTestId('rating-skeleton')).toBeNull());
+      expect(announce).toHaveBeenCalledWith('Loading place details');
+      expect(announce).not.toHaveBeenCalledWith('Place details added');
     });
   });
 

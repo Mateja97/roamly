@@ -309,10 +309,13 @@ export type Activity = {
   // `toGoogleReviews`'s reshaped (camelCase) output, not the wire's
   // snake_case `RawGoogleReview[]` — see that function below.
   google_reviews?: GoogleReview[];
-  // T6: live Google `userRatingCount` — design-spec.md's rating cluster
-  // ("4.6 (214)"). Flows straight through from the wire (`review_count`,
-  // matches this file's usual snake_case top-level-field convention, same
-  // as `distance_km`/`image_refs`) with no reshape needed.
+  // T6: live Google `userRatingCount`. No display slot in design-spec.md
+  // today (its rating cluster is star + number, no count) — kept wired
+  // since the wire already carries it (T1's field mask pays for it) and
+  // flows straight through with no reshape needed (matches this file's
+  // usual snake_case top-level-field convention, same as
+  // `distance_km`/`image_refs`); left unrendered rather than inventing a
+  // layout the design spec doesn't call for.
   review_count?: number;
   // T6: GoogleAttributionPlate's mandatory "View on Google Maps" link
   // target (Google's attribution policy) — confirmed present on

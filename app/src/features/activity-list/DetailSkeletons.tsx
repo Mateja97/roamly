@@ -28,22 +28,33 @@ export const PLACES_LIVE_CATEGORIES: ReadonlySet<Category> = new Set([
 ]);
 
 // design-spec.md's Fact strip row: "2 or 3 ... the count that category's
-// fact-strip config can actually produce, never more than 3" — mirrors
-// activityDetailConfig.ts's factStripFields per-category chip count
-// (frontend-only knowledge; whether the live mapper currently fills a given
-// chip is a separate, backend-side concern this table doesn't try to guess).
+// fact-strip config can actually produce, never more than 3" — that's a
+// ceiling, not a floor. Rule 2 ("only skeleton what the merge can fill")
+// means this table has to be the count of chips T1's live mapper
+// (BuildLiveDetails, see its engineering-notes.md breakdown) can actually
+// populate for that category, not activityDetailConfig.ts's full
+// potential chip count:
+// - cafes: mapper emits `hours`/`opening_hours` (feeds the Hours chip via
+//   `withHours`) but not `known_for_brew`/`wifi_quality` — 1.
+// - culture/art/shopping: mapper emits `venue_type` + `hours` — 2 (their
+//   other field, `ticket_price`/`best_day`, is never emitted).
+// - nightlife/nature/sport: none of their fact-strip fields (`entry_price`/
+//   `dress_code`/`opens_time`, `time_to_spend`/`best_time`/`cost`,
+//   `effort_level`/`duration`/`gear`) are in the mapper's output at all — 0.
+// - wellness/kids/entertainment: `factStripFields` itself always returns
+//   `[]` for these regardless of merge — 0 (unchanged, was already right).
 const FACT_STRIP_CHIP_COUNT: Record<Category, number> = {
   restaurants: 0,
   bars: 0,
-  cafes: 3,
-  nightlife: 3,
-  nature: 3,
-  sport: 3,
+  cafes: 1,
+  nightlife: 0,
+  nature: 0,
+  sport: 0,
   kids: 0,
-  culture: 3,
-  art: 3,
+  culture: 2,
+  art: 2,
   wellness: 0,
-  shopping: 3,
+  shopping: 2,
   entertainment: 0,
   tours_experiences: 0,
 };
@@ -52,22 +63,24 @@ export function factStripSkeletonCount(category: Category): number {
   return FACT_STRIP_CHIP_COUNT[category] ?? 0;
 }
 
-// design-spec.md's unique-section shape table — mirrors
-// activityDetailConfig.ts's uniqueSection per-category shape 1:1 (the shape
-// is fixed per category; only whether it has data is unknown pre-fetch).
-type UniqueShape = 'nameprice' | 'pills' | 'checklist' | 'icongrid' | 'banner' | 'schedule-compact' | 'schedule-dateblock';
+// design-spec.md's unique-section shape table, narrowed by rule 2: only a
+// category whose live mapper can actually fill its unique-section field
+// gets a placeholder. Per T1's engineering-notes.md, the mapper only ever
+// emits `good_to_know` (nature) and `facilities` (kids) among the fields
+// `uniqueSection` (activityDetailConfig.ts) reads — every other category's
+// unique-section field (`on_the_bar`, `lineup`, `what_to_bring`,
+// `now_showing`, `current_exhibition`, `treatments`, `what_youll_find`,
+// `upcoming_shows`) is never in the mapper's output, and T4 already wiped
+// any stored copy, so skeletoning them would be a guaranteed
+// flash-then-collapse — the exact case rule 2 forbids. cafes' mapper output
+// (`known_for`) doesn't even correspond to a field on the app's cafes
+// `ActivityDetails` type (`on_the_bar` is name/price pairs, not an amenity
+// list), so it's excluded too, not just narrowed.
+type UniqueShape = 'checklist' | 'icongrid';
 
 const UNIQUE_SHAPE_BY_CATEGORY: Partial<Record<Category, UniqueShape>> = {
-  cafes: 'nameprice',
-  shopping: 'pills',
   nature: 'checklist',
-  sport: 'checklist',
   kids: 'icongrid',
-  culture: 'banner',
-  art: 'banner',
-  nightlife: 'schedule-compact',
-  wellness: 'schedule-compact',
-  entertainment: 'schedule-dateblock',
 };
 
 // "Rating value" row: one bar 48x20px, right-aligned in the badge row
@@ -80,9 +93,11 @@ export function RatingSkeleton() {
   );
 }
 
-// "Fact strip" row: 2 or 3 equal-flex 90px-tall blocks, --space-3 apart —
-// mirrors FactStrip.tsx's own `row`/`chip` layout. Renders nothing when this
-// category's fact strip can never produce a chip (kids/wellness/entertainment).
+// "Fact strip" row: N equal-flex 90px-tall blocks, --space-3 apart —
+// mirrors FactStrip.tsx's own `row`/`chip` layout. Renders nothing when
+// this category's fact strip can never produce a live-fillable chip
+// (nightlife/nature/sport/kids/wellness/entertainment — see
+// FACT_STRIP_CHIP_COUNT above).
 export function FactStripSkeleton({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
@@ -107,94 +122,33 @@ export function DescriptionSkeleton() {
   );
 }
 
-// "Unique section heading + body": one 40%x20px heading bar (omitted for the
-// banner shape, which draws no heading), then the shape-specific body below.
-// Renders nothing for a category with no unique-section shape at all.
+// "Unique section heading + body": one 40%x20px heading bar, then the
+// shape-specific body below. Renders nothing for a category with no
+// live-fillable unique-section shape (see UNIQUE_SHAPE_BY_CATEGORY above).
 export function UniqueSectionSkeleton({ category }: { category: Category }) {
   const shape = UNIQUE_SHAPE_BY_CATEGORY[category];
   if (!shape) return null;
   return (
     <View testID="unique-section-skeleton" style={styles.uniqueWrap}>
-      {shape !== 'banner' && <Skeleton width="40%" height={20} />}
-      <UniqueBodySkeleton shape={shape} />
-    </View>
-  );
-}
-
-function UniqueBodySkeleton({ shape }: { shape: UniqueShape }) {
-  switch (shape) {
-    case 'checklist':
-      // 3 bars, 20px tall, --space-3 apart; widths 90/100/65%.
-      return (
+      <Skeleton width="40%" height={20} />
+      {shape === 'checklist' ? (
+        // 3 bars, 20px tall, --space-3 apart; widths 90/100/65%.
         <View testID="unique-body-checklist" style={styles.checklistBody}>
           <Skeleton width="90%" height={20} />
           <Skeleton width="100%" height={20} />
           <Skeleton width="65%" height={20} />
         </View>
-      );
-    case 'nameprice':
-      // 3 rows, --space-6 pitch, container padded --space-3 top/bottom
-      // (~132px total); each row: a left 60%x20px bar, a right 48x20px bar.
-      return (
-        <View testID="unique-body-nameprice" style={styles.namePriceBody}>
-          {[0, 1, 2].map((i) => (
-            <View key={i} style={styles.namePriceRow}>
-              <Skeleton width="60%" height={20} />
-              <Skeleton width={48} height={20} />
-            </View>
-          ))}
-        </View>
-      );
-    case 'pills':
-      // 3 pill blocks in one row, 38px tall, full radius, --space-2 apart;
-      // widths 88/116/72px.
-      return (
-        <View testID="unique-body-pills" style={styles.pillsBody}>
-          <Skeleton width={88} height={38} style={styles.pillRadius} />
-          <Skeleton width={116} height={38} style={styles.pillRadius} />
-          <Skeleton width={72} height={38} style={styles.pillRadius} />
-        </View>
-      );
-    case 'icongrid':
-      // 4 cells, 2 per row, each 47% wide x 82px tall, lg radius, --space-3
-      // row/column gap.
-      return (
+      ) : (
+        // 4 cells, 2 per row, each 47% wide x 82px tall, lg radius, --space-3
+        // row/column gap.
         <View testID="unique-body-icongrid" style={styles.iconGridBody}>
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} width="47%" height={82} style={styles.iconGridRadius} />
           ))}
         </View>
-      );
-    case 'banner':
-      // One block, 100% x 100px; no heading bar above it (caller omits it).
-      return (
-        <View testID="unique-body-banner">
-          <Skeleton width="100%" height={100} />
-        </View>
-      );
-    case 'schedule-compact':
-      // Same rows as the name+price list, plus a 52x20px leading bar in
-      // each row (leading / main / trailing).
-      return (
-        <View testID="unique-body-schedule-compact" style={styles.namePriceBody}>
-          {[0, 1, 2].map((i) => (
-            <View key={i} style={styles.scheduleCompactRow}>
-              <Skeleton width={52} height={20} />
-              <Skeleton width="60%" height={20} />
-              <Skeleton width={48} height={20} />
-            </View>
-          ))}
-        </View>
-      );
-    case 'schedule-dateblock':
-      // 2 cards, 100% x 70px, --space-3 apart.
-      return (
-        <View testID="unique-body-schedule-dateblock" style={styles.dateBlockBody}>
-          <Skeleton width="100%" height={70} />
-          <Skeleton width="100%" height={70} />
-        </View>
-      );
-  }
+      )}
+    </View>
+  );
 }
 
 // "Reviews / attribution block" pending state: the Google attribution
@@ -253,27 +207,6 @@ const styles = StyleSheet.create({
   checklistBody: {
     gap: space[3],
   },
-  namePriceBody: {
-    gap: space[6],
-    paddingVertical: space[3],
-  },
-  namePriceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  scheduleCompactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-  },
-  pillsBody: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space[2],
-  },
-  pillRadius: {
-    borderRadius: radius.full,
-  },
   iconGridBody: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -281,9 +214,6 @@ const styles = StyleSheet.create({
   },
   iconGridRadius: {
     borderRadius: radius.lg,
-  },
-  dateBlockBody: {
-    gap: space[3],
   },
   // Mirrors GoogleAttributionPlate.tsx's own `card` style exactly, so the
   // real plate never re-frames itself when the swap happens.
