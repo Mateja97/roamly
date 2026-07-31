@@ -1191,8 +1191,14 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 // RefreshTripadvisorLocation's only caller (the backfill tool) exclusively
 // refreshes rows that already exist — Upsert's own
 // ON CONFLICT (source_url, category) DO UPDATE never touches the photos
-// column, so a live LocationPhotos call there would resolve a photo only
-// to have it silently discarded. Leaving photo-fetching and the final
+// column, so whenever the row's stored source_url still matches (the
+// common case), a live LocationPhotos call here would resolve a photo
+// only to have it silently discarded on the UPDATE path. (On the rarer
+// path where Tripadvisor's web_url has drifted since ingest, Upsert
+// inserts a new row instead and a photo would actually land — but that
+// row is already photoless today regardless, since GetPhotos resolves it
+// on first detail view; not a regression this method needs to solve.)
+// Leaving photo-fetching and the final
 // Upsert call in each caller's own code lets each decide the photo
 // question independently, and keeps the sweep's outer-ctx-for-Upsert
 // choice a visible, one-line decision at its own call site rather than
@@ -1200,7 +1206,7 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 func (a *Activities) resolveTripadvisorLocation(ctx context.Context, locationID string) (tripadvisor.LocationDetails, []activitiessvc.TripadvisorReview, error) {
 	details, err := a.tripadvisor.LocationDetails(ctx, locationID)
 	if err != nil {
-		return tripadvisor.LocationDetails{}, nil, fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
+		return tripadvisor.LocationDetails{}, nil, fmt.Errorf("tripadvisor location details: %w", err)
 	}
 	return details, a.tripadvisorReviews(ctx, details), nil
 }
