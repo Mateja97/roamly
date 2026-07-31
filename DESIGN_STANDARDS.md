@@ -823,6 +823,132 @@ Composes from `--attribution-plate`, `--ink`, `--border`, `--primary`, `--text`,
 `--space-4`, `--font-size-xs`/`--font-size-sm`, and the platform `<Image>`. No new
 token.
 
+### Google attribution plate (Places reviews + Maps branding)
+
+The required on-surface attribution whenever **live Google Places** content
+renders (the 10 Places-sourced categories — cafes, nightlife, nature, sport,
+kids, culture, art, wellness, shopping, entertainment; Restaurants/Bars are
+Tripadvisor's and use the Partner attribution plate above). Google's Places
+Terms mandate, wherever their data shows: **Google Maps branding** (the logo or
+the literal words "Google Maps" — **never a bare "Google"**), **per-review
+author attribution** (avatar + name + a link to the author's Google profile), a
+**visible, legible link to the venue's `googleMapsUri`**, and that none of the
+above is ever hidden, obscured, truncated, or restyled away. Sibling of the
+Partner attribution plate (Tripadvisor) and the Photo attribution recipe — this
+one carries Google's **reviews + Maps lockup + maps link**.
+
+**Not a white plate.** Unlike Tripadvisor's rating-bubble image (a fixed
+green-on-light asset that forces the white `--attribution-plate`), Google's
+content here is **text + user avatars**. So this plate renders on the app's
+own **`--surface`** (dark), native to the theme — the white-plate exception
+does **not** apply. All plate text, including the brand mark, is `--text` /
+`--text-muted` on `--surface` (both pre-computed AA below).
+
+- **Brand mark:** the literal words **"Google Maps"** (`--text`, weight 600,
+  never a bare "Google") — no icon or glyph beside it. Rendered ≥16px tall for
+  legibility (detail 18px, footer 16px). A bundled official Google Maps
+  logo/lockup asset (mirroring how `TripadvisorLogo` bundles Tripadvisor's own
+  brand-kit SVG) is the eventual upgrade **if and when one is sourced and
+  verified accurate** — until then, plain text is Google's own
+  policy-sanctioned alternative to a logo (never a hand-drawn approximation of
+  their mark: an unofficial redraw risks reading as an invented, non-Google
+  lockup, which is worse than no logo at all). Decorative in the a11y tree;
+  the section/link accessible names carry "Google Maps".
+- **Photo author credit is *not* re-implemented here** — a live Places photo's
+  per-author credit is already the **Photo attribution (Google-sourced imagery)**
+  recipe (`PhotoAttributionCaption`), rendered flush below each photo. This plate
+  covers **reviews + Maps branding + the maps link**; it delegates photo credits
+  to that existing recipe rather than duplicating them (ponytail: one Google
+  photo-credit path, not two).
+
+**Variants** (mirrors the Partner plate's `variant` prop, adapted to the two
+detail-screen render spots — the list-card `card` variant does **not** apply,
+because §14.3 forbids caching ratings/reviews, so a list card never carries live
+Places content to attribute):
+
+- **`detail`** — the full block in the detail body, a **`--surface` card**: 1px
+  `--border`, gold `--card-highlight` top edge, `--radius` (8px), `--space-4`
+  padding, `--space-3` between internal groups.
+  - *Header:* the "Google Maps" text mark (18px), left-aligned. Section
+    accessible name "Reviews from Google Maps".
+  - *Review rows* (up to whatever the merge supplies — Places returns ≤5;
+    render each, no pad-to-N), stacked, each separated from the next by a 1px
+    `--border` hairline with `--space-3` above/below (no hairline after the
+    last):
+    - *Author row:* a **32px circular avatar** (left, `AuthorAttribution.photo`),
+      then the **author name** (`--font-size-sm`, weight 600) as an **underlined
+      `--text` link** to `AuthorAttribution.uri` (underlined so the link
+      affordance never leans on gold, which fails normal-text contrast on
+      `--surface`), then the **review date** (`--font-size-xs`, `--text-muted`,
+      verbatim/relative from the API). The avatar+name together are the one
+      44×44 profile-link target. A small **14px `--primary` gold `Star`**
+      (decorative) + the review's own numeric rating (`--font-size-xs` `--text`,
+      `tabular-nums`) sit at the row's right — the star is decorative, the
+      number carries the value (Google mandates no specific review-rating
+      artwork, unlike Tripadvisor's bubble image, so the app's gold star is
+      allowed here).
+      - *Avatar loading:* a 32px `--surface-hover` circle (Skeleton-style pulse).
+      - *Avatar broken/absent:* a 32px `--surface-hover` circle with the author's
+        **first initial** centered (`--font-size-sm` `--text-muted`, uppercase) —
+        never a broken glyph, never a collapsed row. The 32px box is always
+        reserved so the name never reflows.
+    - *Review body:* `--font-size-sm` `--text` (7.1:1), line-height 1.5, up to
+      **4 lines then ellipsis** — the profile/maps link is the path to the full
+      review on Google (the compliance "never truncate" rule governs the
+      *attribution* — branding, author name, links — **not** the review body,
+      which Google permits truncating as long as meaning isn't altered).
+  - *Maps link (footer of the block):* separated by a 1px `--border` hairline
+    with `--space-3` above, an underlined **`--text` "View on Google Maps"**
+    link + a trailing 16px `--text` `ExternalLink` icon (decorative), opening
+    `googleMapsUri`. 44×44 target, ≥`--space-2` from the last review.
+- **`footer`** — the compact single-line attribution at the detail screen's
+  footer-CTA spot (on `--bg`): the "Google Maps" text mark (16px) + an
+  underlined **`--text` "View on Google Maps"** link (8.5:1 on `--bg`) opening
+  `googleMapsUri`, `--space-2` gap, 44×44 target. No reviews, no card surface.
+
+**States:**
+- *Default:* renders synchronously from already-merged live data (no internal
+  skeleton — the block-level skeleton while the live fetch is pending is the
+  detail screen's job, per the progressive-merge recipe). Present-vs-absent of
+  the whole plate is decided at merge time, not toggled post-paint → no layout
+  jump.
+- *Empty / no live data:* renders **nothing** (returns null) when there are no
+  reviews **and** no `googleMapsUri` — a silent-degrade detail page shows no
+  broken/empty plate. When *some* data is present, each sub-element renders
+  independently (reviews without a maps link, or the maps link without reviews);
+  the brand mark always renders whenever the plate renders at all.
+- *Link press:* brief `opacity` dip (≤150ms, `prefers-reduced-motion` →
+  instant); opening the external URL hands off to the OS (that handoff is the
+  feedback). A failed `openURL` on a dead link is silently swallowed — matching
+  `PhotoAttributionCaption`'s existing waiver (only a genuinely dead link, not a
+  general no-op).
+- *Focus (keyboard/AT):* 2px `--primary` outline on each link (3.1:1 on
+  `--surface` / 3.65:1 on `--bg` — UI, clears 3:1). Every link is
+  keyboard-operable, never tap-only. Links keep ≥`--space-2` between them.
+
+**Accessibility & compliance:** section name "Reviews from Google Maps"; each
+profile link announces "Review by {author} on Google Maps" (or "{author}'s
+Google profile"); the maps link "View on Google Maps". Brand mark and star
+icons are decorative (excluded from the a11y tree — text carries their meaning).
+Body wraps and honors dynamic text scaling (the author row wraps the name under
+the avatar at large sizes rather than clipping). The engineer carries the
+compliance rules as code comments in the same style
+`TripadvisorAttributionPlate.tsx` uses (branding always visible / never bare
+"Google" / per-review author+avatar+link never stripped / maps link present when
+a `googleMapsUri` exists / nothing hidden-obscured-restyled-away).
+
+Composes from `--surface`, `--border`, `--card-highlight`, `--text`,
+`--text-muted`, `--surface-hover`, `--primary`, `--radius`, `--font-size-xs`/
+`--font-size-sm`, `--space-2`/`--space-3`/`--space-4`, the platform `<Image>`,
+and reuses the Photo attribution recipe for photo credits. Pre-computed pairings:
+`--text` on `--surface` 7.1:1 ✓ / on `--bg` 8.5:1 ✓ (covers the "Google Maps"
+text mark, same token as the rest of the plate's text — no separate asset
+contrast to compute) · `--text-muted` on `--surface` 5.3:1 ✓ / on `--bg` 6.2:1
+✓ · `--primary` focus outline 3.1:1 on `--surface` / 3.65:1 on `--bg` (UI,
+clears 3:1). **No new token.** ponytail: no `card` variant and no white plate
+— Places live content only lands on the detail screen, so the list-card
+lockup and the white-plate surface both have no reason to exist here.
+
 ### Fullscreen photo viewer (+ hero photo-count pill)
 
 An immersive, paged gallery for an activity's photos, opened from a count pill on
