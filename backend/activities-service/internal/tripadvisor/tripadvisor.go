@@ -251,12 +251,20 @@ type LocationDetails struct {
 	Award          *Award
 	PriceLevel     string
 	Categories     []Category
-	// Description is the primary-language editorial description
-	// (descriptions[]), "" when Tripadvisor has none for this location.
+	// Description is the venue-submitted description (descriptions[]), ""
+	// when Tripadvisor has none for this location. Its `language` tag is
+	// unreliable — verified live against real venues where the tag says
+	// "en" but the text is actually Serbian or Italian — so don't build any
+	// language filtering on it; primaryValue's fall-back-to-first-entry is
+	// the actual production path (the `primary` flag itself was never
+	// observed set in any sampled response).
 	Description string
 	// Attributes is descriptive amenities/features (attributes[].name) —
-	// e.g. "Free Wi-Fi", "Outdoor Seating". Names only; type/type_id aren't
-	// consumed anywhere downstream yet.
+	// e.g. "Free Wi-Fi", "Outdoor Seating" per the Terra OpenAPI spec's
+	// Attribute schema. Unverified against a live response: not one of 83
+	// sampled venues (food, attractions, hotels) returned this key, so the
+	// shape here is spec-only — if it's ever wrong, the practical effect is
+	// an empty Attributes, same as today.
 	Attributes []string
 	// RecommendedVisitLength is Tripadvisor's coded suggested-visit-length
 	// indicator (0 = unknown/not set, 1 = under 1h, 2 = 1-2h, 3 = 2-3h,

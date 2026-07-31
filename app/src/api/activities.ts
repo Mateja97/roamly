@@ -99,9 +99,10 @@ export type TripadvisorAttribution = {
   award?: TripadvisorAward;
   price_level?: string;
   cuisine?: string;
-  // Attributes/recommended_visit_length: decoded but empirically sparse for
-  // Restaurants/Bars/Cafés under this API entitlement — no screen renders
-  // them yet, kept on the wire for when/if coverage improves.
+  // ponytail: attributes/recommended_visit_length are decoded and carried
+  // onto the wire, but no screen renders them yet — 0/83 sampled venues
+  // (Restaurants/Bars/Cafés, attractions, hotels) returned a non-empty
+  // value for either. Build the UI once a real venue actually has one.
   attributes?: string[];
   recommended_visit_length?: number;
 };

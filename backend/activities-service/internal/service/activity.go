@@ -1193,12 +1193,17 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 // Tripadvisor itself returned nothing for it, never a fabricated value.
 func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
-		RatingImageURL:         d.RatingImageURL,
-		ReviewCount:            d.ReviewCount,
-		RankingText:            rankingText(d.Rankings),
-		WebURL:                 d.WebURL,
-		Phone:                  d.Phone,
-		PriceLevel:             d.PriceLevel,
+		RatingImageURL: d.RatingImageURL,
+		ReviewCount:    d.ReviewCount,
+		RankingText:    rankingText(d.Rankings),
+		WebURL:         d.WebURL,
+		Phone:          d.Phone,
+		PriceLevel:     d.PriceLevel,
+		// ponytail: carried onto the wire, nothing renders these two yet —
+		// 0/83 sampled Restaurants/Bars/Cafés/attractions/hotels returned
+		// Attributes at all, and RecommendedVisitLength was 0 for every
+		// food venue sampled. Build the rendering once any real venue
+		// actually returns a non-empty value for either.
 		Attributes:             d.Attributes,
 		RecommendedVisitLength: d.RecommendedVisitLength,
 	}
