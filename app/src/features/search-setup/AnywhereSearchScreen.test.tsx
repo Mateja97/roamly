@@ -3,11 +3,13 @@ import { queryActivities } from '../../api/activities';
 import { suggestCities } from '../../api/cities';
 import { AnywhereSearchScreen } from './AnywhereSearchScreen';
 
-// T4: a pushed ActivityDetailScreen fires its own getActivityPhotos fetch on
-// mount — stub it to never resolve so it doesn't disturb assertions here.
+// T4/T6: a pushed ActivityDetailScreen fires its own getActivityPhotos and
+// getActivity fetches on mount — stub both to never resolve so neither
+// disturbs assertions here.
 jest.mock('../../api/activities', () => ({
   queryActivities: jest.fn(),
   getActivityPhotos: jest.fn(() => new Promise(() => {})),
+  getActivity: jest.fn(() => new Promise(() => {})),
 }));
 jest.mock('../../api/cities', () => ({ suggestCities: jest.fn() }));
 

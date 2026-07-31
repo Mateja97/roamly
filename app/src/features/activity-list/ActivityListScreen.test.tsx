@@ -1,6 +1,6 @@
 import { AccessibilityInfo, BackHandler, StyleSheet } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { getActivityPhotos, queryActivities } from '../../api/activities';
+import { getActivity, getActivityPhotos, queryActivities } from '../../api/activities';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import type { CitySuggestion } from '../../api/cities';
 import { ActivityListScreen } from './ActivityListScreen';
@@ -9,12 +9,17 @@ import { ActivityListScreen } from './ActivityListScreen';
 // on mount — stub it to never resolve so it never disturbs the list-level
 // assertions here (ActivityDetailScreen.test.tsx owns the photo-upgrade
 // behavior itself).
+// T6: the pushed ActivityDetailScreen also fires its own getActivity fetch
+// on mount — stub it to never resolve for the same reason as
+// getActivityPhotos above (owned by ActivityDetailScreen.test.tsx itself).
 jest.mock('../../api/activities', () => ({
   queryActivities: jest.fn(),
   getActivityPhotos: jest.fn(),
+  getActivity: jest.fn(() => new Promise(() => {})),
 }));
 const mockedQuery = jest.mocked(queryActivities);
 const mockedGetActivityPhotos = jest.mocked(getActivityPhotos);
+const mockedGetActivity = jest.mocked(getActivity);
 
 const COORDINATES = { latitude: 44.8125, longitude: 20.4612 };
 const LOCATION = { lat: 44.8125, lng: 20.4612 };
@@ -27,9 +32,11 @@ beforeEach(() => {
   // calls — irrelevant to what these tests verify (data fetching, filters).
   jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
   jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
-  // resetAllMocks (below) wipes getActivityPhotos' implementation too —
-  // re-arm every test, same reasoning as the AccessibilityInfo spies above.
+  // resetAllMocks (below) wipes getActivityPhotos'/getActivity's
+  // implementation too — re-arm every test, same reasoning as the
+  // AccessibilityInfo spies above.
   mockedGetActivityPhotos.mockReturnValue(new Promise(() => {}));
+  mockedGetActivity.mockReturnValue(new Promise(() => {}));
 });
 
 const activity: Activity = {

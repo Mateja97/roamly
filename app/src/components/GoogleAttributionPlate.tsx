@@ -2,41 +2,24 @@ import { Image } from 'expo-image';
 import { ExternalLink, Star } from 'lucide-react-native';
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { GoogleAuthorAttribution, GoogleReview } from '../api/activities';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 import { formatReviewDate } from '../utils/date';
 import { Skeleton } from './Skeleton';
 
-// T5 (stub — T2 hasn't landed the backend wire shape yet, per
-// design-spec.md's "coordinate via engineering-notes.md" note).
-// `authorAttribution`/`rating`/`text` mirror T1's Go `placesmap.Review`/
-// `AuthorAttribution` 1:1 (`DisplayName`→`displayName`, `PhotoURI`→`photoUri`,
-// `URI`→`uri`) — a rename, not a reshape. **`date` does NOT mirror T1
-// 1:1**: T1's `Review.Text` is a nested `localizedText` ({text: string}), so
-// T6 must unwrap `.Text` before it reaches `text` here; and T1's
-// `Review.PublishTime` is a raw RFC3339 timestamp with no
-// relative-time field, so T6 hands the raw ISO string to `date` — this
-// component (not T6) is what turns it into something readable (see
-// `formatReviewDate` below), matching `TripadvisorReviewsCarousel.tsx`'s
-// review-date treatment for the same "API gives ISO, UI shows a real date"
-// problem.
-export type GoogleAuthorAttribution = {
-  displayName: string;
-  photoUri?: string;
-  uri: string;
-};
-
-export type GoogleReview = {
-  authorAttribution: GoogleAuthorAttribution;
-  rating: number;
-  text: string;
-  // A raw ISO-8601 timestamp (T1's `PublishTime`) *or* an already-human
-  // string (e.g. a `relativePublishTimeDescription`-style "a month ago",
-  // which Google's API can also return, if T6 ever wires it through) —
-  // `formatReviewDate` below reformats the former and passes the latter
-  // through verbatim, so callers don't need to know which one they have.
-  date: string;
-};
+// T5 stubbed `GoogleAuthorAttribution`/`GoogleReview` here directly (T2
+// hadn't landed the backend wire shape yet). T6 wired real data through and
+// made `api/activities.ts` their canonical home (same file every other wire
+// type — `TripadvisorReview`, `ActivityDetails`, etc. — already lives in);
+// re-exported here so existing importers of this file are unaffected. Kept
+// camelCase (the shape this component was built and reviewed against,
+// mirroring T1's Go `placesmap.Review`/`AuthorAttribution` field-for-field)
+// rather than reshaping this already-shipped component to match
+// proxy-service's snake_case `googleReviewDTO` wire shape — `toActivity`
+// (`api/activities.ts`) is where that reshape belongs, same as
+// `toActivityPhotos` already does for photos.
+export type { GoogleAuthorAttribution, GoogleReview };
 
 type GoogleAttributionPlateProps = {
   /** `detail` = full block with review rows, `footer` = compact maps-link line. */

@@ -113,6 +113,39 @@ export type TripadvisorReview = {
   rating_image_url?: string;
 };
 
+// T6: Google Places' per-review author attribution — canonical home for
+// this wire shape (T5 stubbed an identical copy inside
+// GoogleAttributionPlate.tsx ahead of this task, since T2 hadn't landed the
+// backend wire shape yet; that file now re-exports these instead of
+// declaring its own). Kept camelCase — the shape GoogleAttributionPlate
+// was already built and reviewed against (T5, shipped) — rather than
+// reshaping that component to match the wire; `toGoogleReviews` below does
+// the snake_case-to-camelCase reshape, same as `toActivityPhotos` already
+// does for photos.
+export type GoogleAuthorAttribution = { displayName: string; photoUri?: string; uri: string };
+export type GoogleReview = {
+  authorAttribution: GoogleAuthorAttribution;
+  rating: number;
+  text: string;
+  // Raw ISO-8601 (T1's `PublishTime`) or an already-human string —
+  // GoogleAttributionPlate's `formatReviewDate()` reformats the former,
+  // passes the latter through verbatim.
+  date: string;
+};
+
+// The wire shape (proxy-service's `googleAuthorAttributionDTO`/
+// `googleReviewDTO`, confirmed against its real — built, not yet merged —
+// branch `feature/proxy-public-activity-detail-t3`): snake_case,
+// `publish_time` instead of `date`. `text` is already a flat string on the
+// wire — proxy-service unwraps T1's nested `{text}` object server-side.
+type RawGoogleAuthorAttribution = { display_name: string; photo_uri?: string; uri: string };
+type RawGoogleReview = {
+  author_attribution: RawGoogleAuthorAttribution;
+  rating: number;
+  text: string;
+  publish_time: string;
+};
+
 // T3: per-category structured detail payload (T4 consumes this for the
 // Activity Detail screen's fact strip + unique section). Discriminated by
 // `category` so a consumer narrows to the right shape via
@@ -267,13 +300,42 @@ export type Activity = {
   // place-facts address row omits itself when both are absent.
   address?: string;
   city?: string;
+  // T6: Google Places live reviews, merged in by ActivityDetailScreen's
+  // `getActivity` upgrade fetch. Cross-cutting across all 10 Places-sourced
+  // categories (like `image_refs`), so it lives here rather than nested in
+  // the per-category `details` union — mirrors T2's backend reasoning for
+  // keeping `GoogleReviews` off `Details` on the Go side. Absent from a bare
+  // list-query row; only ever set after a successful live merge. Shape is
+  // `toGoogleReviews`'s reshaped (camelCase) output, not the wire's
+  // snake_case `RawGoogleReview[]` — see that function below.
+  google_reviews?: GoogleReview[];
+  // T6: live Google `userRatingCount`. No display slot in design-spec.md
+  // today (its rating cluster is star + number, no count) — kept wired
+  // since the wire already carries it (T1's field mask pays for it) and
+  // flows straight through with no reshape needed (matches this file's
+  // usual snake_case top-level-field convention, same as
+  // `distance_km`/`image_refs`); left unrendered rather than inventing a
+  // layout the design spec doesn't call for.
+  review_count?: number;
+  // T6: GoogleAttributionPlate's mandatory "View on Google Maps" link
+  // target (Google's attribution policy) — confirmed present on
+  // proxy-service's real (built, not yet merged — branch
+  // `feature/proxy-public-activity-detail-t3`) `activityDTO.google_maps_uri`
+  // field, a flat string needing no reshape.
+  google_maps_uri?: string;
 };
 
 // The wire format today (pre-T3) is still a plain string[] of URLs; T3 will
 // move the backend to send { uri, attribution } objects. Accepting either
 // per-entry shape here means this client type change ships safely before
 // T3 lands, and needs no follow-up change once it does.
-type RawActivity = Omit<Activity, 'image_refs'> & { image_refs: (string | ActivityPhoto)[] };
+// T6: `google_reviews` is `RawGoogleReview[]` (snake_case) on the wire,
+// reshaped to `GoogleReview[]` (camelCase) by `toGoogleReviews` below —
+// every other field passes through `toActivity` unchanged.
+type RawActivity = Omit<Activity, 'image_refs' | 'google_reviews'> & {
+  image_refs: (string | ActivityPhoto)[];
+  google_reviews?: RawGoogleReview[];
+};
 
 // T6: the wire `details` payload never carries a `category` key — it's just
 // that category's own fields (confirmed against the backend's Go structs and
@@ -311,11 +373,30 @@ function toActivityPhotos(refs: (string | ActivityPhoto)[] | undefined): Activit
   });
 }
 
+// T6: reshapes the wire's snake_case Google review shape into the
+// camelCase `GoogleReview` GoogleAttributionPlate.tsx (T5) already expects
+// — same "reshape once, here" pattern as `toActivityPhotos` above.
+// `text`/`rating` need no rename, only the nested author fields and
+// `publish_time`→`date`.
+function toGoogleReviews(reviews: RawGoogleReview[] | undefined): GoogleReview[] | undefined {
+  return reviews?.map((r) => ({
+    authorAttribution: {
+      displayName: r.author_attribution.display_name,
+      photoUri: r.author_attribution.photo_uri,
+      uri: r.author_attribution.uri,
+    },
+    rating: r.rating,
+    text: r.text,
+    date: r.publish_time,
+  }));
+}
+
 function toActivity(raw: RawActivity): Activity {
   return {
     ...raw,
     details: attachCategory(raw.details, raw.category),
     image_refs: toActivityPhotos(raw.image_refs),
+    google_reviews: toGoogleReviews(raw.google_reviews),
   };
 }
 
@@ -409,6 +490,55 @@ export async function getActivityPhotos(id: string): Promise<ActivityPhotosResul
     try {
       const data = (await res.json()) as { image_refs: (string | ActivityPhoto)[] };
       return { status: 'success', image_refs: toActivityPhotos(data.image_refs) };
+    } catch {
+      return { status: 500, message: 'Something went wrong. Please try again.' };
+    }
+  }
+
+  let message = 'Something went wrong. Please try again.';
+  try {
+    const errorBody = (await res.json()) as { error?: string };
+    if (errorBody.error) message = errorBody.error;
+  } catch {
+    // ponytail: non-JSON error body falls back to the generic message above.
+  }
+
+  const status = KNOWN_ERROR_STATUSES.includes(res.status as (typeof KNOWN_ERROR_STATUSES)[number])
+    ? (res.status as (typeof KNOWN_ERROR_STATUSES)[number])
+    : 500;
+  return { status, message };
+}
+
+// T6: bounds ActivityDetailScreen's live-details upgrade fetch — same
+// "caller keeps showing what it already has either way" contract as
+// PHOTOS_FETCH_TIMEOUT_MS above, just a separate const per-endpoint per
+// product-tasks.md's T6 section.
+const ACTIVITY_FETCH_TIMEOUT_MS = 10000;
+
+export type ActivityResult =
+  | { status: 'success'; activity: Activity }
+  | { status: 400 | 403 | 404 | 409 | 500; message: string };
+
+// T6's `GET /activities/{id}` (T3, proxy-service's only public single-
+// activity route — never call activities-service directly, per
+// ARCHITECTURE.md) — the activity with any live-merged Places details
+// (rating/details/description/reviews/maps link) T2's service layer
+// resolved server-side. Same discriminated-result convention as
+// queryActivities/getActivityPhotos; the detail screen (only caller)
+// silently drops the error branch and keeps the seeded activity, per
+// design-spec.md.
+export async function getActivity(id: string): Promise<ActivityResult> {
+  let res: Response;
+  try {
+    res = await withTimeout(fetch(`${PROXY_URL}/activities/${encodeURIComponent(id)}`), ACTIVITY_FETCH_TIMEOUT_MS);
+  } catch {
+    return { status: 500, message: 'Could not reach the server. Check your connection and try again.' };
+  }
+
+  if (res.ok) {
+    try {
+      const raw = (await res.json()) as RawActivity;
+      return { status: 'success', activity: toActivity(raw) };
     } catch {
       return { status: 500, message: 'Something went wrong. Please try again.' };
     }

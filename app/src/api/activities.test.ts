@@ -1,4 +1,4 @@
-import { queryActivities } from './activities';
+import { getActivity, queryActivities } from './activities';
 import {
   badgeQualifier,
   factStripFields,
@@ -241,5 +241,59 @@ describe('queryActivities', () => {
       title: 'Modern Serbian Art',
       description: 'Through October',
     });
+  });
+});
+
+describe('getActivity', () => {
+  afterEach(() => jest.resetAllMocks());
+
+  it('reshapes the wire\'s snake_case google_reviews into GoogleReview\'s camelCase shape', async () => {
+    mockFetchOnce(200, {
+      id: '2',
+      category: 'cafes',
+      google_reviews: [
+        {
+          author_attribution: { display_name: 'Ana K.', photo_uri: 'https://places.example/a.jpg', uri: 'https://maps.example/contrib/1' },
+          rating: 5,
+          text: 'Best coffee in town.',
+          publish_time: '2026-06-01T00:00:00Z',
+        },
+      ],
+      review_count: 128,
+      google_maps_uri: 'https://maps.example/place/xyz',
+    });
+    const result = await getActivity('2');
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    expect(result.activity.google_reviews).toEqual([
+      {
+        authorAttribution: { displayName: 'Ana K.', photoUri: 'https://places.example/a.jpg', uri: 'https://maps.example/contrib/1' },
+        rating: 5,
+        text: 'Best coffee in town.',
+        date: '2026-06-01T00:00:00Z',
+      },
+    ]);
+    expect(result.activity.review_count).toBe(128);
+    expect(result.activity.google_maps_uri).toBe('https://maps.example/place/xyz');
+  });
+
+  it('leaves google_reviews undefined when the wire omits it (no live merge / no reviews)', async () => {
+    mockFetchOnce(200, { id: '2', category: 'cafes' });
+    const result = await getActivity('2');
+    expect(result.status).toBe('success');
+    if (result.status !== 'success') return;
+    expect(result.activity.google_reviews).toBeUndefined();
+  });
+
+  it('resolves a discriminated error result on a non-2xx response', async () => {
+    mockFetchOnce(404, { error: 'not found' });
+    const result = await getActivity('missing');
+    expect(result).toEqual({ status: 404, message: 'not found' });
+  });
+
+  it('resolves a 500 on a network failure', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
+    const result = await getActivity('2');
+    expect(result.status).toBe(500);
   });
 });

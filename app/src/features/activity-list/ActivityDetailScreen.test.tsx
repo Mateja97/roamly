@@ -7,18 +7,20 @@ import {
 } from '@testing-library/react-native';
 import { AccessibilityInfo, Linking, Modal, Share, StyleSheet } from 'react-native';
 import type { Activity } from '../../api/activities';
-import { getActivityPhotos } from '../../api/activities';
+import { getActivity, getActivityPhotos } from '../../api/activities';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 
-// T4: real network calls aren't available in the Jest environment (a bare
-// `fetch` throws, caught by getActivityPhotos' own try/catch) — mocking
-// keeps that failure deterministic and lets the new describe block below
-// control resolve/reject timing.
+// T4/T6: real network calls aren't available in the Jest environment (a
+// bare `fetch` throws, caught by getActivityPhotos'/getActivity's own
+// try/catch) — mocking keeps that failure deterministic and lets the
+// describe blocks below control resolve/reject timing.
 jest.mock('../../api/activities', () => ({
   ...jest.requireActual('../../api/activities'),
   getActivityPhotos: jest.fn(),
+  getActivity: jest.fn(),
 }));
 const mockedGetActivityPhotos = jest.mocked(getActivityPhotos);
+const mockedGetActivity = jest.mocked(getActivity);
 
 const activity: Activity = {
   id: '1',
@@ -39,12 +41,16 @@ describe('ActivityDetailScreen', () => {
   beforeEach(() => {
     // Default: never resolves, so every pre-existing test above (none of
     // which cares about the photo-set upgrade) sees the plain provisional
-    // state throughout.
+    // state throughout. Same for getActivity — the default `activity`
+    // fixture above is 'restaurants' (never `isPlacesLive`), so its
+    // resolution is irrelevant to every test that doesn't override it.
     mockedGetActivityPhotos.mockReturnValue(new Promise(() => {}));
+    mockedGetActivity.mockReturnValue(new Promise(() => {}));
   });
   afterEach(() => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = originalKey;
     mockedGetActivityPhotos.mockReset();
+    mockedGetActivity.mockReset();
   });
 
   it('shows the full description (no snippet truncation) and every tag, uncapped', () => {
@@ -708,6 +714,153 @@ describe('ActivityDetailScreen', () => {
         { uri: activity.image_refs[0].uri },
       ]);
       expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
+    });
+  });
+
+  describe('live-details upgrade fetch — seed → skeleton → merge (T6)', () => {
+    // Places-sourced row, post-migration: empty at seed (rating 0, blank
+    // description, `details` with only the category stamped on) — every
+    // Places-backed block should skeleton while getActivity(id) is pending.
+    const placesActivity: Activity = {
+      id: '2',
+      title: 'Kafeterija',
+      description: '',
+      category: 'cafes',
+      location: { lat: 44.8, lng: 20.46 },
+      country: 'Serbia',
+      rating: 0,
+      image_refs: [{ uri: 'https://example.com/cafe.jpg' }],
+      tags: [],
+      distance_km: 0.2,
+      details: { category: 'cafes' },
+    };
+
+    it('fetches getActivity(id) on mount', () => {
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).toHaveBeenCalledWith(placesActivity.id);
+    });
+
+    it('seeds render from the passed activity immediately, before the fetch resolves', () => {
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Kafeterija')).toBeTruthy();
+      expect(screen.getByText('0.2 km away')).toBeTruthy();
+    });
+
+    it('skeletons the rating/fact-strip/description/reviews blocks while pending (cafes)', () => {
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('rating-skeleton')).toBeTruthy();
+      expect(screen.getByTestId('fact-strip-skeleton')).toBeTruthy();
+      expect(screen.getByTestId('description-skeleton')).toBeTruthy();
+      expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
+      // cafes' unique-section field (`on_the_bar`) is never in T1's live
+      // mapper output (design-spec.md rule 2) — no guaranteed
+      // flash-then-collapse skeleton for it.
+      expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
+    });
+
+    it('skeletons the unique-section block for a category the live mapper can actually fill (nature)', () => {
+      const natureActivity: Activity = { ...placesActivity, id: '3', category: 'nature', details: { category: 'nature' } };
+      render(<ActivityDetailScreen activity={natureActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('unique-section-skeleton')).toBeTruthy();
+      // nature's fact-strip fields (time_to_spend/best_time/cost) are never
+      // in the mapper's output either — no skeleton for that block.
+      expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
+    });
+
+    it('merges the live fields onto local state on success, replacing every skeleton with real content', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesActivity,
+          rating: 4.5,
+          details: {
+            category: 'cafes',
+            known_for_brew: 'Turkish coffee',
+            hours: '8am–8pm',
+            on_the_bar: [{ name: 'Baklava', price: '€3' }],
+          },
+          description: 'Cozy corner cafe with a garden terrace.',
+          google_reviews: [
+            {
+              authorAttribution: { displayName: 'Ana K.', uri: 'https://maps.google.com/contrib/1' },
+              rating: 5,
+              text: 'Best coffee in town.',
+              date: '2026-06-01T00:00:00Z',
+            },
+          ],
+          google_maps_uri: 'https://maps.google.com/place/xyz',
+        },
+      });
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+
+      await waitFor(() => expect(screen.getByText('4.5')).toBeTruthy());
+      expect(screen.getByText('Turkish coffee')).toBeTruthy();
+      expect(screen.getByText('Cozy corner cafe with a garden terrace.')).toBeTruthy();
+      expect(screen.getByText('Baklava')).toBeTruthy();
+      expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy();
+      expect(screen.getByTestId('google-attribution-plate-footer')).toBeTruthy();
+
+      // Every placeholder is gone — one settle, not a per-block cascade.
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+    });
+
+    it('silently drops every skeletoned block on failure — no error UI, seeded page intact', async () => {
+      mockedGetActivity.mockResolvedValue({ status: 500, message: 'boom' });
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+
+      await waitFor(() => expect(mockedGetActivity).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByTestId('rating-skeleton')).toBeNull());
+
+      expect(screen.queryByText('boom')).toBeNull();
+      expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+      // The rating block genuinely collapses too — no fabricated "0.0",
+      // no leftover star, matching every other Places-backed block.
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.queryByText('0.0')).toBeNull();
+      // The seeded page itself is unaffected.
+      expect(screen.getByText('Kafeterija')).toBeTruthy();
+      expect(screen.getByTestId('activity-detail-hero-image-0')).toBeTruthy();
+    });
+
+    it('never renders the Google attribution plate or any Places skeleton for a Tripadvisor-sourced row', () => {
+      render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+    });
+
+    it('never fires getActivity for a Tripadvisor-sourced row (no wasted round trip)', () => {
+      render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).not.toHaveBeenCalled();
+    });
+
+    it('announces the loading status only for a Places-live category, not a Tripadvisor row', () => {
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      expect(announce).toHaveBeenCalledWith('Loading place details');
+      announce.mockClear();
+      render(<ActivityDetailScreen activity={activity} showDistance onBack={jest.fn()} />);
+      expect(announce).not.toHaveBeenCalled();
+    });
+
+    it('does not announce "added" when the merge collapses every block (nothing new arrived)', async () => {
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      mockedGetActivity.mockResolvedValue({ status: 'success', activity: { ...placesActivity } });
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(mockedGetActivity).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByTestId('rating-skeleton')).toBeNull());
+      expect(announce).toHaveBeenCalledWith('Loading place details');
+      expect(announce).not.toHaveBeenCalledWith('Place details added');
     });
   });
 
