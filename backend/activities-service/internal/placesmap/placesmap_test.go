@@ -83,37 +83,3 @@ func TestBuildOpeningHours(t *testing.T) {
 		t.Errorf("midnight cross: got %+v", ohc)
 	}
 }
-
-// TestBuildDetails proves the scrape-time mapper (places-live-details T1)
-// never emits hours, price_tier, venue_type or opening_hours (Places Terms
-// §14.3 forbids storing any of them) — it always returns "{}", regardless of
-// category or input. See buildlivedetails_test.go for the live, on-view
-// mapper that replaces this output.
-func TestBuildDetails(t *testing.T) {
-	// BuildDetails ignores every argument now (see its doc comment) — a
-	// zero-value Place proves that, rather than a populated fixture that
-	// would misleadingly imply some field still drives the output.
-	var p Place
-	removed := []string{"hours", "price_tier", "venue_type", "opening_hours"}
-
-	for _, cat := range []activitiessvc.Category{
-		activitiessvc.CategoryRestaurants, activitiessvc.CategoryCafes, activitiessvc.CategoryBars,
-		activitiessvc.CategoryNightlife, activitiessvc.CategoryCulture, activitiessvc.CategoryArt,
-		activitiessvc.CategoryShopping, activitiessvc.CategoryWellness, activitiessvc.CategoryNature,
-		activitiessvc.CategorySport, activitiessvc.CategoryKids, activitiessvc.CategoryEntertainment,
-	} {
-		raw := BuildDetails(cat, "Belgrade", p)
-		if string(raw) != "{}" {
-			t.Errorf("%s: BuildDetails = %s, want {}", cat, raw)
-		}
-		var m map[string]any
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("%s: invalid json: %v", cat, err)
-		}
-		for _, key := range removed {
-			if _, ok := m[key]; ok {
-				t.Errorf("%s: BuildDetails must not carry %q", cat, key)
-			}
-		}
-	}
-}

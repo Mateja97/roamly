@@ -1,17 +1,26 @@
-// Command scrapecity runs type-driven discovery against a city and reports
-// per-subtype yields. With -count-only (the default and, for now, the only
-// mode) it writes nothing and resolves no photos: it exists to prove the
-// placesmap.DiscoveryRows table before any ingest depends on it. A row
-// yielding zero venues is a mapping bug — a Table A type that does not
-// exist, or a subtype that genuinely needs the phrase fallback.
+// Command scrapecity runs type-driven discovery against a city. With
+// -count-only (the default) it writes nothing and resolves no photos: it
+// exists to prove the placesmap.DiscoveryRows table before any ingest
+// depends on it, reporting per-subtype yields. A row yielding zero venues is
+// a mapping bug — a Table A type that does not exist, or a subtype that
+// genuinely needs the phrase fallback.
+//
+// With -count-only=false it pre-warms a city: it runs every discovery row at
+// the anchor through the service's own lazy-sync code (service.PrewarmGoogle),
+// ingesting whatever passes the quality floor, so a city is no longer thin on
+// its first live search.
 //
 // Build/seed-time maintenance tool; not wired into service startup.
-// Requires GOOGLE_MAPS_API_KEY (Places API New enabled).
+// Requires GOOGLE_MAPS_API_KEY (Places API New enabled); pre-warm mode also
+// requires DATABASE_URL.
 //
 // Usage:
 //
 //	GOOGLE_MAPS_API_KEY=... go run ./cmd/scrapecity \
 //	  -city "Belgrade" -lat 44.8125 -lng 20.4612 [-radius-km 10]
+//
+//	GOOGLE_MAPS_API_KEY=... DATABASE_URL=... go run ./cmd/scrapecity \
+//	  -city "Belgrade" -lat 44.8125 -lng 20.4612 -count-only=false
 package main
 
 import (
@@ -24,6 +33,12 @@ import (
 
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
+	"activities-service/internal/repository"
+	"activities-service/internal/service"
+
+	sharedconfig "backend/shared/config"
+	shareddb "backend/shared/db"
+	"backend/shared/models/activitiessvc"
 )
 
 // The quality floor lives in placesmap (MinRating/MinReviews/PassesFloor),
@@ -72,7 +87,7 @@ func main() {
 	city := flag.String("city", "", "city name, for the report header (required)")
 	lat := flag.Float64("lat", 0, "anchor latitude (required)")
 	lng := flag.Float64("lng", 0, "anchor longitude (required)")
-	radiusKM := flag.Float64("radius-km", 10, "search radius in km, max 50")
+	radiusKM := flag.Float64("radius-km", 10, "search radius in km, max 50 (count-only mode only; pre-warm always uses the sync's own radius)")
 	countOnly := flag.Bool("count-only", true, "report yields without writing anything")
 	flag.Parse()
 
@@ -80,13 +95,14 @@ func main() {
 		slog.Error("usage: scrapecity -city <city> -lat <lat> -lng <lng> [-radius-km 10]")
 		os.Exit(1)
 	}
-	if !*countOnly {
-		slog.Error("only -count-only mode exists today; full pre-warm lands with the sync (plan Task 9)")
-		os.Exit(1)
-	}
 	if *radiusKM > 50 {
 		slog.Error("radius-km exceeds the Places API maximum of 50")
 		os.Exit(1)
+	}
+
+	if !*countOnly {
+		prewarm(context.Background(), *lat, *lng)
+		return
 	}
 
 	c, err := places.NewFromEnv()
@@ -164,4 +180,34 @@ func report(lines []yieldLine, city string, unique, duplicates int) {
 	}
 	fmt.Printf("\nrows=%d  zero-yield=%d  found=%d  kept=%d  unique=%d  cross-row duplicates=%d\n",
 		len(lines), empties, totalFound, totalKept, unique, duplicates)
+}
+
+// prewarm runs every discovery row for one anchor through the service's own
+// sync, ignoring the TTL and the per-query budget. This is the answer to
+// "a cold city is thin on the first search": run it before a city ships.
+//
+// It deliberately calls the same service code the lazy sync uses rather than
+// reimplementing discovery — two implementations of one job is how the batch
+// pipeline and the sync would drift apart again.
+func prewarm(ctx context.Context, lat, lng float64) {
+	dsn, err := sharedconfig.Require("DATABASE_URL")
+	if err != nil {
+		slog.Error("config", "error", err)
+		os.Exit(1)
+	}
+	pool, err := shareddb.Connect(ctx, dsn)
+	if err != nil {
+		slog.Error("connecting to database", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	pc, err := places.NewFromEnv()
+	if err != nil {
+		slog.Error("places client setup failed", "error", err)
+		os.Exit(1)
+	}
+	svc := service.New(repository.New(pool)).WithPlaces(pc)
+	svc.PrewarmGoogle(ctx, activitiessvc.Point{Lat: lat, Lng: lng})
+	slog.Info("prewarm complete", "lat", lat, "lng", lng)
 }

@@ -163,6 +163,31 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 	}()
 }
 
+// PrewarmGoogle runs every discovery row at anchor synchronously, ignoring
+// both the freshness TTL and maxGoogleRowsPerQuery. Seed/build-time only
+// (cmd/scrapecity) — the request path uses syncGoogleIfNeeded, which is
+// budgeted and detached.
+//
+// It resolves anchor's city once, the same way syncGoogleIfNeeded resolves
+// it once per sync cell, then runs every row through syncGoogleRow — the
+// same function the lazy sync uses — rather than reimplementing discovery.
+func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Point) {
+	if a.places == nil {
+		slog.Error("prewarm needs a Places client")
+		return
+	}
+	var cell cellLocation
+	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
+	if err != nil {
+		slog.Warn("google reverse geocode failed; falling back to per-venue city", "error", err)
+	} else {
+		cell = cellLocation{City: city, Country: country}
+	}
+	for _, row := range placesmap.DiscoveryRows {
+		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell)
+	}
+}
+
 // syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
 // then an Upsert per surviving place.
 //
