@@ -114,22 +114,22 @@ export type TripadvisorReview = {
 };
 
 // T6: Google Places' per-review author attribution — canonical home for
-// this wire shape (T5 stubbed an identical copy inside
-// GoogleAttributionPlate.tsx ahead of this task, since T2 hadn't landed the
-// backend wire shape yet; that file now re-exports these instead of
-// declaring its own). Field names mirror the Places API's own camelCase
-// 1:1 (not this file's usual snake_case DTO convention) — same as T1's Go
-// `placesmap.Review`/`AuthorAttribution`, which pass Google's own field
-// names straight through rather than reformatting them.
-export type GoogleAuthorAttribution = { displayName: string; photoUri?: string; uri: string };
+// this wire shape. T5 stubbed a camelCase version of this inside
+// GoogleAttributionPlate.tsx (T2 hadn't landed the backend wire shape
+// yet); confirmed against proxy-service's actual (built, not yet merged —
+// branch `feature/proxy-public-activity-detail-t3`) `googleAuthorAttributionDTO`/
+// `googleReviewDTO`, this file's usual snake_case DTO convention, not
+// Google's own camelCase — proxy-service's DTO already renames/flattens
+// them server-side (`author_attribution.display_name`/`photo_uri`, and
+// `text` is already unwrapped from T1's nested `{text}` object).
+export type GoogleAuthorAttribution = { display_name: string; photo_uri?: string; uri: string };
 export type GoogleReview = {
-  authorAttribution: GoogleAuthorAttribution;
+  author_attribution: GoogleAuthorAttribution;
   rating: number;
   text: string;
-  // Raw ISO-8601 (T1's `PublishTime`) or an already-human string —
-  // GoogleAttributionPlate's `formatReviewDate()` reformats the former,
-  // passes the latter through verbatim.
-  date: string;
+  // Places' raw timestamp string (T1's `PublishTime`), not pre-formatted —
+  // GoogleAttributionPlate's `formatReviewDate()` formats it for display.
+  publish_time: string;
 };
 
 // T3: per-category structured detail payload (T4 consumes this for the
@@ -286,14 +286,25 @@ export type Activity = {
   // place-facts address row omits itself when both are absent.
   address?: string;
   city?: string;
-  // T6: Google Places live reviews + maps link, merged in by
-  // ActivityDetailScreen's `getActivity` upgrade fetch. Cross-cutting
-  // across all 10 Places-sourced categories (like `image_refs`), so it
-  // lives here rather than nested in the per-category `details` union —
-  // mirrors T2's backend reasoning for keeping `GoogleReviews` off
-  // `Details` on the Go side. Absent from a bare list-query row; only ever
-  // set after a successful live merge.
+  // T6: Google Places live reviews, merged in by ActivityDetailScreen's
+  // `getActivity` upgrade fetch. Cross-cutting across all 10 Places-sourced
+  // categories (like `image_refs`), so it lives here rather than nested in
+  // the per-category `details` union — mirrors T2's backend reasoning for
+  // keeping `GoogleReviews` off `Details` on the Go side. Confirmed against
+  // proxy-service's real (built, unmerged) `activityDTO.google_reviews`/
+  // `review_count` fields. Absent from a bare list-query row; only ever set
+  // after a successful live merge.
   google_reviews?: GoogleReview[];
+  review_count?: number;
+  // T5/T6: GoogleAttributionPlate's mandatory "View on Google Maps" link
+  // target (Google's attribution policy). Genuinely unreachable today: T1
+  // captures it (`placesmap.PlaceDetail.GoogleMapsURI`), but T2's merged
+  // `activitiessvc.Activity` domain type has no field for it and T3's DTO
+  // (confirmed against its real, built-but-unmerged branch) has no
+  // `google_maps_uri` key either — this prop is wired end-to-end here and
+  // in GoogleAttributionPlate ready for whichever backend task closes that
+  // gap, but will stay `undefined` (footer/maps-link never render) until
+  // one does. See engineering-notes.md.
   google_maps_uri?: string;
 };
 
