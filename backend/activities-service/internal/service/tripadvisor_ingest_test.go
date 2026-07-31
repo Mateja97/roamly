@@ -177,6 +177,9 @@ func TestActivities_RefreshTripadvisorLocation_Success(t *testing.T) {
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"7678207": {LocationID: "7678207", Name: "Mosaic Restaurant", WebURL: "https://ta/7678207", Description: "Here, at the heart of the city, food is prepared heartily."},
 		},
+		// Set to prove it's never even read (see below) — a real caller
+		// would leave this unset since RefreshTripadvisorLocation never
+		// calls LocationPhotos at all.
 		photosOut: []activitiessvc.Photo{{URL: "https://ta/photo.jpg"}},
 	}
 	svc := New(repo).WithTripadvisor(ta)
@@ -195,6 +198,9 @@ func TestActivities_RefreshTripadvisorLocation_Success(t *testing.T) {
 	}
 	if repo.gotUpsert.ExternalID != "7678207" {
 		t.Errorf("ExternalID = %q, want %q", repo.gotUpsert.ExternalID, "7678207")
+	}
+	if ta.photosCalls != 0 {
+		t.Errorf("photosCalls = %d, want 0 — refreshing an already-stored row must never fetch a photo Upsert would just discard", ta.photosCalls)
 	}
 }
 
@@ -226,9 +232,15 @@ func TestActivities_RefreshTripadvisorLocation_NoClientConfiguredErrors(t *testi
 	}
 }
 
-// TestActivities_RefreshTripadvisorLocation_PhotoFailureNeverBlocksUpsert
-// mirrors syncTripadvisorAnchor's own never-block-on-photos contract.
-func TestActivities_RefreshTripadvisorLocation_PhotoFailureNeverBlocksUpsert(t *testing.T) {
+// TestActivities_RefreshTripadvisorLocation_NeverFetchesAPhoto proves
+// RefreshTripadvisorLocation skips LocationPhotos entirely — unlike
+// syncTripadvisorAnchor's discovery sweep (which needs one on first
+// insert), every row this method touches is already stored, and Upsert's
+// ON CONFLICT ... DO UPDATE never writes the photos column, so a live
+// photo call here would be resolved and then silently discarded. Even a
+// LocationPhotos failure (which the sweep tolerates, logged) must have no
+// bearing here since the call never happens.
+func TestActivities_RefreshTripadvisorLocation_NeverFetchesAPhoto(t *testing.T) {
 	repo := &fakeRepo{}
 	ta := &fakeTripadvisor{
 		detailsOut: map[string]tripadvisor.LocationDetails{"1": {LocationID: "1", Name: "Bare Bones", WebURL: "https://ta/1"}},
@@ -237,9 +249,12 @@ func TestActivities_RefreshTripadvisorLocation_PhotoFailureNeverBlocksUpsert(t *
 	svc := New(repo).WithTripadvisor(ta)
 
 	if err := svc.RefreshTripadvisorLocation(context.Background(), activitiessvc.CategoryRestaurants, "1"); err != nil {
-		t.Fatalf("RefreshTripadvisorLocation: %v, want nil — a photo failure must not block the upsert", err)
+		t.Fatalf("RefreshTripadvisorLocation: %v, want nil", err)
 	}
 	if repo.upsertCalls != 1 {
 		t.Errorf("Upsert calls = %d, want 1", repo.upsertCalls)
+	}
+	if ta.photosCalls != 0 {
+		t.Errorf("photosCalls = %d, want 0", ta.photosCalls)
 	}
 }

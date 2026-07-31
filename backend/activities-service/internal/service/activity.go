@@ -1060,13 +1060,11 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 		go func() {
 			defer wg.Done()
 			for c := range work {
-				details, err := a.tripadvisor.LocationDetails(syncCtx, c.summary.LocationID)
+				details, reviews, err := a.resolveTripadvisorLocation(syncCtx, c.summary.LocationID)
 				if err != nil {
-					slog.Warn("tripadvisor location details failed", "location_id", c.summary.LocationID, "error", err)
+					slog.Warn("tripadvisor location resolve failed", "location_id", c.summary.LocationID, "error", err)
 					continue
 				}
-
-				reviews := a.tripadvisorReviews(syncCtx, details)
 
 				// One provisional photo at ingest time, the rest resolved later on
 				// first view via GetPhotos — same pattern as cmd/scrapecity's Google
@@ -1184,8 +1182,31 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 	return out
 }
 
+// resolveTripadvisorLocation fetches locationID's current details and
+// eligible featured reviews — the fetch-only step shared by
+// syncTripadvisorAnchor's discovery sweep and RefreshTripadvisorLocation's
+// direct-by-ID backfill path (see cmd/backfilltripadvisor). Deliberately
+// stops short of also fetching a photo or upserting: a sweep's brand-new
+// discovery needs a provisional photo on first insert, but
+// RefreshTripadvisorLocation's only caller (the backfill tool) exclusively
+// refreshes rows that already exist — Upsert's own
+// ON CONFLICT (source_url, category) DO UPDATE never touches the photos
+// column, so a live LocationPhotos call there would resolve a photo only
+// to have it silently discarded. Leaving photo-fetching and the final
+// Upsert call in each caller's own code lets each decide the photo
+// question independently, and keeps the sweep's outer-ctx-for-Upsert
+// choice a visible, one-line decision at its own call site rather than
+// buried in a shared helper's signature.
+func (a *Activities) resolveTripadvisorLocation(ctx context.Context, locationID string) (tripadvisor.LocationDetails, []activitiessvc.TripadvisorReview, error) {
+	details, err := a.tripadvisor.LocationDetails(ctx, locationID)
+	if err != nil {
+		return tripadvisor.LocationDetails{}, nil, fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
+	}
+	return details, a.tripadvisorReviews(ctx, details), nil
+}
+
 // RefreshTripadvisorLocation re-fetches locationID's current Tripadvisor
-// details/reviews/photo and re-upserts it under category — the direct,
+// details/reviews and re-upserts it under category — the direct,
 // discovery-free counterpart to syncTripadvisorAnchor's NearbySearch-bounded
 // sweep. syncTripadvisorAnchor only ever re-touches whichever locations a
 // fresh NearbySearch snapshot happens to resurface (capped at
@@ -1193,31 +1214,20 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 // location (see cmd/backfilltripadvisor) needs to hit each one directly by
 // ID instead, bypassing that discovery step and its cap entirely.
 //
-// Deliberately NOT reused by syncTripadvisorAnchor's sweep, despite the
-// near-identical body: that loop's Upsert call intentionally runs on the
-// caller's outer ctx rather than the sweep's own syncCtx, so a
-// deadline-truncated sweep's already-fetched results still get written
-// (see TestActivities_Query_TripadvisorSync_DeadlineTruncatedSweepLeavesAreaUnmarked).
-// A shared single-context helper would collapse that distinction. This
-// method's one ctx param is the right shape for its one caller (a backfill
-// script has no analogous sweep-deadline-vs-write split to preserve), so
-// the ~10 lines of overlap stay duplicated rather than forcing an
-// unnatural two-context signature onto the simpler caller.
+// No photo fetch — see resolveTripadvisorLocation's doc for why a live
+// LocationPhotos call here would be pure waste. This method's one ctx
+// param (rather than syncTripadvisorAnchor's fetch-ctx/write-ctx split) is
+// the right shape for its one caller: a backfill script has no analogous
+// sweep-deadline-vs-write distinction to preserve.
 func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category activitiessvc.Category, locationID string) error {
 	if a.tripadvisor == nil {
 		return fmt.Errorf("tripadvisor client not configured")
 	}
-	details, err := a.tripadvisor.LocationDetails(ctx, locationID)
+	details, reviews, err := a.resolveTripadvisorLocation(ctx, locationID)
 	if err != nil {
-		return fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
+		return err
 	}
-	reviews := a.tripadvisorReviews(ctx, details)
-	// Same never-block-on-photos contract as syncTripadvisorAnchor.
-	photos, err := a.tripadvisor.LocationPhotos(ctx, details.LocationID, 1)
-	if err != nil {
-		photos = nil
-	}
-	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, photos)); err != nil {
+	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, nil)); err != nil {
 		return fmt.Errorf("upserting tripadvisor activity %s: %w", locationID, err)
 	}
 	return nil

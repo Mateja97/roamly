@@ -14,8 +14,8 @@
 // on however many natural query-triggered sweeps it takes to resurface
 // each one.
 //
-// Live-writing, per GO_STANDARDS.md's "seed/build time, not live" rule this
-// is still a build/maintenance-time tool: it's never wired into
+// Live-writing, but still a build/maintenance-time tool in the same sense
+// as cmd/importcity and cmd/scrapecity: it's never wired into
 // activities-service's own startup path, run by hand only.
 //
 // Usage: DATABASE_URL=... TRIPADVISOR_API_KEY=... go run ./cmd/backfilltripadvisor [-city Belgrade] [-dry-run]
@@ -45,7 +45,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
 
-	city := flag.String("city", "", "limit to this city (matches the stored `city` column exactly); empty = every city")
+	city := flag.String("city", "", "limit to this exact `city` column value (case-sensitive, exact match only — e.g. real Tripadvisor rows for one metro area can be split across \"Belgrade\", \"Stari Grad\", \"Novi Belgrade\", etc., so this flag alone won't necessarily cover \"the whole city\"); empty = every city")
 	dryRun := flag.Bool("dry-run", false, "list what would be refreshed without calling Tripadvisor or writing")
 	flag.Parse()
 
@@ -94,6 +94,9 @@ func main() {
 		refreshed++
 	}
 	logger.Info("backfill complete", "total", len(rows), "refreshed", refreshed, "failed", failed)
+	if failed > 0 {
+		os.Exit(1)
+	}
 }
 
 // activityLister is the one repository capability this tool's enumeration
