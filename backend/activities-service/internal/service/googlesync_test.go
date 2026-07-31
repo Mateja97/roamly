@@ -245,6 +245,59 @@ func TestActivities_Query_GoogleSync_AllBelowFloorStillMarksSynced(t *testing.T)
 	}
 }
 
+func TestActivities_Query_GoogleSync_CityResolvedOncePerCell(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{
+		nearbyOut: []placesmap.Place{
+			{ID: "a", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/a"},
+			{ID: "b", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/b"},
+		},
+		geocodeCity: "Belgrade", geocodeCountry: "Serbia",
+	}
+	svc := New(repo).WithPlaces(gp)
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	if len(repo.gotUpserts) == 0 {
+		t.Fatal("no upserts")
+	}
+	for _, u := range repo.gotUpserts {
+		if u.City != "Belgrade" || u.Country != "Serbia" {
+			t.Errorf("upsert city/country = %q/%q, want Belgrade/Serbia for every venue in the cell", u.City, u.Country)
+		}
+	}
+	// One call for the whole sweep — not one per venue, and not one per row.
+	if gp.geocodeCalls != 1 {
+		t.Errorf("ReverseGeocodeCity calls = %d, want exactly 1 per cell", gp.geocodeCalls)
+	}
+}
+
+func TestActivities_Query_GoogleSync_GeocodeFailureFallsBackPerVenue(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	p := placesmap.Place{ID: "a", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/a"}
+	p.AddressComponents = []placesmap.AddressComponent{
+		{LongText: "Beograd", Types: []string{"locality"}},
+		{LongText: "Serbia", Types: []string{"country"}},
+	}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{p}, geocodeErr: errors.New("geocode 503")}
+	svc := New(repo).WithPlaces(gp)
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	if len(repo.gotUpserts) == 0 {
+		t.Fatal("no upserts — a geocode failure must degrade, not drop the sweep")
+	}
+	if repo.gotUpserts[0].City != "Beograd" {
+		t.Errorf("city = %q, want the per-venue fallback Beograd", repo.gotUpserts[0].City)
+	}
+}
+
 func TestActivities_Query_GoogleSync_NoClientNoWork(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	svc := New(repo) // no WithPlaces
@@ -316,7 +369,7 @@ func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
 	}
-	svc.syncGoogleRow(context.Background(), job)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
 
 	if len(repo.gotUpserts) == 0 {
 		t.Fatal("no upserts")
@@ -341,7 +394,7 @@ func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
 	}
-	svc.syncGoogleRow(context.Background(), job)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a venue with no photo is still worth ingesting", len(repo.gotUpserts))

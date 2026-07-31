@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -472,5 +473,56 @@ func TestClient_SearchNearby(t *testing.T) {
 	types, ok := gotBody["includedTypes"].([]any)
 	if !ok || len(types) != 1 || types[0] != "beach" {
 		t.Errorf("includedTypes = %+v, want [beach]", gotBody["includedTypes"])
+	}
+}
+
+func TestClient_ReverseGeocodeCity(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := io.WriteString(w, `{"status":"OK","results":[{"address_components":[
+			{"long_name":"Belgrade","types":["locality","political"]},
+			{"long_name":"Serbia","types":["country","political"]}]}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("test-key", srv.URL)
+	city, country, err := c.ReverseGeocodeCity(context.Background(), 44.8125, 20.4612)
+	if err != nil {
+		t.Fatalf("ReverseGeocodeCity() error: %v", err)
+	}
+	if city != "Belgrade" || country != "Serbia" {
+		t.Errorf("city/country = %q/%q, want Belgrade/Serbia", city, country)
+	}
+	// language=en is the whole point: Places' own locality component returns
+	// "Beograd" regardless of languageCode (verified live), which is what
+	// fragmented the catalog into eight spellings of one city.
+	if !strings.Contains(gotQuery, "language=en") {
+		t.Errorf("query = %q, want language=en", gotQuery)
+	}
+	if !strings.Contains(gotQuery, "result_type=locality") {
+		t.Errorf("query = %q, want result_type=locality", gotQuery)
+	}
+}
+
+func TestClient_ReverseGeocodeCity_ZeroResults(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := io.WriteString(w, `{"status":"ZERO_RESULTS","results":[]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("test-key", srv.URL)
+	city, country, err := c.ReverseGeocodeCity(context.Background(), 0, 0)
+	if err != nil {
+		t.Fatalf("ReverseGeocodeCity() error: %v — mid-ocean is not an error, it is an empty answer", err)
+	}
+	if city != "" || country != "" {
+		t.Errorf("city/country = %q/%q, want empty for ZERO_RESULTS", city, country)
 	}
 }

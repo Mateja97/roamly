@@ -77,6 +77,11 @@ type placesClient interface {
 	// subtype has no Table A type. Without it those subtypes would never
 	// populate from the lazy sync at all.
 	SearchTextInArea(ctx context.Context, query string, lat, lng, radiusKM float64, fieldMask string) ([]placesmap.Place, error)
+	// ReverseGeocodeCity resolves a sync cell's anchor to a stable English
+	// city/country once per cell — see syncGoogleIfNeeded and
+	// places.Client.ReverseGeocodeCity for why this replaced per-venue
+	// derivation from addressComponents.
+	ReverseGeocodeCity(ctx context.Context, lat, lng float64) (city, country string, err error)
 }
 
 // tripadvisorClient is the subset of internal/tripadvisor.Client the

@@ -133,6 +133,11 @@ type fakeGooglePlaces struct {
 	photosOut         []activitiessvc.Photo
 	photosErr         error
 	resolvePhotoCalls int
+
+	geocodeCity    string
+	geocodeCountry string
+	geocodeErr     error
+	geocodeCalls   int
 }
 
 func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
@@ -162,6 +167,13 @@ func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, _, _, _
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.nearbyOut, f.nearbyErr
+}
+
+func (f *fakeGooglePlaces) ReverseGeocodeCity(_ context.Context, _, _ float64) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.geocodeCalls++
+	return f.geocodeCity, f.geocodeCountry, f.geocodeErr
 }
 
 func TestActivities_Query_Validation(t *testing.T) {

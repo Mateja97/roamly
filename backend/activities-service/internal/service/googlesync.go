@@ -35,6 +35,19 @@ type googleSyncJob struct {
 	row    placesmap.DiscoveryRow
 }
 
+// cellLocation is a sync cell's resolved place name, applied to every venue
+// the sweep ingests there. Resolved once per cell (see
+// places.Client.ReverseGeocodeCity): per-venue derivation from each place's
+// own addressComponents fragmented one city into eight strings in a live
+// Belgrade sweep (Beograd 225, Belgrade 80, Београд 4, …), because
+// `locality` carries the local name and sometimes a sub-municipality. A
+// zero-value cellLocation means resolution failed or came back empty —
+// toIngest falls back to placesmap.CityCountry per venue in that case.
+type cellLocation struct {
+	City    string
+	Country string
+}
+
 // googleDueRows picks which discovery rows to sync for req, in priority
 // order, capped at maxGoogleRowsPerQuery.
 //
@@ -126,8 +139,26 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 			}
 			return ok && time.Since(syncedAt) < googleSyncTTL
 		})
+
+		// Resolve each distinct anchor's city once, before running its jobs —
+		// not once per venue and not once per row. A geocode failure degrades
+		// to a zero-value cellLocation rather than dropping the sweep;
+		// toIngest falls back to per-venue extraction for that cell.
+		cells := make(map[string]cellLocation)
 		for _, job := range jobs {
-			a.syncGoogleRow(syncCtx, job)
+			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
+			if _, ok := cells[key]; ok {
+				continue
+			}
+			city, country, err := a.places.ReverseGeocodeCity(syncCtx, job.anchor.Lat, job.anchor.Lng)
+			if err != nil {
+				slog.Warn("google reverse geocode failed; falling back to per-venue city", "cell", key, "error", err)
+			}
+			cells[key] = cellLocation{City: city, Country: country}
+		}
+
+		for _, job := range jobs {
+			a.syncGoogleRow(syncCtx, job, cells[syncCellKey(job.anchor.Lat, job.anchor.Lng)])
 		}
 	}()
 }
@@ -149,7 +180,7 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 // re-searches on every future query forever — trading the stale-data bug for
 // an unbounded quota-spend one. A single Upsert failure is logged and
 // skipped without abandoning the rest of the row.
-func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
+func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation) {
 	var found []placesmap.Place
 	var err error
 	if len(job.row.Types) > 0 {
@@ -187,7 +218,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 			slog.Warn("google provisional photo failed", "place_id", p.ID, "error", err)
 			photos = nil
 		}
-		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, photos)); err != nil {
+		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, photos, cell)); err != nil {
 			slog.Warn("google sync upsert failed", "place_id", p.ID, "error", err)
 			continue
 		}
@@ -199,30 +230,40 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 		return
 	}
 
-	cell := syncCellKey(job.anchor.Lat, job.anchor.Lng)
-	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cell, string(job.row.Category), job.row.Subtype); err != nil {
-		slog.Warn("google mark-synced failed", "cell", cell, "category", job.row.Category, "subtype", job.row.Subtype, "error", err)
+	cellKey := syncCellKey(job.anchor.Lat, job.anchor.Lng)
+	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cellKey, string(job.row.Category), job.row.Subtype); err != nil {
+		slog.Warn("google mark-synced failed", "cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype, "error", err)
 		return
 	}
 	slog.Info("google discovery row synced",
-		"cell", cell, "category", job.row.Category, "subtype", job.row.Subtype,
+		"cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype,
 		"found", len(found), "kept", kept)
 }
 
 // toIngest maps one discovered place onto the ingest shape. Category always
 // comes from the discovery row. Subcategory is arbitrated (see subtypeFor).
-// City/Country come from the place's own address components
-// (placesmap.CityCountry) — both are storable under Places Terms §14.3
-// (only hours/price/venue-type are not) and City in particular is load-
-// bearing: BuildLiveDetails' opening-hours timezone lookup keys off it, and
-// Upsert's ON CONFLICT does "city = EXCLUDED.city", so leaving it blank here
-// would blank an existing legacy row's city on rediscovery.
+// City/Country prefer cell — resolved once per sync cell via
+// ReverseGeocodeCity, consistent across every venue the sweep ingests there —
+// and fall back per field to the place's own address components
+// (placesmap.CityCountry) when the cell resolution came back empty (a
+// geocode failure or ZERO_RESULTS). Both are storable under Places Terms
+// §14.3 (only hours/price/venue-type are not) and City in particular is
+// load-bearing: BuildLiveDetails' opening-hours timezone lookup keys off it,
+// and Upsert's ON CONFLICT does "city = EXCLUDED.city", so leaving it blank
+// here would blank an existing legacy row's city on rediscovery.
 //
 // Details is deliberately empty — Places Terms §14.3 permits caching only
 // place_id and lat/lng, so hours, price and venue type are fetched live on
 // detail view instead (see placesmap.BuildLiveDetails).
-func toIngest(row placesmap.DiscoveryRow, p placesmap.Place, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
-	city, country := placesmap.CityCountry(p.AddressComponents)
+func toIngest(row placesmap.DiscoveryRow, p placesmap.Place, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
+	fallbackCity, fallbackCountry := placesmap.CityCountry(p.AddressComponents)
+	city, country := cell.City, cell.Country
+	if city == "" {
+		city = fallbackCity
+	}
+	if country == "" {
+		country = fallbackCountry
+	}
 	return activitiessvc.IngestActivity{
 		Title:       p.DisplayName.Text,
 		Category:    row.Category,

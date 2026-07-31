@@ -59,6 +59,10 @@ func (f *fakePlaces) SearchTextInArea(_ context.Context, _ string, _, _, _ float
 	return nil, nil
 }
 
+func (f *fakePlaces) ReverseGeocodeCity(_ context.Context, _, _ float64) (string, string, error) {
+	return "", "", nil
+}
+
 func TestActivities_GetPhotos(t *testing.T) {
 	provisional := []activitiessvc.Photo{{URL: "https://example.com/provisional.jpg"}}
 	resolvedSet := []activitiessvc.Photo{
