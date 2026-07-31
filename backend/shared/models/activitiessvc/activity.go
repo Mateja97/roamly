@@ -175,6 +175,24 @@ type Activity struct {
 	// Subcategory (T1) is an optional, category-validated subtype slug (see
 	// Subcategories/ValidSubcategory); "" = not set.
 	Subcategory string
+	// GoogleReviews (T2, places-live-details) is a Places-sourced row's live
+	// Google reviews, merged onto Activity by
+	// service.Activities.GetByIDWithLiveDetails on detail-page open — never
+	// persisted (Places Terms §14.3 forbids caching review content), so no
+	// DB column backs this field; every call that reaches the live path
+	// recomputes it fresh. Reviews are the same shape across all 10
+	// Places-sourced categories (unlike Details, which is category-specific),
+	// so this is a top-level field alongside Photos/Tags rather than a key
+	// inside Details.
+	GoogleReviews []GoogleReview
+	// ReviewCount (T2, places-live-details) is a Places-sourced row's live
+	// Google userRatingCount, merged alongside Rating by
+	// service.Activities.GetByIDWithLiveDetails (guarded on the live rating
+	// being > 0 — see that method's doc). Zero for every row that never
+	// reaches the live path (Tripadvisor-sourced rows carry their own review
+	// count inside TripadvisorAttribution.ReviewCount instead); never
+	// persisted, no DB column.
+	ReviewCount int
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar
@@ -280,6 +298,27 @@ type TripadvisorAttribution struct {
 	Award          *TripadvisorAward      `json:"award,omitempty"`
 	PriceLevel     string                 `json:"price_level,omitempty"`
 	Cuisine        string                 `json:"cuisine,omitempty"`
+}
+
+// GoogleAuthorAttribution is the Places API's mandatory per-review
+// attribution — avatar, display name, profile link — required wherever a
+// GoogleReview renders (T2, places-live-details).
+type GoogleAuthorAttribution struct {
+	DisplayName string `json:"display_name"`
+	PhotoURI    string `json:"photo_uri,omitempty"`
+	URI         string `json:"uri"`
+}
+
+// GoogleReview is one live Google Place Details review (T2,
+// places-live-details), merged onto Activity.GoogleReviews on detail-page
+// open for a Places-sourced row; never persisted. PublishTime is Places'
+// raw timestamp string, not a pre-formatted relative label — whichever wire
+// layer exposes this later decides whether/where to format it.
+type GoogleReview struct {
+	AuthorAttribution GoogleAuthorAttribution `json:"author_attribution"`
+	Rating            float64                 `json:"rating"`
+	Text              string                  `json:"text"`
+	PublishTime       string                  `json:"publish_time"`
 }
 
 // TripadvisorReview is one quoted traveler review shown on a

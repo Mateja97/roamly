@@ -36,6 +36,10 @@ type fakeRepo struct {
 	gotUpdatePatch activitiessvc.UpdatePatch
 	updateOut      activitiessvc.Activity
 	updateErr      error
+	// updateCalls (T2, places-live-details) explicitly counts Update calls —
+	// the live-merge path's own acceptance criterion is "never persists",
+	// asserted directly against this rather than inferred from gotUpdateID.
+	updateCalls int
 
 	upsertMu    sync.Mutex                     // Upsert runs syncVenueConcurrency-wide during a sweep
 	gotUpsert   activitiessvc.IngestActivity   // most recent call
@@ -77,6 +81,7 @@ func (f *fakeRepo) Create(_ context.Context, in activitiessvc.NewActivity) (acti
 }
 
 func (f *fakeRepo) Update(_ context.Context, id string, patch activitiessvc.UpdatePatch) (activitiessvc.Activity, error) {
+	f.updateCalls++
 	f.gotUpdateID = id
 	f.gotUpdatePatch = patch
 	return f.updateOut, f.updateErr
