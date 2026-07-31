@@ -177,7 +177,17 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 			continue
 		}
 		passed++
-		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p)); err != nil {
+		// One provisional photo for the list screen. The full set resolves
+		// on first detail view (see GetPhotos), so this is a one-time cost
+		// per newly discovered venue rather than per query. A photo failure
+		// is not fatal: a venue with no image still beats no venue, and the
+		// client falls back to its missing-image state.
+		photos, err := a.places.ResolvePhotos(ctx, p.ID, 1)
+		if err != nil {
+			slog.Warn("google provisional photo failed", "place_id", p.ID, "error", err)
+			photos = nil
+		}
+		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, photos)); err != nil {
 			slog.Warn("google sync upsert failed", "place_id", p.ID, "error", err)
 			continue
 		}
@@ -211,7 +221,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 // Details is deliberately empty — Places Terms §14.3 permits caching only
 // place_id and lat/lng, so hours, price and venue type are fetched live on
 // detail view instead (see placesmap.BuildLiveDetails).
-func toIngest(row placesmap.DiscoveryRow, p placesmap.Place) activitiessvc.IngestActivity {
+func toIngest(row placesmap.DiscoveryRow, p placesmap.Place, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
 	city, country := placesmap.CityCountry(p.AddressComponents)
 	return activitiessvc.IngestActivity{
 		Title:       p.DisplayName.Text,
@@ -224,6 +234,7 @@ func toIngest(row placesmap.DiscoveryRow, p placesmap.Place) activitiessvc.Inges
 		Address:     p.FormattedAddress,
 		Rating:      p.Rating,
 		Status:      activitiessvc.StatusPublished,
+		Photos:      photos,
 		Source:      "google_places",
 		SourceURL:   p.GoogleMapsURI,
 		ExternalID:  p.ID,

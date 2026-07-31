@@ -295,3 +295,55 @@ func TestSubtypeFor(t *testing.T) {
 		t.Errorf("subtype = %q, want monument_landmark — a wellness subtype is not valid for a culture row", got)
 	}
 }
+
+// The two tests below call syncGoogleRow directly (sanctioned — see
+// googleDueRows/subtypeFor above) rather than going through Query. Query's
+// due-row selection always schedules up to maxGoogleRowsPerQuery (8) rows
+// per sweep whenever more than 8 of the 53 DiscoveryRows are stale, which is
+// true for every unfiltered request against a fakeRepo with an empty
+// syncedAtOut. Since fakeGooglePlaces returns the same fixture place for any
+// row, going through Query here would call ResolvePhotos/Upsert 8 times
+// instead of the 1 these tests need to isolate.
+
+func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{
+		nearbyOut: []placesmap.Place{{ID: "p1", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/p1"}},
+		photosOut: []activitiessvc.Photo{{URL: "https://photos/1.jpg", Provider: activitiessvc.ProviderGoogle}},
+	}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
+	}
+	svc.syncGoogleRow(context.Background(), job)
+
+	if len(repo.gotUpserts) == 0 {
+		t.Fatal("no upserts")
+	}
+	if len(repo.gotUpserts[0].Photos) != 1 {
+		t.Errorf("photos = %d, want exactly 1 provisional photo (the full set resolves on detail view)",
+			len(repo.gotUpserts[0].Photos))
+	}
+	if gp.resolvePhotoCalls != 1 {
+		t.Errorf("ResolvePhotos calls = %d, want 1 — one per newly discovered venue", gp.resolvePhotoCalls)
+	}
+}
+
+func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{
+		nearbyOut: []placesmap.Place{{ID: "p1", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/p1"}},
+		photosErr: errors.New("photo media 500"),
+	}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
+	}
+	svc.syncGoogleRow(context.Background(), job)
+
+	if len(repo.gotUpserts) != 1 {
+		t.Fatalf("upserts = %d, want 1 — a venue with no photo is still worth ingesting", len(repo.gotUpserts))
+	}
+}

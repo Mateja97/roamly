@@ -129,6 +129,10 @@ type fakeGooglePlaces struct {
 	nearbyErr   error
 	nearbyCalls int
 	gotNearby   []places.NearbyRequest
+
+	photosOut         []activitiessvc.Photo
+	photosErr         error
+	resolvePhotoCalls int
 }
 
 func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
@@ -140,7 +144,10 @@ func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequ
 }
 
 func (f *fakeGooglePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
-	return nil, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolvePhotoCalls++
+	return f.photosOut, f.photosErr
 }
 
 func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
