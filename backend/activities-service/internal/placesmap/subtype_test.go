@@ -11,8 +11,14 @@ import (
 // activitiessvc.ValidSubcategory for the category Subtype would be called
 // with in practice — a typo here would otherwise silently never fire (the
 // ValidSubcategory gate in Subtype would just skip it), not error loudly.
+//
+// typeToSubtype (discovery.go) replaced placeTypeToSubtype as Subtype's data
+// source; this test now validates that index instead. Reaching into an
+// unexported package var from a test is a deliberate, human-approved
+// exception to GO_STANDARDS' "test through exported APIs" rule for this
+// package — see task-1-brief.md.
 func TestSubtype_AllMappedEntriesValid(t *testing.T) {
-	for placeType, sub := range placeTypeToSubtype {
+	for placeType, sub := range typeToSubtype {
 		var owner activitiessvc.Category
 		for cat, subs := range activitiessvc.Subcategories {
 			for _, s := range subs {
