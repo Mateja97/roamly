@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -163,5 +165,96 @@ func TestTripadvisorIngestActivity_DescriptionAttributesVisitLengthCarried(t *te
 	}
 	if details.Tripadvisor.RecommendedVisitLength != d.RecommendedVisitLength {
 		t.Errorf("RecommendedVisitLength = %d, want %d", details.Tripadvisor.RecommendedVisitLength, d.RecommendedVisitLength)
+	}
+}
+
+// TestActivities_RefreshTripadvisorLocation_Success proves the
+// direct-by-ID path (no NearbySearch discovery) resolves and upserts one
+// location — the mechanism cmd/backfilltripadvisor relies on.
+func TestActivities_RefreshTripadvisorLocation_Success(t *testing.T) {
+	repo := &fakeRepo{}
+	ta := &fakeTripadvisor{
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"7678207": {LocationID: "7678207", Name: "Mosaic Restaurant", WebURL: "https://ta/7678207", Description: "Here, at the heart of the city, food is prepared heartily."},
+		},
+		// Set to prove it's never even read (see below) — a real caller
+		// would leave this unset since RefreshTripadvisorLocation never
+		// calls LocationPhotos at all.
+		photosOut: []activitiessvc.Photo{{URL: "https://ta/photo.jpg"}},
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	if err := svc.RefreshTripadvisorLocation(context.Background(), activitiessvc.CategoryRestaurants, "7678207"); err != nil {
+		t.Fatalf("RefreshTripadvisorLocation: %v", err)
+	}
+	if repo.upsertCalls != 1 {
+		t.Fatalf("Upsert calls = %d, want 1", repo.upsertCalls)
+	}
+	if repo.gotUpsert.Description != "Here, at the heart of the city, food is prepared heartily." {
+		t.Errorf("Description = %q, want the fetched description carried through", repo.gotUpsert.Description)
+	}
+	if repo.gotUpsert.Category != activitiessvc.CategoryRestaurants {
+		t.Errorf("Category = %q, want %q", repo.gotUpsert.Category, activitiessvc.CategoryRestaurants)
+	}
+	if repo.gotUpsert.ExternalID != "7678207" {
+		t.Errorf("ExternalID = %q, want %q", repo.gotUpsert.ExternalID, "7678207")
+	}
+	if ta.photosCalls != 0 {
+		t.Errorf("photosCalls = %d, want 0 — refreshing an already-stored row must never fetch a photo Upsert would just discard", ta.photosCalls)
+	}
+}
+
+// TestActivities_RefreshTripadvisorLocation_DetailsErrorNeverUpserts proves
+// a failed live fetch never reaches Upsert — no partial/stale write.
+func TestActivities_RefreshTripadvisorLocation_DetailsErrorNeverUpserts(t *testing.T) {
+	repo := &fakeRepo{}
+	ta := &fakeTripadvisor{detailsErrs: map[string]error{"1": errors.New("terra 500")}}
+	svc := New(repo).WithTripadvisor(ta)
+
+	err := svc.RefreshTripadvisorLocation(context.Background(), activitiessvc.CategoryRestaurants, "1")
+	if err == nil {
+		t.Fatal("RefreshTripadvisorLocation: want error, got nil")
+	}
+	if repo.upsertCalls != 0 {
+		t.Errorf("Upsert calls = %d, want 0 — a failed details fetch must never upsert", repo.upsertCalls)
+	}
+}
+
+// TestActivities_RefreshTripadvisorLocation_NoClientConfiguredErrors proves
+// the method fails loudly (not a silent no-op) when no Tripadvisor client
+// is attached — unlike the request-serving paths (GetPhotos, live-merge),
+// which nil-safely fall back to stored data, this is a standalone backfill
+// operation with nothing sensible to fall back to.
+func TestActivities_RefreshTripadvisorLocation_NoClientConfiguredErrors(t *testing.T) {
+	svc := New(&fakeRepo{})
+	if err := svc.RefreshTripadvisorLocation(context.Background(), activitiessvc.CategoryRestaurants, "1"); err == nil {
+		t.Fatal("RefreshTripadvisorLocation: want error with no tripadvisor client configured, got nil")
+	}
+}
+
+// TestActivities_RefreshTripadvisorLocation_NeverFetchesAPhoto proves
+// RefreshTripadvisorLocation skips LocationPhotos entirely — unlike
+// syncTripadvisorAnchor's discovery sweep (which needs one on first
+// insert), every row this method touches is already stored, and Upsert's
+// ON CONFLICT ... DO UPDATE never writes the photos column, so a live
+// photo call here would be resolved and then silently discarded. Even a
+// LocationPhotos failure (which the sweep tolerates, logged) must have no
+// bearing here since the call never happens.
+func TestActivities_RefreshTripadvisorLocation_NeverFetchesAPhoto(t *testing.T) {
+	repo := &fakeRepo{}
+	ta := &fakeTripadvisor{
+		detailsOut: map[string]tripadvisor.LocationDetails{"1": {LocationID: "1", Name: "Bare Bones", WebURL: "https://ta/1"}},
+		photosErr:  errors.New("terra photos 500"),
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	if err := svc.RefreshTripadvisorLocation(context.Background(), activitiessvc.CategoryRestaurants, "1"); err != nil {
+		t.Fatalf("RefreshTripadvisorLocation: %v, want nil", err)
+	}
+	if repo.upsertCalls != 1 {
+		t.Errorf("Upsert calls = %d, want 1", repo.upsertCalls)
+	}
+	if ta.photosCalls != 0 {
+		t.Errorf("photosCalls = %d, want 0", ta.photosCalls)
 	}
 }

@@ -1060,13 +1060,11 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 		go func() {
 			defer wg.Done()
 			for c := range work {
-				details, err := a.tripadvisor.LocationDetails(syncCtx, c.summary.LocationID)
+				details, reviews, err := a.resolveTripadvisorLocation(syncCtx, c.summary.LocationID)
 				if err != nil {
-					slog.Warn("tripadvisor location details failed", "location_id", c.summary.LocationID, "error", err)
+					slog.Warn("tripadvisor location resolve failed", "location_id", c.summary.LocationID, "error", err)
 					continue
 				}
-
-				reviews := a.tripadvisorReviews(syncCtx, details)
 
 				// One provisional photo at ingest time, the rest resolved later on
 				// first view via GetPhotos — same pattern as cmd/scrapecity's Google
@@ -1182,6 +1180,63 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 		}
 	}
 	return out
+}
+
+// resolveTripadvisorLocation fetches locationID's current details and
+// eligible featured reviews — the fetch-only step shared by
+// syncTripadvisorAnchor's discovery sweep and RefreshTripadvisorLocation's
+// direct-by-ID backfill path (see cmd/backfilltripadvisor). Deliberately
+// stops short of also fetching a photo or upserting: a sweep's brand-new
+// discovery needs a provisional photo on first insert, but
+// RefreshTripadvisorLocation's only caller (the backfill tool) exclusively
+// refreshes rows that already exist — Upsert's own
+// ON CONFLICT (source_url, category) DO UPDATE never touches the photos
+// column, so whenever the row's stored source_url still matches (the
+// common case), a live LocationPhotos call here would resolve a photo
+// only to have it silently discarded on the UPDATE path. (On the rarer
+// path where Tripadvisor's web_url has drifted since ingest, Upsert
+// inserts a new row instead and a photo would actually land — but that
+// row is already photoless today regardless, since GetPhotos resolves it
+// on first detail view; not a regression this method needs to solve.)
+// Leaving photo-fetching and the final
+// Upsert call in each caller's own code lets each decide the photo
+// question independently, and keeps the sweep's outer-ctx-for-Upsert
+// choice a visible, one-line decision at its own call site rather than
+// buried in a shared helper's signature.
+func (a *Activities) resolveTripadvisorLocation(ctx context.Context, locationID string) (tripadvisor.LocationDetails, []activitiessvc.TripadvisorReview, error) {
+	details, err := a.tripadvisor.LocationDetails(ctx, locationID)
+	if err != nil {
+		return tripadvisor.LocationDetails{}, nil, fmt.Errorf("tripadvisor location details: %w", err)
+	}
+	return details, a.tripadvisorReviews(ctx, details), nil
+}
+
+// RefreshTripadvisorLocation re-fetches locationID's current Tripadvisor
+// details/reviews and re-upserts it under category — the direct,
+// discovery-free counterpart to syncTripadvisorAnchor's NearbySearch-bounded
+// sweep. syncTripadvisorAnchor only ever re-touches whichever locations a
+// fresh NearbySearch snapshot happens to resurface (capped at
+// nearbySearchMaxPages pages); a full backfill of every already-known
+// location (see cmd/backfilltripadvisor) needs to hit each one directly by
+// ID instead, bypassing that discovery step and its cap entirely.
+//
+// No photo fetch — see resolveTripadvisorLocation's doc for why a live
+// LocationPhotos call here would be pure waste. This method's one ctx
+// param (rather than syncTripadvisorAnchor's fetch-ctx/write-ctx split) is
+// the right shape for its one caller: a backfill script has no analogous
+// sweep-deadline-vs-write distinction to preserve.
+func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category activitiessvc.Category, locationID string) error {
+	if a.tripadvisor == nil {
+		return fmt.Errorf("tripadvisor client not configured")
+	}
+	details, reviews, err := a.resolveTripadvisorLocation(ctx, locationID)
+	if err != nil {
+		return err
+	}
+	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, nil)); err != nil {
+		return fmt.Errorf("upserting tripadvisor activity %s: %w", locationID, err)
+	}
+	return nil
 }
 
 // tripadvisorIngestActivity maps a resolved Tripadvisor location into the
