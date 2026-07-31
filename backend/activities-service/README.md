@@ -35,6 +35,36 @@ automatically at startup (`backend/shared/db.Migrate`). Requires the
 `postgis` extension (image `postgis/postgis:16-3.4-alpine` in
 docker-compose, not the plain `postgres` image).
 
+The catalog fills itself — there is no batch import step. Two lazy syncs run
+off `QueryActivities`:
+
+- **Google Places** — type-driven discovery, one `searchNearby` (or, for the
+  few subtypes Table A can't express, a bounded `searchText`) per
+  (map cell, category, subtype) row in `internal/placesmap/discovery.go`.
+  Runs detached in the background; a single query schedules at most
+  `maxGoogleRowsPerQuery` (8) of the ~53 rows, so a city converges over
+  roughly seven searches rather than one expensive burst.
+- **Tripadvisor** — Restaurants, Bars and Cafés, synchronous within the
+  query.
+
+Freshness for both is tracked in `sync_regions` (`provider`, `cell_key`,
+`category`, `subtype`), TTL 14 days (`googleSyncTTL` /
+`tripadvisorSyncTTL` in `internal/service/`).
+
+To pre-warm a city before it ships, instead of waiting for the first user
+query to trickle results in over several searches:
+
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+      go run ./cmd/scrapecity -city Belgrade -lat 44.8125 -lng 20.4612 -count-only=false
+
+`-count-only` defaults to `true`: a read-only dry run that writes nothing and
+reports each discovery row's yield against the quality floor — the right
+first move after touching `discovery.go`, since a row that returns zero
+venues is a mapping bug. `-count-only=false` switches to pre-warm: it runs
+every discovery row at the anchor through the service's own lazy-sync code
+(`service.PrewarmGoogle`), ignoring the TTL and per-query budget, and
+actually ingests what passes the floor.
+
 ## Testing
 
 - `go test ./...` — unit tests only (query-builder, validation, gRPC

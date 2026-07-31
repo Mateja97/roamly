@@ -54,6 +54,39 @@ similarly-named subtypes (e.g. `bakery_dessert` under Restaurants vs
 | Entertainment (`entertainment`) | Cinema (`cinema`), Escape Room (`escape_room`), Bowling/Arcade (`bowling_arcade`), Theater/Performance (`theater`), Casino (`casino`) |
 | Tours & Experiences (`tours_experiences`) | Walking Tour (`walking_tour`), Day Trip (`day_trip`), Food & Drink Tour (`food_drink_tour`), Adventure Tour (`adventure_tour`), Cooking Class/Workshop (`cooking_class`), Bike Tour (`bike_tour`) |
 
+### How subtypes get populated
+
+Every subtype above is filled automatically by type-driven discovery:
+`backend/activities-service/internal/placesmap/discovery.go` maps each
+(category, subtype) pair to its Google Places Table A types (or, for the
+handful Table A can't express, a bounded text-search phrase), and the lazy
+sync issues one search per pair, so a venue's subtype is known from the query
+that found it rather than guessed from the response. The same table read
+backward classifies venues discovered by other providers.
+
+A venue's subtype is decided by its own Google `primaryType` first — so the
+same venue gets the same subtype no matter which discovery row's search
+happened to surface it — falling back to the row's subtype only when
+`primaryType` maps to nothing. A venue can legitimately match rows in two
+different *categories* (e.g. a park that is also a sports court); that
+produces two stored rows on purpose, collapsed back into one in query results
+whenever no category filter is active.
+
+City and country are resolved once per synced map cell by reverse geocoding
+the search anchor, not once per venue — deriving it per-venue from each
+place's own address fragmented a single live city into eight different
+strings.
+
+**Adding a subtype to the table above requires a matching discovery row.** A
+test enforces this (`TestDiscoveryRows_CoversEveryGoogleSubtype`) — a subtype
+with no source turns the build red rather than quietly returning nothing.
+
+Sourcing by category: Google Places covers Cafés, Nightlife, Nature, Sport,
+Kids, Culture, Art, Wellness, Shopping and Entertainment. Restaurants and Bars
+come from Tripadvisor (Cafés is also synced from Tripadvisor, but its
+coverage there is too thin to stand alone). Tours & Experiences has no
+provider yet and is deliberately empty.
+
 ## Search scope rules (Nearby vs Anywhere)
 
 | Rule | Nearby | Anywhere |
