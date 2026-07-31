@@ -114,21 +114,35 @@ export type TripadvisorReview = {
 };
 
 // T6: Google Places' per-review author attribution — canonical home for
-// this wire shape. T5 stubbed a camelCase version of this inside
-// GoogleAttributionPlate.tsx (T2 hadn't landed the backend wire shape
-// yet); confirmed against proxy-service's actual (built, not yet merged —
-// branch `feature/proxy-public-activity-detail-t3`) `googleAuthorAttributionDTO`/
-// `googleReviewDTO`, this file's usual snake_case DTO convention, not
-// Google's own camelCase — proxy-service's DTO already renames/flattens
-// them server-side (`author_attribution.display_name`/`photo_uri`, and
-// `text` is already unwrapped from T1's nested `{text}` object).
-export type GoogleAuthorAttribution = { display_name: string; photo_uri?: string; uri: string };
+// this wire shape (T5 stubbed an identical copy inside
+// GoogleAttributionPlate.tsx ahead of this task, since T2 hadn't landed the
+// backend wire shape yet; that file now re-exports these instead of
+// declaring its own). Kept camelCase — the shape GoogleAttributionPlate
+// was already built and reviewed against (T5, shipped) — rather than
+// reshaping that component to match the wire; `toGoogleReviews` below does
+// the snake_case-to-camelCase reshape, same as `toActivityPhotos` already
+// does for photos.
+export type GoogleAuthorAttribution = { displayName: string; photoUri?: string; uri: string };
 export type GoogleReview = {
-  author_attribution: GoogleAuthorAttribution;
+  authorAttribution: GoogleAuthorAttribution;
   rating: number;
   text: string;
-  // Places' raw timestamp string (T1's `PublishTime`), not pre-formatted —
-  // GoogleAttributionPlate's `formatReviewDate()` formats it for display.
+  // Raw ISO-8601 (T1's `PublishTime`) or an already-human string —
+  // GoogleAttributionPlate's `formatReviewDate()` reformats the former,
+  // passes the latter through verbatim.
+  date: string;
+};
+
+// The wire shape (proxy-service's `googleAuthorAttributionDTO`/
+// `googleReviewDTO`, confirmed against its real — built, not yet merged —
+// branch `feature/proxy-public-activity-detail-t3`): snake_case,
+// `publish_time` instead of `date`. `text` is already a flat string on the
+// wire — proxy-service unwraps T1's nested `{text}` object server-side.
+type RawGoogleAuthorAttribution = { display_name: string; photo_uri?: string; uri: string };
+type RawGoogleReview = {
+  author_attribution: RawGoogleAuthorAttribution;
+  rating: number;
+  text: string;
   publish_time: string;
 };
 
@@ -290,21 +304,21 @@ export type Activity = {
   // `getActivity` upgrade fetch. Cross-cutting across all 10 Places-sourced
   // categories (like `image_refs`), so it lives here rather than nested in
   // the per-category `details` union — mirrors T2's backend reasoning for
-  // keeping `GoogleReviews` off `Details` on the Go side. Confirmed against
-  // proxy-service's real (built, unmerged) `activityDTO.google_reviews`/
-  // `review_count` fields. Absent from a bare list-query row; only ever set
-  // after a successful live merge.
+  // keeping `GoogleReviews` off `Details` on the Go side. Absent from a bare
+  // list-query row; only ever set after a successful live merge. Shape is
+  // `toGoogleReviews`'s reshaped (camelCase) output, not the wire's
+  // snake_case `RawGoogleReview[]` — see that function below.
   google_reviews?: GoogleReview[];
+  // T6: live Google `userRatingCount` — design-spec.md's rating cluster
+  // ("4.6 (214)"). Flows straight through from the wire (`review_count`,
+  // matches this file's usual snake_case top-level-field convention, same
+  // as `distance_km`/`image_refs`) with no reshape needed.
   review_count?: number;
-  // T5/T6: GoogleAttributionPlate's mandatory "View on Google Maps" link
-  // target (Google's attribution policy). Genuinely unreachable today: T1
-  // captures it (`placesmap.PlaceDetail.GoogleMapsURI`), but T2's merged
-  // `activitiessvc.Activity` domain type has no field for it and T3's DTO
-  // (confirmed against its real, built-but-unmerged branch) has no
-  // `google_maps_uri` key either — this prop is wired end-to-end here and
-  // in GoogleAttributionPlate ready for whichever backend task closes that
-  // gap, but will stay `undefined` (footer/maps-link never render) until
-  // one does. See engineering-notes.md.
+  // T6: GoogleAttributionPlate's mandatory "View on Google Maps" link
+  // target (Google's attribution policy) — confirmed present on
+  // proxy-service's real (built, not yet merged — branch
+  // `feature/proxy-public-activity-detail-t3`) `activityDTO.google_maps_uri`
+  // field, a flat string needing no reshape.
   google_maps_uri?: string;
 };
 
@@ -312,7 +326,13 @@ export type Activity = {
 // move the backend to send { uri, attribution } objects. Accepting either
 // per-entry shape here means this client type change ships safely before
 // T3 lands, and needs no follow-up change once it does.
-type RawActivity = Omit<Activity, 'image_refs'> & { image_refs: (string | ActivityPhoto)[] };
+// T6: `google_reviews` is `RawGoogleReview[]` (snake_case) on the wire,
+// reshaped to `GoogleReview[]` (camelCase) by `toGoogleReviews` below —
+// every other field passes through `toActivity` unchanged.
+type RawActivity = Omit<Activity, 'image_refs' | 'google_reviews'> & {
+  image_refs: (string | ActivityPhoto)[];
+  google_reviews?: RawGoogleReview[];
+};
 
 // T6: the wire `details` payload never carries a `category` key — it's just
 // that category's own fields (confirmed against the backend's Go structs and
@@ -350,11 +370,30 @@ function toActivityPhotos(refs: (string | ActivityPhoto)[] | undefined): Activit
   });
 }
 
+// T6: reshapes the wire's snake_case Google review shape into the
+// camelCase `GoogleReview` GoogleAttributionPlate.tsx (T5) already expects
+// — same "reshape once, here" pattern as `toActivityPhotos` above.
+// `text`/`rating` need no rename, only the nested author fields and
+// `publish_time`→`date`.
+function toGoogleReviews(reviews: RawGoogleReview[] | undefined): GoogleReview[] | undefined {
+  return reviews?.map((r) => ({
+    authorAttribution: {
+      displayName: r.author_attribution.display_name,
+      photoUri: r.author_attribution.photo_uri,
+      uri: r.author_attribution.uri,
+    },
+    rating: r.rating,
+    text: r.text,
+    date: r.publish_time,
+  }));
+}
+
 function toActivity(raw: RawActivity): Activity {
   return {
     ...raw,
     details: attachCategory(raw.details, raw.category),
     image_refs: toActivityPhotos(raw.image_refs),
+    google_reviews: toGoogleReviews(raw.google_reviews),
   };
 }
 

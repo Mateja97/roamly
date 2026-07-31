@@ -9,17 +9,16 @@ import { formatReviewDate } from '../utils/date';
 import { Skeleton } from './Skeleton';
 
 // T5 stubbed `GoogleAuthorAttribution`/`GoogleReview` here directly (T2
-// hadn't landed the backend wire shape yet, using camelCase field names
-// guessed off T1's Go structs). T6 wired real data through, made
-// `api/activities.ts` their canonical home (same file every other wire
-// type — `TripadvisorReview`, `ActivityDetails`, etc. — already lives in),
-// and corrected the field names against proxy-service's actual (built,
-// not yet merged) `googleAuthorAttributionDTO`/`googleReviewDTO`: snake_case
-// (`author_attribution`, not `authorAttribution`), and `publish_time` (a raw
-// Places timestamp string) rather than the stub's `date`. `text` is already
-// a flat string on the wire — proxy-service unwraps T1's nested `{text}`
-// object server-side, this component never needs to. Re-exported here so
-// existing importers of this file are unaffected by the relocation.
+// hadn't landed the backend wire shape yet). T6 wired real data through and
+// made `api/activities.ts` their canonical home (same file every other wire
+// type — `TripadvisorReview`, `ActivityDetails`, etc. — already lives in);
+// re-exported here so existing importers of this file are unaffected. Kept
+// camelCase (the shape this component was built and reviewed against,
+// mirroring T1's Go `placesmap.Review`/`AuthorAttribution` field-for-field)
+// rather than reshaping this already-shipped component to match
+// proxy-service's snake_case `googleReviewDTO` wire shape — `toActivity`
+// (`api/activities.ts`) is where that reshape belongs, same as
+// `toActivityPhotos` already does for photos.
 export type { GoogleAuthorAttribution, GoogleReview };
 
 type GoogleAttributionPlateProps = {
@@ -63,7 +62,7 @@ export function GoogleAttributionPlate({ variant, reviews = [], googleMapsUri }:
         <GoogleMapsMark height={18} />
       </View>
       {reviews.map((review, index) => (
-        <ReviewRow key={review.author_attribution.uri + index} review={review} hairline={index > 0} />
+        <ReviewRow key={review.authorAttribution.uri + index} review={review} hairline={index > 0} />
       ))}
       {googleMapsUri && (
         // No repeated brand mark here — the header above already carries it;
@@ -101,7 +100,7 @@ function GoogleMapsMark({ height }: { height: number }) {
 
 function ReviewRow({ review, hairline }: { review: GoogleReview; hairline: boolean }) {
   const focus = useFocusable();
-  const { author_attribution: authorAttribution, rating, text, publish_time: publishTime } = review;
+  const { authorAttribution, rating, text, date } = review;
 
   return (
     <View testID="google-review-row" style={[styles.reviewRow, hairline && styles.hairlineAbove]}>
@@ -116,21 +115,20 @@ function ReviewRow({ review, hairline }: { review: GoogleReview; hairline: boole
           onFocus={focus.onFocus}
           onBlur={focus.onBlur}
           accessibilityRole="link"
-          accessibilityLabel={`Review by ${authorAttribution.display_name} on Google Maps`}
+          accessibilityLabel={`Review by ${authorAttribution.displayName} on Google Maps`}
           style={({ pressed }) => [
             styles.profileLink,
             pressed && styles.pressedDip,
             focus.focused && styles.profileLinkFocused,
           ]}
         >
-          <ReviewAvatar photoUri={authorAttribution.photo_uri} displayName={authorAttribution.display_name} />
+          <ReviewAvatar photoUri={authorAttribution.photoUri} displayName={authorAttribution.displayName} />
           <View style={styles.nameColumn}>
-            <Text style={styles.authorName}>{authorAttribution.display_name}</Text>
+            <Text style={styles.authorName}>{authorAttribution.displayName}</Text>
             {/* formatReviewDate reformats an ISO timestamp (T1's raw
-                PublishTime, passed through as `publish_time`); an already-human
-                string that doesn't parse as a Date (e.g. a relative "a month
-                ago") passes through as-is. */}
-            <Text style={styles.reviewDate}>{formatReviewDate(publishTime) ?? publishTime}</Text>
+                PublishTime); an already-human string that doesn't parse as
+                a Date (e.g. a relative "a month ago") passes through as-is. */}
+            <Text style={styles.reviewDate}>{formatReviewDate(date) ?? date}</Text>
           </View>
         </Pressable>
         <View style={styles.ratingGroup}>

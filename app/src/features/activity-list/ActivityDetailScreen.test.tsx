@@ -770,10 +770,10 @@ describe('ActivityDetailScreen', () => {
           description: 'Cozy corner cafe with a garden terrace.',
           google_reviews: [
             {
-              author_attribution: { display_name: 'Ana K.', uri: 'https://maps.google.com/contrib/1' },
+              authorAttribution: { displayName: 'Ana K.', uri: 'https://maps.google.com/contrib/1' },
               rating: 5,
               text: 'Best coffee in town.',
-              publish_time: '2026-06-01T00:00:00Z',
+              date: '2026-06-01T00:00:00Z',
             },
           ],
           google_maps_uri: 'https://maps.google.com/place/xyz',
