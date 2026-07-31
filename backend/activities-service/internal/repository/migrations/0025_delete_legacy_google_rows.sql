@@ -17,9 +17,18 @@ DELETE FROM activities
 WHERE source = 'google_places'
   AND (external_id IS NULL OR external_id = '');
 
--- The source-less rows are the tours_experiences demo seeds from 0008/0010.
--- Tours has no provider, so nothing will replace them — but a fake venue is
--- worse than an empty category, and the empty state is the honest signal that
--- the category is unsourced.
+-- The two source-less tours_experiences rows are seeded placeholders (not
+-- from 0008/0010, which seed cafes/bars/nightlife/kids/entertainment/
+-- shopping — these are tours-specific). Tours has no data provider, so
+-- nothing will replace them — but a fake venue is worse than an empty
+-- category, and the empty state is the honest signal that the category is
+-- unsourced.
+--
+-- Scoped to category = 'tours_experiences' deliberately: source IS NULL/''
+-- is NOT unique to these placeholders — repository/activity.go's admin
+-- Create() never sets source, so every admin-drafted row across every
+-- category also has a NULL source (see 0023's same distinction). Without
+-- the category guard this DELETE would silently destroy real admin content.
 DELETE FROM activities
-WHERE source IS NULL OR source = '';
+WHERE (source IS NULL OR source = '')
+  AND category = 'tours_experiences';
