@@ -394,6 +394,15 @@ type CafeDetails struct {
 	// ...) on detail-page open — replaces the unsourceable on-the-bar list
 	// for Places-sourced rows; never persisted.
 	KnownFor []string `json:"known_for,omitempty"`
+	// Tripadvisor is the required attribution block for a
+	// Tripadvisor-sourced row; nil for Google/admin-sourced rows. Cafés is
+	// the one dual-sourced category (#104, "restore Google as a Café source
+	// alongside Tripadvisor") — a café can genuinely carry this field, same
+	// as Restaurants/Bars.
+	Tripadvisor *TripadvisorAttribution `json:"tripadvisor,omitempty"`
+	// Reviews (T3) is up to 3 quoted 5-bubble reviews, shown when the place
+	// is rated >= 4.0; empty/omitted otherwise.
+	Reviews []TripadvisorReview `json:"reviews,omitempty"`
 }
 
 // LineupItem is one entry in Nightlife's tonight lineup.

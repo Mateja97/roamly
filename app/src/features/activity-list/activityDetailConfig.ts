@@ -192,15 +192,19 @@ export function artAttribution(activity: Activity): ArtAttribution | undefined {
 
 // design-spec.md T8 (Tripadvisor initiative): a row is Tripadvisor-treated
 // iff `details.tripadvisor` is present — the sole detection signal (no
-// `Source` field on the wire, not needed for UI detection). Only
-// restaurants/bars carry this field. Shared by ActivityCard and the detail
-// screen so the union-narrowing switch lives in exactly one place.
+// `Source` field on the wire, not needed for UI detection). Restaurants/bars
+// are Tripadvisor-exclusive; cafés joined as a third, dual-sourced category
+// per fix(activities-service) #104 ("restore Google as a Café source
+// alongside Tripadvisor" — a café can genuinely come from either provider).
+// Shared by ActivityCard and the detail screen so the union-narrowing switch
+// lives in exactly one place.
 export function tripadvisorAttribution(activity: Activity): TripadvisorAttribution | undefined {
   const d = activity.details;
   if (!d) return undefined;
   switch (d.category) {
     case 'restaurants':
     case 'bars':
+    case 'cafes':
       return d.tripadvisor;
     default:
       return undefined;
@@ -217,6 +221,7 @@ export function tripadvisorReviews(activity: Activity): TripadvisorReview[] {
   switch (d.category) {
     case 'restaurants':
     case 'bars':
+    case 'cafes':
       return d.reviews ?? [];
     default:
       return [];

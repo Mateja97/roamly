@@ -844,6 +844,34 @@ describe('ActivityDetailScreen', () => {
       expect(mockedGetActivity).not.toHaveBeenCalled();
     });
 
+    // Cafés is the one dual-sourced category (#103/#104): a café can be
+    // Places-live (placesActivity above) OR Tripadvisor-sourced. This is the
+    // case those two "restaurants row" tests above don't actually cover
+    // (restaurants is never in PLACES_LIVE_CATEGORIES to begin with) — a
+    // café that's genuinely both must still resolve to Tripadvisor-only.
+    it('treats a Tripadvisor-sourced café as Tripadvisor-only, never Places-live', () => {
+      const tripadvisorCafe: Activity = {
+        ...placesActivity,
+        details: {
+          category: 'cafes',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 104,
+            web_url: 'https://tripadvisor.example/place',
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={tripadvisorCafe} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+      expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.getByText('104 reviews on Tripadvisor')).toBeTruthy();
+    });
+
     it('announces the loading status only for a Places-live category, not a Tripadvisor row', () => {
       const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
       render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);

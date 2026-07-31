@@ -341,7 +341,7 @@ export function ActivityListScreen({
             ListFooterComponent={
               queryState.activities.some((activity) => Boolean(tripadvisorAttribution(activity))) ? (
                 <Text style={styles.tripadvisorFooter}>
-                  Restaurant and bar ratings, reviews and photos provided by Tripadvisor.
+                  Restaurant, bar and café ratings, reviews and photos provided by Tripadvisor.
                 </Text>
               ) : null
             }
