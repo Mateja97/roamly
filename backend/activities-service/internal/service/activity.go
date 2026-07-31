@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
 	"activities-service/internal/tripadvisormap"
@@ -69,6 +70,13 @@ type placesClient interface {
 	// PlaceDetails fetches live Place Details for one placeID — the data
 	// source for GetByID's live merge (see withLiveDetails).
 	PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
+	// SearchNearby is the type-driven discovery call: one per (cell,
+	// category, subtype) row, circle-restricted, max 20 results.
+	SearchNearby(ctx context.Context, req places.NearbyRequest, fieldMask string) ([]placesmap.Place, error)
+	// SearchTextInArea is the phrase fallback for discovery rows whose
+	// subtype has no Table A type. Without it those subtypes would never
+	// populate from the lazy sync at all.
+	SearchTextInArea(ctx context.Context, query string, lat, lng, radiusKM float64, fieldMask string) ([]placesmap.Place, error)
 }
 
 // tripadvisorClient is the subset of internal/tripadvisor.Client the
@@ -115,6 +123,10 @@ type Activities struct {
 	// a direct tripadvisorSyncTimeout read only so tests can shrink it to
 	// exercise deadline truncation without waiting out the real value.
 	syncTimeout time.Duration
+	// googleSync tracks in-flight background discovery passes. Production
+	// never waits on it — it exists so tests can join the goroutine instead
+	// of sleeping (see waitForGoogleSync).
+	googleSync sync.WaitGroup
 }
 
 func New(repo repository) *Activities {
@@ -131,6 +143,10 @@ func (a *Activities) WithPlaces(p placesClient) *Activities {
 	return a
 }
 
+// waitForGoogleSync blocks until every in-flight background discovery pass
+// finishes. Test-only: production deliberately never waits.
+func (a *Activities) waitForGoogleSync() { a.googleSync.Wait() }
+
 // WithTripadvisor attaches a live Tripadvisor client for the
 // Restaurants/Bars lazy sync and GetPhotos' Tripadvisor-sourced resolve
 // path. Optional, same nil-safe contract as WithPlaces.
@@ -146,6 +162,7 @@ func (a *Activities) Query(ctx context.Context, req Request) ([]activitiessvc.Ac
 	}
 
 	a.syncTripadvisorIfNeeded(ctx, req)
+	a.syncGoogleIfNeeded(ctx, req)
 
 	activities, err := a.repo.Query(ctx, filter)
 	if err != nil {

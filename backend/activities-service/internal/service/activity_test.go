@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"activities-service/internal/places"
+	"activities-service/internal/placesmap"
+
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
 )
@@ -117,6 +120,41 @@ func syncKey(provider, cellKey, category, subtype string) string {
 		return cellKey + "|" + category
 	}
 	return provider + "|" + cellKey + "|" + category + "|" + subtype
+}
+
+// fakeGooglePlaces stands in for internal/places.Client in sync tests.
+type fakeGooglePlaces struct {
+	mu          sync.Mutex
+	nearbyOut   []placesmap.Place
+	nearbyErr   error
+	nearbyCalls int
+	gotNearby   []places.NearbyRequest
+}
+
+func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nearbyCalls++
+	f.gotNearby = append(f.gotNearby, req)
+	return f.nearbyOut, f.nearbyErr
+}
+
+func (f *fakeGooglePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
+	return nil, nil
+}
+
+func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
+	return placesmap.PlaceDetail{}, nil
+}
+
+// SearchTextInArea shares nearbyOut/nearbyErr with SearchNearby: these tests
+// exercise the sweep's behavior around a Places call succeeding or failing,
+// not which of the two discovery paths a given row happens to take (see
+// placesmap.DiscoveryRow's Types/TextQuery split).
+func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, _, _, _ float64, _ string) ([]placesmap.Place, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nearbyOut, f.nearbyErr
 }
 
 func TestActivities_Query_Validation(t *testing.T) {

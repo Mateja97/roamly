@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
 
@@ -44,6 +45,18 @@ func (f *fakePlaces) PlaceDetails(ctx context.Context, _ string) (placesmap.Plac
 		return placesmap.PlaceDetail{}, ctx.Err()
 	}
 	return f.detailOut, f.detailErr
+}
+
+// SearchNearby/SearchTextInArea: fakePlaces here stands in for GetPhotos'/
+// GetByID's live-merge placesClient, never for the background discovery
+// sweep (see fakeGooglePlaces in activity_test.go) — these two exist only to
+// satisfy the interface.
+func (f *fakePlaces) SearchNearby(_ context.Context, _ places.NearbyRequest, _ string) ([]placesmap.Place, error) {
+	return nil, nil
+}
+
+func (f *fakePlaces) SearchTextInArea(_ context.Context, _ string, _, _, _ float64, _ string) ([]placesmap.Place, error) {
+	return nil, nil
 }
 
 func TestActivities_GetPhotos(t *testing.T) {
