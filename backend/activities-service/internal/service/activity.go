@@ -1287,8 +1287,12 @@ func rankingText(rankings []tripadvisor.Ranking) string {
 }
 
 func tripadvisorDetailsPayload(category activitiessvc.Category, attribution *activitiessvc.TripadvisorAttribution, reviews []activitiessvc.TripadvisorReview) any {
-	if category == activitiessvc.CategoryBars {
+	switch category {
+	case activitiessvc.CategoryBars:
 		return activitiessvc.BarDetails{Tripadvisor: attribution, Reviews: reviews}
+	case activitiessvc.CategoryCafes:
+		return activitiessvc.CafeDetails{Tripadvisor: attribution, Reviews: reviews}
+	default:
+		return activitiessvc.RestaurantDetails{Tripadvisor: attribution, Reviews: reviews}
 	}
-	return activitiessvc.RestaurantDetails{Tripadvisor: attribution, Reviews: reviews}
 }

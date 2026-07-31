@@ -436,7 +436,7 @@ describe('ActivityListScreen', () => {
 
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
       expect(
-        screen.getByText('Restaurant and bar ratings, reviews and photos provided by Tripadvisor.'),
+        screen.getByText('Restaurant, bar and café ratings, reviews and photos provided by Tripadvisor.'),
       ).toBeTruthy();
     });
 
@@ -446,7 +446,7 @@ describe('ActivityListScreen', () => {
 
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
       expect(
-        screen.queryByText('Restaurant and bar ratings, reviews and photos provided by Tripadvisor.'),
+        screen.queryByText('Restaurant, bar and café ratings, reviews and photos provided by Tripadvisor.'),
       ).toBeNull();
     });
   });

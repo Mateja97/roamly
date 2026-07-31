@@ -167,7 +167,12 @@ export function ActivityDetailScreen({
   // guard mirrors the photos effect above; failure/timeout is silently
   // dropped (design-spec.md: no error UI for content the user never saw).
   const [activity, setActivity] = useState<Activity>(seedActivity);
-  const isPlacesLive = PLACES_LIVE_CATEGORIES.has(seedActivity.category);
+  // Cafés is the one category that can be either Tripadvisor- or
+  // Google-sourced (#103/#104) — a Tripadvisor-sourced café must stay
+  // Tripadvisor-treated only, same as a Tripadvisor restaurant/bar, so this
+  // excludes any row `tripadvisorAttribution` already claims.
+  const isPlacesLive =
+    PLACES_LIVE_CATEGORIES.has(seedActivity.category) && !tripadvisorAttribution(seedActivity);
   // A Tripadvisor/admin row is never skeletoned and the merge can't improve
   // it (T2's own gate never live-merges these), so it starts (and stays)
   // settled — the effect below skips the round trip entirely for it,
@@ -631,7 +636,7 @@ export function ActivityDetailScreen({
               </Pressable>
 
               <Text style={styles.tripadvisorDisclaimer}>
-                Ratings, reviews and photos for restaurants and bars are sourced from Tripadvisor and
+                Ratings, reviews and photos for restaurants, bars and cafés are sourced from Tripadvisor and
                 refreshed periodically. Roamly does not rate these places.
               </Text>
             </View>
