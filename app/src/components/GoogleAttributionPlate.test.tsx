@@ -35,6 +35,17 @@ describe('GoogleAttributionPlate', () => {
     expect(screen.getByText('View on Google Maps')).toBeTruthy();
   });
 
+  it('detail variant: formats a raw ISO timestamp date into a readable date, not the raw string', () => {
+    render(<GoogleAttributionPlate variant="detail" reviews={[{ ...review, date: '2026-07-15T14:32:00Z' }]} />);
+    expect(screen.getByText('15 July 2026')).toBeTruthy();
+    expect(screen.queryByText('2026-07-15T14:32:00Z')).toBeNull();
+  });
+
+  it('detail variant: an already-human date string (not parseable as a Date) renders verbatim', () => {
+    render(<GoogleAttributionPlate variant="detail" reviews={[{ ...review, date: 'a month ago' }]} />);
+    expect(screen.getByText('a month ago')).toBeTruthy();
+  });
+
   it('detail variant: the brand mark renders once (header only), not again on the in-card maps link row', () => {
     render(
       <GoogleAttributionPlate variant="detail" reviews={[review]} googleMapsUri="https://maps.example/place" />,

@@ -4,12 +4,22 @@ import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
+import { formatReviewDate } from '../utils/date';
 import { Skeleton } from './Skeleton';
 
 // T5 (stub — T2 hasn't landed the backend wire shape yet, per
-// design-spec.md's "coordinate via engineering-notes.md" note). Field names
-// mirror T1's Go `placesmap.Review`/`AuthorAttribution` 1:1 so T6's mapping
-// from the proxy JSON is a rename, not a reshape.
+// design-spec.md's "coordinate via engineering-notes.md" note).
+// `authorAttribution`/`rating`/`text` mirror T1's Go `placesmap.Review`/
+// `AuthorAttribution` 1:1 (`DisplayName`→`displayName`, `PhotoURI`→`photoUri`,
+// `URI`→`uri`) — a rename, not a reshape. **`date` does NOT mirror T1
+// 1:1**: T1's `Review.Text` is a nested `localizedText` ({text: string}), so
+// T6 must unwrap `.Text` before it reaches `text` here; and T1's
+// `Review.PublishTime` is a raw RFC3339 timestamp with no
+// relative-time field, so T6 hands the raw ISO string to `date` — this
+// component (not T6) is what turns it into something readable (see
+// `formatReviewDate` below), matching `TripadvisorReviewsCarousel.tsx`'s
+// review-date treatment for the same "API gives ISO, UI shows a real date"
+// problem.
 export type GoogleAuthorAttribution = {
   displayName: string;
   photoUri?: string;
@@ -20,8 +30,11 @@ export type GoogleReview = {
   authorAttribution: GoogleAuthorAttribution;
   rating: number;
   text: string;
-  // Verbatim/relative date string from the API (e.g. "a month ago") —
-  // rendered as-is, never reformatted.
+  // A raw ISO-8601 timestamp (T1's `PublishTime`) *or* an already-human
+  // string (e.g. a `relativePublishTimeDescription`-style "a month ago",
+  // which Google's API can also return, if T6 ever wires it through) —
+  // `formatReviewDate` below reformats the former and passes the latter
+  // through verbatim, so callers don't need to know which one they have.
   date: string;
 };
 
@@ -90,9 +103,14 @@ export function GoogleAttributionPlate({ variant, reviews = [], googleMapsUri }:
 // accurate copy of Google's actual brand mark is out of scope here; swap in
 // the real bundled asset if/when one is sourced, per DESIGN_STANDARDS.md.
 function GoogleMapsMark({ height }: { height: number }) {
+  // `height` doubles as the literal font size (not one of tokens.ts's
+  // fontSize steps — 18px/16px don't land on that scale) so the rendered
+  // size always matches exactly what DESIGN_STANDARDS.md documents per
+  // call site (detail 18px, footer 16px) — no separate mapping to drift
+  // out of sync with the doc again.
   return (
     <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-      <Text style={[styles.markText, { fontSize: height === 16 ? fontSize.sm : fontSize.md }]}>Google Maps</Text>
+      <Text style={[styles.markText, { fontSize: height }]}>Google Maps</Text>
     </View>
   );
 }
@@ -124,7 +142,10 @@ function ReviewRow({ review, hairline }: { review: GoogleReview; hairline: boole
           <ReviewAvatar photoUri={authorAttribution.photoUri} displayName={authorAttribution.displayName} />
           <View style={styles.nameColumn}>
             <Text style={styles.authorName}>{authorAttribution.displayName}</Text>
-            <Text style={styles.reviewDate}>{date}</Text>
+            {/* formatReviewDate reformats an ISO timestamp (T1's raw
+                PublishTime); an already-human string that doesn't parse as
+                a Date (e.g. a relative "a month ago") passes through as-is. */}
+            <Text style={styles.reviewDate}>{formatReviewDate(date) ?? date}</Text>
           </View>
         </Pressable>
         <View style={styles.ratingGroup}>
