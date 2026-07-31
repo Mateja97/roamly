@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -118,5 +119,49 @@ func TestTripadvisorIngestActivity_AbsentOptionalFieldsStayAbsent(t *testing.T) 
 	}
 	if ingest.Subcategory != "" {
 		t.Errorf("Subcategory = %q, want empty (no categories to map)", ingest.Subcategory)
+	}
+	if ingest.Description != "" {
+		t.Errorf("Description = %q, want empty (no description supplied)", ingest.Description)
+	}
+	if details.Tripadvisor.Attributes != nil {
+		t.Errorf("Attributes = %+v, want nil (none supplied)", details.Tripadvisor.Attributes)
+	}
+	if details.Tripadvisor.RecommendedVisitLength != 0 {
+		t.Errorf("RecommendedVisitLength = %d, want 0 (none supplied)", details.Tripadvisor.RecommendedVisitLength)
+	}
+}
+
+// TestTripadvisorIngestActivity_DescriptionAttributesVisitLengthCarried
+// proves the three newly-decoded fields actually reach the ingested
+// activity/attribution block, not just the tripadvisor.LocationDetails
+// struct they're decoded into.
+func TestTripadvisorIngestActivity_DescriptionAttributesVisitLengthCarried(t *testing.T) {
+	d := tripadvisor.LocationDetails{
+		LocationID:             "1",
+		Name:                   "Mosaic Restaurant",
+		WebURL:                 "https://ta/1",
+		Description:            "Here, at the heart of the city, food is prepared heartily.",
+		Attributes:             []string{"Free Wi-Fi", "Outdoor Seating"},
+		RecommendedVisitLength: 2,
+	}
+
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil)
+
+	if ingest.Description != d.Description {
+		t.Errorf("Description = %q, want %q", ingest.Description, d.Description)
+	}
+
+	var details activitiessvc.RestaurantDetails
+	if err := json.Unmarshal(ingest.Details, &details); err != nil {
+		t.Fatalf("unmarshaling details: %v", err)
+	}
+	if details.Tripadvisor == nil {
+		t.Fatal("Tripadvisor attribution = nil, want a populated block")
+	}
+	if !reflect.DeepEqual(details.Tripadvisor.Attributes, d.Attributes) {
+		t.Errorf("Attributes = %+v, want %+v", details.Tripadvisor.Attributes, d.Attributes)
+	}
+	if details.Tripadvisor.RecommendedVisitLength != d.RecommendedVisitLength {
+		t.Errorf("RecommendedVisitLength = %d, want %d", details.Tripadvisor.RecommendedVisitLength, d.RecommendedVisitLength)
 	}
 }

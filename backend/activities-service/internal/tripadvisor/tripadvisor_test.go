@@ -189,22 +189,24 @@ func TestLocationDetails_Decoding(t *testing.T) {
 		t.Fatalf("LocationDetails: %v", err)
 	}
 	want := tripadvisor.LocationDetails{
-		LocationID:     "13834051",
-		Name:           "Alfredo's Transfers & Tours",
-		Lat:            41.9028050,
-		Lng:            12.4964100,
-		Address:        "Rome 00195 Italy",
-		City:           "Rome",
-		Country:        "Italy",
-		Phone:          "+39 339 314 2147",
-		Rating:         5.0,
-		ReviewCount:    96,
-		RatingImageURL: "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/5.0-70260-4.png",
-		WebURL:         "https://www.tripadvisor.com/Attraction_Review-g187791-d13834051-Reviews-Alfredo_s_Transfers_&_Tours-Rome_Lazio.html?m=70260",
+		LocationID:             "13834051",
+		Name:                   "Alfredo's Transfers & Tours",
+		Lat:                    41.9028050,
+		Lng:                    12.4964100,
+		Address:                "Rome 00195 Italy",
+		City:                   "Rome",
+		Country:                "Italy",
+		Phone:                  "+39 339 314 2147",
+		Rating:                 5.0,
+		ReviewCount:            96,
+		RatingImageURL:         "https://www.tripadvisor.com/img/cdsi/img2/ratings/traveler/5.0-70260-4.png",
+		WebURL:                 "https://www.tripadvisor.com/Attraction_Review-g187791-d13834051-Reviews-Alfredo_s_Transfers_&_Tours-Rome_Lazio.html?m=70260",
+		Description:            "Alfredo's transfers & tours provides...",
+		RecommendedVisitLength: 3,
 		// Subratings zero-value: the fixture's own "subratings" is an empty
 		// array (real locations without traveler subratings yet). Rankings/
-		// Award/PriceLevel/Categories all zero-value: the fixture supplies
-		// none of them.
+		// Award/PriceLevel/Categories/Attributes all zero-value: the fixture
+		// supplies none of them.
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v, want %+v", got, want)
@@ -358,6 +360,48 @@ func TestLocationDetails_RankingsAwardsPriceLevelCategoriesAbsent(t *testing.T) 
 	}
 	if got.PriceLevel != "" || got.Rankings != nil || got.Award != nil || got.Categories != nil {
 		t.Fatalf("got %+v, want all-absent PriceLevel/Rankings/Award/Categories", got)
+	}
+}
+
+func TestLocationDetails_AttributesDecoding(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{
+			"id" : 1,
+			"names" : [ { "language" : "en", "value" : "Yugo Verse", "primary" : true } ],
+			"attributes" : [
+				{ "id" : "wifi", "name" : "Free Wi-Fi", "type" : "amenity", "type_id" : "1" },
+				{ "id" : "outdoor", "name" : "Outdoor Seating", "type" : "feature", "type_id" : "2" },
+				{ "id" : "unnamed", "name" : "", "type" : "amenity", "type_id" : "3" }
+			]
+		}`)
+	}))
+	defer srv.Close()
+
+	c := tripadvisor.NewWithBase("k", srv.URL)
+	got, err := c.LocationDetails(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("LocationDetails: %v", err)
+	}
+	// The nameless third entry is dropped, not kept as an empty string.
+	want := []string{"Free Wi-Fi", "Outdoor Seating"}
+	if !reflect.DeepEqual(got.Attributes, want) {
+		t.Errorf("Attributes = %+v, want %+v", got.Attributes, want)
+	}
+}
+
+func TestLocationDetails_AttributesAbsent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"id":1,"names":[{"language":"en","value":"Bare Place","primary":true}]}`)
+	}))
+	defer srv.Close()
+
+	c := tripadvisor.NewWithBase("k", srv.URL)
+	got, err := c.LocationDetails(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("LocationDetails: %v", err)
+	}
+	if got.Attributes != nil {
+		t.Errorf("Attributes = %+v, want nil", got.Attributes)
 	}
 }
 

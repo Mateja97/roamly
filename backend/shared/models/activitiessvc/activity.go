@@ -304,6 +304,15 @@ type TripadvisorAttribution struct {
 	Award          *TripadvisorAward      `json:"award,omitempty"`
 	PriceLevel     string                 `json:"price_level,omitempty"`
 	Cuisine        string                 `json:"cuisine,omitempty"`
+	// Attributes is Tripadvisor's descriptive amenities/features for the
+	// venue (e.g. "Free Wi-Fi", "Outdoor Seating") — empirically sparse
+	// for Restaurants/Bars/Cafés under this entitlement; no app rendering
+	// consumes this yet (decoded and stored for when/if coverage improves).
+	Attributes []string `json:"attributes,omitempty"`
+	// RecommendedVisitLength is Tripadvisor's coded suggested-visit-length
+	// (0 unknown, 1 under 1h, 2 1-2h, 3 2-3h, 4 over 3h) — same
+	// empirically-sparse caveat as Attributes.
+	RecommendedVisitLength int `json:"recommended_visit_length,omitempty"`
 }
 
 // GoogleAuthorAttribution is the Places API's mandatory per-review

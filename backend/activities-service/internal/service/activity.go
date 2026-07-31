@@ -1199,6 +1199,13 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 		WebURL:         d.WebURL,
 		Phone:          d.Phone,
 		PriceLevel:     d.PriceLevel,
+		// ponytail: carried onto the wire, nothing renders these two yet —
+		// 0/83 sampled Restaurants/Bars/Cafés/attractions/hotels returned
+		// Attributes at all, and RecommendedVisitLength was 0 for every
+		// food venue sampled. Build the rendering once any real venue
+		// actually returns a non-empty value for either.
+		Attributes:             d.Attributes,
+		RecommendedVisitLength: d.RecommendedVisitLength,
 	}
 	if d.Subratings != (tripadvisor.Subratings{}) {
 		attribution.Subratings = &activitiessvc.TripadvisorSubratings{
@@ -1217,20 +1224,21 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, reviews))
 
 	return activitiessvc.IngestActivity{
-		Title:      d.Name,
-		Category:   category,
-		Lat:        d.Lat,
-		Lng:        d.Lng,
-		Address:    d.Address,
-		City:       d.City,
-		Country:    d.Country,
-		Rating:     d.Rating,
-		Status:     activitiessvc.StatusPublished,
-		Details:    detailsJSON,
-		Photos:     photos,
-		Source:     "tripadvisor",
-		SourceURL:  d.WebURL,
-		ExternalID: d.LocationID,
+		Title:       d.Name,
+		Description: d.Description,
+		Category:    category,
+		Lat:         d.Lat,
+		Lng:         d.Lng,
+		Address:     d.Address,
+		City:        d.City,
+		Country:     d.Country,
+		Rating:      d.Rating,
+		Status:      activitiessvc.StatusPublished,
+		Details:     detailsJSON,
+		Photos:      photos,
+		Source:      "tripadvisor",
+		SourceURL:   d.WebURL,
+		ExternalID:  d.LocationID,
 		// categoryTags derives tripadvisormap's expected leaf-tag shape
 		// ("fine_dining") from categories[]'s "restaurants > fine_dining"
 		// hierarchy strings; Subtype itself never guesses beyond its curated
