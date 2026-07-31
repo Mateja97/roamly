@@ -8,6 +8,7 @@ import (
 
 	"activities-service/internal/placesmap"
 
+	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
 )
 
@@ -54,7 +55,7 @@ func TestActivities_GetByID_NeverLiveMerges(t *testing.T) {
 func TestActivities_GetByID_LiveDetails(t *testing.T) {
 	cafe := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryCafes, City: "Belgrade",
-		Source: "google_places", ExternalID: "place-1",
+		Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1",
 	}
 
 	review := placesmap.Review{
@@ -115,7 +116,7 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 			name: "zero live rating leaves stored rating and review count untouched",
 			activity: activitiessvc.Activity{
 				ID: "5", Category: activitiessvc.CategoryCafes, City: "Belgrade",
-				Source: "google_places", ExternalID: "place-5", Rating: 4.2, ReviewCount: 87,
+				Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-5", Rating: 4.2, ReviewCount: 87,
 			},
 			// Details is still replaced (the Rating guard only covers
 			// Rating/ReviewCount) — a zero-value PlaceDetail maps to "{}"
@@ -128,17 +129,17 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 		},
 		{
 			name:     "tripadvisor source never calls places",
-			activity: activitiessvc.Activity{ID: "2", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "loc-1"},
+			activity: activitiessvc.Activity{ID: "2", Category: activitiessvc.CategoryRestaurants, Status: activitiessvc.StatusPublished, Source: "tripadvisor", ExternalID: "loc-1"},
 			places:   &fakePlaces{detailOut: detail},
 		},
 		{
 			name:     "admin-created (empty source) row never calls places",
-			activity: activitiessvc.Activity{ID: "3", Category: activitiessvc.CategoryNature, Source: "", ExternalID: "place-3"},
+			activity: activitiessvc.Activity{ID: "3", Category: activitiessvc.CategoryNature, Status: activitiessvc.StatusPublished, Source: "", ExternalID: "place-3"},
 			places:   &fakePlaces{detailOut: detail},
 		},
 		{
 			name:     "no external_id never calls places",
-			activity: activitiessvc.Activity{ID: "4", Category: activitiessvc.CategoryCafes, Source: "google_places", ExternalID: ""},
+			activity: activitiessvc.Activity{ID: "4", Category: activitiessvc.CategoryCafes, Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: ""},
 			places:   &fakePlaces{detailOut: detail},
 		},
 	}
@@ -202,7 +203,7 @@ func TestActivities_GetByID_LiveDetails_ReviewMapping(t *testing.T) {
 	review.Text.Text = "Lovely spot."
 	detail := placesmap.PlaceDetail{Reviews: []placesmap.Review{review}}
 
-	activity := activitiessvc.Activity{ID: "1", Category: activitiessvc.CategoryCafes, Source: "google_places", ExternalID: "place-1"}
+	activity := activitiessvc.Activity{ID: "1", Category: activitiessvc.CategoryCafes, Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1"}
 	repo := &fakeRepo{getOut: activity}
 	svc := New(repo).WithPlaces(&fakePlaces{detailOut: detail})
 
@@ -223,5 +224,33 @@ func TestActivities_GetByID_LiveDetails_ReviewMapping(t *testing.T) {
 	}
 	if got.GoogleReviews[0] != want {
 		t.Errorf("GoogleReviews[0] = %+v, want %+v", got.GoogleReviews[0], want)
+	}
+}
+
+// TestActivities_GetByIDWithLiveDetails_UnpublishedNotFound is the T3
+// review-round-1 regression: the public detail-page path must never serve
+// a draft/pending row (QueryActivities' own published-only invariant,
+// activitiessvc.Activity's doc: "draft/pending rows exist for the admin
+// surface but never reach the app") or spend a billed Places call resolving
+// one nobody should be able to see yet.
+func TestActivities_GetByIDWithLiveDetails_UnpublishedNotFound(t *testing.T) {
+	for _, status := range []activitiessvc.Status{activitiessvc.StatusDraft, activitiessvc.StatusPending} {
+		t.Run(string(status), func(t *testing.T) {
+			stored := activitiessvc.Activity{
+				ID: "1", Category: activitiessvc.CategoryCafes, Status: status,
+				Source: "google_places", ExternalID: "place-1",
+			}
+			places := &fakePlaces{detailOut: placesmap.PlaceDetail{Rating: 4.9}}
+			repo := &fakeRepo{getOut: stored}
+			svc := New(repo).WithPlaces(places)
+
+			_, err := svc.GetByIDWithLiveDetails(context.Background(), "1")
+			if !errors.Is(err, sharederrors.ErrNotFound) {
+				t.Fatalf("GetByIDWithLiveDetails() error = %v, want ErrNotFound", err)
+			}
+			if places.detailCalls != 0 {
+				t.Errorf("places.PlaceDetails calls = %d, want 0 — an unpublished row must never reach the live call", places.detailCalls)
+			}
+		})
 	}
 }

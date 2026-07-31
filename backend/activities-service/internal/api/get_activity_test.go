@@ -27,6 +27,9 @@ func TestGetActivity_HappyPath(t *testing.T) {
 	if fake.gotGetID != "1" {
 		t.Errorf("service received id = %q, want 1", fake.gotGetID)
 	}
+	if fake.gotLiveID != "" {
+		t.Errorf("admin GetActivity must never call GetByIDWithLiveDetails, got id = %q", fake.gotLiveID)
+	}
 }
 
 func TestGetActivity_NotFoundMapsTo404(t *testing.T) {

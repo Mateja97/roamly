@@ -39,6 +39,10 @@ func main() {
 	mux.HandleFunc("GET /healthz", health.Handler())
 	mux.HandleFunc("POST /activities/query", api.NewQueryActivitiesHandler(activitiesClient, logger).Handle)
 	mux.HandleFunc("GET /activities/{id}/photos", api.NewGetActivityPhotosHandler(activitiesClient, logger).Handle)
+	// GET /activities/{id} (T3, places-live-details): public detail-page
+	// route, live-merged Google Place Details for Places-sourced rows. No
+	// adminAuth — same public surface as POST /activities/query.
+	mux.HandleFunc("GET /activities/{id}", api.NewGetActivityHandler(activitiesClient, logger).Handle)
 	mux.HandleFunc("GET /cities/suggest", api.NewSuggestCitiesHandler(activitiesClient, logger).Handle)
 
 	// Public photo serving (T1): read-only off the shared volume

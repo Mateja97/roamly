@@ -41,6 +41,9 @@ type fakeQueryService struct {
 	getOut        activitiessvc.Activity
 	getErr        error
 	gotGetID      string
+	liveOut       activitiessvc.Activity
+	liveErr       error
+	gotLiveID     string
 	photosOut     []activitiessvc.Photo
 	photosErr     error
 	gotPhotosID   string
@@ -83,6 +86,11 @@ func (f *fakeQueryService) List(_ context.Context, req service.ListRequest) (act
 func (f *fakeQueryService) GetByID(_ context.Context, id string) (activitiessvc.Activity, error) {
 	f.gotGetID = id
 	return f.getOut, f.getErr
+}
+
+func (f *fakeQueryService) GetByIDWithLiveDetails(_ context.Context, id string) (activitiessvc.Activity, error) {
+	f.gotLiveID = id
+	return f.liveOut, f.liveErr
 }
 
 func (f *fakeQueryService) GetPhotos(_ context.Context, id string) ([]activitiessvc.Photo, error) {

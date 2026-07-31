@@ -82,3 +82,10 @@ func (c *Client) ListAdminCities(ctx context.Context, req *activitiesv1.ListAdmi
 func (c *Client) GetActivityPhotos(ctx context.Context, req *activitiesv1.GetActivityPhotosRequest) (*activitiesv1.GetActivityPhotosResponse, error) {
 	return c.rpc.GetActivityPhotos(ctx, req)
 }
+
+// GetActivityWithLiveDetails (T3, places-live-details): a pass-through
+// wrapper, same shape as the above — backs the public GET /activities/{id}
+// route, distinct from GetActivity (the admin RPC).
+func (c *Client) GetActivityWithLiveDetails(ctx context.Context, req *activitiesv1.GetActivityRequest) (*activitiesv1.Activity, error) {
+	return c.rpc.GetActivityWithLiveDetails(ctx, req)
+}

@@ -108,14 +108,45 @@ type activityDTO struct {
 	// string-of-a-string.
 	Details json.RawMessage `json:"details"`
 	// City, Address, and Status are T1 additions. Status is always
-	// "published" here: QueryActivities (the RPC this handler calls) only
-	// ever returns published activities.
+	// "published" here: both RPCs this DTO serves are published-only —
+	// QueryActivities always was; GetActivityWithLiveDetails (T3) 404s on a
+	// draft/pending row rather than returning it (see
+	// service.Activities.GetByIDWithLiveDetails's doc).
 	City    string `json:"city"`
 	Address string `json:"address"`
 	Status  string `json:"status"`
 	// Subcategory (T1) is the optional, category-validated subtype slug; ""
 	// when not set.
 	Subcategory string `json:"subcategory"`
+	// ReviewCount, GoogleReviews, and GoogleMapsURI (T3, places-live-details)
+	// are only ever non-empty on a GET /activities/{id} response for a
+	// Places-sourced row (activities-service's GetActivityWithLiveDetails) —
+	// always 0/omitted from POST /activities/query, which never live-merges.
+	// GoogleMapsURI is the mandatory "View on Google Maps" attribution link
+	// target (Places API attribution policy); GoogleAttributionPlate's
+	// `footer` variant (T5) and ActivityDetailScreen (T6) both read it.
+	ReviewCount   int               `json:"review_count,omitempty"`
+	GoogleReviews []googleReviewDTO `json:"google_reviews,omitempty"`
+	GoogleMapsURI string            `json:"google_maps_uri,omitempty"`
+}
+
+// googleAuthorAttributionDTO is the Places API's mandatory per-review
+// attribution (T3, places-live-details) — avatar, display name, profile
+// link. PhotoURI is "" when Google returned no reviewer avatar.
+type googleAuthorAttributionDTO struct {
+	DisplayName string `json:"display_name"`
+	PhotoURI    string `json:"photo_uri,omitempty"`
+	URI         string `json:"uri"`
+}
+
+// googleReviewDTO is one live Google Place Details review; PublishTime is
+// Places' raw timestamp string, not pre-formatted — the client formats it
+// for display.
+type googleReviewDTO struct {
+	AuthorAttribution googleAuthorAttributionDTO `json:"author_attribution"`
+	Rating            float64                    `json:"rating"`
+	Text              string                     `json:"text"`
+	PublishTime       string                     `json:"publish_time"`
 }
 
 type queryActivitiesResponseDTO struct {
@@ -234,22 +265,47 @@ func toProtoCategory(c string) (activitiesv1.Category, bool) {
 
 func toActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) activityDTO {
 	return activityDTO{
-		ID:          a.GetId(),
-		Title:       a.GetTitle(),
-		Description: a.GetDescription(),
-		Category:    string(toDomainCategory(a.GetCategory(), logger)),
-		Location:    locationDTO{Lat: a.GetLocation().GetLat(), Lng: a.GetLocation().GetLng()},
-		Country:     a.GetCountry(),
-		Rating:      a.GetRating(),
-		ImageRefs:   toPhotoDTOs(a.GetPhotos()),
-		Tags:        nonNilTags(a.GetTags()),
-		DistanceKM:  a.GetDistanceKm(),
-		Details:     detailsJSON(a.GetDetails()),
-		City:        a.GetCity(),
-		Address:     a.GetAddress(),
-		Status:      toDomainStatus(a.GetStatus(), logger),
-		Subcategory: a.GetSubcategory(),
+		ID:            a.GetId(),
+		Title:         a.GetTitle(),
+		Description:   a.GetDescription(),
+		Category:      string(toDomainCategory(a.GetCategory(), logger)),
+		Location:      locationDTO{Lat: a.GetLocation().GetLat(), Lng: a.GetLocation().GetLng()},
+		Country:       a.GetCountry(),
+		Rating:        a.GetRating(),
+		ImageRefs:     toPhotoDTOs(a.GetPhotos()),
+		Tags:          nonNilTags(a.GetTags()),
+		DistanceKM:    a.GetDistanceKm(),
+		Details:       detailsJSON(a.GetDetails()),
+		City:          a.GetCity(),
+		Address:       a.GetAddress(),
+		Status:        toDomainStatus(a.GetStatus(), logger),
+		Subcategory:   a.GetSubcategory(),
+		ReviewCount:   int(a.GetReviewCount()),
+		GoogleReviews: toGoogleReviewDTOs(a.GetGoogleReviews()),
+		GoogleMapsURI: a.GetGoogleMapsUri(),
 	}
+}
+
+// toGoogleReviewDTOs maps a live-merged activity's reviews onto the wire
+// (T3, places-live-details); nil in, nil out (omitted via omitempty).
+func toGoogleReviewDTOs(reviews []*activitiesv1.GoogleReview) []googleReviewDTO {
+	if reviews == nil {
+		return nil
+	}
+	out := make([]googleReviewDTO, len(reviews))
+	for i, r := range reviews {
+		out[i] = googleReviewDTO{
+			AuthorAttribution: googleAuthorAttributionDTO{
+				DisplayName: r.GetAuthorAttribution().GetDisplayName(),
+				PhotoURI:    r.GetAuthorAttribution().GetPhotoUri(),
+				URI:         r.GetAuthorAttribution().GetUri(),
+			},
+			Rating:      r.GetRating(),
+			Text:        r.GetText(),
+			PublishTime: r.GetPublishTime(),
+		}
+	}
+	return out
 }
 
 // toDomainStatus converts the wire enum to the lowercase snake_case string

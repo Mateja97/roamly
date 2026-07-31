@@ -26,6 +26,11 @@ type queryService interface {
 	AdminListCities(ctx context.Context) ([]string, error)
 	List(ctx context.Context, req service.ListRequest) (activitiessvc.ListResult, int, int, error)
 	GetByID(ctx context.Context, id string) (activitiessvc.Activity, error)
+	// GetByIDWithLiveDetails (T3, places-live-details) backs the public
+	// GetActivityWithLiveDetails RPC only — never call it from the admin
+	// GetActivity RPC, whose edit form round-trips whatever it reads
+	// straight back into a PATCH (see GetByID's own doc for why).
+	GetByIDWithLiveDetails(ctx context.Context, id string) (activitiessvc.Activity, error)
 	// GetPhotos (T2) is the public resolve-on-first-view-and-persist path —
 	// unlike the rest of this admin-focused interface's Get/Create/Update,
 	// it's called from the app-facing surface.
@@ -159,7 +164,35 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		Address:     a.Address,
 		Status:      toProtoStatus(a.Status),
 		Subcategory: a.Subcategory,
+		// GoogleReviews/ReviewCount/GoogleMapsURI (T3, places-live-details)
+		// are always nil/0/"" for a plain GetByID row — only
+		// GetByIDWithLiveDetails's live-merge path ever populates them.
+		GoogleReviews: toProtoGoogleReviews(a.GoogleReviews),
+		ReviewCount:   int32(a.ReviewCount),
+		GoogleMapsUri: a.GoogleMapsURI,
 	}
+}
+
+// toProtoGoogleReviews maps a live-merged activity's reviews onto the wire
+// (T3, places-live-details); nil in, nil out.
+func toProtoGoogleReviews(reviews []activitiessvc.GoogleReview) []*activitiesv1.GoogleReview {
+	if reviews == nil {
+		return nil
+	}
+	out := make([]*activitiesv1.GoogleReview, len(reviews))
+	for i, r := range reviews {
+		out[i] = &activitiesv1.GoogleReview{
+			AuthorAttribution: &activitiesv1.GoogleAuthorAttribution{
+				DisplayName: r.AuthorAttribution.DisplayName,
+				PhotoUri:    r.AuthorAttribution.PhotoURI,
+				Uri:         r.AuthorAttribution.URI,
+			},
+			Rating:      r.Rating,
+			Text:        r.Text,
+			PublishTime: r.PublishTime,
+		}
+	}
+	return out
 }
 
 // toProtoStatus maps the domain lifecycle value onto the wire enum (T1); an

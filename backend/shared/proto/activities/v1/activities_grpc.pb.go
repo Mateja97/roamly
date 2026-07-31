@@ -19,15 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ActivitiesService_QueryActivities_FullMethodName   = "/activities.v1.ActivitiesService/QueryActivities"
-	ActivitiesService_SuggestCities_FullMethodName     = "/activities.v1.ActivitiesService/SuggestCities"
-	ActivitiesService_ListActivities_FullMethodName    = "/activities.v1.ActivitiesService/ListActivities"
-	ActivitiesService_GetActivity_FullMethodName       = "/activities.v1.ActivitiesService/GetActivity"
-	ActivitiesService_GetActivityPhotos_FullMethodName = "/activities.v1.ActivitiesService/GetActivityPhotos"
-	ActivitiesService_CreateActivity_FullMethodName    = "/activities.v1.ActivitiesService/CreateActivity"
-	ActivitiesService_UpdateActivity_FullMethodName    = "/activities.v1.ActivitiesService/UpdateActivity"
-	ActivitiesService_ListAdminCities_FullMethodName   = "/activities.v1.ActivitiesService/ListAdminCities"
-	ActivitiesService_UploadPhoto_FullMethodName       = "/activities.v1.ActivitiesService/UploadPhoto"
+	ActivitiesService_QueryActivities_FullMethodName            = "/activities.v1.ActivitiesService/QueryActivities"
+	ActivitiesService_SuggestCities_FullMethodName              = "/activities.v1.ActivitiesService/SuggestCities"
+	ActivitiesService_ListActivities_FullMethodName             = "/activities.v1.ActivitiesService/ListActivities"
+	ActivitiesService_GetActivity_FullMethodName                = "/activities.v1.ActivitiesService/GetActivity"
+	ActivitiesService_GetActivityPhotos_FullMethodName          = "/activities.v1.ActivitiesService/GetActivityPhotos"
+	ActivitiesService_GetActivityWithLiveDetails_FullMethodName = "/activities.v1.ActivitiesService/GetActivityWithLiveDetails"
+	ActivitiesService_CreateActivity_FullMethodName             = "/activities.v1.ActivitiesService/CreateActivity"
+	ActivitiesService_UpdateActivity_FullMethodName             = "/activities.v1.ActivitiesService/UpdateActivity"
+	ActivitiesService_ListAdminCities_FullMethodName            = "/activities.v1.ActivitiesService/ListAdminCities"
+	ActivitiesService_UploadPhoto_FullMethodName                = "/activities.v1.ActivitiesService/UploadPhoto"
 )
 
 // ActivitiesServiceClient is the client API for ActivitiesService service.
@@ -56,6 +57,15 @@ type ActivitiesServiceClient interface {
 	// already stored, at minimum the provisional listing photo. Public
 	// surface (not admin-only): this is what the app's detail screen calls.
 	GetActivityPhotos(ctx context.Context, in *GetActivityPhotosRequest, opts ...grpc.CallOption) (*GetActivityPhotosResponse, error)
+	// GetActivityWithLiveDetails (T3, places-live-details) is the public
+	// detail-page surface: same request/response shapes as GetActivity, but
+	// backed by service.Activities.GetByIDWithLiveDetails, which merges fresh
+	// Google Place Details onto a Places-sourced row's Details/Description
+	// and populates GoogleReviews/ReviewCount below — never persisted (Places
+	// Terms §14.3). GetActivity itself (the admin RPC) is deliberately
+	// unchanged and keeps calling plain GetByID: an admin's edit-save
+	// round-trip must never write live Google content back into storage.
+	GetActivityWithLiveDetails(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*Activity, error)
 	CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*Activity, error)
 	UpdateActivity(ctx context.Context, in *UpdateActivityRequest, opts ...grpc.CallOption) (*Activity, error)
 	// ListAdminCities returns every distinct city with at least one activity,
@@ -130,6 +140,16 @@ func (c *activitiesServiceClient) GetActivityPhotos(ctx context.Context, in *Get
 	return out, nil
 }
 
+func (c *activitiesServiceClient) GetActivityWithLiveDetails(ctx context.Context, in *GetActivityRequest, opts ...grpc.CallOption) (*Activity, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Activity)
+	err := c.cc.Invoke(ctx, ActivitiesService_GetActivityWithLiveDetails_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *activitiesServiceClient) CreateActivity(ctx context.Context, in *CreateActivityRequest, opts ...grpc.CallOption) (*Activity, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Activity)
@@ -196,6 +216,15 @@ type ActivitiesServiceServer interface {
 	// already stored, at minimum the provisional listing photo. Public
 	// surface (not admin-only): this is what the app's detail screen calls.
 	GetActivityPhotos(context.Context, *GetActivityPhotosRequest) (*GetActivityPhotosResponse, error)
+	// GetActivityWithLiveDetails (T3, places-live-details) is the public
+	// detail-page surface: same request/response shapes as GetActivity, but
+	// backed by service.Activities.GetByIDWithLiveDetails, which merges fresh
+	// Google Place Details onto a Places-sourced row's Details/Description
+	// and populates GoogleReviews/ReviewCount below — never persisted (Places
+	// Terms §14.3). GetActivity itself (the admin RPC) is deliberately
+	// unchanged and keeps calling plain GetByID: an admin's edit-save
+	// round-trip must never write live Google content back into storage.
+	GetActivityWithLiveDetails(context.Context, *GetActivityRequest) (*Activity, error)
 	CreateActivity(context.Context, *CreateActivityRequest) (*Activity, error)
 	UpdateActivity(context.Context, *UpdateActivityRequest) (*Activity, error)
 	// ListAdminCities returns every distinct city with at least one activity,
@@ -234,6 +263,9 @@ func (UnimplementedActivitiesServiceServer) GetActivity(context.Context, *GetAct
 }
 func (UnimplementedActivitiesServiceServer) GetActivityPhotos(context.Context, *GetActivityPhotosRequest) (*GetActivityPhotosResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetActivityPhotos not implemented")
+}
+func (UnimplementedActivitiesServiceServer) GetActivityWithLiveDetails(context.Context, *GetActivityRequest) (*Activity, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetActivityWithLiveDetails not implemented")
 }
 func (UnimplementedActivitiesServiceServer) CreateActivity(context.Context, *CreateActivityRequest) (*Activity, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateActivity not implemented")
@@ -358,6 +390,24 @@ func _ActivitiesService_GetActivityPhotos_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ActivitiesService_GetActivityWithLiveDetails_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ActivitiesServiceServer).GetActivityWithLiveDetails(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ActivitiesService_GetActivityWithLiveDetails_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ActivitiesServiceServer).GetActivityWithLiveDetails(ctx, req.(*GetActivityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ActivitiesService_CreateActivity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateActivityRequest)
 	if err := dec(in); err != nil {
@@ -456,6 +506,10 @@ var ActivitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetActivityPhotos",
 			Handler:    _ActivitiesService_GetActivityPhotos_Handler,
+		},
+		{
+			MethodName: "GetActivityWithLiveDetails",
+			Handler:    _ActivitiesService_GetActivityWithLiveDetails_Handler,
 		},
 		{
 			MethodName: "CreateActivity",
