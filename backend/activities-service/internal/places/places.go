@@ -120,9 +120,13 @@ func (c *Client) SearchText(ctx context.Context, query, pageToken, fieldMask str
 // Deliberately narrow: hours, price and venue type are not storable under
 // Places Terms §14.3 and are fetched live on detail view instead, so paying
 // for them here would be a no-op (the same trim scrapecity's fieldMask got).
+// addressComponents is in the same SKU tier as the rest of this mask (no
+// extra cost) — it's how syncGoogleRow derives City/Country for a discovered
+// place (see placesmap.CityCountry).
 const NearbyFieldMask = "places.id,places.displayName,places.location," +
 	"places.formattedAddress,places.rating,places.userRatingCount," +
-	"places.googleMapsUri,places.photos,places.primaryType,places.types"
+	"places.googleMapsUri,places.photos,places.primaryType,places.types," +
+	"places.addressComponents"
 
 // NearbyRequest is one searchNearby call's inputs. RadiusM must be <= 50000
 // (the API's documented ceiling); MaxResults is clamped to 1..20 by the API,

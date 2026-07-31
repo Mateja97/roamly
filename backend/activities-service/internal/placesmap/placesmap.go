@@ -80,6 +80,19 @@ type Place struct {
 	// label. Consumed by Subtype (subtype.go), not by BuildDetails.
 	PrimaryType string   `json:"primaryType"`
 	Types       []string `json:"types"`
+	// AddressComponents is the place's structured address breakdown.
+	// Consumed by CityCountry (address.go), not by BuildDetails — City/
+	// Country are storable (Places Terms §14.3 permits them), unlike
+	// hours/price/venue-type.
+	AddressComponents []AddressComponent `json:"addressComponents"`
+}
+
+// AddressComponent is one segment of a Places API (New) structured address
+// (e.g. {"longText": "Belgrade", "types": ["locality", "political"]}).
+type AddressComponent struct {
+	LongText  string   `json:"longText"`
+	ShortText string   `json:"shortText"`
+	Types     []string `json:"types"`
 }
 
 // cityTimezones maps a scraped city to its IANA zone, the timezone structured

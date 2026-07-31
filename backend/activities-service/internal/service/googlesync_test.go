@@ -94,11 +94,17 @@ func TestGoogleDueRows_NoAnchorNoWork(t *testing.T) {
 	}
 }
 
-func TestActivities_Query_GoogleSync_UpsertsWithSubtypeFromTheRow(t *testing.T) {
+func TestActivities_Query_GoogleSync_UpsertsWithArbitratedSubtype(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{
 		ID: "beach-1", Rating: 4.4, UserRatingCount: 30,
 		GoogleMapsURI: "https://maps.google/beach-1",
+		PrimaryType:   "beach",
+		Types:         []string{"beach"},
+		AddressComponents: []placesmap.AddressComponent{
+			{LongText: "Belgrade", Types: []string{"locality", "political"}},
+			{LongText: "Serbia", Types: []string{"country", "political"}},
+		},
 	}}}
 	gp.nearbyOut[0].DisplayName.Text = "Ada Ciganlija"
 	gp.nearbyOut[0].Location.Latitude = 44.79
@@ -120,13 +126,21 @@ func TestActivities_Query_GoogleSync_UpsertsWithSubtypeFromTheRow(t *testing.T) 
 		t.Fatal("no upserts, want the discovered beach")
 	}
 	got := repo.gotUpserts[0]
-	// The whole design in one assertion: subtype comes from the row that
-	// issued the query, never from classifying the response.
+	// The row supplies Category (and, only as a fallback, Subtype) — the
+	// place's own primaryType is what subtypeFor actually derives Subcategory
+	// from here (PrimaryType/Types both say "beach"), which is why this still
+	// lands on "beach" without ever touching row.Subtype.
 	if got.Category != activitiessvc.CategoryNature || got.Subcategory != "beach" {
 		t.Errorf("upsert category/subcategory = %s/%s, want nature/beach", got.Category, got.Subcategory)
 	}
 	if got.Source != "google_places" || got.ExternalID != "beach-1" {
 		t.Errorf("upsert source/external id = %s/%s, want google_places/beach-1", got.Source, got.ExternalID)
+	}
+	// City/Country come from the place's own address components, not the
+	// discovery row — without this, BuildLiveDetails' opening-hours timezone
+	// lookup (keyed on City) always misses for a sweep-ingested row.
+	if got.City != "Belgrade" || got.Country != "Serbia" {
+		t.Errorf("upsert city/country = %s/%s, want Belgrade/Serbia", got.City, got.Country)
 	}
 }
 
@@ -163,6 +177,27 @@ func TestActivities_Query_GoogleSync_FailedRowLeftUnmarked(t *testing.T) {
 
 	if len(repo.markSynced) != 0 {
 		t.Errorf("markSynced = %v, want none — a failed row must stay stale so a later query retries it", repo.markSynced)
+	}
+}
+
+func TestActivities_Query_GoogleSync_AllUpsertsFailedLeavesRowUnmarked(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}, upsertErr: errors.New("db down")}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		{ID: "good", Rating: 4.5, UserRatingCount: 50, GoogleMapsURI: "https://maps.google/good"},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	// The search itself succeeded (places were found), but every Upsert of
+	// them errored — kept stays 0 despite found > 0. Marking this row synced
+	// would freeze it at zero ingested rows for the whole TTL, so it must be
+	// left unmarked exactly like a row whose search call failed outright.
+	if len(repo.markSynced) != 0 {
+		t.Errorf("markSynced = %v, want none — a row must stay unmarked when every upsert failed even though places were found", repo.markSynced)
 	}
 }
 

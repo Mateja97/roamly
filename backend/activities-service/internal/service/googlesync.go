@@ -95,21 +95,17 @@ const googleSyncTimeout = 2 * time.Minute
 // options — and photo resolution (below) would blow any in-request budget
 // outright.
 //
+// googleDueRows itself — and every SyncedAt lookup it makes, up to ~53 per
+// anchor — runs inside the goroutine, not here. Only the "is a Places client
+// even configured" check stays on the caller's goroutine, so a server with
+// none spawns nothing; everything that touches the repo happens off the
+// request path entirely, matching the "background" contract this function
+// promises.
+//
 // Never fails Query: a sync problem at any step is logged and leaves the DB
 // as-is, exactly like syncTripadvisorIfNeeded.
 func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 	if a.places == nil {
-		return
-	}
-	jobs := googleDueRows(req, func(cell, category, subtype string) bool {
-		syncedAt, ok, err := a.repo.SyncedAt(ctx, ProviderGoogle, cell, category, subtype)
-		if err != nil {
-			slog.Warn("google synced-at lookup failed", "cell", cell, "category", category, "subtype", subtype, "error", err)
-			return false
-		}
-		return ok && time.Since(syncedAt) < googleSyncTTL
-	})
-	if len(jobs) == 0 {
 		return
 	}
 
@@ -121,6 +117,15 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		// would abort every pass the moment Query returns.
 		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), googleSyncTimeout)
 		defer cancel()
+
+		jobs := googleDueRows(req, func(cell, category, subtype string) bool {
+			syncedAt, ok, err := a.repo.SyncedAt(syncCtx, ProviderGoogle, cell, category, subtype)
+			if err != nil {
+				slog.Warn("google synced-at lookup failed", "cell", cell, "category", category, "subtype", subtype, "error", err)
+				return false
+			}
+			return ok && time.Since(syncedAt) < googleSyncTTL
+		})
 		for _, job := range jobs {
 			a.syncGoogleRow(syncCtx, job)
 		}
@@ -130,11 +135,14 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 // syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
 // then an Upsert per surviving place.
 //
-// MarkSynced is called only when the call itself succeeded. A failed row is
-// left stale so a later query retries it — the same rule that keeps a
-// truncated Tripadvisor sweep from freezing a cell for the whole TTL. A
-// single Upsert failure is logged and skipped without abandoning the rest of
-// the row.
+// MarkSynced is called only when the search call itself succeeded AND at
+// least one place survived to a successful Upsert (or the search itself
+// legitimately found nothing at all). A row whose search succeeded but whose
+// every Upsert then failed is left unmarked too — marking it would freeze
+// the cell at zero ingested rows for the whole TTL, the exact Belgrade
+// failure mode (2 restaurants for 14 days) the Tripadvisor sweep's own
+// MarkSynced gate exists to avoid. A single Upsert failure is logged and
+// skipped without abandoning the rest of the row.
 func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 	var found []placesmap.Place
 	var err error
@@ -168,6 +176,11 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 		}
 		kept++
 	}
+	if kept == 0 && len(found) > 0 {
+		slog.Warn("google discovery row found places but every upsert failed; leaving unmarked to retry",
+			"category", job.row.Category, "subtype", job.row.Subtype, "found", len(found))
+		return
+	}
 
 	cell := syncCellKey(job.anchor.Lat, job.anchor.Lng)
 	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cell, string(job.row.Category), job.row.Subtype); err != nil {
@@ -181,17 +194,26 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 
 // toIngest maps one discovered place onto the ingest shape. Category always
 // comes from the discovery row. Subcategory is arbitrated (see subtypeFor).
+// City/Country come from the place's own address components
+// (placesmap.CityCountry) — both are storable under Places Terms §14.3
+// (only hours/price/venue-type are not) and City in particular is load-
+// bearing: BuildLiveDetails' opening-hours timezone lookup keys off it, and
+// Upsert's ON CONFLICT does "city = EXCLUDED.city", so leaving it blank here
+// would blank an existing legacy row's city on rediscovery.
 //
 // Details is deliberately empty — Places Terms §14.3 permits caching only
 // place_id and lat/lng, so hours, price and venue type are fetched live on
 // detail view instead (see placesmap.BuildLiveDetails).
 func toIngest(row placesmap.DiscoveryRow, p placesmap.Place) activitiessvc.IngestActivity {
+	city, country := placesmap.CityCountry(p.AddressComponents)
 	return activitiessvc.IngestActivity{
 		Title:       p.DisplayName.Text,
 		Category:    row.Category,
 		Subcategory: subtypeFor(row, p),
 		Lat:         p.Location.Latitude,
 		Lng:         p.Location.Longitude,
+		City:        city,
+		Country:     country,
 		Address:     p.FormattedAddress,
 		Rating:      p.Rating,
 		Status:      activitiessvc.StatusPublished,
