@@ -120,3 +120,30 @@ func TestDiscoveryRows_ExactlyOneDiscoveryMethod(t *testing.T) {
 		}
 	}
 }
+
+// TestPassesFloor is the dry run's and the live sync's shared quality gate,
+// tuned from real neighbourhood venues rather than restaurant-era guesswork.
+func TestPassesFloor(t *testing.T) {
+	tests := []struct {
+		name  string
+		place Place
+		want  bool
+	}{
+		{"clears both floors", Place{Rating: 4.2, UserRatingCount: 40}, true},
+		{"exactly on both floors", Place{Rating: MinRating, UserRatingCount: MinReviews}, true},
+		{"rating too low", Place{Rating: 3.4, UserRatingCount: 500}, false},
+		{"too few reviews", Place{Rating: 4.9, UserRatingCount: 4}, false},
+		{"unrated venue", Place{Rating: 0, UserRatingCount: 0}, false},
+		// The old floors were 4.0/50, tuned for restaurants. A real
+		// neighbourhood viewpoint looks like this and must survive, or
+		// type-driven discovery surfaces subtypes the filter then deletes.
+		{"thin-but-real viewpoint", Place{Rating: 4.4, UserRatingCount: 12}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PassesFloor(tt.place); got != tt.want {
+				t.Errorf("PassesFloor(%+v) = %v, want %v", tt.place, got, tt.want)
+			}
+		})
+	}
+}
