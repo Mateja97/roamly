@@ -72,7 +72,7 @@ var DiscoveryRows = []DiscoveryRow{
 	{activitiessvc.CategoryNature, "hiking_trail", []string{"hiking_area", "national_park", "state_park"}, ""},
 	{activitiessvc.CategoryNature, "park", []string{"park", "dog_park", "picnic_ground"}, ""},
 	{activitiessvc.CategoryNature, "beach", []string{"beach"}, ""},
-	{activitiessvc.CategoryNature, "botanical_garden", []string{"botanical_garden", "garden"}, ""},
+	{activitiessvc.CategoryNature, "botanical_garden", []string{"botanical_garden"}, ""},
 	{activitiessvc.CategoryNature, "viewpoint", []string{"observation_deck"}, ""},
 	{activitiessvc.CategoryNature, "", []string{"wildlife_park", "wildlife_refuge", "marina"}, ""},
 

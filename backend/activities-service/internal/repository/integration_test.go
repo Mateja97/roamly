@@ -599,6 +599,152 @@ func TestActivities_Query_Integration(t *testing.T) {
 	})
 }
 
+// TestActivities_Query_DedupesCrossCategoryDuplicatesWhenUnfiltered proves
+// Task 8b: Upsert conflicts on (source_url, category) (see 0017), so a venue
+// matching discovery rows in two categories legitimately becomes two rows —
+// live example: Tašmajdan as both nature/park and sport/sports_court. An
+// unfiltered Query must collapse those into one; a category-filtered Query
+// must still surface every one of them, since a filter already narrows to at
+// most one row per venue. A separate container from
+// TestActivities_Query_Integration so these fixture rows can't perturb that
+// test's exact-count assertions on the seeded catalog.
+func TestActivities_Query_DedupesCrossCategoryDuplicatesWhenUnfiltered(t *testing.T) {
+	db := startTestPostgres(t)
+	repo := New(db)
+	ctx := context.Background()
+
+	const externalID = "dedup-test-tasmajdan"
+	base := activitiessvc.IngestActivity{
+		Title: "Dedup Test Tasmajdan", Description: "test fixture",
+		Lat: 44.8125, Lng: 20.4612, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: externalID,
+	}
+
+	parkIn := base
+	parkIn.Category = activitiessvc.CategoryNature
+	parkIn.Subcategory = "park"
+	parkIn.SourceURL = "https://places/dedup-test-tasmajdan-nature"
+	parkRow, err := repo.Upsert(ctx, parkIn)
+	if err != nil {
+		t.Fatalf("upserting park row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, parkRow.ID) })
+
+	sportIn := base
+	sportIn.Category = activitiessvc.CategorySport
+	sportIn.Subcategory = "sports_court"
+	sportIn.SourceURL = "https://places/dedup-test-tasmajdan-sport"
+	sportRow, err := repo.Upsert(ctx, sportIn)
+	if err != nil {
+		t.Fatalf("upserting sport row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, sportRow.ID) })
+
+	// Same external_id, no subcategory — the tie-break (subcategory <> '')
+	// DESC must never let this one win over park/sport, both of which carry
+	// a subtype.
+	noSubtypeIn := base
+	noSubtypeIn.Category = activitiessvc.CategoryEntertainment
+	noSubtypeIn.SourceURL = "https://places/dedup-test-tasmajdan-entertainment"
+	noSubtypeRow, err := repo.Upsert(ctx, noSubtypeIn)
+	if err != nil {
+		t.Fatalf("upserting no-subtype row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, noSubtypeRow.ID) })
+
+	// An unrelated venue (different external_id) that dedup must never touch.
+	unrelatedIn := activitiessvc.IngestActivity{
+		Title: "Dedup Test Unrelated Gallery", Description: "test fixture",
+		Lat: 44.82, Lng: 20.47, Country: "Serbia", City: "Belgrade",
+		Rating: 4.0, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "dedup-test-unrelated",
+		Category: activitiessvc.CategoryArt, SourceURL: "https://places/dedup-test-unrelated",
+	}
+	unrelatedRow, err := repo.Upsert(ctx, unrelatedIn)
+	if err != nil {
+		t.Fatalf("upserting unrelated row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, unrelatedRow.ID) })
+
+	fixtureIDs := map[string]bool{parkRow.ID: true, sportRow.ID: true, noSubtypeRow.ID: true}
+	survivorOf := func(got []activitiessvc.Activity) string {
+		for _, a := range got {
+			if fixtureIDs[a.ID] {
+				return a.ID
+			}
+		}
+		return ""
+	}
+
+	t.Run("unfiltered query collapses the three shared-external_id rows into one, unrelated row untouched", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		var hits int
+		var sawUnrelated bool
+		for _, a := range got {
+			if fixtureIDs[a.ID] {
+				hits++
+			}
+			if a.ID == unrelatedRow.ID {
+				sawUnrelated = true
+			}
+		}
+		if hits != 1 {
+			t.Errorf("got %d of the 3 shared-external_id rows, want exactly 1 (collapsed)", hits)
+		}
+		if !sawUnrelated {
+			t.Error("unrelated row missing from unfiltered results")
+		}
+	})
+
+	t.Run("category filter still surfaces the venue — dedup must not hide it", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{
+			Scope:      activitiessvc.ScopeAnywhere,
+			Categories: []activitiessvc.Category{activitiessvc.CategorySport},
+		})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		var found bool
+		for _, a := range got {
+			if a.ID == sportRow.ID {
+				found = true
+			}
+			if fixtureIDs[a.ID] && a.ID != sportRow.ID {
+				t.Errorf("sport-filtered query returned a non-sport fixture row %s, want the filter untouched by dedup", a.ID)
+			}
+		}
+		if !found {
+			t.Error("sport-filtered query dropped the sport row — dedup must never apply when a category filter narrows the result")
+		}
+	})
+
+	t.Run("survivor is deterministic across repeated unfiltered queries, not merely the count", func(t *testing.T) {
+		first, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("first Query() error: %v", err)
+		}
+		second, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("second Query() error: %v", err)
+		}
+
+		firstSurvivor, secondSurvivor := survivorOf(first), survivorOf(second)
+		if firstSurvivor == "" || secondSurvivor == "" {
+			t.Fatalf("survivor missing from a run: first=%q second=%q", firstSurvivor, secondSurvivor)
+		}
+		if firstSurvivor != secondSurvivor {
+			t.Errorf("survivor changed across repeated queries (%q then %q); a dedup that picks arbitrarily would still pass a count-only assertion", firstSurvivor, secondSurvivor)
+		}
+		if firstSurvivor == noSubtypeRow.ID {
+			t.Errorf("survivor was the no-subtype row %s, want a subtype-carrying row (park %s or sport %s) to win the tie-break", firstSurvivor, parkRow.ID, sportRow.ID)
+		}
+	})
+}
+
 // TestActivities_AdminCRUD_Integration covers T2's first real write path
 // against real Postgres: JSONB details/photos round-trip through pgx's
 // automatic marshaling (never exercised before T2 — QueryActivities only

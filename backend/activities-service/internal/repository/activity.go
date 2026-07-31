@@ -95,15 +95,40 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 	// empty — no "always true" placeholder needed.
 	whereClause := strings.Join(where, " AND ")
 
-	query := fmt.Sprintf(
-		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
+	const columns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 			country, rating, photos, tags, details,
-			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, subcategory,
+			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, subcategory`
+
+	// Upsert conflicts on (source_url, category), so a venue matching
+	// discovery rows in two categories (e.g. Tašmajdan as both nature/park
+	// and sport/sports_court) is stored as two rows on purpose — see Upsert's
+	// doc. With no category filter those would surface as duplicates in the
+	// same list, so collapse them here via DISTINCT ON, keyed the same way a
+	// missing external_id falls back to the row's own id so unrelated rows
+	// never collapse into each other. A category filter narrows to at most
+	// one row per venue already, so the filtered path is left untouched.
+	if len(filter.Categories) == 0 {
+		query := fmt.Sprintf(
+			`SELECT * FROM (
+				SELECT DISTINCT ON (coalesce(nullif(external_id, ''), id::text)) %s,
+					%s AS distance_km
+				FROM activities
+				WHERE %s
+				ORDER BY coalesce(nullif(external_id, ''), id::text), (subcategory <> '') DESC, id
+			) deduped
+			%s`,
+			columns, distanceExpr, whereClause, orderBy,
+		)
+		return query, args, nil
+	}
+
+	query := fmt.Sprintf(
+		`SELECT %s,
 			%s AS distance_km
 		FROM activities
 		WHERE %s
 		%s`,
-		distanceExpr, whereClause, orderBy,
+		columns, distanceExpr, whereClause, orderBy,
 	)
 	return query, args, nil
 }
