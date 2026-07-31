@@ -176,14 +176,23 @@ type Activity struct {
 	// Subcategories/ValidSubcategory); "" = not set.
 	Subcategory string
 	// GoogleReviews (T2, places-live-details) is a Places-sourced row's live
-	// Google reviews, merged onto Activity by service.Activities.GetByID on
-	// detail-page open — never persisted (Places Terms §14.3 forbids
-	// caching review content), so no DB column backs this field; every
-	// GetByID call that reaches the live path recomputes it fresh. Reviews
-	// are the same shape across all 10 Places-sourced categories (unlike
-	// Details, which is category-specific), so this is a top-level field
-	// alongside Photos/Tags rather than a key inside Details.
+	// Google reviews, merged onto Activity by
+	// service.Activities.GetByIDWithLiveDetails on detail-page open — never
+	// persisted (Places Terms §14.3 forbids caching review content), so no
+	// DB column backs this field; every call that reaches the live path
+	// recomputes it fresh. Reviews are the same shape across all 10
+	// Places-sourced categories (unlike Details, which is category-specific),
+	// so this is a top-level field alongside Photos/Tags rather than a key
+	// inside Details.
 	GoogleReviews []GoogleReview
+	// ReviewCount (T2, places-live-details) is a Places-sourced row's live
+	// Google userRatingCount, merged alongside Rating by
+	// service.Activities.GetByIDWithLiveDetails (guarded on the live rating
+	// being > 0 — see that method's doc). Zero for every row that never
+	// reaches the live path (Tripadvisor-sourced rows carry their own review
+	// count inside TripadvisorAttribution.ReviewCount instead); never
+	// persisted, no DB column.
+	ReviewCount int
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar

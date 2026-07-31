@@ -492,26 +492,43 @@ func (a *Activities) List(ctx context.Context, req ListRequest) (result activiti
 	return result, page, pageSize, nil
 }
 
-// GetByID returns a single activity by id, sentinel errors passed through
-// untouched (wrapped for context) — see GO_STANDARDS.md "Errors". For a
-// Places-sourced row, live Google Place Details are merged onto the result
-// (T2, places-live-details) — see withLiveDetails. This is also what backs
-// the admin GetActivity RPC; the same nil-safe fallback-on-error contract
-// makes that harmless (admin just also sees the live-merged view), and
-// reusing GetByID here rather than adding a second method is the smaller
-// diff — see engineering-notes.md.
+// GetByID returns a single activity by id exactly as stored, sentinel
+// errors passed through untouched (wrapped for context) — see
+// GO_STANDARDS.md "Errors". No live Places call, ever: this backs the
+// admin GetActivity RPC (whose edit form round-trips whatever it reads
+// straight back into a PATCH) and every other internal read (Update's own
+// category lookup, UpdateActivity's pre-write photo snapshot) — none of
+// them may see live-merged Google content, or an admin save would
+// re-persist exactly the Places data T4's migration exists to keep out of
+// the DB. The live-merged view for the public detail-page path lives in
+// GetByIDWithLiveDetails (T2 resolve, round 1: this split replaces an
+// earlier version that merged directly in GetByID).
 func (a *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Activity, error) {
 	activity, err := a.repo.GetByID(ctx, id)
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
 	}
+	return activity, nil
+}
+
+// GetByIDWithLiveDetails returns id's activity like GetByID, plus a live
+// Google Place Details merge for a Places-sourced row (T2,
+// places-live-details) — see withLiveDetails for the merge/fallback
+// contract. Reserved for the public detail-page path (T3's proxy route);
+// never call this from an admin or other internal read — see GetByID's doc
+// for why.
+func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (activitiessvc.Activity, error) {
+	activity, err := a.GetByID(ctx, id)
+	if err != nil {
+		return activitiessvc.Activity{}, err
+	}
 	return a.withLiveDetails(ctx, activity), nil
 }
 
-// detailResolveTimeout bounds GetByID's live Place Details lookup (T2,
-// places-live-details): request-scoped and deliberately short, same
-// reasoning as photoResolveTimeout — a detail-page load can't block on a
-// third-party call.
+// detailResolveTimeout bounds GetByIDWithLiveDetails' live Place Details
+// lookup (T2, places-live-details): request-scoped and deliberately short,
+// same reasoning as photoResolveTimeout — a detail-page load can't block on
+// a third-party call.
 const detailResolveTimeout = 4 * time.Second
 
 // withLiveDetails live-merges fresh Google Place Details onto activity for
@@ -523,6 +540,13 @@ const detailResolveTimeout = 4 * time.Second
 // deliberate difference from GetPhotos: this result is never passed to
 // a.repo.Update or any other persistence call — Places Terms §14.3 forbids
 // caching anything but place_id/lat-lng, so every call re-fetches fresh.
+//
+// Details is replaced outright, not deep-merged: BuildLiveDetails has no
+// case for Sport/Entertainment (always "{}"), so any admin-curated details
+// on a Places-sourced row in one of those two categories would be
+// overwritten on every live-merged read (harmless today only because T4's
+// migration already blanks every Places-sourced row's stored details;
+// worth remembering if admin curation of those rows is ever added back).
 func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
 	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" || a.places == nil {
 		return activity
@@ -540,6 +564,16 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 	activity.Details = placesmap.BuildLiveDetails(activity.Category, activity.City, detail)
 	if desc := liveDescription(detail); desc != "" {
 		activity.Description = desc
+	}
+	// Rating/ReviewCount: guarded on Rating > 0, not just "detail resolved
+	// successfully" — Places omits both fields together for a venue with no
+	// ratings yet, which decodes as the zero value indistinguishable from
+	// "not present" (same ambiguity T1's amenity booleans already document);
+	// a guarded overwrite means a rating-less live response never clobbers a
+	// real stored rating with a fabricated 0.0.
+	if detail.Rating > 0 {
+		activity.Rating = detail.Rating
+		activity.ReviewCount = detail.UserRatingCount
 	}
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
 	return activity

@@ -11,13 +11,46 @@ import (
 	"backend/shared/models/activitiessvc"
 )
 
-// TestActivities_GetByID_LiveDetails covers T2's (places-live-details)
-// fallback-on-error contract for GetByID's live merge: an unconfigured
-// places client, a PlaceDetails error, and a timeout must all fall back to
-// the bare stored row with no error surfaced; success must merge
-// Details/Description/GoogleReviews. Every case also asserts the live
-// result is never persisted (repo.updateCalls stays 0) — the one
-// deliberate deviation from GetPhotos' otherwise-identical pattern.
+// TestActivities_GetByID_NeverLiveMerges is the regression the review round
+// 1 finding named directly: GetByID (used by the admin GetActivity RPC and
+// every other internal read) must never make a live Places call or merge
+// live data, even for a Places-sourced row with everything configured to
+// make GetByIDWithLiveDetails's live path fire — an admin edit form
+// round-trips whatever GetByID returns straight back into a PATCH, so a
+// live merge here would re-persist Places content T4's migration exists to
+// keep out of the DB.
+func TestActivities_GetByID_NeverLiveMerges(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCafes, City: "Belgrade",
+		Source: "google_places", ExternalID: "place-1", Description: "", Rating: 4.2,
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{Rating: 4.9}}
+	repo := &fakeRepo{getOut: stored}
+	svc := New(repo).WithPlaces(places)
+
+	got, err := svc.GetByID(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetByID() unexpected error: %v", err)
+	}
+	if places.detailCalls != 0 {
+		t.Errorf("places.PlaceDetails calls = %d, want 0 — GetByID must never make a live call", places.detailCalls)
+	}
+	// Activity contains slice fields (Photos, GoogleReviews, ...), not
+	// comparable with == — check the fields a live merge would have
+	// touched instead of the whole struct.
+	if got.Description != stored.Description || got.Rating != stored.Rating ||
+		string(got.Details) != string(stored.Details) || len(got.GoogleReviews) != 0 {
+		t.Errorf("GetByID() = %+v, want the bare stored row %+v unchanged", got, stored)
+	}
+}
+
+// TestActivities_GetByID_LiveDetails covers GetByIDWithLiveDetails' (T2,
+// places-live-details) fallback-on-error contract: an unconfigured places
+// client, a PlaceDetails error, and a timeout must all fall back to the
+// bare stored row with no error surfaced; success must merge
+// Details/Description/Rating/ReviewCount/GoogleReviews. Every case also
+// asserts the live result is never persisted (repo.updateCalls stays 0) —
+// the one deliberate deviation from GetPhotos' otherwise-identical pattern.
 func TestActivities_GetByID_LiveDetails(t *testing.T) {
 	cafe := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryCafes, City: "Belgrade",
@@ -32,7 +65,7 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 		PublishTime: "2026-06-01T00:00:00Z",
 	}
 	review.Text.Text = "Lovely spot."
-	detail := placesmap.PlaceDetail{Reviews: []placesmap.Review{review}, ServesCoffee: true}
+	detail := placesmap.PlaceDetail{Reviews: []placesmap.Review{review}, ServesCoffee: true, Rating: 4.7, UserRatingCount: 214}
 	detail.EditorialSummary.Text = "A cozy cafe with great coffee."
 	wantDetailsJSON := string(placesmap.BuildLiveDetails(activitiessvc.CategoryCafes, "Belgrade", detail))
 
@@ -46,6 +79,8 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 		wantDescription string
 		wantDetailsJSON string
 		wantReviews     int
+		wantRating      float64
+		wantReviewCount int
 	}{
 		{
 			name:     "unconfigured places client falls back to bare row",
@@ -66,13 +101,30 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 			wantPlaceCalls: 1,
 		},
 		{
-			name:            "success merges details, description, reviews",
+			name:            "success merges details, description, rating, review count, reviews",
 			activity:        cafe,
 			places:          &fakePlaces{detailOut: detail},
 			wantPlaceCalls:  1,
 			wantDescription: "A cozy cafe with great coffee.",
 			wantDetailsJSON: wantDetailsJSON,
 			wantReviews:     1,
+			wantRating:      4.7,
+			wantReviewCount: 214,
+		},
+		{
+			name: "zero live rating leaves stored rating and review count untouched",
+			activity: activitiessvc.Activity{
+				ID: "5", Category: activitiessvc.CategoryCafes, City: "Belgrade",
+				Source: "google_places", ExternalID: "place-5", Rating: 4.2, ReviewCount: 87,
+			},
+			// Details is still replaced (the Rating guard only covers
+			// Rating/ReviewCount) — a zero-value PlaceDetail maps to "{}"
+			// for Cafes (no amenities, no hours).
+			places:          &fakePlaces{detailOut: placesmap.PlaceDetail{Rating: 0, UserRatingCount: 0}},
+			wantPlaceCalls:  1,
+			wantDetailsJSON: "{}",
+			wantRating:      4.2,
+			wantReviewCount: 87,
 		},
 		{
 			name:     "tripadvisor source never calls places",
@@ -106,9 +158,9 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 				defer cancel()
 			}
 
-			got, err := svc.GetByID(ctx, tt.activity.ID)
+			got, err := svc.GetByIDWithLiveDetails(ctx, tt.activity.ID)
 			if err != nil {
-				t.Fatalf("GetByID() unexpected error: %v", err)
+				t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
 			}
 
 			if !tt.noPlaces && tt.places.detailCalls != tt.wantPlaceCalls {
@@ -122,6 +174,12 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 			}
 			if len(got.GoogleReviews) != tt.wantReviews {
 				t.Errorf("GoogleReviews len = %d, want %d", len(got.GoogleReviews), tt.wantReviews)
+			}
+			if got.Rating != tt.wantRating {
+				t.Errorf("Rating = %v, want %v", got.Rating, tt.wantRating)
+			}
+			if got.ReviewCount != tt.wantReviewCount {
+				t.Errorf("ReviewCount = %v, want %v", got.ReviewCount, tt.wantReviewCount)
 			}
 			if repo.updateCalls != 0 {
 				t.Errorf("repo.Update called %d times, want 0 — the live-merged result must never be persisted", repo.updateCalls)
@@ -148,9 +206,9 @@ func TestActivities_GetByID_LiveDetails_ReviewMapping(t *testing.T) {
 	repo := &fakeRepo{getOut: activity}
 	svc := New(repo).WithPlaces(&fakePlaces{detailOut: detail})
 
-	got, err := svc.GetByID(context.Background(), "1")
+	got, err := svc.GetByIDWithLiveDetails(context.Background(), "1")
 	if err != nil {
-		t.Fatalf("GetByID() unexpected error: %v", err)
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
 	}
 	if len(got.GoogleReviews) != 1 {
 		t.Fatalf("GoogleReviews = %+v, want 1 entry", got.GoogleReviews)
