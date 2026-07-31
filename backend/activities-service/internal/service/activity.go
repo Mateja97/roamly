@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
 	"activities-service/internal/tripadvisormap"
 
@@ -45,12 +46,16 @@ type repository interface {
 	MarkSynced(ctx context.Context, cellKey, category string) error
 }
 
-// placesClient is the subset of internal/places.Client GetPhotos needs
-// (T2). Optional (see WithPlaces) — a server with none configured, or with
-// GOOGLE_MAPS_API_KEY unset, still serves stored photos, it just never
-// resolves a venue's rest-of-set live.
+// placesClient is the subset of internal/places.Client the service layer
+// needs: GetPhotos uses ResolvePhotos; GetByID's live-merge (T2,
+// places-live-details) uses PlaceDetails. Optional (see WithPlaces) — a
+// server with none configured, or with GOOGLE_MAPS_API_KEY unset, still
+// serves stored data, it just never resolves anything live.
 type placesClient interface {
 	ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error)
+	// PlaceDetails fetches live Place Details for one placeID — the data
+	// source for GetByID's live merge (see withLiveDetails).
+	PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
 }
 
 // tripadvisorClient is the subset of internal/tripadvisor.Client the
@@ -488,13 +493,94 @@ func (a *Activities) List(ctx context.Context, req ListRequest) (result activiti
 }
 
 // GetByID returns a single activity by id, sentinel errors passed through
-// untouched (wrapped for context) — see GO_STANDARDS.md "Errors".
+// untouched (wrapped for context) — see GO_STANDARDS.md "Errors". For a
+// Places-sourced row, live Google Place Details are merged onto the result
+// (T2, places-live-details) — see withLiveDetails. This is also what backs
+// the admin GetActivity RPC; the same nil-safe fallback-on-error contract
+// makes that harmless (admin just also sees the live-merged view), and
+// reusing GetByID here rather than adding a second method is the smaller
+// diff — see engineering-notes.md.
 func (a *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Activity, error) {
 	activity, err := a.repo.GetByID(ctx, id)
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
 	}
-	return activity, nil
+	return a.withLiveDetails(ctx, activity), nil
+}
+
+// detailResolveTimeout bounds GetByID's live Place Details lookup (T2,
+// places-live-details): request-scoped and deliberately short, same
+// reasoning as photoResolveTimeout — a detail-page load can't block on a
+// third-party call.
+const detailResolveTimeout = 4 * time.Second
+
+// withLiveDetails live-merges fresh Google Place Details onto activity for
+// a Places-sourced row (T2, places-live-details), mirroring GetPhotos'
+// fallback-on-error contract exactly: an unconfigured places client, any
+// resolve error, or a timeout all fall back to the bare stored row, no
+// error surfaced. Tripadvisor-sourced rows (source == "tripadvisor") and
+// admin-created rows (source == "") never reach a.places. The one
+// deliberate difference from GetPhotos: this result is never passed to
+// a.repo.Update or any other persistence call — Places Terms §14.3 forbids
+// caching anything but place_id/lat-lng, so every call re-fetches fresh.
+func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
+	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" || a.places == nil {
+		return activity
+	}
+
+	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
+	defer cancel()
+
+	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID)
+	if err != nil {
+		slog.Warn("live place details resolve failed, falling back to stored row", "activity_id", activity.ID, "error", err)
+		return activity
+	}
+
+	activity.Details = placesmap.BuildLiveDetails(activity.Category, activity.City, detail)
+	if desc := liveDescription(detail); desc != "" {
+		activity.Description = desc
+	}
+	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	return activity
+}
+
+// liveDescription reads a Place Details response's description (T2): the
+// spec's merge order is editorialSummary first, generativeSummary.overview
+// as the fallback. "" when Places supplied neither, so withLiveDetails
+// leaves the stored (currently always empty) Description untouched instead
+// of blanking it.
+func liveDescription(d placesmap.PlaceDetail) string {
+	if d.EditorialSummary.Text != "" {
+		return d.EditorialSummary.Text
+	}
+	return d.GenerativeSummary.Overview.Text
+}
+
+// toGoogleReviews maps a live Place Details response's reviews onto
+// activitiessvc's own wire-agnostic GoogleReview shape (T2): a
+// backend/shared model can't import internal/placesmap (Go's internal
+// package rule), so this is a small field-for-field copy, not a reshape.
+// nil (not an empty slice) when Places returned no reviews, matching
+// Photos/Tags' own "absent means nil" convention on Activity.
+func toGoogleReviews(reviews []placesmap.Review) []activitiessvc.GoogleReview {
+	if len(reviews) == 0 {
+		return nil
+	}
+	out := make([]activitiessvc.GoogleReview, len(reviews))
+	for i, r := range reviews {
+		out[i] = activitiessvc.GoogleReview{
+			AuthorAttribution: activitiessvc.GoogleAuthorAttribution{
+				DisplayName: r.AuthorAttribution.DisplayName,
+				PhotoURI:    r.AuthorAttribution.PhotoURI,
+				URI:         r.AuthorAttribution.URI,
+			},
+			Rating:      r.Rating,
+			Text:        r.Text.Text,
+			PublishTime: r.PublishTime,
+		}
+	}
+	return out
 }
 
 // photoResolveTimeout bounds GetPhotos' live Places lookup (T2):

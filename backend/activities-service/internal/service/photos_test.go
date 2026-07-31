@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
 
 	"backend/shared/models/activitiessvc"
@@ -15,15 +16,34 @@ import (
 // fakePlaces is a fake placesClient: each call is counted, so tests can
 // assert "makes zero Place Photos calls" (T2's cache-only acceptance
 // criterion) as directly as the RPC itself would be verified.
+// PlaceDetails (T2, places-live-details, GetByID's live-merge) can either
+// return detailOut/detailErr directly, or block until its ctx is done and
+// return ctx.Err() (detailBlock) — a deterministic stand-in for a real
+// timeout, since detailResolveTimeout is a package const, not a field a
+// test can shrink.
 type fakePlaces struct {
 	calls int
 	out   []activitiessvc.Photo
 	err   error
+
+	detailCalls int
+	detailOut   placesmap.PlaceDetail
+	detailErr   error
+	detailBlock bool
 }
 
 func (f *fakePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
 	f.calls++
 	return f.out, f.err
+}
+
+func (f *fakePlaces) PlaceDetails(ctx context.Context, _ string) (placesmap.PlaceDetail, error) {
+	f.detailCalls++
+	if f.detailBlock {
+		<-ctx.Done()
+		return placesmap.PlaceDetail{}, ctx.Err()
+	}
+	return f.detailOut, f.detailErr
 }
 
 func TestActivities_GetPhotos(t *testing.T) {
