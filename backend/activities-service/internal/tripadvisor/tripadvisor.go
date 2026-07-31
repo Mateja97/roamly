@@ -227,8 +227,13 @@ const travelersChoice = "Travelers' Choice"
 
 // LocationDetails is one Tripadvisor location's full detail record — a
 // second call per NearbySearch candidate. Phone, Subratings, Rankings,
-// Award, PriceLevel, and Categories are all optional per the API and
-// absent/zero-value when Tripadvisor didn't return them.
+// Award, PriceLevel, Categories, Description, Attributes, and
+// RecommendedVisitLength are all optional per the API and absent/zero-value
+// when Tripadvisor didn't return them — empirically sparse for
+// Restaurants/Bars/Cafés under this entitlement (Description shows up for
+// some venues, Attributes/RecommendedVisitLength were absent in every venue
+// sampled while wiring this up), same "some venues have it, most don't"
+// shape as Google's own editorialSummary.
 type LocationDetails struct {
 	LocationID     string
 	Name           string
@@ -246,6 +251,17 @@ type LocationDetails struct {
 	Award          *Award
 	PriceLevel     string
 	Categories     []Category
+	// Description is the primary-language editorial description
+	// (descriptions[]), "" when Tripadvisor has none for this location.
+	Description string
+	// Attributes is descriptive amenities/features (attributes[].name) —
+	// e.g. "Free Wi-Fi", "Outdoor Seating". Names only; type/type_id aren't
+	// consumed anywhere downstream yet.
+	Attributes []string
+	// RecommendedVisitLength is Tripadvisor's coded suggested-visit-length
+	// indicator (0 = unknown/not set, 1 = under 1h, 2 = 1-2h, 3 = 2-3h,
+	// 4 = over 3h) — 0 and "absent" are indistinguishable on the wire.
+	RecommendedVisitLength int
 }
 
 func (c *Client) LocationDetails(ctx context.Context, locationID string) (LocationDetails, error) {
@@ -305,21 +321,33 @@ func (c *Client) LocationDetails(ctx context.Context, locationID string) (Locati
 			DisplayName string `json:"display_name"`
 			Hierarchy   string `json:"hierarchy"`
 		} `json:"categories"`
+		Descriptions []localizedValue `json:"descriptions"`
+		Attributes   []struct {
+			Name string `json:"name"`
+		} `json:"attributes"`
+		RecommendedVisitLength int `json:"recommended_visit_length"`
 	}
 	if err := c.doJSON(ctx, c.base+"/locations/"+locationID+"?"+q.Encode(), &parsed); err != nil {
 		return LocationDetails{}, fmt.Errorf("tripadvisor location %s details: %w", locationID, err)
 	}
 
 	details := LocationDetails{
-		LocationID:     strconv.FormatInt(parsed.ID, 10),
-		Name:           primaryValue(parsed.Names),
-		Lat:            parsed.Coordinates.Latitude,
-		Lng:            parsed.Coordinates.Longitude,
-		Rating:         parsed.TravelerRatings.Overall.Rating,
-		ReviewCount:    parsed.TravelerRatings.Overall.Count,
-		RatingImageURL: parsed.TravelerRatings.Overall.IconURL,
-		WebURL:         parsed.URLs.Tripadvisor.Main,
-		PriceLevel:     parsed.PriceLevel,
+		LocationID:             strconv.FormatInt(parsed.ID, 10),
+		Name:                   primaryValue(parsed.Names),
+		Lat:                    parsed.Coordinates.Latitude,
+		Lng:                    parsed.Coordinates.Longitude,
+		Rating:                 parsed.TravelerRatings.Overall.Rating,
+		ReviewCount:            parsed.TravelerRatings.Overall.Count,
+		RatingImageURL:         parsed.TravelerRatings.Overall.IconURL,
+		WebURL:                 parsed.URLs.Tripadvisor.Main,
+		PriceLevel:             parsed.PriceLevel,
+		Description:            primaryValue(parsed.Descriptions),
+		RecommendedVisitLength: parsed.RecommendedVisitLength,
+	}
+	for _, attr := range parsed.Attributes {
+		if attr.Name != "" {
+			details.Attributes = append(details.Attributes, attr.Name)
+		}
 	}
 	if len(parsed.Addresses) > 0 {
 		details.Address = parsed.Addresses[0].Formatted

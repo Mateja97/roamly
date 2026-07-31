@@ -1193,12 +1193,14 @@ func (a *Activities) tripadvisorReviews(ctx context.Context, details tripadvisor
 // Tripadvisor itself returned nothing for it, never a fabricated value.
 func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
-		RatingImageURL: d.RatingImageURL,
-		ReviewCount:    d.ReviewCount,
-		RankingText:    rankingText(d.Rankings),
-		WebURL:         d.WebURL,
-		Phone:          d.Phone,
-		PriceLevel:     d.PriceLevel,
+		RatingImageURL:         d.RatingImageURL,
+		ReviewCount:            d.ReviewCount,
+		RankingText:            rankingText(d.Rankings),
+		WebURL:                 d.WebURL,
+		Phone:                  d.Phone,
+		PriceLevel:             d.PriceLevel,
+		Attributes:             d.Attributes,
+		RecommendedVisitLength: d.RecommendedVisitLength,
 	}
 	if d.Subratings != (tripadvisor.Subratings{}) {
 		attribution.Subratings = &activitiessvc.TripadvisorSubratings{
@@ -1217,20 +1219,21 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, reviews))
 
 	return activitiessvc.IngestActivity{
-		Title:      d.Name,
-		Category:   category,
-		Lat:        d.Lat,
-		Lng:        d.Lng,
-		Address:    d.Address,
-		City:       d.City,
-		Country:    d.Country,
-		Rating:     d.Rating,
-		Status:     activitiessvc.StatusPublished,
-		Details:    detailsJSON,
-		Photos:     photos,
-		Source:     "tripadvisor",
-		SourceURL:  d.WebURL,
-		ExternalID: d.LocationID,
+		Title:       d.Name,
+		Description: d.Description,
+		Category:    category,
+		Lat:         d.Lat,
+		Lng:         d.Lng,
+		Address:     d.Address,
+		City:        d.City,
+		Country:     d.Country,
+		Rating:      d.Rating,
+		Status:      activitiessvc.StatusPublished,
+		Details:     detailsJSON,
+		Photos:      photos,
+		Source:      "tripadvisor",
+		SourceURL:   d.WebURL,
+		ExternalID:  d.LocationID,
 		// categoryTags derives tripadvisormap's expected leaf-tag shape
 		// ("fine_dining") from categories[]'s "restaurants > fine_dining"
 		// hierarchy strings; Subtype itself never guesses beyond its curated

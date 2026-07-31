@@ -99,6 +99,11 @@ export type TripadvisorAttribution = {
   award?: TripadvisorAward;
   price_level?: string;
   cuisine?: string;
+  // Attributes/recommended_visit_length: decoded but empirically sparse for
+  // Restaurants/Bars/Cafés under this API entitlement — no screen renders
+  // them yet, kept on the wire for when/if coverage improves.
+  attributes?: string[];
+  recommended_visit_length?: number;
 };
 
 // T4: a backend-gated quoted traveler review — only ever populated for a
