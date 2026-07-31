@@ -2,6 +2,7 @@ package places_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -409,5 +410,67 @@ func TestSearchText_NoRetryOnOther4xx(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("calls = %d, want 1 (no retry on 4xx other than 429)", calls)
+	}
+}
+
+func TestClient_SearchNearby(t *testing.T) {
+	var gotBody map[string]any
+	var gotMask, gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMask = r.Header.Get("X-Goog-FieldMask")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("decoding request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := io.WriteString(w, `{"places":[{"id":"abc","displayName":{"text":"Ada Beach"},"primaryType":"beach"}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("test-key", srv.URL)
+	got, err := c.SearchNearby(context.Background(), places.NearbyRequest{
+		Lat: 44.81, Lng: 20.46, RadiusM: 10000,
+		IncludedTypes: []string{"beach"}, MaxResults: 20,
+	}, places.NearbyFieldMask)
+	if err != nil {
+		t.Fatalf("SearchNearby() error: %v", err)
+	}
+
+	if gotPath != "/v1/places:searchNearby" {
+		t.Errorf("path = %q, want /v1/places:searchNearby", gotPath)
+	}
+	if gotMask != places.NearbyFieldMask {
+		t.Errorf("field mask = %q, want %q", gotMask, places.NearbyFieldMask)
+	}
+	if len(got) != 1 || got[0].ID != "abc" || got[0].PrimaryType != "beach" {
+		t.Fatalf("places = %+v, want one place id=abc primaryType=beach", got)
+	}
+
+	// The circle locationRestriction is the whole reason this uses
+	// searchNearby rather than searchText: it is a hard geographic bound,
+	// where searchText's circle is only a bias.
+	restriction, ok := gotBody["locationRestriction"].(map[string]any)
+	if !ok {
+		t.Fatalf("locationRestriction missing from body %+v", gotBody)
+	}
+	circle, ok := restriction["circle"].(map[string]any)
+	if !ok {
+		t.Fatalf("circle missing from locationRestriction %+v", restriction)
+	}
+	if circle["radius"] != float64(10000) {
+		t.Errorf("radius = %v, want 10000", circle["radius"])
+	}
+	center, ok := circle["center"].(map[string]any)
+	if !ok || center["latitude"] != 44.81 || center["longitude"] != 20.46 {
+		t.Errorf("center = %+v, want lat 44.81 lng 20.46", center)
+	}
+	if gotBody["maxResultCount"] != float64(20) {
+		t.Errorf("maxResultCount = %v, want 20", gotBody["maxResultCount"])
+	}
+	types, ok := gotBody["includedTypes"].([]any)
+	if !ok || len(types) != 1 || types[0] != "beach" {
+		t.Errorf("includedTypes = %+v, want [beach]", gotBody["includedTypes"])
 	}
 }

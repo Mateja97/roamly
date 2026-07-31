@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"time"
@@ -113,6 +114,101 @@ func (c *Client) SearchText(ctx context.Context, query, pageToken, fieldMask str
 		return SearchResult{}, err
 	}
 	return parsed, nil
+}
+
+// NearbyFieldMask selects the place fields type-driven discovery needs.
+// Deliberately narrow: hours, price and venue type are not storable under
+// Places Terms §14.3 and are fetched live on detail view instead, so paying
+// for them here would be a no-op (the same trim scrapecity's fieldMask got).
+const NearbyFieldMask = "places.id,places.displayName,places.location," +
+	"places.formattedAddress,places.rating,places.userRatingCount," +
+	"places.googleMapsUri,places.photos,places.primaryType,places.types"
+
+// NearbyRequest is one searchNearby call's inputs. RadiusM must be <= 50000
+// (the API's documented ceiling); MaxResults is clamped to 1..20 by the API,
+// which returns no pagination token — 20 per call is the hard ceiling, which
+// is why discovery issues one call per subtype rather than one per category.
+type NearbyRequest struct {
+	Lat, Lng      float64
+	RadiusM       float64
+	IncludedTypes []string
+	MaxResults    int
+}
+
+// SearchNearby runs one Places Nearby Search restricted to a circle and to
+// includedTypes. Unlike SearchText, the circle is a hard restriction rather
+// than a bias, so results cannot drift outside the requested area.
+func (c *Client) SearchNearby(ctx context.Context, req NearbyRequest, fieldMask string) ([]placesmap.Place, error) {
+	body, err := json.Marshal(map[string]any{
+		"includedTypes":  req.IncludedTypes,
+		"maxResultCount": req.MaxResults,
+		"rankPreference": "POPULARITY",
+		"locationRestriction": map[string]any{
+			"circle": map[string]any{
+				"center": map[string]any{"latitude": req.Lat, "longitude": req.Lng},
+				"radius": req.RadiusM,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding nearby search body: %w", err)
+	}
+
+	var parsed struct {
+		Places []placesmap.Place `json:"places"`
+	}
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchNearby", body, map[string]string{
+		"Content-Type":     "application/json",
+		"X-Goog-Api-Key":   c.key,
+		"X-Goog-FieldMask": fieldMask,
+	}, &parsed)
+	if err != nil {
+		return nil, fmt.Errorf("nearby search for %v: %w", req.IncludedTypes, err)
+	}
+	return parsed.Places, nil
+}
+
+// SearchTextInArea runs a Text Search bounded to a rectangle around
+// (lat, lng). It exists for the handful of discovery rows whose subtype has
+// no Table A type and must fall back to a phrase.
+//
+// A rectangle rather than a circle because Text Search's locationRestriction
+// accepts only rectangles — its circle form is locationBias, a soft hint that
+// results routinely escape. That softness is exactly how "Tara National
+// Park", 200 km away, ended up in Belgrade's nature rows, so the phrase
+// fallback gets the hardest bound the endpoint offers.
+func (c *Client) SearchTextInArea(ctx context.Context, query string, lat, lng, radiusKM float64, fieldMask string) ([]placesmap.Place, error) {
+	// Degrees per km: latitude is ~111 km/deg everywhere; longitude shrinks
+	// by cos(latitude).
+	const kmPerDegreeLat = 111.0
+	dLat := radiusKM / kmPerDegreeLat
+	dLng := radiusKM / (kmPerDegreeLat * math.Cos(lat*math.Pi/180))
+
+	body, err := json.Marshal(map[string]any{
+		"textQuery":           query,
+		"pageSize":            20,
+		"strictTypeFiltering": true,
+		"locationRestriction": map[string]any{
+			"rectangle": map[string]any{
+				"low":  map[string]any{"latitude": lat - dLat, "longitude": lng - dLng},
+				"high": map[string]any{"latitude": lat + dLat, "longitude": lng + dLng},
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding area text search body: %w", err)
+	}
+
+	var parsed SearchResult
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchText", body, map[string]string{
+		"Content-Type":     "application/json",
+		"X-Goog-Api-Key":   c.key,
+		"X-Goog-FieldMask": fieldMask,
+	}, &parsed)
+	if err != nil {
+		return nil, fmt.Errorf("area text search for %q: %w", query, err)
+	}
+	return parsed.Places, nil
 }
 
 // PhotoMediaURL resolves a Places photo resource name (e.g.
