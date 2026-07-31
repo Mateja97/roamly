@@ -1010,23 +1010,27 @@ func TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource(t *testing.T) {
 	}
 }
 
-// TestMigration0015TripadvisorSyncRegions proves the freshness table exists
-// with the (cell_key, category) composite primary key the lazy sync relies
-// on: one row per area+category, a duplicate rejected, a different
-// category at the same cell allowed (Restaurants and Bars track freshness
-// independently).
-func TestMigration0015TripadvisorSyncRegions(t *testing.T) {
+// TestSyncRegionsPrimaryKey proves 0024's widened composite primary key
+// (provider, cell_key, category, subtype) — generalized from Tripadvisor's
+// original (cell_key, category) — still rejects an exact duplicate while
+// allowing a different category, subtype, or provider at the same cell to
+// coexist (Google's per-subtype rows track freshness independently from
+// Tripadvisor's whole-category rows).
+func TestSyncRegionsPrimaryKey(t *testing.T) {
 	ctx := context.Background()
 	pool := startTestPostgres(t)
 
-	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'restaurants', now())`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now())`); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'restaurants', now())`); err == nil {
-		t.Fatal("duplicate (cell_key, category) insert succeeded, want primary-key violation")
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now())`); err == nil {
+		t.Fatal("duplicate (provider, cell_key, category, subtype) insert succeeded, want primary-key violation")
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ('44.8,20.5', 'bars', now())`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'bars', '', now())`); err != nil {
 		t.Fatalf("different-category insert at the same cell: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('google', '44.8,20.5', 'nature', 'beach', now())`); err != nil {
+		t.Fatalf("different-provider/subtype insert at the same cell: %v", err)
 	}
 }
 
@@ -1069,7 +1073,7 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 	db := startTestPostgres(t)
 	repo := New(db)
 
-	_, ok, err := repo.SyncedAt(ctx, "44.8,20.5", "restaurants")
+	_, ok, err := repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "restaurants", "")
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
@@ -1081,11 +1085,11 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 	// container and host (database now() might be slightly earlier than Go time.Now()).
 	time.Sleep(time.Millisecond)
 	before := time.Now()
-	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
+	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}
 
-	syncedAt, ok, err := repo.SyncedAt(ctx, "44.8,20.5", "restaurants")
+	syncedAt, ok, err := repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "restaurants", "")
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
@@ -1096,7 +1100,7 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 		t.Errorf("syncedAt = %v, want >= %v", syncedAt, before)
 	}
 
-	_, ok, err = repo.SyncedAt(ctx, "44.8,20.5", "bars")
+	_, ok, err = repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "bars", "")
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
@@ -1106,8 +1110,18 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 
 	// Re-marking the same cell/category updates the timestamp in place
 	// rather than erroring on a duplicate primary key.
-	if err := repo.MarkSynced(ctx, "44.8,20.5", "restaurants"); err != nil {
+	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
 		t.Fatalf("MarkSynced() (second call) error: %v", err)
+	}
+
+	// A Google row at the same cell but a different provider/subtype tracks
+	// freshness independently — the granularity 0024 exists for.
+	_, ok, err = repo.SyncedAt(ctx, "google", "44.8,20.5", "nature", "beach")
+	if err != nil {
+		t.Fatalf("SyncedAt() error: %v", err)
+	}
+	if ok {
+		t.Fatal("SyncedAt() ok = true for google/nature/beach, want false — providers and subtypes track independently")
 	}
 }
 

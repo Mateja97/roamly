@@ -484,34 +484,37 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 	return a, nil
 }
 
-// SyncedAt reports the last successful Tripadvisor sync time for
-// (cellKey, category), and whether one has happened at all — false, zero
-// time when the cell/category pair has never been synced.
-func (r *Activities) SyncedAt(ctx context.Context, cellKey, category string) (time.Time, bool, error) {
+// SyncedAt reports the last successful sync time for
+// (provider, cellKey, category, subtype), and whether one has happened at
+// all — false, zero time when the combination has never been synced.
+func (r *Activities) SyncedAt(ctx context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
 	var syncedAt time.Time
 	err := r.db.QueryRow(ctx,
-		`SELECT synced_at FROM tripadvisor_sync_regions WHERE cell_key = $1 AND category = $2`,
-		cellKey, category,
+		`SELECT synced_at FROM sync_regions
+		 WHERE provider = $1 AND cell_key = $2 AND category = $3 AND subtype = $4`,
+		provider, cellKey, category, subtype,
 	).Scan(&syncedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, false, nil
 	}
 	if err != nil {
-		return time.Time{}, false, fmt.Errorf("querying tripadvisor sync region %s/%s: %w", cellKey, category, err)
+		return time.Time{}, false, fmt.Errorf("querying sync region %s/%s/%s/%s: %w", provider, cellKey, category, subtype, err)
 	}
 	return syncedAt, true, nil
 }
 
-// MarkSynced records a fresh Tripadvisor sync for (cellKey, category),
-// upserting the timestamp in place on a re-sync.
-func (r *Activities) MarkSynced(ctx context.Context, cellKey, category string) error {
+// MarkSynced records a fresh sync for (provider, cellKey, category,
+// subtype), upserting the timestamp in place on a re-sync.
+func (r *Activities) MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error {
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ($1, $2, now())
-		 ON CONFLICT (cell_key, category) DO UPDATE SET synced_at = EXCLUDED.synced_at`,
-		cellKey, category,
+		`INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at)
+		 VALUES ($1, $2, $3, $4, now())
+		 ON CONFLICT (provider, cell_key, category, subtype)
+		 DO UPDATE SET synced_at = EXCLUDED.synced_at`,
+		provider, cellKey, category, subtype,
 	)
 	if err != nil {
-		return fmt.Errorf("marking tripadvisor sync region %s/%s: %w", cellKey, category, err)
+		return fmt.Errorf("marking sync region %s/%s/%s/%s: %w", provider, cellKey, category, subtype, err)
 	}
 	return nil
 }

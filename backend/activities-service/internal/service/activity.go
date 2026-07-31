@@ -39,12 +39,25 @@ type repository interface {
 	// pipeline already relies on. Each source_url now maps to exactly one
 	// category, decided by tripadvisormap.Category before Upsert is called.
 	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
-	// SyncedAt reports the last successful Tripadvisor sync time for
-	// (cellKey, category), and whether one has happened at all.
-	SyncedAt(ctx context.Context, cellKey, category string) (time.Time, bool, error)
-	// MarkSynced records a fresh Tripadvisor sync for (cellKey, category).
-	MarkSynced(ctx context.Context, cellKey, category string) error
+	// SyncedAt reports the last successful sync time for
+	// (provider, cellKey, category, subtype), and whether one has happened.
+	SyncedAt(ctx context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error)
+	// MarkSynced records a fresh sync for (provider, cellKey, category, subtype).
+	MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error
 }
+
+// Sync providers, the first column of sync_regions. Adding a tours provider
+// later means a new constant here and its own syncXIfNeeded — not a schema
+// change.
+//
+// Not to be confused with activities.source, a different namespace with
+// different values: a Google-discovered row has provider "google" in
+// sync_regions but source "google_places" in activities (the value the
+// existing catalog and GetPhotos' provider branch already use).
+const (
+	ProviderTripadvisor = "tripadvisor"
+	ProviderGoogle      = "google"
+)
 
 // placesClient is the subset of internal/places.Client the service layer
 // needs: GetPhotos uses ResolvePhotos; GetByID's live-merge (T2,
@@ -949,7 +962,7 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 		cell := syncCellKey(anchor.Lat, anchor.Lng)
 		var due []activitiessvc.Category
 		for _, cat := range categories {
-			syncedAt, ok, err := a.repo.SyncedAt(ctx, cell, string(cat))
+			syncedAt, ok, err := a.repo.SyncedAt(ctx, ProviderTripadvisor, cell, string(cat), "")
 			if err != nil {
 				slog.Warn("tripadvisor synced-at lookup failed", "cell", cell, "category", cat, "error", err)
 			} else if ok && time.Since(syncedAt) < tripadvisorSyncTTL {
@@ -1095,7 +1108,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 	}
 
 	for _, category := range categories {
-		if err := a.repo.MarkSynced(ctx, syncCellKey(anchor.Lat, anchor.Lng), string(category)); err != nil {
+		if err := a.repo.MarkSynced(ctx, ProviderTripadvisor, syncCellKey(anchor.Lat, anchor.Lng), string(category), ""); err != nil {
 			slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
 		}
 	}

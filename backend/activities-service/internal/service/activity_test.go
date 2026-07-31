@@ -48,8 +48,9 @@ type fakeRepo struct {
 	upsertOut   activitiessvc.Activity
 	upsertErr   error
 
-	syncedAtOut map[string]time.Time // key: cellKey+"|"+category
-	markSynced  []string             // cellKey+"|"+category, in call order
+	syncMu      sync.Mutex           // MarkSynced runs concurrently once Google's sweep lands
+	syncedAtOut map[string]time.Time // key: syncKey(provider, cellKey, category, subtype)
+	markSynced  []string             // syncKey(...), in call order
 }
 
 func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
@@ -96,14 +97,26 @@ func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (a
 	return f.upsertOut, f.upsertErr
 }
 
-func (f *fakeRepo) SyncedAt(_ context.Context, cellKey, category string) (time.Time, bool, error) {
-	t, ok := f.syncedAtOut[cellKey+"|"+category]
+func (f *fakeRepo) SyncedAt(_ context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
+	t, ok := f.syncedAtOut[syncKey(provider, cellKey, category, subtype)]
 	return t, ok, nil
 }
 
-func (f *fakeRepo) MarkSynced(_ context.Context, cellKey, category string) error {
-	f.markSynced = append(f.markSynced, cellKey+"|"+category)
+func (f *fakeRepo) MarkSynced(_ context.Context, provider, cellKey, category, subtype string) error {
+	f.syncMu.Lock()
+	defer f.syncMu.Unlock()
+	f.markSynced = append(f.markSynced, syncKey(provider, cellKey, category, subtype))
 	return nil
+}
+
+// syncKey keeps Tripadvisor's existing "cell|category" test key shape so the
+// pre-existing sync assertions are untouched, and extends it only for other
+// providers or subtype-scoped rows.
+func syncKey(provider, cellKey, category, subtype string) string {
+	if provider == ProviderTripadvisor && subtype == "" {
+		return cellKey + "|" + category
+	}
+	return provider + "|" + cellKey + "|" + category + "|" + subtype
 }
 
 func TestActivities_Query_Validation(t *testing.T) {
