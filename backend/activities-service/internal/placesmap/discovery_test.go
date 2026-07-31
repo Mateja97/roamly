@@ -63,7 +63,10 @@ func TestDiscoveryRows_SubtypesAreValid(t *testing.T) {
 
 // TestDiscoveryRows_TypesAreUnambiguous protects the inverted (classification)
 // direction: a Google type on two rows would make Subtype pick whichever came
-// first, which is a guess.
+// first, which is a guess. classifyOnlyTypes is merged into typeToSubtype
+// after the DiscoveryRows loop (see discovery.go), so a key colliding with a
+// DiscoveryRows type would silently overwrite the discovery-sourced
+// classification with no test failure — checked here too.
 func TestDiscoveryRows_TypesAreUnambiguous(t *testing.T) {
 	owner := map[string]string{}
 	for _, r := range DiscoveryRows {
@@ -73,6 +76,36 @@ func TestDiscoveryRows_TypesAreUnambiguous(t *testing.T) {
 				t.Errorf("Google type %q claimed by both %s and %s", ty, prev, key)
 			}
 			owner[ty] = key
+		}
+	}
+	for ty := range classifyOnlyTypes {
+		if prev, ok := owner[ty]; ok {
+			t.Errorf("Google type %q claimed by both discovery row %s and classifyOnlyTypes", ty, prev)
+		}
+	}
+}
+
+// TestClassifyOnlyTypes_SubtypesAreValid catches a typo'd slug in
+// classifyOnlyTypes (discovery.go) — those subtypes are classification-only,
+// never discovered from Google (Restaurants/Bars are Tripadvisor-sourced),
+// which is why they have no DiscoveryRows entry and so aren't covered by
+// TestDiscoveryRows_SubtypesAreValid above.
+func TestClassifyOnlyTypes_SubtypesAreValid(t *testing.T) {
+	for placeType, sub := range classifyOnlyTypes {
+		var owner activitiessvc.Category
+		for cat, subs := range activitiessvc.Subcategories {
+			for _, s := range subs {
+				if s == sub {
+					owner = cat
+				}
+			}
+		}
+		if owner != activitiessvc.CategoryRestaurants && owner != activitiessvc.CategoryBars {
+			t.Errorf("classifyOnlyTypes[%q] = %q: owning category %q is not Restaurants or Bars", placeType, sub, owner)
+			continue
+		}
+		if !activitiessvc.ValidSubcategory(owner, sub) {
+			t.Errorf("ValidSubcategory(%q, %q) = false, want true", owner, sub)
 		}
 	}
 }
