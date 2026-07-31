@@ -1544,10 +1544,15 @@ func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
 		"citizenM San Francisco Union Square": seedTA(t, "citizenM San Francisco Union Square", "junk-3", "https://www.tripadvisor.com/Hotel_Review-g1-d103-Reviews-citizenM.html"),
 	}
 
+	// ExternalID set on both: this test exercises 0022's category scoping,
+	// not 0025's external_id predicate, and real Google-sourced rows always
+	// carry a place id — a fixture without one would spuriously trip 0025
+	// (which now also runs as part of Migrations()) and mask what this test
+	// actually checks.
 	legacyGoogleCafe, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
 		Title: "Legacy Google Cafe", Category: activitiessvc.CategoryCafes,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
-		Source: "google_places", SourceURL: "http://google/cafe1",
+		Source: "google_places", SourceURL: "http://google/cafe1", ExternalID: "legacy-google-cafe-1",
 	})
 	if err != nil {
 		t.Fatalf("seeding legacy google cafe: %v", err)
@@ -1555,7 +1560,7 @@ func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
 	legacyGoogleOther, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
 		Title: "Legacy Google Park", Category: activitiessvc.CategoryNature,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
-		Source: "google_places", SourceURL: "http://google/park1",
+		Source: "google_places", SourceURL: "http://google/park1", ExternalID: "legacy-google-park-1",
 	})
 	if err != nil {
 		t.Fatalf("seeding legacy google other-category row: %v", err)
@@ -1635,10 +1640,14 @@ func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
 	}
 	repo := New(db)
 
+	// ExternalID set: this test exercises 0023's source scoping, not 0025's
+	// external_id predicate, and real Google-sourced rows always carry a
+	// place id — a fixture without one would spuriously trip 0025 (which now
+	// also runs as part of Migrations()) before 0023 gets a chance to act.
 	googleRow, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
 		Title: "Ada Ciganlija Beach", Category: activitiessvc.CategoryNature,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
-		Source: "google_places", SourceURL: "http://google/ada-ciganlija",
+		Source: "google_places", SourceURL: "http://google/ada-ciganlija", ExternalID: "ada-ciganlija-beach",
 		Details: json.RawMessage(`{"hours":"9-5","amenities":["parking"]}`),
 	})
 	if err != nil {
