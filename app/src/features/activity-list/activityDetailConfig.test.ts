@@ -426,9 +426,31 @@ describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
     expect(tripadvisorReviews(activity)).toEqual([]);
   });
 
-  it('is undefined for any category that never carries the field (e.g. cafes)', () => {
+  it('reads `tripadvisor`/`reviews` off a café row too — cafés is the one dual-sourced category (#104)', () => {
+    const activity = baseActivity({
+      category: 'cafes',
+      known_for_brew: 'Pour-over',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 104,
+        web_url: 'https://tripadvisor.example/place',
+      },
+      reviews: [{ rating: 4, date: '3 May 2026', text: 'Great espresso.' }],
+    });
+    expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 104 });
+    expect(tripadvisorReviews(activity)).toMatchObject([{ rating: 4 }]);
+  });
+
+  it('is undefined for a non-Tripadvisor café row (Google-sourced, field simply absent)', () => {
     const activity = baseActivity({ category: 'cafes', known_for_brew: 'Pour-over' });
     expect(tripadvisorAttribution(activity)).toBeUndefined();
+    expect(tripadvisorReviews(activity)).toEqual([]);
+  });
+
+  it('is undefined for a category that never carries the field (e.g. nightlife)', () => {
+    const activity = baseActivity({ category: 'nightlife', venue_type: 'Club' });
+    expect(tripadvisorAttribution(activity)).toBeUndefined();
+    expect(tripadvisorReviews(activity)).toEqual([]);
   });
 
   it('defaults to [] with no details at all', () => {

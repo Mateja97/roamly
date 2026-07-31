@@ -190,6 +190,11 @@ export type ActivityDetails =
       hours?: string;
       on_the_bar?: ItemPrice[];
       opening_hours?: OpeningHours;
+      // Cafés is the one dual-sourced category (fix(activities-service)
+      // #104) — present only for a Tripadvisor-sourced café row, same as
+      // restaurants/bars.
+      tripadvisor?: TripadvisorAttribution;
+      reviews?: TripadvisorReview[];
     }
   | {
       category: 'nightlife';
