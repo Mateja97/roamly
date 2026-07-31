@@ -7,6 +7,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -96,26 +97,35 @@ func TestGoogleDueRows_NoAnchorNoWork(t *testing.T) {
 
 func TestActivities_Query_GoogleSync_UpsertsWithArbitratedSubtype(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	// The Belgrade case that motivated subtypeFor: a monument discovered by
+	// the historical_site row (PrimaryType/Types say "monument", not
+	// "historical_place") must still come out as monument_landmark — the
+	// place's own declared type, not row.Subtype ("historical_site"). Using
+	// a PrimaryType that maps to a DIFFERENT subtype than the row's own is
+	// what makes this test actually discriminate subtypeFor's arbitration
+	// from a reverted row.Subtype passthrough; a fixture whose PrimaryType
+	// happens to map to the same subtype as the row (e.g. "beach"/"beach")
+	// would pass either way.
 	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{
-		ID: "beach-1", Rating: 4.4, UserRatingCount: 30,
-		GoogleMapsURI: "https://maps.google/beach-1",
-		PrimaryType:   "beach",
-		Types:         []string{"beach"},
+		ID: "monument-1", Rating: 4.4, UserRatingCount: 30,
+		GoogleMapsURI: "https://maps.google/monument-1",
+		PrimaryType:   "monument",
+		Types:         []string{"monument", "historical_place", "tourist_attraction"},
 		AddressComponents: []placesmap.AddressComponent{
 			{LongText: "Belgrade", Types: []string{"locality", "political"}},
 			{LongText: "Serbia", Types: []string{"country", "political"}},
 		},
 	}}}
-	gp.nearbyOut[0].DisplayName.Text = "Ada Ciganlija"
-	gp.nearbyOut[0].Location.Latitude = 44.79
-	gp.nearbyOut[0].Location.Longitude = 20.40
+	gp.nearbyOut[0].DisplayName.Text = "Pobednik"
+	gp.nearbyOut[0].Location.Latitude = 44.82
+	gp.nearbyOut[0].Location.Longitude = 20.45
 
 	svc := New(repo).WithPlaces(gp)
 	req := Request{
 		Scope:           activitiessvc.ScopeNearby,
 		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		Categories:      []activitiessvc.Category{activitiessvc.CategoryNature},
-		Subcategories:   []string{"beach"},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryCulture},
+		Subcategories:   []string{"historical_site"},
 	}
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
@@ -123,18 +133,18 @@ func TestActivities_Query_GoogleSync_UpsertsWithArbitratedSubtype(t *testing.T) 
 	svc.waitForGoogleSync()
 
 	if len(repo.gotUpserts) == 0 {
-		t.Fatal("no upserts, want the discovered beach")
+		t.Fatal("no upserts, want the discovered monument")
 	}
 	got := repo.gotUpserts[0]
 	// The row supplies Category (and, only as a fallback, Subtype) — the
 	// place's own primaryType is what subtypeFor actually derives Subcategory
-	// from here (PrimaryType/Types both say "beach"), which is why this still
-	// lands on "beach" without ever touching row.Subtype.
-	if got.Category != activitiessvc.CategoryNature || got.Subcategory != "beach" {
-		t.Errorf("upsert category/subcategory = %s/%s, want nature/beach", got.Category, got.Subcategory)
+	// from, so this lands on monument_landmark even though the row that
+	// found it (historical_site) has a different Subtype of its own.
+	if got.Category != activitiessvc.CategoryCulture || got.Subcategory != "monument_landmark" {
+		t.Errorf("upsert category/subcategory = %s/%s, want culture/monument_landmark", got.Category, got.Subcategory)
 	}
-	if got.Source != "google_places" || got.ExternalID != "beach-1" {
-		t.Errorf("upsert source/external id = %s/%s, want google_places/beach-1", got.Source, got.ExternalID)
+	if got.Source != "google_places" || got.ExternalID != "monument-1" {
+		t.Errorf("upsert source/external id = %s/%s, want google_places/monument-1", got.Source, got.ExternalID)
 	}
 	// City/Country come from the place's own address components, not the
 	// discovery row — without this, BuildLiveDetails' opening-hours timezone
@@ -198,6 +208,40 @@ func TestActivities_Query_GoogleSync_AllUpsertsFailedLeavesRowUnmarked(t *testin
 	// left unmarked exactly like a row whose search call failed outright.
 	if len(repo.markSynced) != 0 {
 		t.Errorf("markSynced = %v, want none — a row must stay unmarked when every upsert failed even though places were found", repo.markSynced)
+	}
+}
+
+// TestActivities_Query_GoogleSync_AllBelowFloorStillMarksSynced is the
+// regression guard for round 1's own bug: a row whose search succeeded but
+// whose every result is unrated/thin (a common, unremarkable outcome for a
+// niche subtype in a smaller city — nothing failed) must still be marked
+// fresh. Conflating "nothing passed the floor" with "the upsert failed"
+// would leave a legitimately-empty row permanently stale, re-searching on
+// every future query forever — trading the stale-data bug for unbounded
+// quota spend.
+func TestActivities_Query_GoogleSync_AllBelowFloorStillMarksSynced(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		{ID: "unrated", Rating: 0, UserRatingCount: 0, GoogleMapsURI: "https://maps.google/unrated"},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	req := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryNature},
+		Subcategories:   []string{"beach"},
+	}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	if len(repo.gotUpserts) != 0 {
+		t.Errorf("gotUpserts = %v, want none — the only result fails the quality floor", repo.gotUpserts)
+	}
+	wantKey := syncKey(ProviderGoogle, "44.8,20.5", string(activitiessvc.CategoryNature), "beach")
+	if !slices.Contains(repo.markSynced, wantKey) {
+		t.Errorf("markSynced = %v, want it to contain %q — a row with no eligible places is not a failure and must not re-search forever", repo.markSynced, wantKey)
 	}
 }
 

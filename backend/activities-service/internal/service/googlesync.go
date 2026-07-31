@@ -135,13 +135,19 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 // syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
 // then an Upsert per surviving place.
 //
-// MarkSynced is called only when the search call itself succeeded AND at
-// least one place survived to a successful Upsert (or the search itself
-// legitimately found nothing at all). A row whose search succeeded but whose
-// every Upsert then failed is left unmarked too — marking it would freeze
-// the cell at zero ingested rows for the whole TTL, the exact Belgrade
-// failure mode (2 restaurants for 14 days) the Tripadvisor sweep's own
-// MarkSynced gate exists to avoid. A single Upsert failure is logged and
+// MarkSynced is called only when the search call itself succeeded AND every
+// place that should have been ingested (survived placesmap.PassesFloor) was
+// actually ingested — or the row genuinely had nothing eligible to ingest,
+// which is not a failure. A row whose search succeeded but whose every
+// eligible Upsert then failed is left unmarked — marking it would freeze the
+// cell at zero ingested rows for the whole TTL, the exact Belgrade failure
+// mode (2 restaurants for 14 days) the Tripadvisor sweep's own MarkSynced
+// gate exists to avoid. That must be distinguished from a row whose search
+// succeeded but returned only sub-floor venues (a common, unremarkable
+// outcome for a niche subtype in a smaller city): that row has nothing to
+// ingest through no fault of its own and must still be marked fresh, or it
+// re-searches on every future query forever — trading the stale-data bug for
+// an unbounded quota-spend one. A single Upsert failure is logged and
 // skipped without abandoning the rest of the row.
 func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 	var found []placesmap.Place
@@ -165,20 +171,21 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob) {
 		return
 	}
 
-	kept := 0
+	passed, kept := 0, 0
 	for _, p := range found {
 		if !placesmap.PassesFloor(p) {
 			continue
 		}
+		passed++
 		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p)); err != nil {
 			slog.Warn("google sync upsert failed", "place_id", p.ID, "error", err)
 			continue
 		}
 		kept++
 	}
-	if kept == 0 && len(found) > 0 {
-		slog.Warn("google discovery row found places but every upsert failed; leaving unmarked to retry",
-			"category", job.row.Category, "subtype", job.row.Subtype, "found", len(found))
+	if passed > 0 && kept == 0 {
+		slog.Warn("google discovery row found eligible places but every upsert failed; leaving unmarked to retry",
+			"category", job.row.Category, "subtype", job.row.Subtype, "found", len(found), "passed", passed)
 		return
 	}
 
