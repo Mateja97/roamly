@@ -161,6 +161,16 @@ type fakeGooglePlaces struct {
 	geocodeCountry string
 	geocodeErr     error
 	geocodeCalls   int
+
+	// gotSearchTextInArea records each SearchTextInArea call's args so tests
+	// can assert resolveTripadvisorSubtype anchors the search on the
+	// venue's own coordinates/radius, not some other value.
+	gotSearchTextInArea []searchTextInAreaCall
+}
+
+type searchTextInAreaCall struct {
+	lat, lng float64
+	radiusKM float64
 }
 
 func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
@@ -190,9 +200,10 @@ func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.
 // exercise the sweep's behavior around a Places call succeeding or failing,
 // not which of the two discovery paths a given row happens to take (see
 // placesmap.DiscoveryRow's Types/TextQuery split).
-func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, _, _, _ float64, _ string) ([]placesmap.Place, error) {
+func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, lat, lng, radiusKM float64, _ string) ([]placesmap.Place, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.gotSearchTextInArea = append(f.gotSearchTextInArea, searchTextInAreaCall{lat: lat, lng: lng, radiusKM: radiusKM})
 	return f.nearbyOut, f.nearbyErr
 }
 

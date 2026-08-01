@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
@@ -878,6 +880,16 @@ func validCategory(c activitiessvc.Category) bool {
 // unconditionally.
 const tripadvisorSyncRadiusKM = 8
 
+// tripadvisorSubtypeRadiusKM bounds resolveTripadvisorSubtype's Places Text
+// Search to a 50m box around the venue's own Tripadvisor coordinates —
+// deliberately much tighter than tripadvisorSyncRadiusKM's 8km discovery
+// sweep. The search is by name, and a chain or a generic name ("Coffee
+// Shop") can easily recur elsewhere in the same city; 50m keeps the match
+// pinned to the one building the venue's own lat/lng already identifies,
+// while still tolerating the small, real offset between Tripadvisor's and
+// Google's pin placement for the same venue (entrance vs. building centroid).
+const tripadvisorSubtypeRadiusKM = 0.05
+
 // tripadvisorSyncTTL is how long a synced area's data is considered fresh
 // before the next query for that area re-syncs.
 const tripadvisorSyncTTL = 14 * 24 * time.Hour
@@ -1126,7 +1138,9 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 					photos = nil
 				}
 
-				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, details, reviews, photos, cellLoc)); err != nil {
+				subtype := a.resolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID)
+
+				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, subtype, details, reviews, photos, cellLoc)); err != nil {
 					slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
 				}
 			}
@@ -1173,6 +1187,98 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 		return cellLocation{}
 	}
 	return cellLocation{City: city, Country: country}
+}
+
+// resolveTripadvisorSubtype derives a subtype for one Tripadvisor venue,
+// once per venue per sync (called from syncTripadvisorAnchor's per-venue
+// goroutine and RefreshTripadvisorLocation's single-location refresh, never
+// on a detail-page render). Tripadvisor's own categories[] field never
+// carries a subtype-capable tag on our entitlement (see tripadvisormap's
+// package doc), so this resolves the venue by name via a Places Text Search
+// tightly bounded to its own coordinates (tripadvisorSubtypeRadiusKM) and
+// classifies the single match's Google primaryType/types through
+// placesmap.Subtype — the same table Google-sourced categories classify
+// through, so Tripadvisor venues land in the identical subtype vocabulary.
+//
+// Text Search ranks by relevance within the radius, it does not guarantee
+// an exact-name lookup — in a dense box the venue itself can be missing
+// from Google's results while a neighbour is the sole (best-ranked) hit, so
+// a single-result count alone is not identity. venueNameMatches guards
+// against exactly that: the candidate's own returned name must plausibly be
+// the same venue, or it's rejected same as no match at all.
+//
+// Returns "" — never a guess — when: no Places client is configured
+// (a.places == nil); name is empty or lat/lng is the zero value (nothing
+// to search on, and a call would waste a Places request); the search
+// errors (logged, the sync itself must not fail); the search finds no
+// candidate; it finds more than one, which means the tight radius still
+// couldn't disambiguate a same/similar-named venue and picking either
+// would be a guess; or the sole candidate's own name doesn't plausibly
+// match, meaning it's a different venue that merely happened to be the
+// only result in the box.
+func (a *Activities) resolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) string {
+	if a.places == nil {
+		return ""
+	}
+	if name == "" || (lat == 0 && lng == 0) {
+		return ""
+	}
+	found, err := a.places.SearchTextInArea(ctx, name, lat, lng, tripadvisorSubtypeRadiusKM, places.NearbyFieldMask)
+	if err != nil {
+		slog.Warn("tripadvisor subtype resolve failed", "location_id", locationID, "name", name, "error", err)
+		return ""
+	}
+	if len(found) != 1 {
+		return ""
+	}
+	if !venueNameMatches(name, found[0].DisplayName.Text) {
+		return ""
+	}
+	return placesmap.Subtype(category, found[0].PrimaryType, found[0].Types)
+}
+
+// venueNameMatches reports whether candidateName (a Places Text Search
+// hit's own displayName) plausibly names the same venue as tripadvisorName
+// — the identity check resolveTripadvisorSubtype needs because Text Search
+// is relevance ranking, not exact lookup (see its doc). Case- and
+// punctuation-insensitive, and accepts either name containing the other so
+// a business-type suffix one provider adds and the other doesn't (e.g.
+// Tripadvisor "Ambar" vs Google "Ambar Beograd") doesn't reject a real
+// match. Containment only counts once the shorter folded name has at
+// least 5 runes (rune count, not byte length, so a short non-Latin name
+// isn't let through by its multi-byte encoding) — otherwise a short name
+// (e.g. a folded "Bar") would trivially "contain-match" "Sky Bar", a false
+// positive containment exists to prevent, not create. Anything shorter
+// than that is treated as a different venue, never a guess.
+func venueNameMatches(tripadvisorName, candidateName string) bool {
+	a, b := foldVenueName(tripadvisorName), foldVenueName(candidateName)
+	if a == "" || b == "" {
+		return false
+	}
+	if a == b {
+		return true
+	}
+	shorter := a
+	if utf8.RuneCountInString(b) < utf8.RuneCountInString(a) {
+		shorter = b
+	}
+	if utf8.RuneCountInString(shorter) < 5 {
+		return false
+	}
+	return strings.Contains(a, b) || strings.Contains(b, a)
+}
+
+// foldVenueName lowercases name and strips everything but letters/digits,
+// so casing and punctuation/spacing differences between Tripadvisor's and
+// Google's spelling of the same venue don't defeat venueNameMatches.
+func foldVenueName(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // terraNearbySearchCategory is the Terra nearby-search category value used
@@ -1307,13 +1413,18 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 	if err != nil {
 		return err
 	}
+	// Re-resolved on every refresh, same as a fresh sync — Upsert's ON
+	// CONFLICT unconditionally overwrites subcategory (see its own doc), so
+	// skipping this here would silently wipe out a subtype a prior sync
+	// already resolved every time cmd/backfilltripadvisor's refresh runs.
+	subtype := a.resolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID)
 	// No anchor here — a direct-by-ID backfill has no sweep to resolve a
 	// city once for (see resolveTripadvisorCity) — so this always falls
 	// back to Terra's own City/Country, same as every call before this
 	// param existed. Fine for its one caller (cmd/backfilltripadvisor):
 	// every row it touches already has a stored city that COALESCE(NULLIF(
 	// ..., ''), ...) in Upsert preserves if Terra's own value is empty.
-	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, nil, cellLocation{})); err != nil {
+	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, subtype, details, reviews, nil, cellLocation{})); err != nil {
 		return fmt.Errorf("upserting tripadvisor activity %s: %w", locationID, err)
 	}
 	return nil
@@ -1334,7 +1445,7 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 // Upsert's own ON CONFLICT also refuses to let an empty incoming city/
 // country clobber a stored one, so an empty cell resolution here degrades
 // safely either way.
-func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
+func tripadvisorIngestActivity(category activitiessvc.Category, subtype string, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
 		RatingImageURL: d.RatingImageURL,
 		ReviewCount:    d.ReviewCount,
@@ -1390,11 +1501,10 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 		Source:      "tripadvisor",
 		SourceURL:   d.WebURL,
 		ExternalID:  d.LocationID,
-		// categoryTags derives tripadvisormap's expected leaf-tag shape
-		// ("fine_dining") from categories[]'s "restaurants > fine_dining"
-		// hierarchy strings; Subtype itself never guesses beyond its curated
-		// lookup — an unmapped tag leaves Subcategory "" (see its own doc).
-		Subcategory: tripadvisormap.Subtype(category, categoryTags(d.Categories)),
+		// subtype is resolved by the caller via resolveTripadvisorSubtype
+		// (Tripadvisor's own categories[] never carries one — see that
+		// function's doc) — "" when it didn't resolve, never a guess.
+		Subcategory: subtype,
 	}
 }
 
@@ -1406,20 +1516,6 @@ func toAspectRating(a *tripadvisor.Aspect) *activitiessvc.TripadvisorAspectRatin
 		return nil
 	}
 	return &activitiessvc.TripadvisorAspectRating{Rating: a.Rating, IconURL: a.IconURL}
-}
-
-// categoryTags extracts the leaf hierarchy segment from each of categories
-// (e.g. "restaurants > fine_dining" -> "fine_dining") — the flat tag shape
-// tripadvisormap.Subtype's curated lookup expects.
-func categoryTags(categories []tripadvisor.Category) []string {
-	var tags []string
-	for _, c := range categories {
-		parts := strings.Split(c.Hierarchy, ">")
-		if leaf := strings.TrimSpace(parts[len(parts)-1]); leaf != "" {
-			tags = append(tags, leaf)
-		}
-	}
-	return tags
 }
 
 // rankingDateRe matches a full month name followed by a 4-digit year (e.g.

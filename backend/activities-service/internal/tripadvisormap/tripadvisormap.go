@@ -1,6 +1,9 @@
-// Package tripadvisormap maps Tripadvisor Content API subcategory/cuisine
-// tags to Roamly's own subtype taxonomy (BUSINESS_STANDARDS.md), the exact
-// counterpart to internal/placesmap's Google Places mapping.
+// Package tripadvisormap classifies a Tripadvisor venue into one of Roamly's
+// Restaurants/Cafés/Bars categories from its name (see Category) — the one
+// signal Tripadvisor's Content API entitlement actually provides. Subtype
+// classification for these venues does not live here: it's resolved via
+// Google Places at sync time and shares placesmap's Google-type-driven table
+// instead (see service.resolveTripadvisorSubtype, BUSINESS_STANDARDS.md).
 package tripadvisormap
 
 import (
@@ -9,36 +12,6 @@ import (
 
 	"backend/shared/models/activitiessvc"
 )
-
-// taTagToSubtype is the curated Tripadvisor subcategory/cuisine tag -> our
-// subtype slug lookup. Only unambiguous tags belong here — verify names
-// against a live Tripadvisor Content API location response before adding
-// more; unlike Google's published Table A, Tripadvisor's own taxonomy
-// isn't documented as a fixed enum, so this list is expected to grow as
-// real sync results are observed.
-var taTagToSubtype = map[string]string{
-	"fine_dining":  "fine_dining",
-	"quick_bites":  "fast_casual",
-	"street_food":  "street_food",
-	"dessert_shop": "bakery_dessert",
-	"wine_bar":     "wine_bar",
-	"brew_pub":     "brewery",
-	"sports_bar":   "sports_bar",
-	"pub":          "pub",
-}
-
-// Subtype derives a subcategory slug for cat from Tripadvisor's
-// subcategory/cuisine tags, returning the first mappable, cat-valid entry.
-// Returns "" when nothing maps — never a guess, matching
-// activitiessvc.ValidSubcategory's contract that "" is always valid.
-func Subtype(cat activitiessvc.Category, subcategories []string) string {
-	for _, tag := range subcategories {
-		if sub, ok := taTagToSubtype[tag]; ok && activitiessvc.ValidSubcategory(cat, sub) {
-			return sub
-		}
-	}
-	return ""
-}
 
 // cafeRe / barRe hold the curated, English + Serbian/Latin-script keywords
 // that decide Category below, matched as whole words (\b-bounded) so a
