@@ -346,6 +346,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 	}
 
 	passed, kept, skipped := 0, 0, 0
+	var skippedTypes []string
 	for _, p := range found {
 		if !placesmap.PassesFloor(p) {
 			continue
@@ -358,6 +359,9 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 			// instead of correctly marked fresh (see venueWrongCategory's
 			// doc and this function's own doc above).
 			skipped++
+			if !slices.Contains(skippedTypes, p.PrimaryType) {
+				skippedTypes = append(skippedTypes, p.PrimaryType)
+			}
 			continue
 		}
 		passed++
@@ -390,7 +394,8 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 	}
 	slog.Info("google discovery row synced",
 		"cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype,
-		"found", len(found), "kept", kept, "skipped_wrong_category", skipped)
+		"found", len(found), "kept", kept, "skipped_wrong_category", skipped,
+		"skipped_wrong_category_types", skippedTypes)
 }
 
 // toIngest maps one discovered place onto the ingest shape. Category always
@@ -494,7 +499,22 @@ func subtypeFor(row placesmap.DiscoveryRow, p placesmap.Place) string {
 // truly belongs to two categories" from "this venue was misclassified by an
 // overlapping type list" — there is no signal here to tell the two apart, so
 // the simpler, single-category rule is the one that's actually implementable.
+//
+// Never arbitrate a TextQuery row (len(row.Types) == 0), though. Five
+// subtypes — escape_room, lounge, climbing_gym, kids_museum,
+// meditation_center — have NO Table A type at all; they exist as phrase
+// searches precisely because no includedTypes list can express them. Google
+// still assigns those venues *some* primaryType (an escape room commonly
+// comes back as "amusement_center", Kids' own type), and arbitrating on that
+// would skip the phrase row's own upsert in favor of a category the venue
+// only incidentally overlaps — permanently, since no other row can ever
+// produce these five subtypes. A venue a targeted name query matched is
+// stronger evidence for its subtype than an incidental type overlap, so
+// trust the row unconditionally here.
 func venueWrongCategory(row placesmap.DiscoveryRow, p placesmap.Place) bool {
+	if len(row.Types) == 0 {
+		return false
+	}
 	trueCategory, ok := placesmap.CategoryForType(p.PrimaryType)
 	return ok && trueCategory != row.Category
 }

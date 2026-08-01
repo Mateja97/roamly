@@ -375,6 +375,18 @@ func TestVenueWrongCategory(t *testing.T) {
 	if venueWrongCategory(natureRow, unmappable) {
 		t.Error("venueWrongCategory = true, want false — an unmappable primaryType must fall back to trusting the row")
 	}
+
+	// A TextQuery row (Types empty) must never be arbitrated away, even when
+	// primaryType maps to a plainly different category. escape_room has no
+	// Table A type — Google commonly returns "amusement_center" (Kids' own
+	// type) for an escape room — and it's the only row that can ever produce
+	// this subtype, so arbitrating it here would make escape_room permanently
+	// unfillable.
+	escapeRoomRow := placesmap.DiscoveryRow{Category: activitiessvc.CategoryEntertainment, Subtype: "escape_room", TextQuery: "escape room"}
+	escapeRoom := placesmap.Place{PrimaryType: "amusement_center", Types: []string{"amusement_center"}}
+	if venueWrongCategory(escapeRoomRow, escapeRoom) {
+		t.Error("venueWrongCategory = true, want false — a TextQuery row must never be arbitrated away")
+	}
 }
 
 // The two tests below call syncGoogleRow directly (sanctioned — see
@@ -525,6 +537,32 @@ func TestActivities_SyncGoogleRow_IngestsVenueWithUnmappablePrimaryType(t *testi
 	}
 	if repo.gotUpserts[0].Category != activitiessvc.CategoryNature {
 		t.Errorf("category = %s, want nature (the row's own category)", repo.gotUpserts[0].Category)
+	}
+}
+
+// TestActivities_SyncGoogleRow_TextQueryRowIngestsDespiteMismatchedPrimaryType
+// covers Fix 1: a phrase-discovered row (Types empty) must ingest under its
+// own category even when the venue's primaryType maps to a different one —
+// the exact escape_room/amusement_center collision that made the subtype
+// permanently unfillable before this fix.
+func TestActivities_SyncGoogleRow_TextQueryRowIngestsDespiteMismatchedPrimaryType(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		{ID: "escape-room", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/escape-room",
+			PrimaryType: "amusement_center", Types: []string{"amusement_center"}},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryEntertainment, Subtype: "escape_room", TextQuery: "escape room"},
+	}
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+
+	if len(repo.gotUpserts) != 1 {
+		t.Fatalf("upserts = %d, want 1 — a TextQuery row is stronger evidence than an incidental type overlap", len(repo.gotUpserts))
+	}
+	if repo.gotUpserts[0].Category != activitiessvc.CategoryEntertainment {
+		t.Errorf("category = %s, want entertainment (the row's own category, not amusement_center's Kids)", repo.gotUpserts[0].Category)
 	}
 }
 
