@@ -79,13 +79,24 @@ export function ActivityListScreen({
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersButtonRef = useRef<ElementRef<typeof Pressable>>(null);
   const countRef = useRef<View>(null);
-  // T4: 14 multi-select pills make rapid re-toggling (tap Sport, then Culture
-  // before Sport's response lands) the normal flow, not an edge case — a
-  // stale in-flight response landing after a newer one would silently
-  // overwrite it (last-*resolved* wins, not last-requested). Bumped at the
-  // start of every handleFiltersChange call; a response only applies if it's
-  // still the most recent request when it lands.
+  // T4 round 3: EVERY query path that can paint `queryState` (initial load,
+  // pill toggle/chip removal, retry, sheet apply) shares this one counter and
+  // `isCurrent` check — whichever call started *last* wins, not whichever
+  // happens to *resolve* last. A prior fix only guarded handleFiltersChange,
+  // which left the other three call sites free to paint a stale response
+  // over a newer one (e.g. the initial load resolving after a pill tap).
+  // Routing every path through the same gate means there's exactly one place
+  // that decides "is this response still current" — a fourth call site can't
+  // reopen the race by rolling its own check.
   const filtersRequestSeq = useRef(0);
+
+  function startQuery(): number {
+    return ++filtersRequestSeq.current;
+  }
+
+  function isCurrent(seq: number): boolean {
+    return seq === filtersRequestSeq.current;
+  }
 
   const runQuery = useCallback(
     (filters: Filters): Promise<ActivitiesQueryResult> => queryActivities(buildActivitiesRequest(selection, filters)),
@@ -105,16 +116,15 @@ export function ActivityListScreen({
   // Initial load — fires once per mount (once per scope selection). Applying
   // filters or removing a chip re-queries explicitly below, not via effect.
   // `queryState`'s own default is already `{status: 'loading'}`, so there's
-  // no state to set synchronously here — just kick off the fetch.
+  // no state to set synchronously here — just kick off the fetch. No local
+  // `cancelled` flag needed — `isCurrent` already drops this response if a
+  // pill tap (or anything else) started a newer request before it lands.
   useEffect(() => {
     if (skipInitialFetch) return;
-    let cancelled = false;
+    const seq = startQuery();
     runQuery(initialFilters).then((result) => {
-      if (!cancelled) applyResult(result);
+      if (isCurrent(seq)) applyResult(result);
     });
-    return () => {
-      cancelled = true;
-    };
   }, [runQuery, initialFilters, skipInitialFetch]);
 
   // design-spec.md requires the platform-native back control/gesture, not a
@@ -153,13 +163,13 @@ export function ActivityListScreen({
   // immediately and re-queries; a failure here shows the generic Fetch
   // error state (no sheet involved to scope it to).
   async function handleFiltersChange(next: Filters) {
-    const seq = ++filtersRequestSeq.current;
+    const seq = startQuery();
     setAppliedFilters(next);
     setQueryState({ status: 'loading' });
     const result = await runQuery(next);
     // A newer call already bumped the sequence — this response is stale,
     // drop it so it can't paint over a request the user made after this one.
-    if (seq !== filtersRequestSeq.current) return;
+    if (!isCurrent(seq)) return;
     applyResult(result);
     // ponytail: focus always lands on the result count rather than tracking
     // "the next chip" precisely — chip order/refs shift on every removal,
@@ -168,24 +178,31 @@ export function ActivityListScreen({
   }
 
   async function handleRetry() {
+    const seq = startQuery();
     setQueryState({ status: 'loading' });
     const result = await runQuery(appliedFilters);
-    applyResult(result);
+    if (isCurrent(seq)) applyResult(result);
   }
 
   // Sheet-scoped Apply — the list shows the re-query skeleton while it runs
   // (per design-spec), but only commits new results/applied filters on
   // success; on failure the list reverts to what it had and the sheet
-  // surfaces its own error, leaving the draft selection intact.
+  // surfaces its own error, leaving the draft selection intact. The result is
+  // still returned to the sheet unconditionally (its own success/error UI is
+  // local to the sheet, not part of the screen-level race) — only the
+  // *screen's* queryState/appliedFilters paint is gated on `isCurrent`.
   async function handleApply(draft: Filters): Promise<ActivitiesQueryResult> {
+    const seq = startQuery();
     const previousState = queryState;
     setQueryState({ status: 'loading' });
     const result = await runQuery(draft);
-    if (result.status === 'success') {
-      setAppliedFilters(draft);
-      applyResult(result);
-    } else {
-      setQueryState(previousState);
+    if (isCurrent(seq)) {
+      if (result.status === 'success') {
+        setAppliedFilters(draft);
+        applyResult(result);
+      } else {
+        setQueryState(previousState);
+      }
     }
     return result;
   }

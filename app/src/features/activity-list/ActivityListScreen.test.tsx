@@ -437,6 +437,58 @@ describe('ActivityListScreen', () => {
       expect(screen.queryByText('Sport-only result')).toBeNull();
     });
 
+    it('a pill tap while the initial load is still in flight leaves the pill-filtered result standing, not the initial load', async () => {
+      let resolveInitial!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveInitial = resolve)));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+
+      // Row stays operable while the initial fetch is still pending
+      // (design-spec.md T4) — tap a pill before it resolves.
+      let resolveSport!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveSport = resolve)));
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+
+      const sportResult = { ...activity, id: '2', title: 'Sport-filtered result' };
+      const initialResult = { ...activity, id: '1', title: 'Unfiltered initial result' };
+      // Sport's request (fired second) resolves first; the initial load's
+      // (fired first, now stale) resolves after it.
+      await act(async () => resolveSport(successResult([sportResult])));
+      await waitFor(() => expect(screen.getByText('Sport-filtered result')).toBeTruthy());
+
+      await act(async () => resolveInitial(successResult([initialResult])));
+
+      expect(screen.getByText('Sport-filtered result')).toBeTruthy();
+      expect(screen.queryByText('Unfiltered initial result')).toBeNull();
+    });
+
+    it('"Try again" after an error, then a pill tap before retry resolves, leaves the pill-filtered result standing', async () => {
+      mockedQuery.mockResolvedValueOnce({ status: 500, message: 'internal error' });
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('internal error')).toBeTruthy());
+
+      let resolveRetry!: (r: ActivitiesQueryResult) => void;
+      let resolveSport!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveRetry = resolve)));
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveSport = resolve)));
+
+      fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      // The pill row sits in the header, unaffected by the error body below
+      // it — still tappable the instant retry fires.
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+
+      const sportResult = { ...activity, id: '2', title: 'Sport-filtered result' };
+      const retryResult = { ...activity, id: '1', title: 'Unfiltered retry result' };
+      // Sport's request (fired second) resolves first; retry's (fired first,
+      // now stale) resolves after it.
+      await act(async () => resolveSport(successResult([sportResult])));
+      await waitFor(() => expect(screen.getByText('Sport-filtered result')).toBeTruthy());
+
+      await act(async () => resolveRetry(successResult([retryResult])));
+
+      expect(screen.getByText('Sport-filtered result')).toBeTruthy();
+      expect(screen.queryByText('Unfiltered retry result')).toBeNull();
+    });
+
     it('a sheet-applied category (e.g. Sport) reads as active in the pill row too — no more lossy projection', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
