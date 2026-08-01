@@ -51,5 +51,29 @@ describe('FilterChip', () => {
       fireEvent(chip, 'focus');
       expect(StyleSheet.flatten(chip.props.style)).toMatchObject({ borderWidth: 2, borderColor: '#CE9042' });
     });
+
+    it('T4: accessibilityLabel overrides the derived name (visible label unaffected)', () => {
+      render(<FilterChip variant="segment" label="All" accessibilityLabel="All categories" selected onPress={jest.fn()} />);
+      expect(screen.getByRole('button', { name: 'All categories, selected' })).toBeTruthy();
+      expect(screen.getByText('All')).toBeTruthy();
+    });
+
+    it('T4 fix: reserves the selected weight-600 label metrics so selecting does not resize the pill (DESIGN_STANDARDS.md:1214-1217)', () => {
+      render(<FilterChip variant="segment" label="Restaurants" selected={false} onPress={jest.fn()} />);
+      // A hidden weight-600 sizer (same text) renders alongside the visible
+      // label to reserve the wider metrics — it's excluded from default
+      // a11y-tree queries (accessibilityElementsHidden), same convention as
+      // ActivityCard.test.tsx's decorative pills.
+      const visibleLabel = screen.getByText('Restaurants');
+      expect(StyleSheet.flatten(visibleLabel.props.style)).toMatchObject({ fontWeight: '500' });
+      const allLabels = screen.getAllByText('Restaurants', { includeHiddenElements: true });
+      const sizerLabel = allLabels.find((el) => el.props.accessibilityElementsHidden);
+      expect(StyleSheet.flatten(sizerLabel?.props.style)).toMatchObject({ fontWeight: '600' });
+      expect(sizerLabel?.props.accessibilityElementsHidden).toBe(true);
+      // The visible label is absolutely positioned over the sizer, so its
+      // own weight/size changes on selection can never drive the pill's
+      // laid-out box — only the (unchanging) sizer's normal-flow width does.
+      expect(StyleSheet.flatten(visibleLabel.props.style)).toMatchObject({ position: 'absolute' });
+    });
   });
 });

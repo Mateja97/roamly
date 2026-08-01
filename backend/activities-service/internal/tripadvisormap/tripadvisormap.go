@@ -3,7 +3,7 @@
 // signal Tripadvisor's Content API entitlement actually provides. Subtype
 // classification for these venues does not live here: it's resolved via
 // Google Places at sync time and shares placesmap's Google-type-driven table
-// instead (see service.resolveTripadvisorSubtype, BUSINESS_STANDARDS.md).
+// instead (see service.ResolveTripadvisorSubtype, BUSINESS_STANDARDS.md).
 package tripadvisormap
 
 import (

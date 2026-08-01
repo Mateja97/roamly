@@ -920,7 +920,7 @@ func validCategory(c activitiessvc.Category) bool {
 // unconditionally.
 const tripadvisorSyncRadiusKM = 8
 
-// tripadvisorSubtypeRadiusKM bounds resolveTripadvisorSubtype's Places Text
+// tripadvisorSubtypeRadiusKM bounds ResolveTripadvisorSubtype's Places Text
 // Search to a 50m box around the venue's own Tripadvisor coordinates —
 // deliberately much tighter than tripadvisorSyncRadiusKM's 8km discovery
 // sweep. The search is by name, and a chain or a generic name ("Coffee
@@ -1178,7 +1178,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 					photos = nil
 				}
 
-				subtype := a.resolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID)
+				subtype := a.ResolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID)
 
 				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, subtype, details, reviews, photos, cellLoc)); err != nil {
 					slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
@@ -1229,10 +1229,15 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 	return cellLocation{City: city, Country: country}
 }
 
-// resolveTripadvisorSubtype derives a subtype for one Tripadvisor venue,
+// ResolveTripadvisorSubtype derives a subtype for one Tripadvisor venue,
 // once per venue per sync (called from syncTripadvisorAnchor's per-venue
 // goroutine and RefreshTripadvisorLocation's single-location refresh, never
-// on a detail-page render). Tripadvisor's own categories[] field never
+// on a detail-page render). Exported (T3) so cmd/backfillsubtype can reuse
+// this exact resolve-then-classify path for already-stored rows instead of
+// duplicating it — the name/coords/category it needs already live on any
+// activities row regardless of source, so it works unchanged for the
+// legacy firecrawl rows T3 also backfills, not just Tripadvisor ones.
+// Tripadvisor's own categories[] field never
 // carries a subtype-capable tag on our entitlement (see tripadvisormap's
 // package doc), so this resolves the venue by name via a Places Text Search
 // tightly bounded to its own coordinates (tripadvisorSubtypeRadiusKM) and
@@ -1256,7 +1261,7 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // would be a guess; or the sole candidate's own name doesn't plausibly
 // match, meaning it's a different venue that merely happened to be the
 // only result in the box.
-func (a *Activities) resolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) string {
+func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) string {
 	if a.places == nil {
 		return ""
 	}
@@ -1279,7 +1284,7 @@ func (a *Activities) resolveTripadvisorSubtype(ctx context.Context, category act
 
 // venueNameMatches reports whether candidateName (a Places Text Search
 // hit's own displayName) plausibly names the same venue as tripadvisorName
-// — the identity check resolveTripadvisorSubtype needs because Text Search
+// — the identity check ResolveTripadvisorSubtype needs because Text Search
 // is relevance ranking, not exact lookup (see its doc). Case- and
 // punctuation-insensitive, and accepts either name containing the other so
 // a business-type suffix one provider adds and the other doesn't (e.g.
@@ -1457,7 +1462,7 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 	// CONFLICT unconditionally overwrites subcategory (see its own doc), so
 	// skipping this here would silently wipe out a subtype a prior sync
 	// already resolved every time cmd/backfilltripadvisor's refresh runs.
-	subtype := a.resolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID)
+	subtype := a.ResolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID)
 	// No anchor here — a direct-by-ID backfill has no sweep to resolve a
 	// city once for (see resolveTripadvisorCity) — so this always falls
 	// back to Terra's own City/Country, same as every call before this
@@ -1541,7 +1546,7 @@ func tripadvisorIngestActivity(category activitiessvc.Category, subtype string, 
 		Source:      "tripadvisor",
 		SourceURL:   d.WebURL,
 		ExternalID:  d.LocationID,
-		// subtype is resolved by the caller via resolveTripadvisorSubtype
+		// subtype is resolved by the caller via ResolveTripadvisorSubtype
 		// (Tripadvisor's own categories[] never carries one — see that
 		// function's doc) — "" when it didn't resolve, never a guess.
 		Subcategory: subtype,

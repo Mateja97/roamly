@@ -65,6 +65,27 @@ every discovery row at the anchor through the service's own lazy-sync code
 (`service.PrewarmGoogle`), ignoring the TTL and per-query budget, and
 actually ingests what passes the floor.
 
+Rows ingested before subtype resolution existed (T2) — every published
+`tripadvisor`/`firecrawl` row whose `subcategory` is still `""` — need a
+one-time backfill; nothing re-classifies them on its own, so this tool has to
+actually be run for the filter fix to reach existing data:
+
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+      go run ./cmd/backfillsubtype -dry-run
+
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+      go run ./cmd/backfillsubtype
+
+`-dry-run` (default `false`) reports the before-counts by source/category and
+writes nothing — run this first to see how many rows are candidates.
+`-limit N` (default `0`, no cap) stops after processing `N` rows, so a run
+can be staged across multiple invocations against a tight daily Places quota;
+re-running with no `-limit` (or a higher one) picks up exactly where the last
+run left off, since the read filter (`subcategory = ''`) and the write guard
+(`SetSubcategoryIfEmpty`) are the same condition. `google_places` rows are
+never touched — see the tool's package doc for why. Capture the printed
+before/after table into `engineering-notes.md` once run for real.
+
 ## Testing
 
 - `go test ./...` — unit tests only (query-builder, validation, gRPC

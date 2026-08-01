@@ -1323,6 +1323,71 @@ func TestUpsertEmptyDetailsDoesNotClobberStoredDetails(t *testing.T) {
 	wantTreatments(t, got.Details, "persisted row")
 }
 
+// TestSetSubcategoryIfEmpty_WritesOnlyWhenStillEmpty is the correctness
+// proof behind cmd/backfillsubtype (T3)'s "never overwrites a non-empty
+// subtype from any source" guarantee — Update's blind SET would clobber a
+// row a concurrent live sync classified after this backfill's own read but
+// before its write; SetSubcategoryIfEmpty's WHERE guard makes that a lost
+// write instead.
+func TestSetSubcategoryIfEmpty_WritesOnlyWhenStillEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	empty, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Empty Subtype Fixture", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://ta/empty-subtype-fixture", ExternalID: "empty-1",
+	})
+	if err != nil {
+		t.Fatalf("seeding empty-subtype row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, empty.ID) })
+
+	already, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Already Classified Fixture", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://ta/already-classified-fixture", ExternalID: "already-1",
+		Subcategory: "fine_dining_restaurant",
+	})
+	if err != nil {
+		t.Fatalf("seeding already-classified row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, already.ID) })
+
+	wrote, err := repo.SetSubcategoryIfEmpty(ctx, empty.ID, "casual_dining")
+	if err != nil {
+		t.Fatalf("SetSubcategoryIfEmpty(empty) error: %v", err)
+	}
+	if !wrote {
+		t.Fatalf("SetSubcategoryIfEmpty(empty) = false, want true")
+	}
+	got, err := repo.GetByID(ctx, empty.ID)
+	if err != nil {
+		t.Fatalf("GetByID(empty): %v", err)
+	}
+	if got.Subcategory != "casual_dining" {
+		t.Fatalf("subcategory = %q, want casual_dining", got.Subcategory)
+	}
+
+	wrote, err = repo.SetSubcategoryIfEmpty(ctx, already.ID, "street_food")
+	if err != nil {
+		t.Fatalf("SetSubcategoryIfEmpty(already) error: %v", err)
+	}
+	if wrote {
+		t.Fatalf("SetSubcategoryIfEmpty(already) = true, want false (must not report a write it didn't make)")
+	}
+	got, err = repo.GetByID(ctx, already.ID)
+	if err != nil {
+		t.Fatalf("GetByID(already): %v", err)
+	}
+	if got.Subcategory != "fine_dining_restaurant" {
+		t.Fatalf("subcategory = %q, want the original fine_dining_restaurant to survive untouched", got.Subcategory)
+	}
+}
+
 // TestSyncRegionsPrimaryKey proves 0024's widened composite primary key
 // (provider, cell_key, category, subtype) — generalized from Tripadvisor's
 // original (cell_key, category) — still rejects an exact duplicate while

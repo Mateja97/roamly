@@ -5,8 +5,10 @@ import {
   SUBCATEGORIES,
   activeFilterCount,
   buildActivitiesRequest,
+  clearCategories,
   defaultFilters,
   filterChips,
+  toggleCategory,
 } from './filters';
 import type { Filters } from './types';
 
@@ -50,10 +52,21 @@ describe('activeFilterCount', () => {
     const filters: Filters = { categories: [], subtypes: [], minRating: null, maxDistanceKm: 300 };
     expect(activeFilterCount(filters, 'anywhere')).toBe(1);
   });
+
+  it('T6: counts each selected subtype alongside categories/rating/distance', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['climbing_gym', 'extreme_sports'],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    };
+    // 1 category + 2 subtypes + 1 rating = 4
+    expect(activeFilterCount(filters, 'nearby')).toBe(4);
+  });
 });
 
 describe('filterChips', () => {
-  it('produces one chip per single-select group, no chip for categories (quick-filter row owns that, T1)', () => {
+  it('produces one chip per single-select group, no chip for categories (the pill row owns that, T4)', () => {
     const filters: Filters = {
       categories: ['sport'],
       subtypes: [],
@@ -95,6 +108,51 @@ describe('filterChips', () => {
 
   it('is empty for anywhere at "no limit"', () => {
     expect(filterChips(defaultFilters('anywhere'), 'anywhere')).toEqual([]);
+  });
+
+  it('T6: one chip per selected subtype, labelled with its display label (not the raw slug)', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['extreme_sports', 'climbing_gym'],
+      minRating: null,
+      maxDistanceKm: null,
+    };
+    const chips = filterChips(filters, 'nearby');
+    // Taxonomy order (sport's SUBCATEGORIES order), not selection order.
+    expect(chips.map((c) => c.label)).toEqual(['Climbing Gym', 'Adventure/Extreme Sports']);
+  });
+
+  it('T6: subtype chips come first, then rating, then distance — deterministic, never reshuffled', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['climbing_gym'],
+      minRating: 4.5,
+      maxDistanceKm: 300,
+    };
+    const chips = filterChips(filters, 'anywhere');
+    expect(chips.map((c) => c.key)).toEqual(['subtype-climbing_gym', 'min-rating', 'max-distance']);
+  });
+
+  it('T6: removing one subtype chip leaves the other subtypes, rating and category selection intact', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['climbing_gym', 'extreme_sports'],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    };
+    const chips = filterChips(filters, 'nearby');
+    const climbingChip = chips.find((c) => c.label === 'Climbing Gym')!;
+    expect(climbingChip.remove()).toEqual({
+      categories: ['sport'],
+      subtypes: ['extreme_sports'],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    });
+  });
+
+  it('T6: categories still emit no chip — the pill row represents them', () => {
+    const filters: Filters = { categories: ['sport', 'culture'], subtypes: [], minRating: null, maxDistanceKm: null };
+    expect(filterChips(filters, 'nearby')).toEqual([]);
   });
 });
 
@@ -179,6 +237,65 @@ describe('buildActivitiesRequest', () => {
       { categories: ['sport'], subtypes: [], minRating: null, maxDistanceKm: null }
     );
     expect(req.subcategories).toBeUndefined();
+  });
+});
+
+describe('toggleCategory (T4)', () => {
+  it('adds an unselected category, leaving its subtypes untouched', () => {
+    const filters: Filters = { categories: [], subtypes: [], minRating: null, maxDistanceKm: null };
+    expect(toggleCategory(filters, 'sport')).toEqual({
+      categories: ['sport'],
+      subtypes: [],
+      minRating: null,
+      maxDistanceKm: null,
+    });
+  });
+
+  it('removing a selected category drops only that category\'s own subtypes', () => {
+    const filters: Filters = {
+      categories: ['sport', 'culture'],
+      subtypes: ['climbing_gym', 'historical_site'],
+      minRating: null,
+      maxDistanceKm: null,
+    };
+    expect(toggleCategory(filters, 'sport')).toEqual({
+      categories: ['culture'],
+      subtypes: ['historical_site'],
+      minRating: null,
+      maxDistanceKm: null,
+    });
+  });
+
+  it('adding a second category leaves the first category and its subtypes intact', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['climbing_gym'],
+      minRating: null,
+      maxDistanceKm: null,
+    };
+    expect(toggleCategory(filters, 'culture')).toEqual({
+      categories: ['sport', 'culture'],
+      subtypes: ['climbing_gym'],
+      minRating: null,
+      maxDistanceKm: null,
+    });
+  });
+});
+
+describe('clearCategories (T4)', () => {
+  it('clears every category and subtype', () => {
+    const filters: Filters = {
+      categories: ['sport', 'culture'],
+      subtypes: ['climbing_gym', 'historical_site'],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    };
+    expect(clearCategories(filters)).toEqual({
+      categories: [],
+      subtypes: [],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    });
   });
 });
 

@@ -1198,12 +1198,23 @@ feedback carries on touch (no hover reliance).
   `--border`, `--text` label + trailing 16px `X` icon in `--text-muted`. The
   whole chip is one 44×44 remove control; `aria-label` "Remove <filter>
   filter". Press → `--surface` bg.
-- **Segmented (single-select, filled)** — a list-screen quick-filter where
-  exactly one option is always active (e.g. the activities-list category
-  shortcut row: `All` + a few headline categories). Distinct from the sheet
-  `select` variant above: that is a multi-select checklist (border + `Check`);
-  this is an always-one-active toggle, so a filled pill reads correctly where
-  a check does not.
+- **Segmented (filled toggle row)** — a list-screen filter row where at least
+  one pill always reads as active (e.g. the activities-list category row:
+  `All` + every category). Distinct from the sheet `select` variant above:
+  that is a multi-select checklist on `--surface` (border + `Check`); this is
+  a row of filled-vs-outlined pills on `--bg`, which reads correctly where a
+  check does not. Two selection modes, identical visuals:
+  - *Single-select:* tapping one option clears the others.
+  - *Multi-select with a reset pill:* each option pill toggles independently
+    (any number may be filled at once), and a leading reset pill (`All`) is
+    selected **exactly when no option is selected**; tapping it clears the
+    selection, and tapping it while already selected is a no-op (no re-query)
+    — it still gives press feedback, never a dead spot. The row is therefore
+    never all-outlined, so the filled-vs-outlined cue stays truthful.
+  - Selection is a color/fill swap only — the pill's laid-out box does not
+    change size between states (if the selected weight-600 label measures
+    wider than the resting label, the pill reserves the wider metrics), so
+    toggling never shifts its neighbours in the row.
   - *Selected:* `--primary` gold fill, `--ink` label (6.6:1 ✓ — the documented
     filled-gold pairing), weight 600, **no `Check` icon**; the
     **filled-vs-outlined pill is itself the non-color selection cue** (the same
@@ -1216,8 +1227,9 @@ feedback carries on touch (no hover reliance).
     bg. *Focus (keyboard/AT):* 2px `--primary` border.
   - The visible pill is ~32px tall, but the control keeps the ≥44×44 tap
     target (vertical hit area / padding), with ≥`--space-2` between chips and a
-    horizontally-scrollable row. Single-select: tapping one clears the others;
-    `All` is the default state (no category filter applied).
+    horizontally-scrollable row. `All` (the reset pill) is the default state
+    — no filter applied. Labels are never truncated or ellipsed to fit; the
+    row scrolls instead, and it honours dynamic text scaling.
 
 No new color tokens.
 
