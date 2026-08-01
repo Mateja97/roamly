@@ -143,7 +143,7 @@ export function primaryActionURL(activity: Activity): string | undefined {
 // order, replacing the previous single hardcoded order. Sections whose data
 // is absent are simply skipped by the renderer — this table only fixes
 // order, not the existing per-section omission rules.
-export type BodySection = 'description' | 'difficulty' | 'factstrip' | 'unique';
+export type BodySection = 'description' | 'difficulty' | 'factstrip' | 'unique' | 'goodtoknow';
 
 export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
   restaurants: ['factstrip', 'description', 'unique'],
@@ -155,8 +155,8 @@ export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
   kids: ['description', 'unique'],
   culture: ['unique', 'factstrip', 'description'],
   art: ['unique', 'factstrip', 'description'],
-  wellness: ['description', 'unique'],
-  entertainment: ['unique'],
+  wellness: ['factstrip', 'description', 'unique', 'goodtoknow'],
+  entertainment: ['factstrip', 'description', 'unique', 'goodtoknow'],
   shopping: ['description', 'unique', 'factstrip'],
   // T3 (roa-5-category-subtypes): no bespoke detail UI in scope — `details`
   // has no `tours_experiences` variant (ActivityDetails), so factstrip/unique
@@ -320,6 +320,8 @@ function openingHoursOf(d: ActivityDetails): OpeningHours | undefined {
     case 'culture':
     case 'art':
     case 'shopping':
+    case 'wellness':
+    case 'entertainment':
       return d.opening_hours;
     default:
       return undefined;
@@ -642,8 +644,23 @@ export function factStripFields(
         d.hours,
       );
     case 'kids':
-    case 'wellness':
       return [];
+    case 'wellness':
+      return withHours(
+        buildChips([
+          [Clock, 'Typical visit', d.typical_visit],
+          [Euro, 'Price from', d.price_from],
+        ]),
+        undefined,
+      );
+    case 'entertainment':
+      return withHours(
+        buildChips([
+          [Clock, 'Typical show', d.typical_show_length],
+          [Euro, 'Price from', d.price_from],
+        ]),
+        undefined,
+      );
     default:
       // ponytail: proxy sends `details: {}` (no omitempty) for every
       // activity with no category-specific data — `.category` is missing,
@@ -790,4 +807,17 @@ export function uniqueSection(
       // ponytail: same `details: {}` shape as factStripFields above.
       return undefined;
   }
+}
+
+// Second body section alongside uniqueSection() — the design's Wellness/
+// Entertainment frames (6i/6j) each carry a list section (Treatments /
+// Upcoming shows) *and* a separate "Good to know" checklist, which
+// UniqueSectionData's single-value shape can't hold at once. Reuses the
+// existing 'checklist' shape (same one Nature/Sport already render via
+// uniqueSection) as a second, independent instance.
+export function goodToKnowSection(activity: Activity): UniqueSectionData | undefined {
+  const d = activity.details;
+  if (!d) return undefined;
+  const items = d.category === 'wellness' || d.category === 'entertainment' ? d.good_to_know : undefined;
+  return items?.length ? { shape: 'checklist', heading: 'Good to know', items } : undefined;
 }
