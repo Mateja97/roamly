@@ -96,7 +96,7 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if details.Tripadvisor.Cuisine != "Fine Dining" {
 		t.Errorf("details.Tripadvisor.Cuisine = %q, want Fine Dining", details.Tripadvisor.Cuisine)
 	}
-	// No Places client is configured on this svc (see resolveTripadvisorSubtype),
+	// No Places client is configured on this svc (see ResolveTripadvisorSubtype),
 	// so subtype resolution is a no-op here; TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType
 	// below covers the resolved case.
 	if repo.gotUpsert.Subcategory != "" {
@@ -654,7 +654,7 @@ func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
 	}
 }
 
-// TestActivities_ResolveTripadvisorSubtype covers resolveTripadvisorSubtype's
+// TestActivities_ResolveTripadvisorSubtype covers ResolveTripadvisorSubtype's
 // "never a guess" outcomes plus its one success path, per T2's acceptance
 // criteria. Every place fixture below carries a DisplayName that matches
 // "Some Venue" (case/punctuation-folded) unless the case is specifically
@@ -718,8 +718,8 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := &fakeGooglePlaces{nearbyOut: tt.places, nearbyErr: tt.err}
 			svc := New(&fakeRepo{}).WithPlaces(gp)
-			if got := svc.resolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111"); got != tt.want {
-				t.Errorf("resolveTripadvisorSubtype(...) = %q, want %q", got, tt.want)
+			if got := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111"); got != tt.want {
+				t.Errorf("ResolveTripadvisorSubtype(...) = %q, want %q", got, tt.want)
 			}
 			if len(gp.gotSearchTextInArea) == 0 {
 				return
@@ -736,8 +736,8 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 // nil-safe degrade — no Places client attached must never panic or block.
 func TestActivities_ResolveTripadvisorSubtype_NoClientConfigured(t *testing.T) {
 	svc := New(&fakeRepo{})
-	if got := svc.resolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111"); got != "" {
-		t.Errorf("resolveTripadvisorSubtype() = %q, want empty with no places client configured", got)
+	if got := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111"); got != "" {
+		t.Errorf("ResolveTripadvisorSubtype() = %q, want empty with no places client configured", got)
 	}
 }
 
@@ -757,8 +757,8 @@ func TestActivities_ResolveTripadvisorSubtype_NoCoordsOrName(t *testing.T) {
 	for _, tt := range tests {
 		gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "wine_bar", DisplayName: displayName(tt.name)}}}
 		svc := New(&fakeRepo{}).WithPlaces(gp)
-		if got := svc.resolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111"); got != "" {
-			t.Errorf("resolveTripadvisorSubtype(name=%q, lat=%v, lng=%v) = %q, want empty", tt.name, tt.lat, tt.lng, got)
+		if got := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111"); got != "" {
+			t.Errorf("ResolveTripadvisorSubtype(name=%q, lat=%v, lng=%v) = %q, want empty", tt.name, tt.lat, tt.lng, got)
 		}
 		if len(gp.gotSearchTextInArea) != 0 {
 			t.Errorf("SearchTextInArea calls = %d, want 0 — no name or no coords must skip the Places call", len(gp.gotSearchTextInArea))
@@ -768,7 +768,7 @@ func TestActivities_ResolveTripadvisorSubtype_NoCoordsOrName(t *testing.T) {
 
 // TestVenueNameMatches covers the identity guard directly — the fold,
 // exact-match, containment, and short-string-false-positive-guard cases —
-// without needing a full resolveTripadvisorSubtype fixture per case.
+// without needing a full ResolveTripadvisorSubtype fixture per case.
 func TestVenueNameMatches(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -809,7 +809,7 @@ func displayName(text string) struct {
 // TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType is
 // the end-to-end proof that a resolved Google primaryType reaches the
 // upserted row's Subcategory through the real sync path, not just the
-// resolveTripadvisorSubtype unit above.
+// ResolveTripadvisorSubtype unit above.
 func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
