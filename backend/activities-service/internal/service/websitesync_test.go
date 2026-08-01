@@ -299,6 +299,21 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 		if firecrawl.calls != 1 {
 			t.Errorf("firecrawl.calls = %d, want 1 — 31 days is past the 30-day window", firecrawl.calls)
 		}
+		if repo.gotUpdatePatch.Details == nil {
+			t.Fatal("repo.Update was not called with Details")
+		}
+		var got map[string]any
+		if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+			t.Fatalf("unmarshal updated details: %v", err)
+		}
+		shows, ok := got["upcoming_shows"].([]any)
+		if !ok || len(shows) != 1 {
+			t.Fatalf("upcoming_shows = %v, want one fresh show", got["upcoming_shows"])
+		}
+		show, ok := shows[0].(map[string]any)
+		if !ok || show["title"] != "New Show" {
+			t.Errorf("upcoming_shows[0] = %v, want the newly scraped show, not the stale stored one", shows[0])
+		}
 	})
 }
 
@@ -385,6 +400,36 @@ func TestSyncWebsiteContent_CultureArt_FillNestedBanner(t *testing.T) {
 	nowShowing, ok := got["now_showing"].(map[string]any)
 	if !ok || nowShowing["title"] != "Modern Serbia" {
 		t.Errorf("now_showing = %v, want the scraped banner", got["now_showing"])
+	}
+}
+
+// TestSyncWebsiteContent_Culture_BlankBanner_NotTreatedAsFilled proves a
+// blank-title extraction (an empty banner Firecrawl couldn't actually fill
+// in) never counts as a completed now_showing — otherwise isComplete would
+// lock the row permanently on a single bad extraction, since Culture has
+// exactly one scraper-owned field.
+func TestSyncWebsiteContent_Culture_BlankBanner_NotTreatedAsFilled(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"","description":""}}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if repo.gotUpdatePatch.Details == nil {
+		t.Fatal("repo.Update was not called with Details")
+	}
+	var got map[string]any
+	if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+		t.Fatalf("unmarshal updated details: %v", err)
+	}
+	if isComplete(activitiessvc.CategoryCulture, *repo.gotUpdatePatch.Details) {
+		t.Errorf("now_showing = %v, blank banner must not count as complete", got["now_showing"])
 	}
 }
 

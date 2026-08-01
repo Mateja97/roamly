@@ -265,10 +265,14 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("extracting website content for %s: %w", id, err)
 	}
+	extracted = dropBlankBanner(activity.Category, extracted)
 
 	merged, err := fillGaps(activity.Details, extracted)
 	if err != nil {
 		return fmt.Errorf("merging website content for %s: %w", id, err)
+	}
+	if complete && activity.Category == activitiessvc.CategoryEntertainment {
+		merged = overwriteField(merged, extracted, "upcoming_shows")
 	}
 	if activity.Category == activitiessvc.CategorySport {
 		merged = markDifficultyInferred(activity.Details, merged)
@@ -291,6 +295,71 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return fmt.Errorf("marking website sync for %s: %w", id, err)
 	}
 	return nil
+}
+
+// overwriteField replaces key on merged with its value from extracted, when
+// extracted actually has a non-empty one — used only for Entertainment's
+// periodic refresh (see SyncWebsiteContent), where upcoming_shows must
+// actually update even though fillGaps' fill-only-if-empty rule would
+// otherwise leave the old (already non-empty) list in place forever. Every
+// other scraper-owned field keeps fillGaps' normal admin-precedence rule.
+func overwriteField(merged, extracted json.RawMessage, key string) json.RawMessage {
+	var extractedFields map[string]any
+	if err := json.Unmarshal(extracted, &extractedFields); err != nil {
+		return merged
+	}
+	newVal, ok := extractedFields[key]
+	if !ok || isEmptyValue(newVal) {
+		return merged // nothing fresh to overwrite with
+	}
+	var m map[string]any
+	if err := json.Unmarshal(merged, &m); err != nil {
+		return merged
+	}
+	m[key] = newVal
+	b, err := json.Marshal(m)
+	if err != nil {
+		return merged
+	}
+	return b
+}
+
+// dropBlankBanner strips now_showing/current_exhibition from extracted when
+// Firecrawl returned a blank title — an empty banner is indistinguishable
+// from "found nothing" and must not count as a filled value, or a single
+// bad extraction would permanently lock the row via isComplete (Culture/Art
+// each have exactly one scraper-owned field). No-op for every other
+// category. isEmptyValue itself is deliberately not changed to handle this
+// — filtering happens here, before the merge, not by teaching isEmptyValue
+// a new case.
+func dropBlankBanner(category activitiessvc.Category, extracted json.RawMessage) json.RawMessage {
+	var key string
+	switch category {
+	case activitiessvc.CategoryCulture:
+		key = "now_showing"
+	case activitiessvc.CategoryArt:
+		key = "current_exhibition"
+	default:
+		return extracted
+	}
+	var m map[string]any
+	if err := json.Unmarshal(extracted, &m); err != nil {
+		return extracted
+	}
+	banner, ok := m[key].(map[string]any)
+	if !ok {
+		return extracted
+	}
+	title, _ := banner["title"].(string)
+	if title != "" {
+		return extracted
+	}
+	delete(m, key)
+	b, err := json.Marshal(m)
+	if err != nil {
+		return extracted
+	}
+	return b
 }
 
 // markDifficultyInferred sets difficulty_inferred:true on merged when this
