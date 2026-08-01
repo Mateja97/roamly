@@ -40,3 +40,5 @@ configure a `claude_design` MCP server for it. The project's
 - The whole stack runs from a single root `docker-compose.yaml` (`docker compose up`); every runnable component registers itself there.
 - Don't push to origin unless explicitly asked.
 - When bumping a pinned dependency/runtime version, update every place that pins it (package.json across `frontend/`/`app/`, lockfiles, Dockerfiles, CI config) in the same change — a version bumped in only one place is a skew that `npm install`/local dev can mask but `npm ci`/Docker builds will hard-fail on.
+- Every session branches from a freshly pulled `main`: `git checkout main && git pull && git checkout -b <branch-name>`. Never branch off another feature branch.
+- If `main` has moved before merging back, resolve conflicts on the feature branch first (`git fetch origin && git merge origin/main`, or rebase), then merge/PR into `main`. `main` should only ever receive clean merges — never a conflict resolution done directly on it.
