@@ -46,8 +46,11 @@ describe('factStripSkeletonCount', () => {
 
   it('gives 0 for a category whose fact strip never produces a chip regardless of merge', () => {
     expect(factStripSkeletonCount('kids')).toBe(0);
-    expect(factStripSkeletonCount('wellness')).toBe(0);
-    expect(factStripSkeletonCount('entertainment')).toBe(0);
+  });
+
+  it('gives 1 for wellness/entertainment — mapper emits opening_hours, same Hours-chip case as cafes', () => {
+    expect(factStripSkeletonCount('wellness')).toBe(1);
+    expect(factStripSkeletonCount('entertainment')).toBe(1);
   });
 });
 

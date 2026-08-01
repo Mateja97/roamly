@@ -161,7 +161,7 @@ export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
   // T3 (roa-5-category-subtypes): no bespoke detail UI in scope — `details`
   // has no `tours_experiences` variant (ActivityDetails), so factstrip/unique
   // simply omit themselves (no data); this is the same generic order as
-  // kids/wellness above.
+  // kids above.
   tours_experiences: ['description', 'unique'],
 };
 

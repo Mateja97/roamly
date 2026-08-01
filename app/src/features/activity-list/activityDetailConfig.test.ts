@@ -574,6 +574,43 @@ describe('factStripFields — wellness/entertainment', () => {
     expect(labels).toContain('Typical show');
     expect(labels).toContain('Price from');
   });
+
+  describe('Hours chip appends when opening_hours is usable (Task 6 wiring)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('appends the Hours chip for wellness', () => {
+      const activity = baseActivity({
+        category: 'wellness',
+        opening_hours: {
+          timezone: 'UTC',
+          periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+        },
+      });
+      const hours = factStripFields(activity).find(
+        (f) => f.label === '09:00–17:00',
+      );
+      expect(hours).toMatchObject({ icon: Clock, value: 'Open' });
+    });
+
+    it('appends the Hours chip for entertainment', () => {
+      const activity = baseActivity({
+        category: 'entertainment',
+        opening_hours: {
+          timezone: 'UTC',
+          periods: [{ day: 'monday', open: '10:00', close: '23:00' }],
+        },
+      });
+      const hours = factStripFields(activity).find(
+        (f) => f.label === '10:00–23:00',
+      );
+      expect(hours).toMatchObject({ icon: Clock, value: 'Open' });
+    });
+  });
 });
 
 describe('goodToKnowSection', () => {
