@@ -56,13 +56,18 @@ similarly-named subtypes (e.g. `bakery_dessert` under Restaurants vs
 
 ### How subtypes get populated
 
-Every subtype above is filled automatically by type-driven discovery:
+Every subtype above is filled automatically, by one of two paths depending on
+where the venue comes from.
+
+**Google-sourced categories** (the ten in `placesmap.GoogleCategories`):
 `backend/activities-service/internal/placesmap/discovery.go` maps each
 (category, subtype) pair to its Google Places Table A types (or, for the
 handful Table A can't express, a bounded text-search phrase), and the lazy
 sync issues one search per pair, so a venue's subtype is known from the query
 that found it rather than guessed from the response. The same table read
-backward classifies venues discovered by other providers.
+backward (`placesmap.Subtype`) classifies venues discovered by other
+providers — one table, two directions, so discovery and classification can't
+drift apart.
 
 A venue's subtype is decided by its own Google `primaryType` first — so the
 same venue gets the same subtype no matter which discovery row's search
@@ -71,6 +76,20 @@ happened to surface it — falling back to the row's subtype only when
 different *categories* (e.g. a park that is also a sports court); that
 produces two stored rows on purpose, collapsed back into one in query results
 whenever no category filter is active.
+
+**Tripadvisor-sourced categories** (Restaurants, Bars, and the Tripadvisor
+side of Cafés): Tripadvisor's own `categories[]` field, which would carry a
+subtype-like tag, is not returned on Roamly's Content API entitlement — every
+Tripadvisor venue's subtype is always empty at the source. Instead, once per
+venue at sync time, the venue's name is looked up via a Google Places Text
+Search tightly bounded to the venue's own coordinates (tight enough that a
+same-named venue elsewhere in the city can't be matched), and the single
+resulting place's Google `primaryType`/`types` is classified through the same
+`placesmap.Subtype` table the Google-sourced categories use — no separate
+Tripadvisor subtype vocabulary. A venue with no match, an ambiguous match (more
+than one candidate in the tight radius), or a Places API error keeps subtype
+`""` — never a guess — and the venue is still ingested; the lookup failing
+never fails the sync.
 
 City and country are resolved once per synced map cell by reverse geocoding
 the search anchor, not once per venue — deriving it per-venue from each

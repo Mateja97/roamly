@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
 
 	"backend/shared/models/activitiessvc"
@@ -95,8 +96,11 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if details.Tripadvisor.Cuisine != "Fine Dining" {
 		t.Errorf("details.Tripadvisor.Cuisine = %q, want Fine Dining", details.Tripadvisor.Cuisine)
 	}
-	if repo.gotUpsert.Subcategory != "fine_dining" {
-		t.Errorf("gotUpsert.Subcategory = %q, want fine_dining (mapped from categories[]'s hierarchy)", repo.gotUpsert.Subcategory)
+	// No Places client is configured on this svc (see resolveTripadvisorSubtype),
+	// so subtype resolution is a no-op here; TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType
+	// below covers the resolved case.
+	if repo.gotUpsert.Subcategory != "" {
+		t.Errorf("gotUpsert.Subcategory = %q, want empty (no places client configured to resolve one)", repo.gotUpsert.Subcategory)
 	}
 	wantSubratings := &activitiessvc.TripadvisorSubratings{
 		Food:       &activitiessvc.TripadvisorAspectRating{Rating: 4.5, IconURL: "https://ta/food.svg"},
@@ -647,5 +651,115 @@ func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
 				t.Errorf("ReverseGeocodeCity calls = %d, want 0 — no places client was configured", gp.geocodeCalls)
 			}
 		})
+	}
+}
+
+// TestActivities_ResolveTripadvisorSubtype covers resolveTripadvisorSubtype's
+// four "never a guess" outcomes plus its one success path, per T2's
+// acceptance criteria.
+func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
+	tests := []struct {
+		name     string
+		category activitiessvc.Category
+		places   []placesmap.Place
+		err      error
+		want     string
+	}{
+		{
+			name:     "primaryType maps to a valid subtype for its category",
+			category: activitiessvc.CategoryBars,
+			places:   []placesmap.Place{{PrimaryType: "wine_bar"}},
+			want:     "wine_bar",
+		},
+		{
+			name:     "primaryType maps to a subtype belonging to a different category yields empty, not a cross-category guess",
+			category: activitiessvc.CategoryBars,
+			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant"}},
+			want:     "",
+		},
+		{
+			name:     "no candidate in the tight radius resolves empty",
+			category: activitiessvc.CategoryRestaurants,
+			places:   nil,
+			want:     "",
+		},
+		{
+			name:     "ambiguous match (more than one candidate) resolves empty rather than guessing",
+			category: activitiessvc.CategoryRestaurants,
+			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant"}, {PrimaryType: "restaurant"}},
+			want:     "",
+		},
+		{
+			name:     "a Places error resolves empty, never propagated to the caller",
+			category: activitiessvc.CategoryRestaurants,
+			err:      errors.New("places 500"),
+			want:     "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gp := &fakeGooglePlaces{nearbyOut: tt.places, nearbyErr: tt.err}
+			svc := New(&fakeRepo{}).WithPlaces(gp)
+			if got := svc.resolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46); got != tt.want {
+				t.Errorf("resolveTripadvisorSubtype(...) = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestActivities_ResolveTripadvisorSubtype_NoClientConfigured proves the
+// nil-safe degrade — no Places client attached must never panic or block.
+func TestActivities_ResolveTripadvisorSubtype_NoClientConfigured(t *testing.T) {
+	svc := New(&fakeRepo{})
+	if got := svc.resolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0); got != "" {
+		t.Errorf("resolveTripadvisorSubtype() = %q, want empty with no places client configured", got)
+	}
+}
+
+// TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType is
+// the end-to-end proof that a resolved Google primaryType reaches the
+// upserted row's Subcategory through the real sync path, not just the
+// resolveTripadvisorSubtype unit above.
+func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1"}},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, WebURL: "https://ta/Restaurant_Review-1"},
+		},
+	}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "fine_dining_restaurant"}}}
+	svc := New(repo).WithTripadvisor(ta).WithPlaces(gp)
+
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+	svc.syncTripadvisorIfNeeded(context.Background(), req)
+
+	if repo.gotUpsert.Subcategory != "fine_dining" {
+		t.Errorf("gotUpsert.Subcategory = %q, want fine_dining (resolved via the Places lookup)", repo.gotUpsert.Subcategory)
+	}
+}
+
+// TestActivities_Query_TripadvisorSync_PlacesErrorStillIngestsVenue proves a
+// subtype resolve failure never fails the whole sync or skips the venue —
+// it's stored with an empty subtype instead.
+func TestActivities_Query_TripadvisorSync_PlacesErrorStillIngestsVenue(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{{LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1"}},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Ambar Beograd", WebURL: "https://ta/Restaurant_Review-1"},
+		},
+	}
+	gp := &fakeGooglePlaces{nearbyErr: errors.New("places 500")}
+	svc := New(repo).WithTripadvisor(ta).WithPlaces(gp)
+
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+	svc.syncTripadvisorIfNeeded(context.Background(), req)
+
+	if repo.upsertCalls != 1 {
+		t.Errorf("Upsert calls = %d, want 1 — a Places resolve error must not skip ingesting the venue", repo.upsertCalls)
+	}
+	if repo.gotUpsert.Subcategory != "" {
+		t.Errorf("gotUpsert.Subcategory = %q, want empty on a Places resolve error", repo.gotUpsert.Subcategory)
 	}
 }

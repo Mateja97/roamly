@@ -46,37 +46,6 @@ func TestRankingText(t *testing.T) {
 	}
 }
 
-func TestCategoryTags(t *testing.T) {
-	tests := []struct {
-		name       string
-		categories []tripadvisor.Category
-		want       []string
-	}{
-		{"no categories returns nil", nil, nil},
-		{"multi-level hierarchy returns the leaf segment", []tripadvisor.Category{{Hierarchy: "restaurants > fine_dining"}}, []string{"fine_dining"}},
-		{"single-level hierarchy returns it trimmed", []tripadvisor.Category{{Hierarchy: "wine_bar"}}, []string{"wine_bar"}},
-		{
-			"multiple categories each contribute their leaf",
-			[]tripadvisor.Category{{Hierarchy: "restaurants > fine_dining"}, {Hierarchy: "bars > wine_bar"}},
-			[]string{"fine_dining", "wine_bar"},
-		},
-		{"empty hierarchy contributes nothing", []tripadvisor.Category{{Hierarchy: ""}}, nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := categoryTags(tt.categories)
-			if len(got) != len(tt.want) {
-				t.Fatalf("categoryTags(%+v) = %v, want %v", tt.categories, got, tt.want)
-			}
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Errorf("categoryTags(%+v)[%d] = %q, want %q", tt.categories, i, got[i], tt.want[i])
-				}
-			}
-		})
-	}
-}
-
 func TestToAspectRating(t *testing.T) {
 	if got := toAspectRating(nil); got != nil {
 		t.Errorf("toAspectRating(nil) = %+v, want nil", got)
@@ -95,7 +64,7 @@ func TestToAspectRating(t *testing.T) {
 func TestTripadvisorIngestActivity_AbsentOptionalFieldsStayAbsent(t *testing.T) {
 	d := tripadvisor.LocationDetails{LocationID: "1", Name: "Bare Bones", WebURL: "https://ta/1"}
 
-	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil, cellLocation{})
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, "", d, nil, nil, cellLocation{})
 
 	var details activitiessvc.RestaurantDetails
 	if err := json.Unmarshal(ingest.Details, &details); err != nil {
@@ -120,7 +89,7 @@ func TestTripadvisorIngestActivity_AbsentOptionalFieldsStayAbsent(t *testing.T) 
 		t.Errorf("Subratings = %+v, want nil (no subratings supplied)", details.Tripadvisor.Subratings)
 	}
 	if ingest.Subcategory != "" {
-		t.Errorf("Subcategory = %q, want empty (no categories to map)", ingest.Subcategory)
+		t.Errorf("Subcategory = %q, want empty (caller passed no resolved subtype)", ingest.Subcategory)
 	}
 	if ingest.Description != "" {
 		t.Errorf("Description = %q, want empty (no description supplied)", ingest.Description)
@@ -147,8 +116,11 @@ func TestTripadvisorIngestActivity_DescriptionAttributesVisitLengthCarried(t *te
 		RecommendedVisitLength: 2,
 	}
 
-	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil, cellLocation{})
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, "fine_dining", d, nil, nil, cellLocation{})
 
+	if ingest.Subcategory != "fine_dining" {
+		t.Errorf("Subcategory = %q, want the caller-resolved subtype carried straight through", ingest.Subcategory)
+	}
 	if ingest.Description != d.Description {
 		t.Errorf("Description = %q, want %q", ingest.Description, d.Description)
 	}
