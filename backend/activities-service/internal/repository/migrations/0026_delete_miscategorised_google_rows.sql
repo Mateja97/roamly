@@ -42,3 +42,20 @@ WHERE source = 'google_places'
     GROUP BY external_id
     HAVING COUNT(DISTINCT category) > 1
   );
+
+-- The DELETE above removes both the wrong-category copy AND the
+-- correctly-categorised one in each group (no signal says which is which —
+-- see above), so the venue must be re-ingested by a fresh sync. But
+-- googleDueRows/syncGoogleRow only re-sweeps a (cell, category, subtype)
+-- whose sync_regions entry is missing or older than the 14-day TTL
+-- (googleSyncTTL); every affected cell's rows were marked synced recently,
+-- so without clearing them the deleted venues — including the correctly
+-- categorised side of each pair — would simply be absent from the catalog
+-- for up to two weeks instead of reappearing on the next query.
+--
+-- Scoped to provider = 'google' (see service.ProviderGoogle) so Tripadvisor
+-- sync state is untouched. Provider-wide, not just the affected cells: this
+-- migration doesn't compute the exact cell set, and re-sweeping every Google
+-- cell once is a bounded, self-healing, one-time cost — far cheaper than a
+-- fortnight of missing venues, and simpler than deriving precise scope.
+DELETE FROM sync_regions WHERE provider = 'google';
