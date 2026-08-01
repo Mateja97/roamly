@@ -1,6 +1,10 @@
 package placesmap
 
-import "backend/shared/models/activitiessvc"
+import (
+	"slices"
+
+	"backend/shared/models/activitiessvc"
+)
 
 // DiscoveryRow is one unit of Google-sourced discovery: the (category,
 // subtype) pair it fills, and the Places Table A types used to find it.
@@ -41,9 +45,10 @@ var GoogleCategories = []activitiessvc.Category{
 	activitiessvc.CategoryEntertainment,
 }
 
-// DiscoveryRows is the table. Exactly one row per (Google category, subtype)
-// pair, plus one subtype-"" row per category for its un-subtyped venues —
-// enforced by TestDiscoveryRows_CoversEveryGoogleSubtype.
+// DiscoveryRows is the table. Exactly one row per (category, subtype) pair
+// for every category except Tours & Experiences (still deliberately
+// unsourced), plus one subtype-"" row per category for its un-subtyped
+// venues — enforced by TestDiscoveryRows_CoversEveryGoogleSubtype.
 //
 // A Table A type that could plausibly mean two different subtypes is
 // deliberately left out rather than guessed (e.g. the generic "museum", when
@@ -54,13 +59,49 @@ var GoogleCategories = []activitiessvc.Category{
 // https://developers.google.com/maps/documentation/places/web-service/place-types
 // (page footer: "Last updated 2026-07-28 UTC") on 2026-07-31 by scraping the
 // live page's Table A section (478 distinct types) and diffing every type
-// string used here against it — zero corrections were needed.
+// string used here against it — zero corrections were needed. The
+// Restaurants and Bars rows below were verified the same way on 2026-08-01
+// (footer unchanged, still 2026-07-28 UTC) — zero corrections needed there
+// either.
+//
+// Restaurants and Bars are NOT in GoogleCategories (see below), so these
+// rows are never read forward — no searchNearby ever runs for them, keeping
+// discovery Tripadvisor-exclusive for both. They exist purely for the
+// backward (classification) direction: Subtype resolves a Tripadvisor
+// venue's Google primaryType/types against these rows, same as any other
+// category's.
+//
+// Same "leave it out" rule below: the generic "restaurant" type is left
+// unmapped (family_restaurant/diner/bistro/buffet_restaurant already cover
+// casual_dining without guessing which subtype a bare "restaurant" means),
+// as are bar_and_grill, gastropub, brewpub, oyster_bar_restaurant and
+// snack_bar — Table A types that could plausibly fit more than one row
+// below.
 var DiscoveryRows = []DiscoveryRow{
+	// Restaurants (classification-only — see the file comment above).
+	// street_food is a TextQuery row with no Table A equivalent; since
+	// Restaurants is never read forward, it never runs and never yields —
+	// that's expected coverage-test bookkeeping, not a bug.
+	{activitiessvc.CategoryRestaurants, "fine_dining", []string{"fine_dining_restaurant"}, ""},
+	{activitiessvc.CategoryRestaurants, "casual_dining", []string{"family_restaurant", "diner", "bistro", "buffet_restaurant"}, ""},
+	{activitiessvc.CategoryRestaurants, "fast_casual", []string{"fast_food_restaurant"}, ""},
+	{activitiessvc.CategoryRestaurants, "street_food", nil, "street food"},
+	{activitiessvc.CategoryRestaurants, "bakery_dessert", []string{"dessert_restaurant", "dessert_shop", "donut_shop", "ice_cream_shop", "chocolate_shop", "candy_store", "confectionery", "pastry_shop", "cake_shop"}, ""},
+	{activitiessvc.CategoryRestaurants, "", []string{"food_court", "meal_delivery", "meal_takeaway"}, ""},
+
 	// Cafés
 	{activitiessvc.CategoryCafes, "coffee_shop", []string{"coffee_shop"}, ""},
 	{activitiessvc.CategoryCafes, "tea_house", []string{"tea_house"}, ""},
 	{activitiessvc.CategoryCafes, "bakery_cafe", []string{"bakery"}, ""},
 	{activitiessvc.CategoryCafes, "", []string{"cafe", "cat_cafe", "dog_cafe", "internet_cafe"}, ""},
+
+	// Bars (classification-only — see the file comment above)
+	{activitiessvc.CategoryBars, "cocktail_bar", []string{"cocktail_bar"}, ""},
+	{activitiessvc.CategoryBars, "wine_bar", []string{"wine_bar"}, ""},
+	{activitiessvc.CategoryBars, "brewery", []string{"brewery", "beer_garden"}, ""},
+	{activitiessvc.CategoryBars, "sports_bar", []string{"sports_bar"}, ""},
+	{activitiessvc.CategoryBars, "pub", []string{"pub", "irish_pub"}, ""},
+	{activitiessvc.CategoryBars, "", []string{"bar", "hookah_bar"}, ""},
 
 	// Nightlife
 	{activitiessvc.CategoryNightlife, "nightclub", []string{"night_club"}, ""},
@@ -148,58 +189,53 @@ var typeToSubtype = func() map[string]string {
 			m[ty] = r.Subtype
 		}
 	}
-	for ty, sub := range classifyOnlyTypes {
-		m[ty] = sub
-	}
 	return m
 }()
 
-// CategoryForType resolves a Google primaryType to the one category whose
-// discovery row(s) use it — the category-level analogue of Subtype, and the
-// arbitration signal service.syncGoogleRow uses to decide whether a
-// discovered venue belongs to the row that found it (see that function's
-// doc for the tradeoff this exists to accept). Returns false when
+// CategoryForType resolves a Google primaryType to the one Google-discovered
+// category whose discovery row(s) use it — the category-level analogue of
+// Subtype, and the arbitration signal service.syncGoogleRow uses to decide
+// whether a discovered venue belongs to the row that found it (see that
+// function's doc for the tradeoff this exists to accept). Returns false when
 // primaryType maps to nothing, matching Subtype's "never a guess" contract.
 //
-// Built from typeToCategory, itself DiscoveryRows read backward exactly like
-// typeToSubtype — one source of truth, so discovery and category
-// arbitration can't drift apart the same way discovery and subtype
-// classification can't.
+// Deliberately scoped to GoogleCategories, unlike typeToSubtype: its only
+// caller is venueWrongCategory, arbitrating between rows that discovery
+// actually runs. Indexing Restaurants/Bars types here too would let a
+// Google-discovered venue (found by, say, a Nature row) get reclassified
+// into Restaurants/Bars purely because its primaryType happens to also
+// appear on a classification-only row — and since Google never discovers
+// those two categories, venueWrongCategory would then skip the venue with no
+// row left to ever re-ingest it. Restaurants/Bars types still classify fine
+// through Subtype/typeToSubtype, which has a different, single caller
+// (Tripadvisor venues, never Google-discovered ones).
 func CategoryForType(primaryType string) (activitiessvc.Category, bool) {
 	cat, ok := typeToCategory[primaryType]
 	return cat, ok
 }
 
-// typeToCategory is DiscoveryRows read backward at the category level: every
-// Types entry maps to its row's Category, including category-level rows
-// (Subtype "") — unlike typeToSubtype, there's no fallback-loop ambiguity to
-// protect against here, since CategoryForType has no types[] fallback to
-// short-circuit. TestDiscoveryRows_TypesAreUnambiguous already guarantees
-// every Types string in the table belongs to exactly one row, so this
-// mapping is total and unambiguous by construction — no separate uniqueness
-// check needed here.
+// typeToCategory is DiscoveryRows read backward at the category level, but
+// only over GoogleCategories rows (see CategoryForType's doc for why) —
+// every Types entry on a Google-discovered row's category maps to it,
+// including that category's category-level row (Subtype ""). Unlike
+// typeToSubtype, there's no fallback-loop ambiguity to protect against here,
+// since CategoryForType has no types[] fallback to short-circuit.
+// TestDiscoveryRows_TypesAreUnambiguous already guarantees every Types
+// string in the table belongs to exactly one row, so this mapping is total
+// and unambiguous over its scoped rows — no separate uniqueness check needed
+// here.
 var typeToCategory = func() map[string]activitiessvc.Category {
 	m := make(map[string]activitiessvc.Category)
 	for _, r := range DiscoveryRows {
+		if !slices.Contains(GoogleCategories, r.Category) {
+			continue
+		}
 		for _, ty := range r.Types {
 			m[ty] = r.Category
 		}
 	}
 	return m
 }()
-
-// classifyOnlyTypes covers subtypes we classify but never discover from
-// Google — Restaurants and Bars are Tripadvisor-sourced, but a Tripadvisor
-// venue can still carry Google types when the two providers overlap.
-var classifyOnlyTypes = map[string]string{
-	"fine_dining_restaurant": "fine_dining",
-	"fast_food_restaurant":   "fast_casual",
-	"cocktail_bar":           "cocktail_bar",
-	"wine_bar":               "wine_bar",
-	"brewery":                "brewery",
-	"sports_bar":             "sports_bar",
-	"pub":                    "pub",
-}
 
 // MinRating and MinReviews are the discovery quality floor, deliberately far
 // below the old batch pipeline's 4.0/50. Those floors existed to compensate

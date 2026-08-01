@@ -88,6 +88,26 @@ func TestGoogleDueRows_SkipsFreshRows(t *testing.T) {
 	}
 }
 
+// TestGoogleDueRows_NeverSchedulesRestaurantsOrBars is the discovery half of
+// item T1's "one table, two directions, two different sets": DiscoveryRows
+// now carries Restaurants/Bars rows for classification (placesmap.Subtype),
+// but googleDueRows must never turn one into a searchNearby job — discovery
+// stays Tripadvisor-exclusive for those two categories. Requesting them
+// explicitly is the strongest case: even a direct ask must not schedule one.
+func TestGoogleDueRows_NeverSchedulesRestaurantsOrBars(t *testing.T) {
+	req := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars},
+	}
+	for _, j := range googleDueRows(req, allStale) {
+		if j.row.Category == activitiessvc.CategoryRestaurants || j.row.Category == activitiessvc.CategoryBars {
+			t.Errorf("scheduled a %s job (subtype %q) — Restaurants/Bars rows classify Tripadvisor venues, never discover from Google",
+				j.row.Category, j.row.Subtype)
+		}
+	}
+}
+
 func TestGoogleDueRows_NoAnchorNoWork(t *testing.T) {
 	req := Request{Scope: activitiessvc.ScopeAnywhere}
 	if jobs := googleDueRows(req, allStale); len(jobs) != 0 {
