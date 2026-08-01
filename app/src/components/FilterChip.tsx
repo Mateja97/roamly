@@ -126,6 +126,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   chipFocused: {
+    borderWidth: 2,
     borderColor: colors.primary,
   },
   label: {
