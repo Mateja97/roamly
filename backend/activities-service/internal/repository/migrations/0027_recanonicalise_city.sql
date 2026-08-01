@@ -19,3 +19,33 @@
 -- correct (see 0026's own provider = 'google' scoping) and re-sweeping them
 -- would be pure spend for no benefit.
 DELETE FROM sync_regions WHERE provider = 'tripadvisor';
+
+-- One-time heal for the rows a re-sweep can't reach.
+--
+-- Terra's nearby search returns a top-N that varies call to call, so a
+-- handful of already-ingested rows (e.g. "Josephine Belgrade", "Cveće Zla")
+-- may simply never resurface in a future sweep to get their city rewritten
+-- by the coordinate-derived resolution above. This statement is
+-- COORDINATE-DERIVED, NOT A NAME-ALIAS LIST — the same principle as the
+-- sync-time fix, just applied once to existing rows instead of on ingest:
+-- it never reads or matches on the stored city string (no "Dorcol"/"Stari
+-- Grad"/... table), only on country and distance from Belgrade's centre.
+-- That's what makes it correct for every sub-city name at once, known or
+-- not, with no per-neighbourhood curation.
+--
+-- 30km is deliberately tight: wide enough to cover every measured
+-- sub-Belgrade row (max observed 5.8km) but well short of the next Serbian
+-- city (Novi Sad, ~80km away), so this stays safe as coverage expands to
+-- more of Serbia. country = 'Serbia' plus 9,000km of distance keeps this
+-- nowhere near the 5 genuinely-correct San Francisco rows.
+--
+-- One-time only: this heals pre-existing rows, it is not an ongoing
+-- mechanism. Every row ingested from here on gets its city from
+-- ReverseGeocodeCity at sync time (see syncTripadvisorAnchor /
+-- syncGoogleIfNeeded), which is what makes an ongoing version of this
+-- unnecessary.
+UPDATE activities
+SET city = 'Belgrade'
+WHERE country = 'Serbia'
+  AND city <> 'Belgrade'
+  AND ST_DWithin(location, ST_SetSRID(ST_MakePoint(20.4612, 44.8125), 4326)::geography, 30000);
