@@ -85,7 +85,7 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(string(tt.cat), func(t *testing.T) {
-			raw := placesmap.BuildLiveDetails(tt.cat, "Belgrade", d)
+			raw := placesmap.BuildLiveDetails(tt.cat, "Serbia", d)
 			m := parseDetails(t, raw)
 			if len(m) != len(tt.wantKeys) {
 				t.Fatalf("keys = %v, want exactly %v", m, tt.wantKeys)
@@ -118,7 +118,7 @@ func TestBuildLiveDetails_AmenitiesAllFalse_OmitsSection(t *testing.T) {
 	for _, cat := range []activitiessvc.Category{
 		activitiessvc.CategoryNature, activitiessvc.CategoryKids, activitiessvc.CategoryCafes,
 	} {
-		raw := placesmap.BuildLiveDetails(cat, "Belgrade", d)
+		raw := placesmap.BuildLiveDetails(cat, "Serbia", d)
 		if string(raw) != "{}" {
 			t.Errorf("%s: all-amenities-false = %s, want {} (section omitted, not empty)", cat, raw)
 		}
@@ -131,7 +131,7 @@ func TestBuildLiveDetails_AmenitiesAbsent_OmitsSection(t *testing.T) {
 	for _, cat := range []activitiessvc.Category{
 		activitiessvc.CategoryNature, activitiessvc.CategoryKids, activitiessvc.CategoryCafes,
 	} {
-		raw := placesmap.BuildLiveDetails(cat, "Belgrade", d)
+		raw := placesmap.BuildLiveDetails(cat, "Serbia", d)
 		var m map[string]any
 		if err := json.Unmarshal(raw, &m); err != nil {
 			t.Fatalf("%s: invalid json: %v", cat, err)
@@ -144,16 +144,16 @@ func TestBuildLiveDetails_AmenitiesAbsent_OmitsSection(t *testing.T) {
 	}
 }
 
-func TestBuildLiveDetails_NoCityTimezone_OmitsOpeningHours(t *testing.T) {
+func TestBuildLiveDetails_NoCountryTimezone_OmitsOpeningHours(t *testing.T) {
 	d := fullPlaceDetail(t)
 	raw := placesmap.BuildLiveDetails(activitiessvc.CategoryCafes, "Atlantis", d)
 	m := parseDetails(t, raw)
 	if _, ok := m["opening_hours"]; ok {
-		t.Errorf("unknown city: opening_hours must be omitted, got %v", m)
+		t.Errorf("unknown country: opening_hours must be omitted, got %v", m)
 	}
 	// hours (free text) and known_for don't depend on timezone -> still present.
 	if _, ok := m["hours"]; !ok {
-		t.Errorf("unknown city: hours (free text) should still be present, got %v", m)
+		t.Errorf("unknown country: hours (free text) should still be present, got %v", m)
 	}
 }
 
@@ -161,7 +161,7 @@ func TestBuildLiveDetails_NeverPersistedShape_IsValidJSON(t *testing.T) {
 	// Sanity: every category returns parseable JSON, never nil/malformed,
 	// even for a zero-value PlaceDetail.
 	for cat := range activitiessvc.Subcategories {
-		raw := placesmap.BuildLiveDetails(cat, "Belgrade", placesmap.PlaceDetail{})
+		raw := placesmap.BuildLiveDetails(cat, "Serbia", placesmap.PlaceDetail{})
 		if !json.Valid(raw) {
 			t.Errorf("%s: BuildLiveDetails returned invalid JSON: %s", cat, raw)
 		}

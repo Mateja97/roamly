@@ -44,15 +44,15 @@ func weekdayHours() RegularOpeningHours {
 }
 
 func TestBuildOpeningHours(t *testing.T) {
-	// Unknown city -> nil.
+	// Unknown country -> nil (the honest miss, not a fabricated zone).
 	if oh := buildOpeningHours("Atlantis", weekdayHours()); oh != nil {
-		t.Errorf("unknown city: got %+v, want nil", oh)
+		t.Errorf("unknown country: got %+v, want nil", oh)
 	}
 
 	// Normal week -> 7 valid periods, correct zero-padding + day name.
-	oh := buildOpeningHours("Belgrade", weekdayHours())
+	oh := buildOpeningHours("Serbia", weekdayHours())
 	if oh == nil {
-		t.Fatal("Belgrade weekday place: got nil")
+		t.Fatal("Serbia weekday place: got nil")
 	}
 	if oh.Timezone != "Europe/Belgrade" {
 		t.Errorf("timezone = %q, want Europe/Belgrade", oh.Timezone)
@@ -66,19 +66,19 @@ func TestBuildOpeningHours(t *testing.T) {
 
 	// 24/7 sentinel -> always_open, no periods.
 	always := RegularOpeningHours{Periods: []placePeriod{{Open: placeDayTime{Day: 0, Hour: 0, Minute: 0}, Close: nil}}}
-	if oh := buildOpeningHours("Belgrade", always); oh == nil || !oh.AlwaysOpen || len(oh.Periods) != 0 {
+	if oh := buildOpeningHours("Serbia", always); oh == nil || !oh.AlwaysOpen || len(oh.Periods) != 0 {
 		t.Errorf("24/7: got %+v, want always_open with no periods", oh)
 	}
 
 	// One-sided period (open, no close) that is NOT the 24/7 sentinel -> skipped -> nil.
 	oneSided := RegularOpeningHours{Periods: []placePeriod{{Open: placeDayTime{Day: 3, Hour: 20, Minute: 0}, Close: nil}}}
-	if oh := buildOpeningHours("Belgrade", oneSided); oh != nil {
+	if oh := buildOpeningHours("Serbia", oneSided); oh != nil {
 		t.Errorf("one-sided: got %+v, want nil", oh)
 	}
 
 	// Midnight cross preserved (close < open).
 	cross := RegularOpeningHours{Periods: []placePeriod{{Open: placeDayTime{Day: 5, Hour: 20, Minute: 0}, Close: &placeDayTime{Day: 6, Hour: 2, Minute: 0}}}}
-	ohc := buildOpeningHours("Belgrade", cross)
+	ohc := buildOpeningHours("Serbia", cross)
 	if ohc == nil || len(ohc.Periods) != 1 || ohc.Periods[0].Open != "20:00" || ohc.Periods[0].Close != "02:00" || ohc.Periods[0].Day != activitiessvc.Friday {
 		t.Errorf("midnight cross: got %+v", ohc)
 	}

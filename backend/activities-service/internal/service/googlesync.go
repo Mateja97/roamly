@@ -405,7 +405,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 // and fall back per field to the place's own address components
 // (placesmap.CityCountry) when the cell resolution came back empty (a
 // geocode failure or ZERO_RESULTS). Both are storable under Places Terms
-// §14.3 (only hours/price/venue-type are not) and City in particular is
+// §14.3 (only hours/price/venue-type are not) and Country in particular is
 // load-bearing: BuildLiveDetails' opening-hours timezone lookup keys off it.
 // Falling back per-field here is belt-and-suspenders — Upsert's ON CONFLICT
 // also refuses to let an empty incoming city/country clobber a stored one —

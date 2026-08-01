@@ -148,7 +148,7 @@ func TestActivities_Query_GoogleSync_UpsertsWithArbitratedSubtype(t *testing.T) 
 	}
 	// City/Country come from the place's own address components, not the
 	// discovery row — without this, BuildLiveDetails' opening-hours timezone
-	// lookup (keyed on City) always misses for a sweep-ingested row.
+	// lookup (keyed on Country) always misses for a sweep-ingested row.
 	if got.City != "Belgrade" || got.Country != "Serbia" {
 		t.Errorf("upsert city/country = %s/%s, want Belgrade/Serbia", got.City, got.Country)
 	}
