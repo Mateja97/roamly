@@ -519,7 +519,8 @@ describe('ActivityListScreen', () => {
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
       // Select Sport from the header pill row, then apply one of its
-      // subtypes from the sheet (still gated to a single category pre-T5).
+      // subtypes from the sheet (single selected category here, but the
+      // sheet now renders one subtype group per selected category — T5).
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: 'Sport' }));

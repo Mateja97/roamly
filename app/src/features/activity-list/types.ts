@@ -25,8 +25,11 @@ export type RatingOption = 4.0 | 4.5 | 4.8;
 // `null` there means "no limit" (the slider's widest/default stop). Nearby's
 // range is server-fixed and never adjustable, so it's always `null` too (no
 // slider, no chip, no request field) — see filters.ts's `defaultFilters`.
-// `subtypes` (T3) is only ever non-empty while exactly one category is
-// selected — see filters.ts's SUBCATEGORIES and FilterSheet's orphan-clearing.
+// `subtypes` holds selections across every selected category at once (one
+// subtype group per category — filters-subtypes-fix T5); a slug only ever
+// stays in this array while its owning category is still selected — see
+// filters.ts's SUBCATEGORIES/toggleCategory and FilterSheet's per-category
+// orphan-clearing.
 export type Filters = {
   categories: Category[];
   subtypes: string[];

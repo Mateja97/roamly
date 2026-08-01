@@ -265,9 +265,11 @@ export function buildActivitiesRequest(selection: ScopeSelection, filters: Filte
   }
 
   if (filters.categories.length > 0) request.categories = filters.categories;
-  // Only meaningful (and only ever populated) alongside exactly one selected
-  // category — see FilterSheet's orphan-clearing — but sent as-is here since
-  // by request-build time that invariant already holds.
+  // OR'd within each category's selection, AND-ed with the category filter
+  // overall — sent as one flat slug list, valid because subtype slugs are
+  // globally unique across categories (see SUBTYPE_CATEGORY above). Every
+  // slug here belongs to a currently-selected category — see FilterSheet's
+  // per-category orphan-clearing (toggleCategory).
   if (filters.subtypes.length > 0) request.subcategories = filters.subtypes;
   if (filters.minRating !== null) request.min_rating = filters.minRating;
 
