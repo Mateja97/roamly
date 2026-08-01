@@ -3,14 +3,11 @@
 // "which field, which category" rule lives in exactly one place.
 //
 // T1 (places-live-details): Places Terms §14.3 forbids caching anything but
-// place_id/lat-lng, so BuildDetails (cmd/scrapecity's scrape-time mapper) no
-// longer stores hours, price, venue-type or rating — see BuildLiveDetails,
-// the on-view sibling that maps a live Place Details response (PlaceDetail)
-// into the same per-category shapes, fetched fresh on every detail-page open
-// and never persisted. (cmd/fixdetails, the old backfill-from-stored-raw
-// tool, is gone — its only remaining job would have been re-running
-// BuildDetails to blank fields, which T4's migration already does directly
-// and more narrowly in the DB.)
+// place_id/lat-lng, so scrape time (cmd/scrapecity, the lazy Google sync)
+// stores none of hours, price, venue-type or rating — see BuildLiveDetails,
+// the on-view mapper that maps a live Place Details response (PlaceDetail)
+// into the per-category shapes, fetched fresh on every detail-page open and
+// never persisted.
 package placesmap
 
 import (
@@ -51,10 +48,9 @@ type RegularOpeningHours struct {
 }
 
 // Place is the subset of a Places API (New) place the pipeline consumes at
-// scrape time. Places Terms §14.3 forbids storing hours/price/venue-type
-// (BuildDetails no longer emits them — see its doc comment), so Place itself
-// carries none of those fields; only what discovery/filtering/photos still
-// need.
+// scrape time. Places Terms §14.3 forbids storing hours/price/venue-type, so
+// Place itself carries none of those fields; only what discovery/filtering/
+// photos still need.
 type Place struct {
 	ID          string `json:"id"`
 	DisplayName struct {
@@ -77,9 +73,21 @@ type Place struct {
 	} `json:"photos"`
 	// PrimaryType and Types are the machine-readable Places type taxonomy
 	// (e.g. "fine_dining_restaurant"), distinct from a localized display
-	// label. Consumed by Subtype (subtype.go), not by BuildDetails.
+	// label. Consumed by Subtype (subtype.go).
 	PrimaryType string   `json:"primaryType"`
 	Types       []string `json:"types"`
+	// AddressComponents is the place's structured address breakdown.
+	// Consumed by CityCountry (address.go) — City/Country are storable
+	// (Places Terms §14.3 permits them), unlike hours/price/venue-type.
+	AddressComponents []AddressComponent `json:"addressComponents"`
+}
+
+// AddressComponent is one segment of a Places API (New) structured address
+// (e.g. {"longText": "Belgrade", "types": ["locality", "political"]}).
+type AddressComponent struct {
+	LongText  string   `json:"longText"`
+	ShortText string   `json:"shortText"`
+	Types     []string `json:"types"`
 }
 
 // cityTimezones maps a scraped city to its IANA zone, the timezone structured
@@ -143,17 +151,6 @@ func buildOpeningHours(city string, roh RegularOpeningHours) *activitiessvc.Open
 	return &activitiessvc.OpeningHours{Timezone: tz, Periods: out}
 }
 
-// BuildDetails is the scrape-time mapper. Places Terms §14.3 permits caching
-// only place_id and lat/lng — hours, price tier, venue type and structured
-// opening hours (this function's entire former output) are not storable, so
-// it now always returns "{}". Kept, rather than deleted or inlined, so its
-// one remaining call site (cmd/scrapecity) needs no change; see
-// BuildLiveDetails for the live, on-view mapper that replaces what this used
-// to store.
-func BuildDetails(_ activitiessvc.Category, _ string, _ Place) json.RawMessage {
-	return json.RawMessage("{}")
-}
-
 // AuthorAttribution is the Places attribution Google's terms require
 // wherever live review or photo content renders: avatar (photo), display
 // name, and a profile link.
@@ -209,7 +206,7 @@ func (m amenityBooleans) any() bool {
 
 // PlaceDetail is the subset of a Google Place Details (New) response
 // BuildLiveDetails needs — a wider sibling of Place (scrape time), not a
-// modification of it, so the scrape path (Place, BuildDetails) is untouched.
+// modification of it, so the scrape-time Place shape is untouched.
 // None of this is ever persisted (Places Terms §14.3): places.Client.
 // PlaceDetails fetches it fresh on every detail-page open.
 //
@@ -316,10 +313,9 @@ func cafeKnownFor(d PlaceDetail) []string {
 
 // BuildLiveDetails maps a live Place Details response onto the details
 // payload for one of the 10 Places-sourced categories (Restaurants and Bars
-// are Tripadvisor-sourced and have no case here). This is the on-view
-// counterpart to BuildDetails: same "which field, which category" shape, but
-// nothing it writes is ever persisted (Places Terms §14.3) — call it fresh
-// on every detail-page open. Header-level fields (rating, review count,
+// are Tripadvisor-sourced and have no case here). Nothing it writes is ever
+// persisted (Places Terms §14.3) — call it fresh on every detail-page open.
+// Header-level fields (rating, review count,
 // description, reviews) live on Activity itself, not in this payload (T2's
 // merge); Sport and Entertainment have no sourceable Details content at all
 // and always return "{}". Every field is omitted, not blanked, when its

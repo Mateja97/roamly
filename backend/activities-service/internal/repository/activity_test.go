@@ -97,12 +97,27 @@ func TestBuildQuery(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "category filter narrows with ANY",
+			name: "category filter narrows with ANY and skips the dedup wrapper",
 			filter: activitiessvc.QueryFilter{
 				Scope:      activitiessvc.ScopeAnywhere,
 				Categories: []activitiessvc.Category{activitiessvc.CategorySport, activitiessvc.CategoryArt},
 			},
-			wantSQL: []string{"category = ANY"},
+			wantSQL:    []string{"category = ANY"},
+			notWantSQL: []string{"DISTINCT ON", "deduped"},
+		},
+		{
+			name: "no category filter wraps the query in a DISTINCT ON dedup, with the real ordering moved outside",
+			filter: activitiessvc.QueryFilter{
+				Scope:           activitiessvc.ScopeNearby,
+				CurrentLocation: &activitiessvc.Point{Lat: 1, Lng: 2},
+				MaxDistanceKM:   10,
+			},
+			wantSQL: []string{
+				"DISTINCT ON (coalesce(nullif(external_id, ''), id::text))",
+				"ORDER BY coalesce(nullif(external_id, ''), id::text), (subcategory <> '') DESC, id",
+				") deduped",
+				"ORDER BY distance_km ASC", // the caller's real ordering, now on the outer query
+			},
 		},
 		{
 			name: "min rating filter combines with AND alongside another filter",

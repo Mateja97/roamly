@@ -95,15 +95,40 @@ func buildQuery(filter activitiessvc.QueryFilter) (string, []any, error) {
 	// empty — no "always true" placeholder needed.
 	whereClause := strings.Join(where, " AND ")
 
-	query := fmt.Sprintf(
-		`SELECT id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
+	const columns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 			country, rating, photos, tags, details,
-			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, subcategory,
+			COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, subcategory`
+
+	// Upsert conflicts on (source_url, category), so a venue matching
+	// discovery rows in two categories (e.g. Tašmajdan as both nature/park
+	// and sport/sports_court) is stored as two rows on purpose — see Upsert's
+	// doc. With no category filter those would surface as duplicates in the
+	// same list, so collapse them here via DISTINCT ON, keyed the same way a
+	// missing external_id falls back to the row's own id so unrelated rows
+	// never collapse into each other. A category filter narrows to at most
+	// one row per venue already, so the filtered path is left untouched.
+	if len(filter.Categories) == 0 {
+		query := fmt.Sprintf(
+			`SELECT * FROM (
+				SELECT DISTINCT ON (coalesce(nullif(external_id, ''), id::text)) %s,
+					%s AS distance_km
+				FROM activities
+				WHERE %s
+				ORDER BY coalesce(nullif(external_id, ''), id::text), (subcategory <> '') DESC, id
+			) deduped
+			%s`,
+			columns, distanceExpr, whereClause, orderBy,
+		)
+		return query, args, nil
+	}
+
+	query := fmt.Sprintf(
+		`SELECT %s,
 			%s AS distance_km
 		FROM activities
 		WHERE %s
 		%s`,
-		distanceExpr, whereClause, orderBy,
+		columns, distanceExpr, whereClause, orderBy,
 	)
 	return query, args, nil
 }
@@ -450,7 +475,12 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 // values with StatusPending, and applying that on conflict would silently
 // un-publish activities an admin already approved. New rows still insert with
 // their given (pending) status via the INSERT VALUES; only the conflict path
-// leaves status alone.
+// leaves status alone. city/country use COALESCE(NULLIF(EXCLUDED.x, empty),
+// x) rather than a bare EXCLUDED.x: a Google reverse-geocode failure or
+// ZERO_RESULTS (see places.Client.ReverseGeocodeCity) sends in an empty
+// string for the whole cell's sweep, and an empty incoming value must never
+// clobber an already-resolved stored one across up to
+// maxGoogleRowsPerQuery x ~20 venues.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
@@ -462,9 +492,9 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			description = EXCLUDED.description,
 			category = EXCLUDED.category,
 			location = EXCLUDED.location,
-			country = EXCLUDED.country,
+			country = COALESCE(NULLIF(EXCLUDED.country, ''), activities.country),
 			rating = EXCLUDED.rating,
-			city = EXCLUDED.city,
+			city = COALESCE(NULLIF(EXCLUDED.city, ''), activities.city),
 			address = EXCLUDED.address,
 			details = EXCLUDED.details,
 			source = EXCLUDED.source,
@@ -484,34 +514,69 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 	return a, nil
 }
 
-// SyncedAt reports the last successful Tripadvisor sync time for
-// (cellKey, category), and whether one has happened at all — false, zero
-// time when the cell/category pair has never been synced.
-func (r *Activities) SyncedAt(ctx context.Context, cellKey, category string) (time.Time, bool, error) {
+// SyncedAt reports the last successful sync time for
+// (provider, cellKey, category, subtype), and whether one has happened at
+// all — false, zero time when the combination has never been synced.
+func (r *Activities) SyncedAt(ctx context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
 	var syncedAt time.Time
 	err := r.db.QueryRow(ctx,
-		`SELECT synced_at FROM tripadvisor_sync_regions WHERE cell_key = $1 AND category = $2`,
-		cellKey, category,
+		`SELECT synced_at FROM sync_regions
+		 WHERE provider = $1 AND cell_key = $2 AND category = $3 AND subtype = $4`,
+		provider, cellKey, category, subtype,
 	).Scan(&syncedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, false, nil
 	}
 	if err != nil {
-		return time.Time{}, false, fmt.Errorf("querying tripadvisor sync region %s/%s: %w", cellKey, category, err)
+		return time.Time{}, false, fmt.Errorf("querying sync region %s/%s/%s/%s: %w", provider, cellKey, category, subtype, err)
 	}
 	return syncedAt, true, nil
 }
 
-// MarkSynced records a fresh Tripadvisor sync for (cellKey, category),
-// upserting the timestamp in place on a re-sync.
-func (r *Activities) MarkSynced(ctx context.Context, cellKey, category string) error {
-	_, err := r.db.Exec(ctx,
-		`INSERT INTO tripadvisor_sync_regions (cell_key, category, synced_at) VALUES ($1, $2, now())
-		 ON CONFLICT (cell_key, category) DO UPDATE SET synced_at = EXCLUDED.synced_at`,
-		cellKey, category,
+// FreshSyncRows returns every (category, subtype) pair for (provider,
+// cellKey) synced more recently than since, keyed category+"|"+subtype —
+// one query for a whole cell instead of SyncedAt's one-row-at-a-time shape.
+// googleDueRows needs an answer for every one of DiscoveryRows' ~53 rows per
+// anchor; calling SyncedAt that many times was ~53 round-trips per query even
+// in the fully-fresh steady state. The caller checks membership in the
+// returned map instead.
+func (r *Activities) FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time) (map[string]bool, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT category, subtype FROM sync_regions
+		 WHERE provider = $1 AND cell_key = $2 AND synced_at > $3`,
+		provider, cellKey, since,
 	)
 	if err != nil {
-		return fmt.Errorf("marking tripadvisor sync region %s/%s: %w", cellKey, category, err)
+		return nil, fmt.Errorf("querying fresh sync rows %s/%s: %w", provider, cellKey, err)
+	}
+	defer rows.Close()
+
+	fresh := make(map[string]bool)
+	for rows.Next() {
+		var category, subtype string
+		if err := rows.Scan(&category, &subtype); err != nil {
+			return nil, fmt.Errorf("scanning fresh sync row %s/%s: %w", provider, cellKey, err)
+		}
+		fresh[category+"|"+subtype] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating fresh sync rows %s/%s: %w", provider, cellKey, err)
+	}
+	return fresh, nil
+}
+
+// MarkSynced records a fresh sync for (provider, cellKey, category,
+// subtype), upserting the timestamp in place on a re-sync.
+func (r *Activities) MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error {
+	_, err := r.db.Exec(ctx,
+		`INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at)
+		 VALUES ($1, $2, $3, $4, now())
+		 ON CONFLICT (provider, cell_key, category, subtype)
+		 DO UPDATE SET synced_at = EXCLUDED.synced_at`,
+		provider, cellKey, category, subtype,
+	)
+	if err != nil {
+		return fmt.Errorf("marking sync region %s/%s/%s/%s: %w", provider, cellKey, category, subtype, err)
 	}
 	return nil
 }

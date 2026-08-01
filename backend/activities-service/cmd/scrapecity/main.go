@@ -1,247 +1,213 @@
-// Command scrapecity is Stage A of the per-city ingestion pipeline: it
-// queries the Google Places API (New) across the 12 activity categories for a
-// city, keeps only high-confidence, relevant venues (rating + review-count
-// floor), resolves ONE provisional/listing photo URL each (the remaining
-// photos, if any, resolve later on first detail view — see T2), and writes a
-// <city>.json in the exact shape cmd/importcity reads. Build/seed-time
-// maintenance tool; not wired into service startup. Requires
-// GOOGLE_MAPS_API_KEY (Places API New enabled).
+// Command scrapecity runs type-driven discovery against a city. With
+// -count-only (the default) it writes nothing and resolves no photos: it
+// exists to prove the placesmap.DiscoveryRows table before any ingest
+// depends on it, reporting per-subtype yields. A row yielding zero venues is
+// a mapping bug — a Table A type that does not exist, or a subtype that
+// genuinely needs the phrase fallback.
+//
+// With -count-only=false it pre-warms a city: it runs every discovery row at
+// the anchor through the service's own lazy-sync code (service.PrewarmGoogle),
+// ingesting whatever passes the quality floor, so a city is no longer thin on
+// its first live search.
+//
+// Build/seed-time maintenance tool; not wired into service startup.
+// Requires GOOGLE_MAPS_API_KEY (Places API New enabled); pre-warm mode also
+// requires DATABASE_URL.
 //
 // Usage:
 //
 //	GOOGLE_MAPS_API_KEY=... go run ./cmd/scrapecity \
-//	  -city "Belgrade" -country "Serbia" -out belgrade.json \
-//	  [-min-rating 4.0] [-min-reviews 50] [-pages 3] [-photos 1]
+//	  -city "Belgrade" -lat 44.8125 -lng 20.4612 [-radius-km 10]
+//
+//	GOOGLE_MAPS_API_KEY=... DATABASE_URL=... go run ./cmd/scrapecity \
+//	  -city "Belgrade" -lat 44.8125 -lng 20.4612 -count-only=false
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
-	"strings"
-	"time"
+	"sort"
 
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
+	"activities-service/internal/repository"
+	"activities-service/internal/service"
 
+	sharedconfig "backend/shared/config"
+	shareddb "backend/shared/db"
 	"backend/shared/models/activitiessvc"
 )
 
-// fieldMask selects the place fields scrapecity needs for its 12-category
-// scrape; other Places call sites (e.g. a photo-only lookup) ask for less.
-// places.priceLevel/regularOpeningHours/primaryTypeDisplayName were removed
-// (T1, places-live-details review round 2): Place no longer decodes them —
-// they're fetched live instead (see places.detailFieldMask) — so requesting
-// them here was a paid-for no-op.
-var fieldMask = strings.Join([]string{
-	"places.id", "places.displayName", "places.location",
-	"places.formattedAddress", "places.rating", "places.userRatingCount",
-	"places.googleMapsUri", "places.photos",
-	"places.primaryType", "places.types", "nextPageToken",
-}, ",")
+// The quality floor lives in placesmap (MinRating/MinReviews/PassesFloor),
+// shared with the live sync — a dry run that filtered differently from the
+// real ingest would report numbers nobody could act on.
 
-// categoryQueries maps each Google-sourced taxonomy category to the Places
-// Text Search term used to discover its venues.
-//
-// Restaurants and Bars are deliberately absent — they're sourced
-// exclusively from the Tripadvisor Content API via
-// service.Activities.Query's lazy sync, not this batch pipeline (see
-// docs/superpowers/specs/2026-07-29-tripadvisor-restaurants-bars-design.md
-// and tripadvisormap.Category).
-//
-// Cafés are the one dual-sourced category: Google here *and* Tripadvisor's
-// lazy sync. Tripadvisor's café coverage turned out far too thin to stand
-// alone — a Belgrade sync yielded 2 cafés against 58 from Google — so
-// dropping Google would have emptied the category. Restaurants/Bars don't
-// have that problem, which is why only Cafés is dual-sourced. Venues found
-// by both providers are separate rows (distinct source_url), so a popular
-// café can appear twice; de-duplicate across providers if that becomes
-// visible in the UI.
-//
-// One term per category keeps the request budget small; add variants later
-// if coverage of a thin category (kids, art) proves too sparse.
-var categoryQueries = []struct {
-	category activitiessvc.Category
-	term     string
-}{
-	{activitiessvc.CategoryCafes, "coffee shops"},
-	{activitiessvc.CategoryNightlife, "night clubs"},
-	{activitiessvc.CategoryNature, "parks and nature"},
-	{activitiessvc.CategorySport, "sports and recreation"},
-	{activitiessvc.CategoryKids, "kids activities"},
-	{activitiessvc.CategoryCulture, "museums and landmarks"},
-	{activitiessvc.CategoryArt, "art galleries"},
-	{activitiessvc.CategoryWellness, "spa and wellness"},
-	{activitiessvc.CategoryShopping, "shopping malls"},
-	{activitiessvc.CategoryEntertainment, "entertainment"},
+// yield is one discovery row's outcome: how many places the API returned and
+// how many survived the quality floor.
+type yield struct {
+	found int
+	kept  int
 }
 
-// outputRow mirrors cmd/importcity's inputRow — the two files are the
-// contract between Stage A and Stage B. PrimaryType/Types are captured here
-// ahead of a downstream subtype consumer; importcity's inputRow doesn't read
-// them yet.
-type outputRow struct {
-	Title       string          `json:"title"`
-	Description string          `json:"description"`
-	Category    string          `json:"category"`
-	Lat         float64         `json:"lat"`
-	Lng         float64         `json:"lng"`
-	Country     string          `json:"country"`
-	City        string          `json:"city"`
-	Address     string          `json:"address"`
-	Rating      float64         `json:"rating"`
-	Details     json.RawMessage `json:"details"`
-	PhotoURLs   []string        `json:"photo_urls"`
-	SourceURL   string          `json:"source_url"`
-	// PlaceID is the Places place_id (p.ID) — the stable identifier that
-	// becomes activities.external_id, distinct from SourceURL (the Maps URI).
-	PlaceID string `json:"place_id"`
-	// PrimaryType and Types are the raw Places machine type, captured for a
-	// downstream subtype mapping (T2); not consumed here.
-	PrimaryType string          `json:"primary_type,omitempty"`
-	Types       []string        `json:"types,omitempty"`
-	Raw         json.RawMessage `json:"raw"`
+// yieldLine is one row of the printed report.
+type yieldLine struct {
+	category string
+	subtype  string
+	found    int
+	kept     int
+	// empty flags a row that returned nothing at all — the finding this
+	// whole dry run exists to surface.
+	empty bool
 }
 
-// toOutputRow maps one already-filtered Place onto the Stage-A output row.
-// Pulled out of the scan loop so the field-by-field mapping (in particular
-// PrimaryType/Types surviving the parse-to-persist hop) is directly
-// testable without a live Places call.
-func toOutputRow(cat activitiessvc.Category, city, country string, p placesmap.Place, photoURLs []string) outputRow {
-	raw, _ := json.Marshal(p)
-	return outputRow{
-		Title:       p.DisplayName.Text,
-		Category:    string(cat),
-		Lat:         p.Location.Latitude,
-		Lng:         p.Location.Longitude,
-		Country:     country,
-		City:        city,
-		Address:     p.FormattedAddress,
-		Rating:      p.Rating,
-		Details:     placesmap.BuildDetails(cat, city, p),
-		PhotoURLs:   photoURLs,
-		SourceURL:   p.GoogleMapsURI,
-		PlaceID:     p.ID,
-		PrimaryType: p.PrimaryType,
-		Types:       p.Types,
-		Raw:         raw,
+// rowYield joins the discovery table against observed counts, in table
+// order, so a row that returned nothing still appears in the report instead
+// of silently missing from it.
+func rowYield(rows []placesmap.DiscoveryRow, counts map[string]yield) []yieldLine {
+	lines := make([]yieldLine, 0, len(rows))
+	for _, r := range rows {
+		y := counts[string(r.Category)+"|"+r.Subtype]
+		lines = append(lines, yieldLine{
+			category: string(r.Category),
+			subtype:  r.Subtype,
+			found:    y.found,
+			kept:     y.kept,
+			empty:    y.found == 0,
+		})
 	}
-}
-
-// passesFilter is the "high confidence + relevant" gate: a venue must clear
-// both the rating floor and the review-count floor. Review count matters as
-// much as rating — a 5.0 with 3 reviews is noise, not signal.
-func passesFilter(p placesmap.Place, minRating float64, minReviews int) bool {
-	return p.Rating >= minRating && p.UserRatingCount >= minReviews
-}
-
-// photoURIs resolves up to max photo resource names into key-free, downloadable
-// photo URLs (same rule as cmd/resolvephotos: skipHttpRedirect via
-// places.Client). Individual failures are skipped, not fatal: a venue with
-// fewer photos is still worth importing (Stage B flags it needs-photos).
-func photoURIs(ctx context.Context, c *places.Client, names []string, max int) []string {
-	var out []string
-	for _, name := range names {
-		if len(out) >= max {
-			break
-		}
-		uri, err := c.PhotoMediaURL(ctx, name)
-		if err != nil || uri == "" {
-			continue
-		}
-		out = append(out, uri)
-	}
-	return out
+	return lines
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	slog.SetDefault(logger)
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 
-	city := flag.String("city", "", "city to scrape, e.g. \"Belgrade\" (required)")
-	country := flag.String("country", "", "country, e.g. \"Serbia\" (recommended, disambiguates the search)")
-	out := flag.String("out", "", "output JSON path (required)")
-	minRating := flag.Float64("min-rating", 4.0, "minimum Google rating to keep a venue")
-	minReviews := flag.Int("min-reviews", 50, "minimum review count to keep a venue")
-	pages := flag.Int("pages", 3, "Places result pages per category (20 venues each, max 3)")
-	// photos is the provisional/listing photo count, deliberately 1: the full
-	// set resolves on-demand on first detail view (T2), not at scrape time.
-	photos := flag.Int("photos", 1, "photo URLs to resolve per venue")
+	city := flag.String("city", "", "city name, for the report header (required)")
+	lat := flag.Float64("lat", 0, "anchor latitude (required)")
+	lng := flag.Float64("lng", 0, "anchor longitude (required)")
+	radiusKM := flag.Float64("radius-km", 10, "search radius in km, max 50 (count-only mode only; pre-warm always uses the sync's own radius)")
+	countOnly := flag.Bool("count-only", true, "report yields without writing anything")
 	flag.Parse()
 
-	if *city == "" || *out == "" {
-		logger.Error("usage: scrapecity -city <city> -out <file.json> [-country <country>]")
+	if *city == "" || *lat == 0 || *lng == 0 {
+		slog.Error("usage: scrapecity -city <city> -lat <lat> -lng <lng> [-radius-km 10]")
 		os.Exit(1)
 	}
+	if *radiusKM > 50 {
+		slog.Error("radius-km exceeds the Places API maximum of 50")
+		os.Exit(1)
+	}
+
+	if !*countOnly {
+		prewarm(context.Background(), *lat, *lng)
+		return
+	}
+
 	c, err := places.NewFromEnv()
 	if err != nil {
-		logger.Error("places client setup failed", "error", err)
+		slog.Error("places client setup failed", "error", err)
 		os.Exit(1)
 	}
 	ctx := context.Background()
 
-	locality := *city
-	if *country != "" {
-		locality += ", " + *country
-	}
+	counts := map[string]yield{}
+	seen := map[string]bool{}
+	var duplicates int
 
-	seen := map[string]bool{} // dedupe by Places place id across category queries
-	var rows []outputRow
-	kept, scanned := 0, 0
-
-	for _, cq := range categoryQueries {
-		query := cq.term + " in " + locality
-		token := ""
-		for page := 0; page < *pages; page++ {
-			resp, err := c.SearchText(ctx, query, token, fieldMask)
-			if err != nil {
-				logger.Warn("search page failed", "query", query, "page", page, "error", err)
-				break
-			}
-			for _, p := range resp.Places {
-				scanned++
-				if seen[p.ID] {
-					continue
-				}
-				if !passesFilter(p, *minRating, *minReviews) {
-					continue
-				}
-				seen[p.ID] = true
-
-				photoURLs := photoURIs(ctx, c, photoNames(p), *photos)
-				rows = append(rows, toOutputRow(cq.category, *city, *country, p, photoURLs))
-				kept++
-			}
-			token = resp.NextPageToken
-			if token == "" {
-				break
-			}
-			// Places API (New) needs a brief moment before a fresh
-			// nextPageToken becomes valid.
-			time.Sleep(2 * time.Second)
+	for _, row := range placesmap.DiscoveryRows {
+		found, err := discover(ctx, c, row, *lat, *lng, *radiusKM)
+		if err != nil {
+			slog.Warn("discovery row failed", "category", row.Category, "subtype", row.Subtype, "error", err)
+			continue
 		}
-		logger.Info("category done", "category", cq.category, "kept_total", kept)
+		y := yield{found: len(found)}
+		for _, p := range found {
+			if seen[p.ID] {
+				duplicates++
+				continue
+			}
+			seen[p.ID] = true
+			if placesmap.PassesFloor(p) {
+				y.kept++
+			}
+		}
+		counts[string(row.Category)+"|"+row.Subtype] = y
 	}
 
-	data, err := json.MarshalIndent(rows, "", "  ")
-	if err != nil {
-		logger.Error("marshaling output", "error", err)
-		os.Exit(1)
-	}
-	if err := os.WriteFile(*out, data, 0o644); err != nil {
-		logger.Error("writing output", "error", err)
-		os.Exit(1)
-	}
-	logger.Info("scrape complete", "city", *city, "scanned", scanned, "kept", kept, "out", *out)
+	report(rowYield(placesmap.DiscoveryRows, counts), *city, len(seen), duplicates)
 }
 
-// photoNames flattens a place's photo resource names for resolution.
-func photoNames(p placesmap.Place) []string {
-	names := make([]string, 0, len(p.Photos))
-	for _, ph := range p.Photos {
-		names = append(names, ph.Name)
+// discover runs one row: searchNearby when the row has Table A types,
+// area-bounded searchText when it falls back to a phrase.
+func discover(ctx context.Context, c *places.Client, row placesmap.DiscoveryRow, lat, lng, radiusKM float64) ([]placesmap.Place, error) {
+	if len(row.Types) > 0 {
+		return c.SearchNearby(ctx, places.NearbyRequest{
+			Lat: lat, Lng: lng, RadiusM: radiusKM * 1000,
+			IncludedTypes: row.Types, MaxResults: 20,
+		}, places.NearbyFieldMask)
 	}
-	return names
+	return c.SearchTextInArea(ctx, row.TextQuery, lat, lng, radiusKM, places.NearbyFieldMask)
+}
+
+// report prints the yield table to stdout, empty rows last so mapping bugs
+// are the last thing on screen rather than buried mid-table.
+func report(lines []yieldLine, city string, unique, duplicates int) {
+	sort.SliceStable(lines, func(i, j int) bool {
+		if lines[i].empty != lines[j].empty {
+			return !lines[i].empty
+		}
+		return lines[i].category < lines[j].category
+	})
+
+	fmt.Printf("\nType-driven discovery dry run: %s\n", city)
+	fmt.Printf("%-16s %-20s %7s %7s\n", "CATEGORY", "SUBTYPE", "FOUND", "KEPT")
+	totalFound, totalKept, empties := 0, 0, 0
+	for _, l := range lines {
+		sub := l.subtype
+		if sub == "" {
+			sub = "(category-level)"
+		}
+		flag := ""
+		if l.empty {
+			flag = "  <-- ZERO: check the types for this row"
+			empties++
+		}
+		fmt.Printf("%-16s %-20s %7d %7d%s\n", l.category, sub, l.found, l.kept, flag)
+		totalFound += l.found
+		totalKept += l.kept
+	}
+	fmt.Printf("\nrows=%d  zero-yield=%d  found=%d  kept=%d  unique=%d  cross-row duplicates=%d\n",
+		len(lines), empties, totalFound, totalKept, unique, duplicates)
+}
+
+// prewarm runs every discovery row for one anchor through the service's own
+// sync, ignoring the TTL and the per-query budget. This is the answer to
+// "a cold city is thin on the first search": run it before a city ships.
+//
+// It deliberately calls the same service code the lazy sync uses rather than
+// reimplementing discovery — two implementations of one job is how the batch
+// pipeline and the sync would drift apart again.
+func prewarm(ctx context.Context, lat, lng float64) {
+	dsn, err := sharedconfig.Require("DATABASE_URL")
+	if err != nil {
+		slog.Error("config", "error", err)
+		os.Exit(1)
+	}
+	pool, err := shareddb.Connect(ctx, dsn)
+	if err != nil {
+		slog.Error("connecting to database", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	pc, err := places.NewFromEnv()
+	if err != nil {
+		slog.Error("places client setup failed", "error", err)
+		os.Exit(1)
+	}
+	svc := service.New(repository.New(pool)).WithPlaces(pc)
+	svc.PrewarmGoogle(ctx, activitiessvc.Point{Lat: lat, Lng: lng})
+	slog.Info("prewarm complete", "lat", lat, "lng", lng)
 }

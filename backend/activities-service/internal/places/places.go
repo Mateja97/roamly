@@ -17,6 +17,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"math"
 	"math/rand"
 	"net/http"
 	"time"
@@ -33,6 +35,11 @@ var ErrNoPhoto = errors.New("no place/photo found")
 
 // defaultBase is the production Places API (New) host.
 const defaultBase = "https://places.googleapis.com"
+
+// defaultGeocodeBase is the production Geocoding API host — a different host,
+// protocol shape (GET, key as a query param, status field in the body) and
+// product from Places (New) above. See ReverseGeocodeCity.
+const defaultGeocodeBase = "https://maps.googleapis.com"
 
 // detailFieldMask selects the live atmosphere/review fields PlaceDetails
 // needs for BuildLiveDetails (T1, places-live-details) — distinct from
@@ -57,11 +64,20 @@ type Client struct {
 	http *http.Client
 	key  string
 	base string
+	// geocodeBase is the Geocoding API host ReverseGeocodeCity calls. Set
+	// from the same base argument NewWithBase receives, so one httptest
+	// server can stand in for both APIs in tests.
+	geocodeBase string
 }
 
-// New builds a Client against the production Places API.
+// New builds a Client against the production Places API and the production
+// Geocoding API. NewWithBase points geocodeBase at the same base as Places
+// (so a single httptest server can serve both in tests); production needs
+// the two on separate hosts, so New corrects geocodeBase after the fact.
 func New(apiKey string) *Client {
-	return NewWithBase(apiKey, defaultBase)
+	c := NewWithBase(apiKey, defaultBase)
+	c.geocodeBase = defaultGeocodeBase
+	return c
 }
 
 // NewFromEnv builds a Client reading GOOGLE_MAPS_API_KEY via config.Require,
@@ -79,7 +95,7 @@ func NewFromEnv() (*Client, error) {
 // point it at a local httptest server (matches the prior
 // googlephotos.FirstPhotoWithBase seam).
 func NewWithBase(apiKey, base string) *Client {
-	return &Client{http: &http.Client{Timeout: 20 * time.Second}, key: apiKey, base: base}
+	return &Client{http: &http.Client{Timeout: 20 * time.Second}, key: apiKey, base: base, geocodeBase: base}
 }
 
 // SearchResult is one page of a Places Text Search.
@@ -113,6 +129,160 @@ func (c *Client) SearchText(ctx context.Context, query, pageToken, fieldMask str
 		return SearchResult{}, err
 	}
 	return parsed, nil
+}
+
+// NearbyFieldMask selects the place fields type-driven discovery needs.
+// Deliberately narrow: hours, price and venue type are not storable under
+// Places Terms §14.3 and are fetched live on detail view instead, so paying
+// for them here would be a no-op (the same trim scrapecity's fieldMask got).
+// addressComponents is in the same SKU tier as the rest of this mask (no
+// extra cost) — it's how syncGoogleRow derives City/Country for a discovered
+// place (see placesmap.CityCountry).
+const NearbyFieldMask = "places.id,places.displayName,places.location," +
+	"places.formattedAddress,places.rating,places.userRatingCount," +
+	"places.googleMapsUri,places.photos,places.primaryType,places.types," +
+	"places.addressComponents"
+
+// NearbyRequest is one searchNearby call's inputs. RadiusM must be <= 50000
+// (the API's documented ceiling); MaxResults is clamped to 1..20 by the API,
+// which returns no pagination token — 20 per call is the hard ceiling, which
+// is why discovery issues one call per subtype rather than one per category.
+type NearbyRequest struct {
+	Lat, Lng      float64
+	RadiusM       float64
+	IncludedTypes []string
+	MaxResults    int
+}
+
+// SearchNearby runs one Places Nearby Search restricted to a circle and to
+// includedTypes. Unlike SearchText, the circle is a hard restriction rather
+// than a bias, so results cannot drift outside the requested area.
+func (c *Client) SearchNearby(ctx context.Context, req NearbyRequest, fieldMask string) ([]placesmap.Place, error) {
+	body, err := json.Marshal(map[string]any{
+		"includedTypes":  req.IncludedTypes,
+		"maxResultCount": req.MaxResults,
+		"rankPreference": "POPULARITY",
+		"locationRestriction": map[string]any{
+			"circle": map[string]any{
+				"center": map[string]any{"latitude": req.Lat, "longitude": req.Lng},
+				"radius": req.RadiusM,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding nearby search body: %w", err)
+	}
+
+	var parsed struct {
+		Places []placesmap.Place `json:"places"`
+	}
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchNearby", body, map[string]string{
+		"Content-Type":     "application/json",
+		"X-Goog-Api-Key":   c.key,
+		"X-Goog-FieldMask": fieldMask,
+	}, &parsed)
+	if err != nil {
+		return nil, fmt.Errorf("nearby search for %v: %w", req.IncludedTypes, err)
+	}
+	return parsed.Places, nil
+}
+
+// SearchTextInArea runs a Text Search bounded to a rectangle around
+// (lat, lng). It exists for the handful of discovery rows whose subtype has
+// no Table A type and must fall back to a phrase.
+//
+// A rectangle rather than a circle because Text Search's locationRestriction
+// accepts only rectangles — its circle form is locationBias, a soft hint that
+// results routinely escape. That softness is exactly how "Tara National
+// Park", 200 km away, ended up in Belgrade's nature rows, so the phrase
+// fallback gets the hardest bound the endpoint offers.
+func (c *Client) SearchTextInArea(ctx context.Context, query string, lat, lng, radiusKM float64, fieldMask string) ([]placesmap.Place, error) {
+	// Degrees per km: latitude is ~111 km/deg everywhere; longitude shrinks
+	// by cos(latitude).
+	const kmPerDegreeLat = 111.0
+	dLat := radiusKM / kmPerDegreeLat
+	dLng := radiusKM / (kmPerDegreeLat * math.Cos(lat*math.Pi/180))
+
+	body, err := json.Marshal(map[string]any{
+		"textQuery":           query,
+		"pageSize":            20,
+		"strictTypeFiltering": true,
+		"locationRestriction": map[string]any{
+			"rectangle": map[string]any{
+				"low":  map[string]any{"latitude": lat - dLat, "longitude": lng - dLng},
+				"high": map[string]any{"latitude": lat + dLat, "longitude": lng + dLng},
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encoding area text search body: %w", err)
+	}
+
+	var parsed SearchResult
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchText", body, map[string]string{
+		"Content-Type":     "application/json",
+		"X-Goog-Api-Key":   c.key,
+		"X-Goog-FieldMask": fieldMask,
+	}, &parsed)
+	if err != nil {
+		return nil, fmt.Errorf("area text search for %q: %w", query, err)
+	}
+	return parsed.Places, nil
+}
+
+// ReverseGeocodeCity resolves a coordinate to an English city and country via
+// the Geocoding API.
+//
+// Called once per sync cell, never per venue. Deriving city per venue from
+// Places' own addressComponents fragmented one city into eight strings in a
+// live Belgrade sweep (Beograd 225, Belgrade 80, Београд 4, Novi Beograd 3,
+// …), because `locality` carries the local name and sometimes a
+// sub-municipality. Places ignores languageCode for that component; Geocoding
+// honours language=en, so this is the only call that yields a stable name.
+//
+// A ZERO_RESULTS answer (mid-ocean, unnamed area) is an empty result, not an
+// error: the caller falls back to per-venue extraction.
+func (c *Client) ReverseGeocodeCity(ctx context.Context, lat, lng float64) (string, string, error) {
+	url := fmt.Sprintf("%s/maps/api/geocode/json?latlng=%f,%f&result_type=locality&language=en&key=%s",
+		c.geocodeBase, lat, lng, c.key)
+
+	var parsed struct {
+		Status       string `json:"status"`
+		ErrorMessage string `json:"error_message"`
+		Results      []struct {
+			AddressComponents []struct {
+				LongName string   `json:"long_name"`
+				Types    []string `json:"types"`
+			} `json:"address_components"`
+		} `json:"results"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, url, nil, nil, &parsed); err != nil {
+		return "", "", fmt.Errorf("reverse geocoding %f,%f: %w", lat, lng, err)
+	}
+	switch parsed.Status {
+	case "OK":
+	case "ZERO_RESULTS":
+		slog.Info("reverse geocode zero results", "lat", lat, "lng", lng)
+		return "", "", nil
+	default:
+		return "", "", fmt.Errorf("reverse geocoding %f,%f: %s: %s", lat, lng, parsed.Status, parsed.ErrorMessage)
+	}
+	if len(parsed.Results) == 0 {
+		return "", "", nil
+	}
+
+	var city, country string
+	for _, comp := range parsed.Results[0].AddressComponents {
+		for _, t := range comp.Types {
+			switch t {
+			case "locality":
+				city = comp.LongName
+			case "country":
+				country = comp.LongName
+			}
+		}
+	}
+	return city, country, nil
 }
 
 // PhotoMediaURL resolves a Places photo resource name (e.g.

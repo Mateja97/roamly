@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"activities-service/internal/places"
+	"activities-service/internal/placesmap"
 
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
@@ -48,8 +52,9 @@ type fakeRepo struct {
 	upsertOut   activitiessvc.Activity
 	upsertErr   error
 
-	syncedAtOut map[string]time.Time // key: cellKey+"|"+category
-	markSynced  []string             // cellKey+"|"+category, in call order
+	syncMu      sync.Mutex           // MarkSynced runs concurrently once Google's sweep lands
+	syncedAtOut map[string]time.Time // key: syncKey(provider, cellKey, category, subtype)
+	markSynced  []string             // syncKey(...), in call order
 }
 
 func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
@@ -96,14 +101,106 @@ func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (a
 	return f.upsertOut, f.upsertErr
 }
 
-func (f *fakeRepo) SyncedAt(_ context.Context, cellKey, category string) (time.Time, bool, error) {
-	t, ok := f.syncedAtOut[cellKey+"|"+category]
+func (f *fakeRepo) SyncedAt(_ context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
+	t, ok := f.syncedAtOut[syncKey(provider, cellKey, category, subtype)]
 	return t, ok, nil
 }
 
-func (f *fakeRepo) MarkSynced(_ context.Context, cellKey, category string) error {
-	f.markSynced = append(f.markSynced, cellKey+"|"+category)
+// FreshSyncRows derives its answer from the same syncedAtOut fixture SyncedAt
+// already reads, rather than a second fixture field, so a test only has to
+// set up freshness once regardless of which of the two paths (or both) it
+// exercises. category/subtype are recovered from the key syncKey built, which
+// only fully round-trips for non-Tripadvisor keys (see syncKey) — fine here,
+// since Google is FreshSyncRows' only caller.
+func (f *fakeRepo) FreshSyncRows(_ context.Context, provider, cellKey string, since time.Time) (map[string]bool, error) {
+	fresh := make(map[string]bool)
+	prefix := provider + "|" + cellKey + "|"
+	for key, syncedAt := range f.syncedAtOut {
+		if !strings.HasPrefix(key, prefix) || !syncedAt.After(since) {
+			continue
+		}
+		fresh[strings.TrimPrefix(key, prefix)] = true
+	}
+	return fresh, nil
+}
+
+func (f *fakeRepo) MarkSynced(_ context.Context, provider, cellKey, category, subtype string) error {
+	f.syncMu.Lock()
+	defer f.syncMu.Unlock()
+	f.markSynced = append(f.markSynced, syncKey(provider, cellKey, category, subtype))
 	return nil
+}
+
+// syncKey keeps Tripadvisor's existing "cell|category" test key shape so the
+// pre-existing sync assertions are untouched, and extends it only for other
+// providers or subtype-scoped rows.
+func syncKey(provider, cellKey, category, subtype string) string {
+	if provider == ProviderTripadvisor && subtype == "" {
+		return cellKey + "|" + category
+	}
+	return provider + "|" + cellKey + "|" + category + "|" + subtype
+}
+
+// fakeGooglePlaces stands in for internal/places.Client in sync tests.
+type fakeGooglePlaces struct {
+	mu          sync.Mutex
+	nearbyOut   []placesmap.Place
+	nearbyErr   error
+	nearbyCalls int
+	gotNearby   []places.NearbyRequest
+	// blockNearby, if non-nil, is received from inside SearchNearby after
+	// recording the call — lets concurrency tests hold a sweep "in flight"
+	// deterministically instead of racing on goroutine scheduling.
+	blockNearby chan struct{}
+
+	photosOut         []activitiessvc.Photo
+	photosErr         error
+	resolvePhotoCalls int
+
+	geocodeCity    string
+	geocodeCountry string
+	geocodeErr     error
+	geocodeCalls   int
+}
+
+func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
+	f.mu.Lock()
+	f.nearbyCalls++
+	f.gotNearby = append(f.gotNearby, req)
+	block := f.blockNearby
+	f.mu.Unlock()
+	if block != nil {
+		<-block
+	}
+	return f.nearbyOut, f.nearbyErr
+}
+
+func (f *fakeGooglePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.resolvePhotoCalls++
+	return f.photosOut, f.photosErr
+}
+
+func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
+	return placesmap.PlaceDetail{}, nil
+}
+
+// SearchTextInArea shares nearbyOut/nearbyErr with SearchNearby: these tests
+// exercise the sweep's behavior around a Places call succeeding or failing,
+// not which of the two discovery paths a given row happens to take (see
+// placesmap.DiscoveryRow's Types/TextQuery split).
+func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, _, _, _ float64, _ string) ([]placesmap.Place, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nearbyOut, f.nearbyErr
+}
+
+func (f *fakeGooglePlaces) ReverseGeocodeCity(_ context.Context, _, _ float64) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.geocodeCalls++
+	return f.geocodeCity, f.geocodeCountry, f.geocodeErr
 }
 
 func TestActivities_Query_Validation(t *testing.T) {

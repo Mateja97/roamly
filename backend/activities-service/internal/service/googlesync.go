@@ -1,0 +1,520 @@
+package service
+
+import (
+	"context"
+	"log/slog"
+	"slices"
+	"sync"
+	"time"
+
+	"activities-service/internal/places"
+	"activities-service/internal/placesmap"
+
+	"backend/shared/models/activitiessvc"
+)
+
+// googleSyncTTL is how long a synced (cell, category, subtype) is considered
+// fresh. Matches tripadvisorSyncTTL — venues do not turn over faster for one
+// provider than the other.
+const googleSyncTTL = 14 * 24 * time.Hour
+
+// googleSyncRadiusKM is the circle radius one discovery call sweeps. Matches
+// NearbyRadiusKM so a Nearby-scope query syncs exactly the area it searches.
+// The API ceiling is 50.
+const googleSyncRadiusKM = 10
+
+// maxGoogleRowsPerQuery caps how many discovery rows one Query call
+// schedules. There are ~53 rows per cell; running them all on one query
+// would cost ~$1.70 and hammer the API for a single search. At 8 per query a
+// city converges over roughly seven searches, which is the price of not
+// making the first user wait for a full ingest.
+const maxGoogleRowsPerQuery = 8
+
+// googleSyncJob is one unit of work: one discovery row at one anchor.
+type googleSyncJob struct {
+	anchor activitiessvc.Point
+	row    placesmap.DiscoveryRow
+}
+
+// cellLocation is a sync cell's resolved place name, applied to every venue
+// the sweep ingests there. Resolved once per cell (see
+// places.Client.ReverseGeocodeCity): per-venue derivation from each place's
+// own addressComponents fragmented one city into eight strings in a live
+// Belgrade sweep (Beograd 225, Belgrade 80, Београд 4, …), because
+// `locality` carries the local name and sometimes a sub-municipality. A
+// zero-value cellLocation means resolution failed or came back empty —
+// toIngest falls back to placesmap.CityCountry per venue in that case.
+type cellLocation struct {
+	City    string
+	Country string
+}
+
+// googleDueRows picks which discovery rows to sync for req, in priority
+// order, capped at maxGoogleRowsPerQuery.
+//
+// Priority matters because the cap means most rows wait: a user who filtered
+// to Wellness/Yoga should get yoga studios on their next search, not on their
+// seventh. Order is (1) rows matching the request's category AND subtype
+// filter, (2) rows matching its category filter, (3) everything else.
+//
+// fresh reports whether (cell, category, subtype) is within TTL; it is a
+// callback rather than a repo call so this stays a pure function.
+func googleDueRows(req Request, fresh func(cell, category, subtype string) bool) []googleSyncJob {
+	var exact, category, rest []googleSyncJob
+
+	for _, anchor := range syncAnchors(req) {
+		cell := syncCellKey(anchor.Lat, anchor.Lng)
+		for _, row := range placesmap.DiscoveryRows {
+			if fresh(cell, string(row.Category), row.Subtype) {
+				continue
+			}
+			job := googleSyncJob{anchor: anchor, row: row}
+			catWanted := len(req.Categories) == 0 || slices.Contains(req.Categories, row.Category)
+			subWanted := len(req.Subcategories) > 0 && slices.Contains(req.Subcategories, row.Subtype)
+
+			switch {
+			case catWanted && subWanted:
+				exact = append(exact, job)
+			case catWanted:
+				category = append(category, job)
+			default:
+				rest = append(rest, job)
+			}
+		}
+	}
+
+	jobs := append(append(exact, category...), rest...)
+	if len(jobs) > maxGoogleRowsPerQuery {
+		jobs = jobs[:maxGoogleRowsPerQuery]
+	}
+	return jobs
+}
+
+// The quality floor is placesmap.PassesFloor, shared with the dry-run CLI so
+// the numbers that tool reports are the numbers this one ingests.
+
+// googleSyncTimeout bounds one background sync pass. Generous compared with
+// the Tripadvisor sweep's 15s because nothing waits on this — Query has long
+// since returned. It exists only so a wedged pass cannot leak a goroutine
+// forever.
+const googleSyncTimeout = 2 * time.Minute
+
+// googleSyncConcurrency bounds how many sweeps run at once across the whole
+// process. One sweep can run up to maxGoogleRowsPerQuery (8) searches, each
+// with up to 20 results, each costing up to 2 further Places calls
+// (provisional photo + upsert) plus one geocode call per cell — roughly 329
+// Google API calls worst case. Left unbounded, a 100-request burst spawns
+// 100 concurrent sweeps (~33k calls, 100 live goroutines) with nothing
+// shedding load, and doJSON's 429/5xx retry then multiplies quota pressure
+// instead of backing off. 4 keeps worst-case concurrent cost in the low
+// thousands of calls while still letting several distinct cells make
+// progress at once; raise it only alongside a real per-process Google API
+// budget (see the "out of scope" note on pgxpool.MaxConns — same shape of
+// problem, deliberately deferred).
+const googleSyncConcurrency = 4
+
+// googleSyncSem is a non-blocking semaphore: acquiring a slot is a buffered
+// channel send with a default case, so a sweep that finds it full is
+// dropped, not queued. Queueing would only move the pile-up from goroutines
+// to a channel buffer; dropping actually sheds load. A dropped sweep leaves
+// its rows unmarked, so a later query retries them — the same fallback a
+// failed row already gets (see syncGoogleRow's doc).
+var googleSyncSem = make(chan struct{}, googleSyncConcurrency)
+
+// googleSyncCellsInFlight is the set of sync cells with a sweep currently
+// running, guarded by googleSyncCellsMu. Without it, two concurrent queries
+// against the same uncovered cell both see the same stale rows from
+// SyncedAt and both sync them — doubling every search, upsert and photo
+// call for that sweep. Cells are claimed synchronously in
+// syncGoogleIfNeeded before its goroutine is spawned (so a second call for
+// the same cell sees the claim immediately, not just once the first
+// goroutine gets scheduled) and released via defer when the goroutine
+// returns on every exit path, including panic.
+var (
+	googleSyncCellsMu       sync.Mutex
+	googleSyncCellsInFlight = make(map[string]struct{})
+)
+
+// claimGoogleSyncCells claims every cell in cells atomically: either all are
+// free and all get claimed, or none are (some other sweep already covers at
+// least one of them) and nothing is claimed. All-or-nothing is simpler than
+// partial claiming and just as safe, since the caller drops the whole sweep
+// either way when the claim fails.
+func claimGoogleSyncCells(cells []string) bool {
+	googleSyncCellsMu.Lock()
+	defer googleSyncCellsMu.Unlock()
+	for _, c := range cells {
+		if _, busy := googleSyncCellsInFlight[c]; busy {
+			return false
+		}
+	}
+	for _, c := range cells {
+		googleSyncCellsInFlight[c] = struct{}{}
+	}
+	return true
+}
+
+// releaseGoogleSyncCells undoes claimGoogleSyncCells. Always called via
+// defer so a claimed cell is freed no matter how the sweep's goroutine
+// exits.
+func releaseGoogleSyncCells(cells []string) {
+	googleSyncCellsMu.Lock()
+	defer googleSyncCellsMu.Unlock()
+	for _, c := range cells {
+		delete(googleSyncCellsInFlight, c)
+	}
+}
+
+// syncGoogleIfNeeded schedules a background type-driven discovery pass for
+// req's anchors.
+//
+// Unlike the Tripadvisor sync, this runs detached: Query returns immediately
+// and results land for the next search. Per-subtype granularity means one
+// query can only ever fetch maxGoogleRowsPerQuery of ~53 rows, so blocking a
+// search for seconds to deliver a fraction of a city is the worst of both
+// options — and photo resolution (below) would blow any in-request budget
+// outright.
+//
+// googleDueRows itself — and every SyncedAt lookup it makes, up to ~53 per
+// anchor — runs inside the goroutine, not here. Only the "is a Places client
+// even configured" check, and the concurrency/in-flight gating below, stay
+// on the caller's goroutine, so a server with no Places client spawns
+// nothing; everything that touches the repo happens off the request path
+// entirely, matching the "background" contract this function promises.
+//
+// Gating happens in this order: claim this request's cells (cheap, no I/O —
+// see claimGoogleSyncCells), then acquire a concurrency slot. Either failing
+// drops the sweep entirely rather than queueing it; a dropped sweep's rows
+// stay stale and a later query retries them.
+//
+// Never fails Query: a sync problem at any step is logged and leaves the DB
+// as-is, exactly like syncTripadvisorIfNeeded.
+func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
+	if a.places == nil {
+		return
+	}
+
+	anchors := syncAnchors(req)
+	if len(anchors) == 0 {
+		return
+	}
+	cells := make([]string, 0, len(anchors))
+	seen := make(map[string]struct{}, len(anchors))
+	for _, anchor := range anchors {
+		key := syncCellKey(anchor.Lat, anchor.Lng)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		cells = append(cells, key)
+	}
+
+	if !claimGoogleSyncCells(cells) {
+		return
+	}
+	select {
+	case googleSyncSem <- struct{}{}:
+	default:
+		releaseGoogleSyncCells(cells)
+		return
+	}
+
+	a.googleSync.Add(1)
+	go func() {
+		defer a.googleSync.Done()
+		defer releaseGoogleSyncCells(cells)
+		defer func() { <-googleSyncSem }()
+		// Detached from the request context on purpose: the HTTP/gRPC
+		// request is already finishing, and inheriting its cancellation
+		// would abort every pass the moment Query returns.
+		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), googleSyncTimeout)
+		defer cancel()
+
+		// One FreshSyncRows query per cell rather than one SyncedAt call per
+		// (cell, category, subtype): googleDueRows' fresh callback runs for
+		// every one of DiscoveryRows' ~53 rows per anchor, so the per-row
+		// query this replaced cost ~53 round-trips per cell even in the
+		// fully-fresh steady state, with no early exit once the 8-job budget
+		// filled. fresh still stays a pure in-memory lookup — see
+		// googleDueRows' own doc for why it takes a callback instead of a
+		// repo handle.
+		freshByCell := make(map[string]map[string]bool, len(cells))
+		since := time.Now().Add(-googleSyncTTL)
+		for _, cell := range cells {
+			set, err := a.repo.FreshSyncRows(syncCtx, ProviderGoogle, cell, since)
+			if err != nil {
+				slog.Warn("google fresh-sync-rows lookup failed; treating cell as fully stale", "cell", cell, "error", err)
+				continue
+			}
+			freshByCell[cell] = set
+		}
+
+		jobs := googleDueRows(req, func(cell, category, subtype string) bool {
+			return freshByCell[cell][category+"|"+subtype]
+		})
+
+		// Resolve each distinct anchor's city once, before running its jobs —
+		// not once per venue and not once per row. A geocode failure degrades
+		// to a zero-value cellLocation rather than dropping the sweep;
+		// toIngest falls back to per-venue extraction for that cell.
+		cellLocations := make(map[string]cellLocation)
+		for _, job := range jobs {
+			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
+			if _, ok := cellLocations[key]; ok {
+				continue
+			}
+			city, country, err := a.places.ReverseGeocodeCity(syncCtx, job.anchor.Lat, job.anchor.Lng)
+			if err != nil {
+				slog.Warn("google reverse geocode failed; falling back to per-venue city", "cell", key, "error", err)
+			}
+			cellLocations[key] = cellLocation{City: city, Country: country}
+		}
+
+		for _, job := range jobs {
+			a.syncGoogleRow(syncCtx, job, cellLocations[syncCellKey(job.anchor.Lat, job.anchor.Lng)])
+		}
+	}()
+}
+
+// PrewarmGoogle runs every discovery row at anchor synchronously, ignoring
+// both the freshness TTL and maxGoogleRowsPerQuery. Seed/build-time only
+// (cmd/scrapecity) — the request path uses syncGoogleIfNeeded, which is
+// budgeted and detached.
+//
+// It resolves anchor's city once, the same way syncGoogleIfNeeded resolves
+// it once per sync cell, then runs every row through syncGoogleRow — the
+// same function the lazy sync uses — rather than reimplementing discovery.
+func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Point) {
+	if a.places == nil {
+		slog.Error("prewarm needs a Places client")
+		return
+	}
+	var cell cellLocation
+	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
+	if err != nil {
+		slog.Warn("google reverse geocode failed; falling back to per-venue city", "error", err)
+	} else {
+		cell = cellLocation{City: city, Country: country}
+	}
+	for _, row := range placesmap.DiscoveryRows {
+		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell)
+	}
+}
+
+// syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
+// then an Upsert per surviving place — except a place arbitrated away by
+// venueWrongCategory (below), which is neither ingested nor counted as
+// eligible for this row.
+//
+// MarkSynced is called only when the search call itself succeeded AND every
+// place that should have been ingested (survived placesmap.PassesFloor AND
+// venueWrongCategory) was actually ingested — or the row genuinely had
+// nothing eligible to ingest, which is not a failure. A row whose search
+// succeeded but whose every eligible Upsert then failed is left unmarked —
+// marking it would freeze the cell at zero ingested rows for the whole TTL,
+// the exact Belgrade failure mode (2 restaurants for 14 days) the
+// Tripadvisor sweep's own MarkSynced gate exists to avoid. That must be
+// distinguished from a row whose search succeeded but returned only
+// sub-floor or wrong-category venues (both a common, unremarkable outcome —
+// a niche subtype in a smaller city rarely clears the floor, and a
+// type-overlapping row often finds venues its own category doesn't own):
+// that row has nothing to ingest through no fault of its own and must still
+// be marked fresh, or it re-searches on every future query forever —
+// trading the stale-data bug for an unbounded quota-spend one. A single
+// Upsert failure is logged and skipped without abandoning the rest of the
+// row.
+func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation) {
+	var found []placesmap.Place
+	var err error
+	if len(job.row.Types) > 0 {
+		found, err = a.places.SearchNearby(ctx, places.NearbyRequest{
+			Lat: job.anchor.Lat, Lng: job.anchor.Lng,
+			RadiusM:       googleSyncRadiusKM * 1000,
+			IncludedTypes: job.row.Types,
+			MaxResults:    20,
+		}, places.NearbyFieldMask)
+	} else {
+		// The ~5 subtypes Table A cannot express. Area-bounded so a phrase
+		// like "escape room" can't pull in results from the next country.
+		found, err = a.places.SearchTextInArea(ctx, job.row.TextQuery,
+			job.anchor.Lat, job.anchor.Lng, googleSyncRadiusKM, places.NearbyFieldMask)
+	}
+	if err != nil {
+		slog.Warn("google discovery row failed",
+			"category", job.row.Category, "subtype", job.row.Subtype, "error", err)
+		return
+	}
+
+	passed, kept, skipped := 0, 0, 0
+	var skippedTypes []string
+	for _, p := range found {
+		if !placesmap.PassesFloor(p) {
+			continue
+		}
+		if venueWrongCategory(job.row, p) {
+			// Arbitrated away, not a floor rejection and not an upsert
+			// failure — must not touch passed/kept, or a row whose every
+			// venue is skipped would look like "found eligible places but
+			// every upsert failed" below and get left unmarked forever
+			// instead of correctly marked fresh (see venueWrongCategory's
+			// doc and this function's own doc above).
+			skipped++
+			if !slices.Contains(skippedTypes, p.PrimaryType) {
+				skippedTypes = append(skippedTypes, p.PrimaryType)
+			}
+			continue
+		}
+		passed++
+		// One provisional photo for the list screen. The full set resolves
+		// on first detail view (see GetPhotos), so this is a one-time cost
+		// per newly discovered venue rather than per query. A photo failure
+		// is not fatal: a venue with no image still beats no venue, and the
+		// client falls back to its missing-image state.
+		photos, err := a.places.ResolvePhotos(ctx, p.ID, 1)
+		if err != nil {
+			slog.Warn("google provisional photo failed", "place_id", p.ID, "error", err)
+			photos = nil
+		}
+		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, photos, cell)); err != nil {
+			slog.Warn("google sync upsert failed", "place_id", p.ID, "error", err)
+			continue
+		}
+		kept++
+	}
+	if passed > 0 && kept == 0 {
+		slog.Warn("google discovery row found eligible places but every upsert failed; leaving unmarked to retry",
+			"category", job.row.Category, "subtype", job.row.Subtype, "found", len(found), "passed", passed)
+		return
+	}
+
+	cellKey := syncCellKey(job.anchor.Lat, job.anchor.Lng)
+	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cellKey, string(job.row.Category), job.row.Subtype); err != nil {
+		slog.Warn("google mark-synced failed", "cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype, "error", err)
+		return
+	}
+	slog.Info("google discovery row synced",
+		"cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype,
+		"found", len(found), "kept", kept, "skipped_wrong_category", skipped,
+		"skipped_wrong_category_types", skippedTypes)
+}
+
+// toIngest maps one discovered place onto the ingest shape. Category always
+// comes from the discovery row. Subcategory is arbitrated (see subtypeFor).
+// City/Country prefer cell — resolved once per sync cell via
+// ReverseGeocodeCity, consistent across every venue the sweep ingests there —
+// and fall back per field to the place's own address components
+// (placesmap.CityCountry) when the cell resolution came back empty (a
+// geocode failure or ZERO_RESULTS). Both are storable under Places Terms
+// §14.3 (only hours/price/venue-type are not) and City in particular is
+// load-bearing: BuildLiveDetails' opening-hours timezone lookup keys off it.
+// Falling back per-field here is belt-and-suspenders — Upsert's ON CONFLICT
+// also refuses to let an empty incoming city/country clobber a stored one —
+// but this fallback is what supplies a value at all when the cell-level
+// resolution is empty and the row is genuinely new.
+//
+// Details is deliberately empty — Places Terms §14.3 permits caching only
+// place_id and lat/lng, so hours, price and venue type are fetched live on
+// detail view instead (see placesmap.BuildLiveDetails).
+func toIngest(row placesmap.DiscoveryRow, p placesmap.Place, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
+	fallbackCity, fallbackCountry := placesmap.CityCountry(p.AddressComponents)
+	city, country := cell.City, cell.Country
+	if city == "" {
+		city = fallbackCity
+	}
+	if country == "" {
+		country = fallbackCountry
+	}
+	return activitiessvc.IngestActivity{
+		Title:       p.DisplayName.Text,
+		Category:    row.Category,
+		Subcategory: subtypeFor(row, p),
+		Lat:         p.Location.Latitude,
+		Lng:         p.Location.Longitude,
+		City:        city,
+		Country:     country,
+		Address:     p.FormattedAddress,
+		Rating:      p.Rating,
+		Status:      activitiessvc.StatusPublished,
+		Photos:      photos,
+		Source:      "google_places",
+		SourceURL:   p.GoogleMapsURI,
+		ExternalID:  p.ID,
+	}
+}
+
+// subtypeFor decides a discovered place's subtype, preferring what the place
+// says about itself over which row happened to find it.
+//
+// Google types overlap at the PLACE level even though every type STRING sits
+// on exactly one discovery row: a venue typed both "historical_place" and
+// "monument" is returned by the historical_site row AND the monument_landmark
+// row. Both upsert the same (source_url, category), so taking row.Subtype
+// unconditionally would make the stored subtype last-writer-wins, decided by
+// DiscoveryRows ordering. The Belgrade dry run measured this at 14% of
+// results (125 of 868) — 19 of 20 monuments were claimed by historical_site
+// purely because it sorts earlier in the table.
+//
+// placesmap.Subtype resolves from the place's own primaryType first, so every
+// row that finds a given place computes the same answer: deterministic and
+// order-independent. The row's own subtype is the fallback for places whose
+// primaryType maps to nothing — the row is still what makes an unmappable
+// place land in the right bucket.
+func subtypeFor(row placesmap.DiscoveryRow, p placesmap.Place) string {
+	if sub := placesmap.Subtype(row.Category, p.PrimaryType, p.Types); sub != "" {
+		return sub
+	}
+	return row.Subtype
+}
+
+// venueWrongCategory reports whether p was found by a row that is not its
+// own category, so syncGoogleRow should skip ingesting it under that row —
+// the venue will be, or already has been, upserted by its true category's
+// own row instead.
+//
+// The problem this fixes: the upsert key is (source_url, category), so a
+// venue whose types happen to satisfy two different categories' includedTypes
+// (a children's playroom typed "amusement_center" also matching Nature's
+// "park"-adjacent search, say) is upserted once per matching row — TWO rows,
+// TWO stored categories for one venue. The query layer only collapses that
+// down to one when no category filter is active; under a category chip the
+// misclassified copy still shows (the motivating case: "Igraonica New
+// Curance", a children's playroom, appearing under nature/botanical_garden).
+//
+// placesmap.CategoryForType is the same inverted DiscoveryRows index
+// subtypeFor's placesmap.Subtype call uses, just read at the category level
+// instead of the subtype level: it says what category the place's own
+// primaryType actually belongs to. When that disagrees with row.Category,
+// row is the wrong source for this venue and skips it. When primaryType maps
+// to nothing, there's no better signal than the row that found it, so the
+// existing behavior (trust the row) is kept — same fallback shape as
+// subtypeFor's "row's own subtype when primaryType maps to nothing".
+//
+// The tradeoff, stated plainly: this makes a venue single-category whenever
+// Google states a primary type, even when the venue genuinely belongs to
+// more than one — Tašmajdan really is both a park and a cluster of sports
+// courts, and after this change it surfaces only under its primaryType's
+// category. That's an accepted cost: correct category chips (no playroom
+// under Nature) matter more than preserving genuine multi-category
+// membership, and nothing in Places' response distinguishes "this venue
+// truly belongs to two categories" from "this venue was misclassified by an
+// overlapping type list" — there is no signal here to tell the two apart, so
+// the simpler, single-category rule is the one that's actually implementable.
+//
+// Never arbitrate a TextQuery row (len(row.Types) == 0), though. Five
+// subtypes — escape_room, lounge, climbing_gym, kids_museum,
+// meditation_center — have NO Table A type at all; they exist as phrase
+// searches precisely because no includedTypes list can express them. Google
+// still assigns those venues *some* primaryType (an escape room commonly
+// comes back as "amusement_center", Kids' own type), and arbitrating on that
+// would skip the phrase row's own upsert in favor of a category the venue
+// only incidentally overlaps — permanently, since no other row can ever
+// produce these five subtypes. A venue a targeted name query matched is
+// stronger evidence for its subtype than an incidental type overlap, so
+// trust the row unconditionally here.
+func venueWrongCategory(row placesmap.DiscoveryRow, p placesmap.Place) bool {
+	if len(row.Types) == 0 {
+		return false
+	}
+	trueCategory, ok := placesmap.CategoryForType(p.PrimaryType)
+	return ok && trueCategory != row.Category
+}
