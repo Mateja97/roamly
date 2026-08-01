@@ -514,8 +514,7 @@ type Treatment struct {
 	Price    string `json:"price,omitempty"`
 }
 
-// WellnessDetails is CategoryWellness' detail payload. No extra properties
-// per APP_STANDARDS.md — only the unique section and booking note.
+// WellnessDetails is CategoryWellness' detail payload.
 type WellnessDetails struct {
 	Treatments          []Treatment `json:"treatments,omitempty"`
 	ExternalBookingNote string      `json:"external_booking_note,omitempty"`
@@ -523,6 +522,13 @@ type WellnessDetails struct {
 	ActionURL *string `json:"action_url,omitempty"`
 	// VenueType (T8) is the badge subtype qualifier, e.g. "Spa".
 	VenueType string `json:"venue_type,omitempty"`
+	// TypicalVisit/PriceFrom/GoodToKnow are website-sourced (see
+	// internal/service/websitesync.go) — never Places-sourced, so they
+	// carry no §14.3 caching restriction.
+	TypicalVisit string        `json:"typical_visit,omitempty"`
+	PriceFrom    string        `json:"price_from,omitempty"`
+	GoodToKnow   []string      `json:"good_to_know,omitempty"`
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // Show is one entry in Entertainment's upcoming shows list.
@@ -539,6 +545,12 @@ type EntertainmentDetails struct {
 	UpcomingShows []Show `json:"upcoming_shows,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
 	ActionURL *string `json:"action_url,omitempty"`
+	// TypicalShowLength/PriceFrom/GoodToKnow are website-sourced, same
+	// provenance note as WellnessDetails above.
+	TypicalShowLength string        `json:"typical_show_length,omitempty"`
+	PriceFrom         string        `json:"price_from,omitempty"`
+	GoodToKnow        []string      `json:"good_to_know,omitempty"`
+	OpeningHours      *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // ShoppingDetails is CategoryShopping's detail payload.

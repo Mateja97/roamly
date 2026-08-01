@@ -41,8 +41,10 @@ export const PLACES_LIVE_CATEGORIES: ReadonlySet<Category> = new Set([
 // - nightlife/nature/sport: none of their fact-strip fields (`entry_price`/
 //   `dress_code`/`opens_time`, `time_to_spend`/`best_time`/`cost`,
 //   `effort_level`/`duration`/`gear`) are in the mapper's output at all — 0.
-// - wellness/kids/entertainment: `factStripFields` itself always returns
-//   `[]` for these regardless of merge — 0 (unchanged, was already right).
+// - kids: `factStripFields` always returns `[]` for it regardless of merge
+//   — 0 (unchanged, was already right).
+// - wellness/entertainment: mapper emits `opening_hours`, which feeds the
+//   Hours chip via `withHours` same as cafes — 1.
 const FACT_STRIP_CHIP_COUNT: Record<Category, number> = {
   restaurants: 0,
   bars: 0,
@@ -53,9 +55,9 @@ const FACT_STRIP_CHIP_COUNT: Record<Category, number> = {
   kids: 0,
   culture: 2,
   art: 2,
-  wellness: 0,
+  wellness: 1,
   shopping: 2,
-  entertainment: 0,
+  entertainment: 1,
   tours_experiences: 0,
 };
 

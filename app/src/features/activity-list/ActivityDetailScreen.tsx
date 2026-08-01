@@ -41,6 +41,7 @@ import {
   BODY_SECTION_ORDER,
   factStripFields,
   genericActionLabel,
+  goodToKnowSection,
   metaRowExtras,
   openStatus,
   PRIMARY_CTA_LABEL,
@@ -231,6 +232,7 @@ export function ActivityDetailScreen({
   // usable (see `hoursChip` there), so this is a no-op for the legacy chip.
   const fields = factStripFields(activity, () => setHoursModalOpen(true));
   const unique = uniqueSection(activity);
+  const goodToKnow = goodToKnowSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
   const genericLabel = genericActionLabel(activity.category);
   const actionURL = primaryActionURL(activity);
@@ -359,6 +361,8 @@ export function ActivityDetailScreen({
         ) : (
           <UniqueSection key="unique" data={unique} />
         );
+      case 'goodtoknow':
+        return goodToKnow ? <UniqueSection key="goodtoknow" data={goodToKnow} /> : null;
     }
   }
 

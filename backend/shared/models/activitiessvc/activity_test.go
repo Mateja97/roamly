@@ -88,6 +88,68 @@ func TestBarDetails_RoundTripsTripadvisorAttribution(t *testing.T) {
 	}
 }
 
+func TestWellnessDetails_RoundTripsNewFields(t *testing.T) {
+	url := "https://example-spa.rs"
+	want := WellnessDetails{
+		Treatments: []Treatment{
+			{Item: "Aroma massage", Duration: "50 min", Price: "€39"},
+		},
+		ExternalBookingNote: "Booking is handled on the venue's own site",
+		ActionURL:           &url,
+		VenueType:           "Spa",
+		TypicalVisit:        "2–3 hrs",
+		PriceFrom:           "from €22",
+		GoodToKnow:          []string{"Towel, robe and slippers included"},
+		OpeningHours: &OpeningHours{
+			Timezone: "Europe/Belgrade",
+			Periods:  []Period{{Day: Monday, Open: "09:00", Close: "22:00"}},
+		},
+	}
+
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	var got WellnessDetails
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("round trip = %+v, want %+v", got, want)
+	}
+}
+
+func TestEntertainmentDetails_RoundTripsNewFields(t *testing.T) {
+	url := "https://example-theatre.rs"
+	want := EntertainmentDetails{
+		Genre:        "Live music",
+		Neighborhood: "Dorćol",
+		UpcomingShows: []Show{
+			{Date: "2026-08-18", Title: "Jazz Night: Bilja Krstić", TimeOrPrice: "20:00 · from €15"},
+		},
+		ActionURL:          &url,
+		TypicalShowLength:  "2 hrs",
+		PriceFrom:          "from €12",
+		GoodToKnow:         []string{"Unnumbered seating — arrive early"},
+		OpeningHours: &OpeningHours{
+			Timezone: "Europe/Belgrade",
+			Periods:  []Period{{Day: Friday, Open: "19:00", Close: "23:00"}},
+		},
+	}
+
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	var got EntertainmentDetails
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("round trip = %+v, want %+v", got, want)
+	}
+}
+
 func TestRestaurantDetails_LegacyRowWithNoTripadvisorFieldDecodesCleanly(t *testing.T) {
 	raw := `{"cuisine":"Balkan","price_tier":"$$"}`
 

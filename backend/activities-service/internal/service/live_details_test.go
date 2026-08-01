@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -252,5 +253,63 @@ func TestActivities_GetByIDWithLiveDetails_UnpublishedNotFound(t *testing.T) {
 				t.Errorf("places.PlaceDetails calls = %d, want 0 — an unpublished row must never reach the live call", places.detailCalls)
 			}
 		})
+	}
+}
+
+// fakePlaceDetail builds a placesmap.PlaceDetail via JSON, the only way an
+// external field (PrimaryTypeDisplayName is the unexported localizedText
+// type) can be set from outside the placesmap package — mirrors
+// placesmap/buildlivedetails_test.go's own fullPlaceDetail fixture.
+func fakePlaceDetail(t *testing.T, websiteURI, primaryType string) placesmap.PlaceDetail {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"websiteUri":             websiteURI,
+		"primaryTypeDisplayName": map[string]string{"text": primaryType},
+	})
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	var d placesmap.PlaceDetail
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatalf("unmarshal fixture: %v", err)
+	}
+	return d
+}
+
+// TestActivities_WithLiveDetails_MergesOntoStoredDetails is the regression
+// this task exists to prevent: once a Wellness/Entertainment row carries
+// website-scraped or admin-curated content (Treatments/GoodToKnow/
+// UpcomingShows), a live-merge on detail-page view must not silently erase
+// it. Only the Places-sourced keys (action_url/opening_hours/venue_type)
+// may be overwritten by the live response; everything else on the stored
+// row must survive.
+func TestActivities_WithLiveDetails_MergesOntoStoredDetails(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, City: "Belgrade",
+		Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+		Details: json.RawMessage(`{"treatments":[{"item":"Aroma massage","price":"€39"}],"venue_type":"Old stale value"}`),
+	}
+	places := &fakePlaces{detailOut: fakePlaceDetail(t, "https://example-spa.rs", "Spa")}
+	repo := &fakeRepo{getOut: stored}
+	svc := New(repo).WithPlaces(places)
+
+	got, err := svc.GetByIDWithLiveDetails(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+	}
+
+	var details map[string]any
+	if err := json.Unmarshal(got.Details, &details); err != nil {
+		t.Fatalf("unmarshal merged details: %v", err)
+	}
+	if _, ok := details["treatments"]; !ok {
+		t.Errorf("merged details lost stored `treatments`: %v", details)
+	}
+	if details["venue_type"] != "Spa" {
+		t.Errorf("venue_type = %v, want the live value to win (\"Spa\")", details["venue_type"])
+	}
+	if details["action_url"] != "https://example-spa.rs" {
+		t.Errorf("action_url = %v, want the live websiteUri", details["action_url"])
 	}
 }

@@ -656,6 +656,22 @@ describe('ActivityDetailScreen', () => {
         screen.getByText("Booking is handled on the venue's own site"),
       ).toBeTruthy();
     });
+
+    it('renders a Good to know checklist for a wellness activity that has good_to_know data', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: {
+          category: 'wellness',
+          good_to_know: ['Towel, robe and slippers included'],
+        },
+      };
+      render(
+        <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('Good to know')).toBeTruthy();
+      expect(screen.getByText('Towel, robe and slippers included')).toBeTruthy();
+    });
   });
 
   describe('photo-set upgrade fetch (T4)', () => {

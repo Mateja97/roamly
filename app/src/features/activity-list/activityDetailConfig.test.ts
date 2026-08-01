@@ -1,7 +1,9 @@
 import { Clock } from 'lucide-react-native';
 import type { Activity, OpeningHours } from '../../api/activities';
 import {
+  BODY_SECTION_ORDER,
   factStripFields,
+  goodToKnowSection,
   openStatus,
   todayHoursRow,
   tripadvisorAddressLine,
@@ -532,5 +534,117 @@ describe('tripadvisorAddressLine (T4)', () => {
 
   it('is undefined when both are absent (row omitted, no dangling comma)', () => {
     expect(tripadvisorAddressLine(baseActivity(undefined))).toBeUndefined();
+  });
+});
+
+describe('BODY_SECTION_ORDER — wellness/entertainment render fact strip + description', () => {
+  it('wellness includes factstrip, description, unique, goodtoknow in that order', () => {
+    expect(BODY_SECTION_ORDER.wellness).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+  });
+
+  it('entertainment includes factstrip, description, unique, goodtoknow in that order', () => {
+    expect(BODY_SECTION_ORDER.entertainment).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+  });
+});
+
+describe('factStripFields — wellness/entertainment', () => {
+  it('includes Typical visit and Price from chips for wellness', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      typical_visit: '2–3 hrs',
+      price_from: 'from €22',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toContain('Typical visit');
+    expect(labels).toContain('Price from');
+  });
+
+  it('omits wellness chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'wellness' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  it('includes Typical show and Price from chips for entertainment', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      typical_show_length: '2 hrs',
+      price_from: 'from €12',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toContain('Typical show');
+    expect(labels).toContain('Price from');
+  });
+
+  describe('Hours chip appends when opening_hours is usable (Task 6 wiring)', () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('appends the Hours chip for wellness', () => {
+      const activity = baseActivity({
+        category: 'wellness',
+        opening_hours: {
+          timezone: 'UTC',
+          periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+        },
+      });
+      const hours = factStripFields(activity).find(
+        (f) => f.label === '09:00–17:00',
+      );
+      expect(hours).toMatchObject({ icon: Clock, value: 'Open' });
+    });
+
+    it('appends the Hours chip for entertainment', () => {
+      const activity = baseActivity({
+        category: 'entertainment',
+        opening_hours: {
+          timezone: 'UTC',
+          periods: [{ day: 'monday', open: '10:00', close: '23:00' }],
+        },
+      });
+      const hours = factStripFields(activity).find(
+        (f) => f.label === '10:00–23:00',
+      );
+      expect(hours).toMatchObject({ icon: Clock, value: 'Open' });
+    });
+  });
+});
+
+describe('goodToKnowSection', () => {
+  it('renders a checklist for wellness when good_to_know is present', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      good_to_know: ['Book ahead on weekends'],
+    });
+    expect(goodToKnowSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Book ahead on weekends'],
+    });
+  });
+
+  it('is undefined when good_to_know is absent', () => {
+    const activity = baseActivity({ category: 'wellness' });
+    expect(goodToKnowSection(activity)).toBeUndefined();
+  });
+
+  it('renders a checklist for entertainment too', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      good_to_know: ['Unnumbered seating — arrive early'],
+    });
+    expect(goodToKnowSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Unnumbered seating — arrive early'],
+    });
+  });
+
+  it('is undefined for a category with no good_to_know field at all (e.g. restaurants)', () => {
+    const activity = baseActivity({ category: 'restaurants' });
+    expect(goodToKnowSection(activity)).toBeUndefined();
   });
 });

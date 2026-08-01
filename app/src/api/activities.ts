@@ -271,6 +271,11 @@ export type ActivityDetails =
       action_url?: string;
       // T8: badge subtype qualifier, e.g. "Spa".
       venue_type?: string;
+      // Website-sourced (weekly scrape) — never Places-sourced.
+      typical_visit?: string;
+      price_from?: string;
+      good_to_know?: string[];
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'entertainment';
@@ -279,6 +284,11 @@ export type ActivityDetails =
       upcoming_shows?: { date: string; title: string; time_or_price?: string }[];
       // T7: primary CTA's external link ("Get tickets").
       action_url?: string;
+      // Website-sourced (weekly scrape) — never Places-sourced.
+      typical_show_length?: string;
+      price_from?: string;
+      good_to_know?: string[];
+      opening_hours?: OpeningHours;
     }
   | {
       category: 'shopping';

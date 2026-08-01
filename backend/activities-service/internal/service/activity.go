@@ -103,6 +103,13 @@ type tripadvisorClient interface {
 	LocationReviews(ctx context.Context, locationID string) ([]tripadvisor.Review, error)
 }
 
+// firecrawlClient is the one capability the weekly website-sync job needs —
+// narrowed the same way placesClient/tripadvisorClient are, so tests fake
+// it without a real HTTP client.
+type firecrawlClient interface {
+	ExtractJSON(ctx context.Context, url, prompt string, schema map[string]any) (json.RawMessage, error)
+}
+
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
 // caller's raw filter value (0 = not set). ScopeNearby ignores it entirely
 // (fixed NearbyRadiusKM); ScopeAnywhere passes it through uncapped.
@@ -131,6 +138,7 @@ type Activities struct {
 	repo        repository
 	places      placesClient
 	tripadvisor tripadvisorClient
+	firecrawl   firecrawlClient
 	// syncTimeout bounds one Tripadvisor anchor sweep. A field rather than
 	// a direct tripadvisorSyncTimeout read only so tests can shrink it to
 	// exercise deadline truncation without waiting out the real value.
@@ -164,6 +172,15 @@ func (a *Activities) waitForGoogleSync() { a.googleSync.Wait() }
 // path. Optional, same nil-safe contract as WithPlaces.
 func (a *Activities) WithTripadvisor(t tripadvisorClient) *Activities {
 	a.tripadvisor = t
+	return a
+}
+
+// WithFirecrawl attaches a live Firecrawl client for SyncWebsiteContent's
+// weekly scrape+extract pass. Optional, same nil-safe contract as
+// WithPlaces: without it, SyncWebsiteContent returns an error rather than
+// silently skipping, since it's the whole point of that call.
+func (a *Activities) WithFirecrawl(f firecrawlClient) *Activities {
+	a.firecrawl = f
 	return a
 }
 
@@ -582,6 +599,31 @@ func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (act
 // a third-party call.
 const detailResolveTimeout = 4 * time.Second
 
+// mergeLiveDetails overlays live's keys onto stored, preserving every key
+// stored already carries — the fix for withLiveDetails' former wholesale
+// replace, which was harmless only while Wellness/Entertainment details
+// were always blank and became unsafe the moment those rows could carry
+// curated Treatments/GoodToKnow/UpcomingShows content. Malformed JSON on
+// either side degrades to "live wins outright" rather than erroring the
+// whole request — mirrors every other fallback-on-error contract in this
+// file.
+func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
+	merged := map[string]any{}
+	_ = json.Unmarshal(stored, &merged) // best-effort; empty/absent stored is fine
+	var liveFields map[string]any
+	if err := json.Unmarshal(live, &liveFields); err != nil {
+		return live
+	}
+	for k, v := range liveFields {
+		merged[k] = v
+	}
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return live
+	}
+	return b
+}
+
 // withLiveDetails live-merges fresh Google Place Details onto activity for
 // a Places-sourced row (T2, places-live-details), mirroring GetPhotos'
 // fallback-on-error contract exactly: an unconfigured places client, any
@@ -592,12 +634,10 @@ const detailResolveTimeout = 4 * time.Second
 // a.repo.Update or any other persistence call — Places Terms §14.3 forbids
 // caching anything but place_id/lat-lng, so every call re-fetches fresh.
 //
-// Details is replaced outright, not deep-merged: BuildLiveDetails has no
-// case for Sport/Entertainment (always "{}"), so any admin-curated details
-// on a Places-sourced row in one of those two categories would be
-// overwritten on every live-merged read (harmless today only because T4's
-// migration already blanks every Places-sourced row's stored details;
-// worth remembering if admin curation of those rows is ever added back).
+// Details is merged (mergeLiveDetails), not replaced outright: live-sourced
+// keys (action_url/opening_hours/venue_type/...) win, everything else
+// already on the stored row (e.g. admin-curated Treatments/GoodToKnow) is
+// passed through unchanged.
 func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
 	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" || a.places == nil {
 		return activity
@@ -612,7 +652,7 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		return activity
 	}
 
-	activity.Details = placesmap.BuildLiveDetails(activity.Category, activity.Country, detail)
+	activity.Details = mergeLiveDetails(activity.Details, placesmap.BuildLiveDetails(activity.Category, activity.Country, detail))
 	if desc := liveDescription(detail); desc != "" {
 		activity.Description = desc
 	}
