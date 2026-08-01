@@ -114,10 +114,9 @@ describe('App', () => {
         categories: ['sport'],
       })
     );
-    // T1: category filters no longer get their own removable chip (the
-    // list header's quick-filter row represents that state instead) — Sport
-    // isn't a headline category, so the row reads "All" active and the
-    // Filters button's count badge is the visible signal.
+    // T4: category filters no longer get their own removable chip (the list
+    // header's pill row represents that state directly instead) — the
+    // Filters button's count badge is the other visible signal.
     expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
   });
 

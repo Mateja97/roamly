@@ -60,33 +60,6 @@ export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce
   {} as Record<Category, string>
 );
 
-// design-spec.md T1: the activities-list header's quick-filter row —
-// `All` plus these headline categories, per frame `5a`'s `All / Restaurants
-// / Bars / Culture`. Same headline set for both scopes (the mock only shows
-// one); the sheet's full category list remains the source of truth for
-// anything beyond this shortcut row.
-export const HEADLINE_CATEGORIES: Category[] = ['restaurants', 'bars', 'culture'];
-
-// The quick-filter row is a projection of the sheet's own (multi-select)
-// category filter, not separate state. Exactly one chip reads as active: a
-// headline category when the applied filters hold exactly that one
-// category, `All` otherwise (0 or 2+ categories, or a non-headline
-// category) — the accepted resting behavior per design-spec.md T1, not a bug.
-export function activeQuickFilterCategory(filters: Filters): Category | null {
-  if (filters.categories.length !== 1) return null;
-  const [category] = filters.categories;
-  return HEADLINE_CATEGORIES.includes(category) ? category : null;
-}
-
-// Next Filters when a quick-filter chip is tapped: `null` (All) clears the
-// category filter; a headline category becomes the sole selected category.
-// Subtypes always reset — they're scoped to the sheet's own category
-// selection, which this shortcut row bypasses (same orphan-clearing intent
-// as FilterSheet's category checkbox handler).
-export function applyQuickFilterCategory(filters: Filters, category: Category | null): Filters {
-  return { ...filters, categories: category ? [category] : [], subtypes: [] };
-}
-
 // T3: category -> subtype options, the same 59-slug taxonomy from
 // BUSINESS_STANDARDS.md's subcategory table as the web frontend's
 // `SUBCATEGORIES` (frontend/src/features/admin/constants.ts) and the T1 wire
@@ -181,6 +154,40 @@ export const SUBCATEGORIES: Record<Category, { value: string; label: string }[]>
   ],
 };
 
+// design-spec.md T4: subtype slug -> its owning category, for orphan-
+// clearing when a category pill toggles off. Slugs are globally unique
+// across categories (BUSINESS_STANDARDS.md), so this reverse index is
+// unambiguous.
+const SUBTYPE_CATEGORY: Record<string, Category> = Object.entries(SUBCATEGORIES).reduce(
+  (acc, [category, options]) => {
+    for (const option of options) acc[option.value] = category as Category;
+    return acc;
+  },
+  {} as Record<string, Category>
+);
+
+// T4: the header pill row and the sheet's own Category group both write
+// straight into `filters.categories` — no separate "quick filter"
+// projection. Toggling a category off drops only that category's own
+// subtypes; every other category's subtypes stay untouched (the design's
+// per-category orphan-clearing rule).
+export function toggleCategory(filters: Filters, category: Category): Filters {
+  const wasSelected = filters.categories.includes(category);
+  const categories = wasSelected
+    ? filters.categories.filter((c) => c !== category)
+    : [...filters.categories, category];
+  const subtypes = wasSelected ? filters.subtypes.filter((s) => SUBTYPE_CATEGORY[s] !== category) : filters.subtypes;
+  return { ...filters, categories, subtypes };
+}
+
+// `All` clears every selected category (and, since no category remains,
+// every subtype with it). Re-tapping an already-active `All` is a no-op —
+// enforced by the caller (ActivityListScreen), which skips calling this at
+// all when `categories` is already empty, so no redundant query fires.
+export function clearCategories(filters: Filters): Filters {
+  return { ...filters, categories: [], subtypes: [] };
+}
+
 export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: null, label: 'Any' },
   { value: 4.0, label: '4.0+' },
@@ -212,11 +219,10 @@ export function activeFilterCount(filters: Filters, scope: Scope): number {
 export type FilterChipData = { key: string; label: string; remove: () => Filters };
 
 // One removable chip per active non-category filter value (rating,
-// distance) — each single-select group gets at most one. design-spec.md T1:
-// category filters no longer get a removable chip here — they're
-// represented by the header's quick-filter row highlight instead (see
-// activeQuickFilterCategory), so showing both would duplicate the same
-// state. The sheet remains the full control for categories either way.
+// distance) — each single-select group gets at most one. design-spec.md T4:
+// category filters never get a removable chip here — the header pill row
+// *is* the category filter (writes straight into `filters.categories`), so a
+// chip here would duplicate the same state.
 export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
   const chips: FilterChipData[] = [];
 

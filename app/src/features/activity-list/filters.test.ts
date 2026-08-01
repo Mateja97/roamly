@@ -5,8 +5,10 @@ import {
   SUBCATEGORIES,
   activeFilterCount,
   buildActivitiesRequest,
+  clearCategories,
   defaultFilters,
   filterChips,
+  toggleCategory,
 } from './filters';
 import type { Filters } from './types';
 
@@ -53,7 +55,7 @@ describe('activeFilterCount', () => {
 });
 
 describe('filterChips', () => {
-  it('produces one chip per single-select group, no chip for categories (quick-filter row owns that, T1)', () => {
+  it('produces one chip per single-select group, no chip for categories (the pill row owns that, T4)', () => {
     const filters: Filters = {
       categories: ['sport'],
       subtypes: [],
@@ -179,6 +181,65 @@ describe('buildActivitiesRequest', () => {
       { categories: ['sport'], subtypes: [], minRating: null, maxDistanceKm: null }
     );
     expect(req.subcategories).toBeUndefined();
+  });
+});
+
+describe('toggleCategory (T4)', () => {
+  it('adds an unselected category, leaving its subtypes untouched', () => {
+    const filters: Filters = { categories: [], subtypes: [], minRating: null, maxDistanceKm: null };
+    expect(toggleCategory(filters, 'sport')).toEqual({
+      categories: ['sport'],
+      subtypes: [],
+      minRating: null,
+      maxDistanceKm: null,
+    });
+  });
+
+  it('removing a selected category drops only that category\'s own subtypes', () => {
+    const filters: Filters = {
+      categories: ['sport', 'culture'],
+      subtypes: ['climbing_gym', 'historical_site'],
+      minRating: null,
+      maxDistanceKm: null,
+    };
+    expect(toggleCategory(filters, 'sport')).toEqual({
+      categories: ['culture'],
+      subtypes: ['historical_site'],
+      minRating: null,
+      maxDistanceKm: null,
+    });
+  });
+
+  it('adding a second category leaves the first category and its subtypes intact', () => {
+    const filters: Filters = {
+      categories: ['sport'],
+      subtypes: ['climbing_gym'],
+      minRating: null,
+      maxDistanceKm: null,
+    };
+    expect(toggleCategory(filters, 'culture')).toEqual({
+      categories: ['sport', 'culture'],
+      subtypes: ['climbing_gym'],
+      minRating: null,
+      maxDistanceKm: null,
+    });
+  });
+});
+
+describe('clearCategories (T4)', () => {
+  it('clears every category and subtype', () => {
+    const filters: Filters = {
+      categories: ['sport', 'culture'],
+      subtypes: ['climbing_gym', 'historical_site'],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    };
+    expect(clearCategories(filters)).toEqual({
+      categories: [],
+      subtypes: [],
+      minRating: 4.5,
+      maxDistanceKm: null,
+    });
   });
 });
 

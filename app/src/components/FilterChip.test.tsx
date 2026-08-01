@@ -51,5 +51,11 @@ describe('FilterChip', () => {
       fireEvent(chip, 'focus');
       expect(StyleSheet.flatten(chip.props.style)).toMatchObject({ borderWidth: 2, borderColor: '#CE9042' });
     });
+
+    it('T4: accessibilityLabel overrides the derived name (visible label unaffected)', () => {
+      render(<FilterChip variant="segment" label="All" accessibilityLabel="All categories" selected onPress={jest.fn()} />);
+      expect(screen.getByRole('button', { name: 'All categories, selected' })).toBeTruthy();
+      expect(screen.getByText('All')).toBeTruthy();
+    });
   });
 });

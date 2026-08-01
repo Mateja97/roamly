@@ -26,6 +26,10 @@ type SegmentChipProps = {
   label: string;
   selected: boolean;
   onPress: () => void;
+  // T4: overrides the derived `${label}, selected` accessible name — needed
+  // for the header row's reset pill, whose visible "All" reads as
+  // meaningless to AT out of context (design-spec.md T4).
+  accessibilityLabel?: string;
 };
 
 type FilterChipProps = SelectChipProps | RemoveChipProps | SegmentChipProps;
@@ -43,8 +47,9 @@ export function FilterChip(props: FilterChipProps) {
   // label color directly (see segmentLabel* below), so they opt out here.
   const useTextLabel = props.variant === 'select' ? selected : props.variant === 'remove';
 
+  const baseLabel = (props.variant === 'segment' && props.accessibilityLabel) || props.label;
   const accessibilityLabel =
-    props.variant === 'remove' ? `Remove ${props.label} filter` : `${props.label}${selected ? ', selected' : ''}`;
+    props.variant === 'remove' ? `Remove ${props.label} filter` : `${baseLabel}${selected ? ', selected' : ''}`;
 
   return (
     <Pressable

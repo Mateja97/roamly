@@ -25,16 +25,15 @@ import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { tripadvisorAttribution } from './activityDetailConfig';
 import { FilterSheet } from './FilterSheet';
 import {
-  CATEGORY_LABELS,
-  HEADLINE_CATEGORIES,
+  CATEGORY_OPTIONS,
   SCOPE_TITLES,
   activeFilterCount,
-  activeQuickFilterCategory,
-  applyQuickFilterCategory,
   buildActivitiesRequest,
+  clearCategories,
   defaultFilters,
   filterChips,
   headerSubtitle,
+  toggleCategory,
 } from './filters';
 import type { ActivityListScreenProps, Filters } from './types';
 
@@ -187,9 +186,6 @@ export function ActivityListScreen({
 
   const chips = filterChips(appliedFilters, selection.scope);
   const filterCount = activeFilterCount(appliedFilters, selection.scope);
-  // design-spec.md T1: quick-filter row's active chip — a headline category
-  // when applied filters hold exactly it, `All` otherwise.
-  const activeQuickFilter = activeQuickFilterCategory(appliedFilters);
   const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
   // T2: whether the composite subtitle will render at all is knowable before
   // the count resolves — nearby always has one, anywhere only when cities
@@ -278,8 +274,9 @@ export function ActivityListScreen({
             </Pressable>
           </View>
 
-          {/* design-spec.md T1: category quick-filter row — a projection of
-              the sheet's own category filter, see activeQuickFilterCategory. */}
+          {/* design-spec.md T4: the pill row *is* the full category filter —
+              it writes straight into filters.categories, the same state the
+              sheet's Category group edits, rather than summarising it. */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -289,16 +286,22 @@ export function ActivityListScreen({
             <FilterChip
               variant="segment"
               label="All"
-              selected={activeQuickFilter === null}
-              onPress={() => handleFiltersChange(applyQuickFilterCategory(appliedFilters, null))}
+              accessibilityLabel="All categories"
+              selected={appliedFilters.categories.length === 0}
+              onPress={() => {
+                // Re-tapping an already-active All is a no-op — no query
+                // re-fire (design-spec.md T4).
+                if (appliedFilters.categories.length === 0) return;
+                handleFiltersChange(clearCategories(appliedFilters));
+              }}
             />
-            {HEADLINE_CATEGORIES.map((category) => (
+            {CATEGORY_OPTIONS.map(({ value, label }) => (
               <FilterChip
-                key={category}
+                key={value}
                 variant="segment"
-                label={CATEGORY_LABELS[category]}
-                selected={activeQuickFilter === category}
-                onPress={() => handleFiltersChange(applyQuickFilterCategory(appliedFilters, category))}
+                label={label}
+                selected={appliedFilters.categories.includes(value)}
+                onPress={() => handleFiltersChange(toggleCategory(appliedFilters, value))}
               />
             ))}
           </ScrollView>
