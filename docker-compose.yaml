@@ -47,6 +47,11 @@ services:
       # Unset, Restaurants/Bars simply never lazily sync from Tripadvisor —
       # the stack still comes up, those two categories just stay empty.
       TRIPADVISOR_API_KEY: ${TRIPADVISOR_API_KEY:-}
+      # Weekly website-enrichment job (cmd/websitesync), not read by this
+      # server binary itself — the standalone tool is run by hand, same
+      # category as cmd/backfilltripadvisor. Kept here so it's set from the
+      # same .env this compose file already reads for the other keys above.
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
     ports:
       - "9090:9090"
     volumes:
