@@ -342,8 +342,8 @@ func cafeKnownFor(d PlaceDetail) []string {
 // persisted (Places Terms §14.3) — call it fresh on every detail-page open.
 // Header-level fields (rating, review count,
 // description, reviews) live on Activity itself, not in this payload (T2's
-// merge); Sport and Entertainment have no sourceable Details content at all
-// and always return "{}". Every field is omitted, not blanked, when its
+// merge); Sport has no sourceable Details content at all and always returns
+// "{}". Every field is omitted, not blanked, when its
 // source is empty/false/absent — including the every-false and
 // every-absent amenity cases, which are indistinguishable in Go's zero-value
 // bool and so behave identically (both omit the section).
@@ -388,8 +388,13 @@ func BuildLiveDetails(cat activitiessvc.Category, country string, d PlaceDetail)
 		setOpeningHours()
 	case activitiessvc.CategoryWellness:
 		set("venue_type", venueType)
+		set("action_url", d.WebsiteURI)
+		setOpeningHours()
+	case activitiessvc.CategoryEntertainment:
+		set("action_url", d.WebsiteURI)
+		setOpeningHours()
 	}
-	// Sport, Entertainment: no case -> always "{}".
+	// Sport: no case -> always "{}" (no sourceable Places fields for it).
 
 	b, err := json.Marshal(out)
 	if err != nil {

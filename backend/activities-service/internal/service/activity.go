@@ -592,12 +592,35 @@ const detailResolveTimeout = 4 * time.Second
 // a.repo.Update or any other persistence call — Places Terms §14.3 forbids
 // caching anything but place_id/lat-lng, so every call re-fetches fresh.
 //
-// Details is replaced outright, not deep-merged: BuildLiveDetails has no
-// case for Sport/Entertainment (always "{}"), so any admin-curated details
-// on a Places-sourced row in one of those two categories would be
-// overwritten on every live-merged read (harmless today only because T4's
-// migration already blanks every Places-sourced row's stored details;
-// worth remembering if admin curation of those rows is ever added back).
+// mergeLiveDetails overlays live's keys onto stored, preserving every key
+// stored already carries — the fix for withLiveDetails' former wholesale
+// replace, which was harmless only while Wellness/Entertainment details
+// were always blank (see this function's former doc comment) and became
+// unsafe the moment those rows could carry curated Treatments/GoodToKnow/
+// UpcomingShows content. Malformed JSON on either side degrades to "live
+// wins outright" rather than erroring the whole request — mirrors every
+// other fallback-on-error contract in this file.
+func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
+	merged := map[string]any{}
+	_ = json.Unmarshal(stored, &merged) // best-effort; empty/absent stored is fine
+	var liveFields map[string]any
+	if err := json.Unmarshal(live, &liveFields); err != nil {
+		return live
+	}
+	for k, v := range liveFields {
+		merged[k] = v
+	}
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return live
+	}
+	return b
+}
+
+// Details is merged (mergeLiveDetails), not replaced outright: live-sourced
+// keys (action_url/opening_hours/venue_type/...) win, everything else
+// already on the stored row (e.g. admin-curated Treatments/GoodToKnow) is
+// passed through unchanged.
 func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
 	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" || a.places == nil {
 		return activity
@@ -612,7 +635,7 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		return activity
 	}
 
-	activity.Details = placesmap.BuildLiveDetails(activity.Category, activity.Country, detail)
+	activity.Details = mergeLiveDetails(activity.Details, placesmap.BuildLiveDetails(activity.Category, activity.Country, detail))
 	if desc := liveDescription(detail); desc != "" {
 		activity.Description = desc
 	}

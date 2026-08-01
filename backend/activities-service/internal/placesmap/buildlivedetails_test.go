@@ -25,6 +25,7 @@ import (
 func fullPlaceDetail(t *testing.T) placesmap.PlaceDetail {
 	t.Helper()
 	raw := []byte(`{
+		"websiteUri": "https://example.rs",
 		"primaryTypeDisplayName": {"text": "Museum"},
 		"regularOpeningHours": {
 			"weekdayDescriptions": ["Monday: 9AM-5PM"],
@@ -74,9 +75,9 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 		{activitiessvc.CategoryKids, []string{"facilities"}},
 		{activitiessvc.CategoryCulture, []string{"hours", "venue_type", "opening_hours"}},
 		{activitiessvc.CategoryArt, []string{"hours", "venue_type", "opening_hours"}},
-		{activitiessvc.CategoryWellness, []string{"venue_type"}},
+		{activitiessvc.CategoryWellness, []string{"venue_type", "action_url", "opening_hours"}},
 		{activitiessvc.CategoryShopping, []string{"hours", "venue_type", "opening_hours"}},
-		{activitiessvc.CategoryEntertainment, nil},
+		{activitiessvc.CategoryEntertainment, []string{"action_url", "opening_hours"}},
 		// Not a Places-sourced category (Tripadvisor / no bespoke UI) -> always "{}".
 		{activitiessvc.CategoryRestaurants, nil},
 		{activitiessvc.CategoryBars, nil},
