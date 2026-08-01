@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"backend/shared/models/activitiessvc"
@@ -125,10 +129,10 @@ var errWriteFailed = errors.New("write failed")
 
 func TestRunBackfill_ResolvesAndWritesOnlyMatchedRows(t *testing.T) {
 	rows := []activitiessvc.Activity{
-		{ID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
-		{ID: "2", Source: "firecrawl", Category: activitiessvc.CategoryBars, Title: "Sky Bar"},
+		{ID: "db-1", ExternalID: "ta-1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
+		{ID: "db-2", ExternalID: "ta-2", Source: "firecrawl", Category: activitiessvc.CategoryBars, Title: "Sky Bar"},
 	}
-	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant", "2": ""}}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": "fine_dining_restaurant", "ta-2": ""}}
 	setter := &fakeSetter{}
 	var paceCalls int
 
@@ -137,20 +141,38 @@ func TestRunBackfill_ResolvesAndWritesOnlyMatchedRows(t *testing.T) {
 	if result.resolved != 1 || result.stayedEmpty != 1 || result.alreadySet != 0 {
 		t.Fatalf("got %+v, want resolved=1 stayedEmpty=1 alreadySet=0", result)
 	}
-	if setter.writes["1"] != "fine_dining_restaurant" {
-		t.Fatalf("row 1 not written with resolved subtype: %+v", setter.writes)
+	if setter.writes["db-1"] != "fine_dining_restaurant" {
+		t.Fatalf("row db-1 not written with resolved subtype: %+v", setter.writes)
 	}
-	if _, wrote := setter.writes["2"]; wrote {
-		t.Fatalf("row 2 (unresolved) must not be written")
+	if _, wrote := setter.writes["db-2"]; wrote {
+		t.Fatalf("row db-2 (unresolved) must not be written")
 	}
 	if paceCalls != 2 {
-		t.Fatalf("pace called %d times, want once per Places call (2)", paceCalls)
+		t.Fatalf("pace called %d times, want once per row (2)", paceCalls)
+	}
+}
+
+// TestRunBackfill_ResolvesByExternalIDNotDBID pins the fix for the resolver
+// call passing the venue's own Tripadvisor location_id (ExternalID), not our
+// internal activities UUID (ID) — the two are deliberately different values
+// here so a regression back to a.ID fails this test.
+func TestRunBackfill_ResolvesByExternalIDNotDBID(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "db-1", ExternalID: "ta-loc-42", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-loc-42": "fine_dining_restaurant"}}
+	setter := &fakeSetter{}
+
+	runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+
+	if len(resolver.calls) != 1 || resolver.calls[0] != "ta-loc-42" {
+		t.Fatalf("resolver called with %+v, want [\"ta-loc-42\"] (the venue's ExternalID, not its DB ID)", resolver.calls)
 	}
 }
 
 func TestRunBackfill_AlreadySetRowNotDoubleCounted(t *testing.T) {
 	rows := []activitiessvc.Activity{
-		{ID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
+		{ID: "1", ExternalID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
 	}
 	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant"}}
 	setter := &fakeSetter{rejectIDs: map[string]bool{"1": true}}
@@ -162,20 +184,24 @@ func TestRunBackfill_AlreadySetRowNotDoubleCounted(t *testing.T) {
 	}
 }
 
-func TestRunBackfill_WriteErrorCountsAsStayedEmptyNotFatal(t *testing.T) {
+func TestRunBackfill_WriteErrorCountsAsFailedNotStayedEmpty(t *testing.T) {
 	rows := []activitiessvc.Activity{
-		{ID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
-		{ID: "2", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Little Bay"},
+		{ID: "1", ExternalID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
+		{ID: "2", ExternalID: "2", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Little Bay"},
 	}
 	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant", "2": "casual_dining"}}
 	setter := &fakeSetter{errIDs: map[string]bool{"1": true}}
 
 	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
 
-	// Row 1's write errors (counted as stayed-empty, not a crash); row 2
-	// still gets processed — one bad row must not abort the whole run.
-	if result.stayedEmpty != 1 || result.resolved != 1 {
-		t.Fatalf("got %+v, want stayedEmpty=1 resolved=1", result)
+	// Row 1's write errors — a distinct outcome (failed) from a genuine
+	// no-match (stayedEmpty), not a crash; row 2 still gets processed — one
+	// bad row must not abort the whole run.
+	if result.failed != 1 || result.stayedEmpty != 0 || result.resolved != 1 {
+		t.Fatalf("got %+v, want failed=1 stayedEmpty=0 resolved=1", result)
+	}
+	if result.byKey["tripadvisor|restaurants"].failed != 1 {
+		t.Fatalf("byKey failed not tracked: %+v", result.byKey["tripadvisor|restaurants"])
 	}
 	if setter.writes["2"] != "casual_dining" {
 		t.Fatalf("row 2 should still have been written: %+v", setter.writes)
@@ -184,25 +210,29 @@ func TestRunBackfill_WriteErrorCountsAsStayedEmptyNotFatal(t *testing.T) {
 
 func TestRunBackfill_LimitCapsRowsProcessedNotJustWritten(t *testing.T) {
 	rows := []activitiessvc.Activity{
-		{ID: "1", Source: "tripadvisor", Title: "A"},
-		{ID: "2", Source: "tripadvisor", Title: "B"},
-		{ID: "3", Source: "tripadvisor", Title: "C"},
+		{ID: "1", ExternalID: "1", Source: "tripadvisor", Title: "A"},
+		{ID: "2", ExternalID: "2", Source: "tripadvisor", Title: "B"},
+		{ID: "3", ExternalID: "3", Source: "tripadvisor", Title: "C"},
 	}
 	resolver := &fakeResolver{byID: map[string]string{"1": "x", "2": "x", "3": "x"}}
 	setter := &fakeSetter{}
 
-	runBackfill(context.Background(), resolver, setter, rows, 2, func() {})
+	result := runBackfill(context.Background(), resolver, setter, rows, 2, func() {})
 
 	if len(resolver.calls) != 2 {
 		t.Fatalf("resolver called %d times, want exactly 2 (limit), leaving row 3 for the next run", len(resolver.calls))
+	}
+	key := result.byKey["tripadvisor|"]
+	if key == nil || key.before != 3 || key.attempted != 2 {
+		t.Fatalf("tripadvisor| = %+v, want before=3 attempted=2 (row 3 left as a skip, not an empty)", key)
 	}
 }
 
 func TestRunBackfill_ByKeyTracksBeforeAndResolvedPerSourceCategory(t *testing.T) {
 	rows := []activitiessvc.Activity{
-		{ID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
-		{ID: "2", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Little Bay"},
-		{ID: "3", Source: "firecrawl", Category: activitiessvc.CategoryBars, Title: "Sky Bar"},
+		{ID: "1", ExternalID: "1", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Ambar"},
+		{ID: "2", ExternalID: "2", Source: "tripadvisor", Category: activitiessvc.CategoryRestaurants, Title: "Little Bay"},
+		{ID: "3", ExternalID: "3", Source: "firecrawl", Category: activitiessvc.CategoryBars, Title: "Sky Bar"},
 	}
 	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant", "2": "", "3": "cocktail_bar"}}
 	setter := &fakeSetter{}
@@ -210,11 +240,91 @@ func TestRunBackfill_ByKeyTracksBeforeAndResolvedPerSourceCategory(t *testing.T)
 	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
 
 	ta := result.byKey["tripadvisor|restaurants"]
-	if ta == nil || ta.before != 2 || ta.resolved != 1 {
-		t.Fatalf("tripadvisor|restaurants = %+v, want before=2 resolved=1", ta)
+	if ta == nil || ta.before != 2 || ta.attempted != 2 || ta.resolved != 1 {
+		t.Fatalf("tripadvisor|restaurants = %+v, want before=2 attempted=2 resolved=1", ta)
 	}
 	fc := result.byKey["firecrawl|bars"]
-	if fc == nil || fc.before != 1 || fc.resolved != 1 {
-		t.Fatalf("firecrawl|bars = %+v, want before=1 resolved=1", fc)
+	if fc == nil || fc.before != 1 || fc.attempted != 1 || fc.resolved != 1 {
+		t.Fatalf("firecrawl|bars = %+v, want before=1 attempted=1 resolved=1", fc)
 	}
+}
+
+// TestReport_SortsRowsAndSplitsFailedSkippedFromEmpty pins two report fixes:
+// row order is sorted (not random map iteration), and FAILED/SKIPPED are
+// their own columns rather than folded into EMPTY.
+func TestReport_SortsRowsAndSplitsFailedSkippedFromEmpty(t *testing.T) {
+	byKey := map[string]*sourceCategoryCount{
+		// before=5, attempted=4 (1 left by -limit), resolved=2, failed=1
+		// -> skipped=1, empty=1 (attempted - resolved - failed).
+		"tripadvisor|restaurants": {source: "tripadvisor", category: "restaurants", before: 5, attempted: 4, resolved: 2, failed: 1},
+		"firecrawl|bars":          {source: "firecrawl", category: "bars", before: 2, attempted: 2, resolved: 1},
+	}
+
+	out := captureReport(t, byKey, false)
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %d lines, want header + 2 rows: %q", len(lines), out)
+	}
+
+	// "firecrawl" sorts before "tripadvisor" — proves the fix, since map
+	// iteration order would be random and could print either row first.
+	firecrawl := strings.Fields(lines[1])
+	tripadvisor := strings.Fields(lines[2])
+	if firecrawl[0] != "firecrawl" || tripadvisor[0] != "tripadvisor" {
+		t.Fatalf("rows not sorted by key, got firecrawl row %q then tripadvisor row %q", lines[1], lines[2])
+	}
+
+	// tripadvisor row: SOURCE CATEGORY BEFORE RESOLVED FAILED SKIPPED EMPTY.
+	want := []string{"tripadvisor", "restaurants", "5", "2", "1", "1", "1"}
+	if len(tripadvisor) != len(want) {
+		t.Fatalf("got fields %v, want %v", tripadvisor, want)
+	}
+	for i, w := range want {
+		if tripadvisor[i] != w {
+			t.Fatalf("field %d: got %q, want %q (full row %v)", i, tripadvisor[i], w, tripadvisor)
+		}
+	}
+}
+
+func TestReport_DryRunPrintsPlaceholdersForEveryAttemptedOutcome(t *testing.T) {
+	byKey := map[string]*sourceCategoryCount{
+		"tripadvisor|restaurants": {source: "tripadvisor", category: "restaurants", before: 5},
+	}
+
+	out := captureReport(t, byKey, true)
+	fields := strings.Fields(strings.TrimSpace(strings.Split(out, "\n")[1]))
+	want := []string{"tripadvisor", "restaurants", "5", "-", "-", "-", "-"}
+	if len(fields) != len(want) {
+		t.Fatalf("got fields %v, want %v", fields, want)
+	}
+	for i, w := range want {
+		if fields[i] != w {
+			t.Fatalf("field %d: got %q, want %q (full row %v)", i, fields[i], w, fields)
+		}
+	}
+}
+
+// captureReport runs report against a redirected os.Stdout and returns what
+// it printed — report writes straight to stdout (no io.Writer param; not
+// worth threading one through for a hand-run CLI's own table) so this is the
+// simplest way to assert on its output.
+func captureReport(t *testing.T, byKey map[string]*sourceCategoryCount, dryRun bool) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	report(byKey, dryRun)
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing pipe writer: %v", err)
+	}
+	os.Stdout = orig
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("reading captured output: %v", err)
+	}
+	return buf.String()
 }

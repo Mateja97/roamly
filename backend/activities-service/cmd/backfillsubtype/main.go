@@ -107,7 +107,7 @@ func main() {
 
 	result := runBackfill(ctx, svc, repo, rows, *limit, func() { time.Sleep(backfillPace) })
 	report(result.byKey, false)
-	logger.Info("backfill complete", "candidates", len(rows), "resolved", result.resolved, "stayed_empty", result.stayedEmpty, "already_set", result.alreadySet)
+	logger.Info("backfill complete", "candidates", len(rows), "resolved", result.resolved, "stayed_empty", result.stayedEmpty, "failed", result.failed, "already_set", result.alreadySet)
 }
 
 // activityLister is the one repository capability this tool's enumeration
@@ -159,27 +159,37 @@ type subcategorySetter interface {
 
 // backfillResult tallies one run: resolved is rows this run classified,
 // stayedEmpty is rows the resolver legitimately couldn't classify (never a
-// failure — see ResolveTripadvisorSubtype's own doc) or whose write failed,
+// failure — see ResolveTripadvisorSubtype's own doc; a write error is
+// counted separately in failed, since "Places couldn't classify this venue"
+// and "we classified it but the write broke" mean different follow-ups),
 // alreadySet is rows SetSubcategoryIfEmpty's WHERE guard rejected because
 // something else classified the row between the list read and this write.
-// byKey breaks before/resolved counts down by "source|category" for the
-// report, doubling as engineering-notes.md's before/after source.
+// byKey breaks before/attempted/resolved/failed counts down by
+// "source|category" for the report, doubling as engineering-notes.md's
+// before/after source.
 type backfillResult struct {
-	resolved, stayedEmpty, alreadySet int
-	byKey                             map[string]*sourceCategoryCount
+	resolved, stayedEmpty, failed, alreadySet int
+	byKey                                     map[string]*sourceCategoryCount
 }
 
+// sourceCategoryCount is one report row. attempted is rows this run actually
+// called the resolver on (before minus attempted = rows a -limit cap left
+// for the next invocation); resolved/failed are the two attempted outcomes
+// worth telling apart in the report — a genuine no-match ("EMPTY") isn't the
+// same finding as a write that broke ("FAILED").
 type sourceCategoryCount struct {
-	source, category string
-	before, resolved int
+	source, category                    string
+	before, attempted, resolved, failed int
 }
 
 // runBackfill classifies rows in place, one at a time, in the order rows is
 // given — sequential, not worker-pool, see package doc for why. pace is
-// called once per Places call (a func, not a raw sleep, so tests run
-// instantly). limit caps how many rows get a Places call this run (0 = every
-// row); the rest are simply left for the next invocation, no different from
-// how a mid-run failure leaves them.
+// called once per row (a func, not a raw sleep, so tests run instantly) —
+// resolver early-returns without an HTTP call for a row with no name/coords,
+// so this is a slight over-pace on those rows, not an under-pace. limit caps
+// how many rows get processed this run (0 = every row); the rest are simply
+// left for the next invocation, no different from how a mid-run failure
+// leaves them.
 func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcategorySetter, rows []activitiessvc.Activity, limit int, pace func()) backfillResult {
 	result := backfillResult{byKey: countsByKey(rows)}
 	for i, a := range rows {
@@ -187,7 +197,8 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 			break
 		}
 		key := a.Source + "|" + string(a.Category)
-		subtype := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ID)
+		result.byKey[key].attempted++
+		subtype := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
 		pace()
 		if subtype == "" {
 			result.stayedEmpty++
@@ -196,7 +207,8 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 		wrote, err := setter.SetSubcategoryIfEmpty(ctx, a.ID, subtype)
 		if err != nil {
 			slog.Warn("writing resolved subtype failed", "id", a.ID, "title", a.Title, "error", err)
-			result.stayedEmpty++
+			result.failed++
+			result.byKey[key].failed++
 			continue
 		}
 		if !wrote {
@@ -223,22 +235,32 @@ func countsByKey(rows []activitiessvc.Activity) map[string]*sourceCategoryCount 
 	return byKey
 }
 
-// report prints the before/after-by-source/category table to stdout.
-// dryRun prints "-" for RESOLVED/EMPTY — nothing has been attempted yet, so
-// a real count there would be a guess. EMPTY = before - resolved also counts
-// any rare alreadySet row (see backfillResult) as "still empty" here, since
-// that count isn't broken down by key — a row someone else classified
-// mid-run is a true positive for the filters fix either way, just not
-// credited to this run's tally. Not expected to be non-zero for a hand-run
-// one-time tool.
+// report prints the before/after-by-source/category table to stdout, keys
+// sorted for a deterministic, diffable-across-runs row order (map iteration
+// order is otherwise random). dryRun prints "-" for every attempted-outcome
+// column — nothing has been attempted yet, so a real count there would be a
+// guess. SKIPPED = before - attempted is rows a -limit cap left for the next
+// invocation; EMPTY = attempted - resolved - failed is genuine no-match only
+// (a write failure is its own FAILED column, not folded into "empty"). Any
+// rare alreadySet row (see backfillResult) isn't broken out by key — a row
+// someone else classified mid-run is a true positive for the filters fix
+// either way, just not credited to this run's tally.
 func report(byKey map[string]*sourceCategoryCount, dryRun bool) {
-	fmt.Printf("%-14s %-16s %8s %8s %8s\n", "SOURCE", "CATEGORY", "BEFORE", "RESOLVED", "EMPTY")
-	for _, c := range byKey {
-		resolved, empty := "-", "-"
+	fmt.Printf("%-14s %-16s %8s %8s %8s %8s %8s\n", "SOURCE", "CATEGORY", "BEFORE", "RESOLVED", "FAILED", "SKIPPED", "EMPTY")
+	keys := make([]string, 0, len(byKey))
+	for k := range byKey {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
+		c := byKey[k]
+		resolved, failed, skipped, empty := "-", "-", "-", "-"
 		if !dryRun {
 			resolved = fmt.Sprintf("%d", c.resolved)
-			empty = fmt.Sprintf("%d", c.before-c.resolved)
+			failed = fmt.Sprintf("%d", c.failed)
+			skipped = fmt.Sprintf("%d", c.before-c.attempted)
+			empty = fmt.Sprintf("%d", c.attempted-c.resolved-c.failed)
 		}
-		fmt.Printf("%-14s %-16s %8d %8s %8s\n", c.source, c.category, c.before, resolved, empty)
+		fmt.Printf("%-14s %-16s %8d %8s %8s %8s %8s\n", c.source, c.category, c.before, resolved, failed, skipped, empty)
 	}
 }
