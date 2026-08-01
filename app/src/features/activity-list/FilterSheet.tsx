@@ -237,7 +237,9 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
 function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
   return (
     <View style={styles.group}>
-      <Text style={styles.groupLabel}>{label}</Text>
+      <Text style={styles.groupLabel} accessibilityRole="header">
+        {label}
+      </Text>
       <View style={styles.chipsRow}>{children}</View>
     </View>
   );

@@ -205,6 +205,7 @@ describe('FilterSheet', () => {
       );
       await flush();
       expect(screen.queryByText('Sport subtypes')).toBeNull();
+      expect(screen.queryAllByText(/subtypes$/)).toHaveLength(0);
     });
 
     it("renders the selected category's own subtype group when exactly 1 category is selected", async () => {
