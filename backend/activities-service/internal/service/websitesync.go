@@ -18,10 +18,20 @@ import (
 // later... no schema change."
 const websiteSyncProvider = "website"
 
-// websiteSyncFreshness bounds how often a venue's website gets re-scraped —
-// weekly, per the design spec's cadence decision (show listings go stale
-// fastest; treatments/good-to-know rarely change).
-const websiteSyncFreshness = 7 * 24 * time.Hour
+// retryFreshness bounds how soon a row that hasn't yet succeeded (no
+// website on file, extraction failed, validation failed, not yet
+// attempted) gets tried again — short, since these are transient failure
+// states worth retrying often. Applies to every category alike.
+const retryFreshness = 7 * 24 * time.Hour
+
+// entertainmentRefreshFreshness bounds how often an already-complete
+// Entertainment row gets re-scraped anyway. Entertainment is the one
+// category whose scraper-owned content (upcoming_shows) genuinely goes
+// stale over time — every other category is skipped permanently once
+// complete (see isComplete/SyncWebsiteContent), because static content
+// like a spa's treatment menu or a museum's current exhibit description
+// doesn't need repeat scraping once it's been captured.
+const entertainmentRefreshFreshness = 30 * 24 * time.Hour
 
 // websiteResolveTimeout bounds the one live Places call this job makes per
 // venue to resolve the website URL — same reasoning as detailResolveTimeout,
@@ -31,8 +41,14 @@ const websiteResolveTimeout = 8 * time.Second
 // firecrawlTimeout bounds the scrape+extract call itself.
 const firecrawlTimeout = 45 * time.Second
 
-// extractionPrompt/extractionSchema differ per category — wellnessSchema and
-// entertainmentSchema below, chosen by the row's own Category.
+// extraction pairs one category's LLM prompt with the JSON schema Firecrawl
+// extracts against — extractionConfig below is the one place all five
+// categories' extraction targets live.
+type extraction struct {
+	prompt string
+	schema map[string]any
+}
+
 var wellnessPrompt = "Extract this wellness/spa venue's treatments menu (name, duration, price), a short list of practical good-to-know notes for visitors, the typical length of a visit, and the starting price of its cheapest offering."
 
 var wellnessSchema = map[string]any{
@@ -77,12 +93,104 @@ var entertainmentSchema = map[string]any{
 	},
 }
 
-// SyncWebsiteContent is cmd/websitesync's one per-row call (T design spec,
-// weekly job). It: skips a row synced within websiteSyncFreshness; resolves
-// the venue's website live via Places (never stored — §14.3, see
-// firecrawl.Client's doc); skips a row with no website; scrapes+extracts via
-// Firecrawl; and writes only the fields the row doesn't already have a
-// value for (fillGaps below) — an admin's own edit is never overwritten.
+var culturePrompt = "Extract this culture/heritage venue's current or upcoming exhibit, show, or program as a short title and one-paragraph description — what's showing right now, not the venue's general description."
+
+var cultureSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"now_showing": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"title":       map[string]any{"type": "string"},
+				"description": map[string]any{"type": "string"},
+			},
+		},
+	},
+}
+
+var artPrompt = "Extract this art venue's current exhibition as a short title and one-paragraph description — what's on display right now, not the venue's general description. Do not attempt to identify a specific artist, artwork, or medium."
+
+var artSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"current_exhibition": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"title":       map[string]any{"type": "string"},
+				"description": map[string]any{"type": "string"},
+			},
+		},
+	},
+}
+
+var sportPrompt = "Extract this sport/activity venue's typical effort level (e.g. Easy, Moderate, Intense), typical session duration, what gear or equipment is provided, a short list of what visitors should bring themselves, and your own best estimate of overall difficulty on a 1-5 scale (1 = beginner-friendly, 5 = expert only) based on how the page describes the activity's intensity or skill requirements — an estimate is expected even if the page never states a number directly."
+
+var sportSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"effort_level":  map[string]any{"type": "string"},
+		"duration":      map[string]any{"type": "string"},
+		"gear":          map[string]any{"type": "string"},
+		"what_to_bring": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		"difficulty":    map[string]any{"type": "number"},
+	},
+}
+
+// extractionConfig is the one place a category's scrape target is defined —
+// adding a category is a new map entry here (plus scraperOwnedFields below),
+// not a new switch branch.
+var extractionConfig = map[activitiessvc.Category]extraction{
+	activitiessvc.CategoryWellness:      {wellnessPrompt, wellnessSchema},
+	activitiessvc.CategoryEntertainment: {entertainmentPrompt, entertainmentSchema},
+	activitiessvc.CategoryCulture:       {culturePrompt, cultureSchema},
+	activitiessvc.CategoryArt:           {artPrompt, artSchema},
+	activitiessvc.CategorySport:         {sportPrompt, sportSchema},
+}
+
+// scraperOwnedFields lists, per category, the `details` keys this job is
+// responsible for — the completeness check (isComplete) walks exactly this
+// list. Deliberately excludes anything Places-sourced (venue_type,
+// action_url, opening_hours) or admin-only (Art's artwork/year) — those
+// aren't this job's concern either way.
+var scraperOwnedFields = map[activitiessvc.Category][]string{
+	activitiessvc.CategoryWellness:      {"treatments", "good_to_know", "typical_visit", "price_from"},
+	activitiessvc.CategoryEntertainment: {"upcoming_shows", "good_to_know", "typical_show_length", "price_from"},
+	activitiessvc.CategoryCulture:       {"now_showing"},
+	activitiessvc.CategoryArt:           {"current_exhibition"},
+	activitiessvc.CategorySport:         {"what_to_bring", "effort_level", "duration", "gear", "difficulty"},
+}
+
+// isComplete reports whether every one of category's scraper-owned fields
+// already has a value on details — the permanent-skip signal for every
+// category except Entertainment (see SyncWebsiteContent). false for a
+// category with no entry in scraperOwnedFields (never complete, matches
+// "unsupported category" falling through to the extractionConfig guard
+// before this is ever consulted for such a category in practice). Reuses
+// isEmptyValue, the same emptiness rule fillGaps itself applies.
+func isComplete(category activitiessvc.Category, details json.RawMessage) bool {
+	fields := scraperOwnedFields[category]
+	if len(fields) == 0 {
+		return false
+	}
+	var m map[string]any
+	_ = json.Unmarshal(details, &m)
+	for _, f := range fields {
+		if isEmptyValue(m[f]) {
+			return false
+		}
+	}
+	return true
+}
+
+// SyncWebsiteContent is cmd/websitesync's one per-row call. For every
+// category in extractionConfig: resolves the venue's website live via
+// Places (never stored — §14.3, see firecrawl.Client's doc); scrapes+
+// extracts via Firecrawl; and writes only the fields the row doesn't
+// already have a value for (fillGaps below) — an admin's own edit is never
+// overwritten. A row whose scraper-owned fields (scraperOwnedFields) are
+// all already filled is skipped permanently, except Entertainment, which
+// still re-checks every entertainmentRefreshFreshness because
+// upcoming_shows genuinely goes stale over time.
 func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	if a.places == nil || a.firecrawl == nil {
 		return fmt.Errorf("places and firecrawl clients must both be configured")
@@ -93,37 +201,49 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return fmt.Errorf("getting activity %s: %w", id, err)
 	}
 
+	extract, supported := extractionConfig[activity.Category]
+	if !supported {
+		// ponytail: cmd/websitesync's own List call only ever queues rows
+		// from categories present in extractionConfig, but SyncWebsiteContent
+		// is exported and takes a bare id — nothing stops any other caller
+		// from passing a row of any category directly.
+		slog.Info("website sync skipped, unsupported category", "activity_id", id, "category", activity.Category)
+		return nil
+	}
+
+	complete := isComplete(activity.Category, activity.Details)
+	if complete && activity.Category != activitiessvc.CategoryEntertainment {
+		// Permanently done: this category's content doesn't go stale the way
+		// Entertainment's upcoming_shows does, so once every scraper-owned
+		// field is filled there's nothing left to gain from ever
+		// re-scraping this row — no Places call, no Firecrawl call, no
+		// sync_regions bookkeeping.
+		slog.Info("website sync skipped, category complete", "activity_id", id, "category", activity.Category)
+		return nil
+	}
+
 	// Mirrors withLiveDetails' guard: an admin-created row (Source == "") or
 	// a Tripadvisor-sourced row has no Google place_id, so PlaceDetails below
-	// would be called with an empty/foreign ExternalID on every weekly run
-	// forever, guaranteed-invalid.
+	// would be called with an empty/foreign ExternalID on every run forever,
+	// guaranteed-invalid.
 	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" {
 		slog.Info("website sync skipped, no Google place id on file", "activity_id", id, "source", activity.Source)
 		return nil
 	}
 
-	var prompt string
-	var schema map[string]any
-	switch activity.Category {
-	case activitiessvc.CategoryWellness:
-		prompt, schema = wellnessPrompt, wellnessSchema
-	case activitiessvc.CategoryEntertainment:
-		prompt, schema = entertainmentPrompt, entertainmentSchema
-	default:
-		// ponytail: cmd/websitesync's own List call only ever queues
-		// Wellness/Entertainment ids, but SyncWebsiteContent is exported and
-		// takes a bare id — nothing stops any other caller from passing a
-		// row of any category directly, which would otherwise silently get
-		// the wellness prompt/schema applied to it.
-		slog.Info("website sync skipped, unsupported category", "activity_id", id, "category", activity.Category)
-		return nil
+	freshness := retryFreshness
+	if complete {
+		// Only reachable for Entertainment here — the permanent-skip branch
+		// above already returned for every other complete category. A
+		// complete show list still needs periodic refreshing, just far less
+		// often than a row that hasn't succeeded at all yet.
+		freshness = entertainmentRefreshFreshness
 	}
-
 	syncedAt, ok, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
 	if err != nil {
 		return fmt.Errorf("checking website sync freshness for %s: %w", id, err)
 	}
-	if ok && time.Since(syncedAt) < websiteSyncFreshness {
+	if ok && time.Since(syncedAt) < freshness {
 		slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
 		return nil
 	}
@@ -140,7 +260,7 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	}
 
 	extractCtx, cancel := context.WithTimeout(ctx, firecrawlTimeout)
-	extracted, err := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, prompt, schema)
+	extracted, err := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, extract.prompt, extract.schema)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("extracting website content for %s: %w", id, err)
@@ -150,11 +270,14 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("merging website content for %s: %w", id, err)
 	}
+	if activity.Category == activitiessvc.CategorySport {
+		merged = markDifficultyInferred(activity.Details, merged)
+	}
 
 	// Firecrawl's LLM extraction is not schema-guaranteed: an unexpected key
 	// or a type mismatch must never reach the DB unvalidated, or a
 	// subsequent admin edit to this row would fail ValidateDetails' strict
-	// decode. Skip and retry next week instead — same "nothing to do this
+	// decode. Skip and retry next cycle instead — same "nothing to do this
 	// cycle" contract as the freshness/no-website checks above.
 	if err := ValidateDetails(activity.Category, merged); err != nil {
 		slog.Warn("website sync produced invalid details, skipping write", "activity_id", id, "error", err)
@@ -168,6 +291,35 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return fmt.Errorf("marking website sync for %s: %w", id, err)
 	}
 	return nil
+}
+
+// markDifficultyInferred sets difficulty_inferred:true on merged when this
+// sync is what filled a previously-empty difficulty — our own merge knows
+// authoritatively that any value it just wrote came from a scrape, which is
+// more reliable than trusting Firecrawl's schema to self-report confidence.
+// A previously non-empty (admin-set, or already-scraped) difficulty is left
+// completely untouched by fillGaps' own precedence rule before this ever
+// runs — this only marks a fresh fill, never re-marks or clears an existing
+// value or flag.
+func markDifficultyInferred(stored, merged json.RawMessage) json.RawMessage {
+	var before map[string]any
+	_ = json.Unmarshal(stored, &before)
+	if !isEmptyValue(before["difficulty"]) {
+		return merged
+	}
+	var after map[string]any
+	if err := json.Unmarshal(merged, &after); err != nil {
+		return merged
+	}
+	if isEmptyValue(after["difficulty"]) {
+		return merged
+	}
+	after["difficulty_inferred"] = true
+	b, err := json.Marshal(after)
+	if err != nil {
+		return merged
+	}
+	return b
 }
 
 // fillGaps overlays extracted's keys onto stored, but only for keys stored
