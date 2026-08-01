@@ -211,6 +211,7 @@ function isDistanceActive(filters: Filters, scope: Scope): boolean {
 export function activeFilterCount(filters: Filters, scope: Scope): number {
   return (
     filters.categories.length +
+    filters.subtypes.length +
     (filters.minRating !== null ? 1 : 0) +
     (isDistanceActive(filters, scope) ? 1 : 0)
   );
@@ -218,13 +219,32 @@ export function activeFilterCount(filters: Filters, scope: Scope): number {
 
 export type FilterChipData = { key: string; label: string; remove: () => Filters };
 
-// One removable chip per active non-category filter value (rating,
-// distance) — each single-select group gets at most one. design-spec.md T4:
-// category filters never get a removable chip here — the header pill row
-// *is* the category filter (writes straight into `filters.categories`), so a
-// chip here would duplicate the same state.
+// T6: subtype slug -> its display label, in taxonomy order (category order,
+// then subtype order within category) — the same order SUBCATEGORIES/
+// CATEGORY_OPTIONS already define, walked once here so filterChips can sort
+// by it below instead of by selection order.
+const SUBTYPE_LABEL_IN_TAXONOMY_ORDER: { value: string; label: string }[] = CATEGORY_OPTIONS.flatMap(
+  ({ value }) => SUBCATEGORIES[value]
+);
+
+// design-spec.md T6's governing rule for this whole function: a filter value
+// gets a removable chip exactly when nothing else in the header already
+// represents it. Subtypes qualify (nothing else on the list screen shows
+// them); categories don't (the pill row above *is* the category filter,
+// T4) — so categories still get no chip here.
 export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
   const chips: FilterChipData[] = [];
+
+  // Taxonomy order, not selection order (design-spec.md T6: "so the row
+  // does not reshuffle between renders").
+  for (const { value, label } of SUBTYPE_LABEL_IN_TAXONOMY_ORDER) {
+    if (!filters.subtypes.includes(value)) continue;
+    chips.push({
+      key: `subtype-${value}`,
+      label,
+      remove: () => ({ ...filters, subtypes: filters.subtypes.filter((s) => s !== value) }),
+    });
+  }
 
   if (filters.minRating !== null) {
     chips.push({
