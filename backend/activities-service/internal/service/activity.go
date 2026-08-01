@@ -103,6 +103,13 @@ type tripadvisorClient interface {
 	LocationReviews(ctx context.Context, locationID string) ([]tripadvisor.Review, error)
 }
 
+// firecrawlClient is the one capability the weekly website-sync job needs —
+// narrowed the same way placesClient/tripadvisorClient are, so tests fake
+// it without a real HTTP client.
+type firecrawlClient interface {
+	ExtractJSON(ctx context.Context, url, prompt string, schema map[string]any) (json.RawMessage, error)
+}
+
 // Request is the pre-validation shape of a query: MaxDistanceKM is the
 // caller's raw filter value (0 = not set). ScopeNearby ignores it entirely
 // (fixed NearbyRadiusKM); ScopeAnywhere passes it through uncapped.
@@ -131,6 +138,7 @@ type Activities struct {
 	repo        repository
 	places      placesClient
 	tripadvisor tripadvisorClient
+	firecrawl   firecrawlClient
 	// syncTimeout bounds one Tripadvisor anchor sweep. A field rather than
 	// a direct tripadvisorSyncTimeout read only so tests can shrink it to
 	// exercise deadline truncation without waiting out the real value.
@@ -164,6 +172,15 @@ func (a *Activities) waitForGoogleSync() { a.googleSync.Wait() }
 // path. Optional, same nil-safe contract as WithPlaces.
 func (a *Activities) WithTripadvisor(t tripadvisorClient) *Activities {
 	a.tripadvisor = t
+	return a
+}
+
+// WithFirecrawl attaches a live Firecrawl client for SyncWebsiteContent's
+// weekly scrape+extract pass. Optional, same nil-safe contract as
+// WithPlaces: without it, SyncWebsiteContent returns an error rather than
+// silently skipping, since it's the whole point of that call.
+func (a *Activities) WithFirecrawl(f firecrawlClient) *Activities {
+	a.firecrawl = f
 	return a
 }
 
