@@ -163,7 +163,7 @@ type fakeGooglePlaces struct {
 	geocodeCalls   int
 
 	// gotSearchTextInArea records each SearchTextInArea call's args so tests
-	// can assert resolveTripadvisorSubtype anchors the search on the
+	// can assert ResolveTripadvisorSubtype anchors the search on the
 	// venue's own coordinates/radius, not some other value.
 	gotSearchTextInArea []searchTextInAreaCall
 }

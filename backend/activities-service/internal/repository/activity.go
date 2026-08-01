@@ -514,6 +514,27 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 	return a, nil
 }
 
+// SetSubcategoryIfEmpty sets id's subcategory to subcategory, but only if
+// the stored value is still ” — the write-side half of cmd/backfillsubtype
+// (T3)'s "never overwrites a non-empty subtype from any source" guarantee.
+// Unlike Update (which blindly overwrites whatever patch carries, correct
+// for its own admin-edit caller), a backfill runs long enough for a live
+// sync to have legitimately resolved the same row in the meantime; the WHERE
+// guard makes that race a lost write rather than a clobber, with no
+// read-then-write round trip needed. Returns whether it actually wrote,
+// so the caller can count "already classified by something else" separately
+// from "classified by this run".
+func (r *Activities) SetSubcategoryIfEmpty(ctx context.Context, id, subcategory string) (bool, error) {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE activities SET subcategory = $1 WHERE id = $2 AND subcategory = ''`,
+		subcategory, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("setting subcategory for activity %s: %w", id, err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 // SyncedAt reports the last successful sync time for
 // (provider, cellKey, category, subtype), and whether one has happened at
 // all — false, zero time when the combination has never been synced.
