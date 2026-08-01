@@ -115,6 +115,34 @@ func TestSyncWebsiteContent_InvalidExtraction_SkipsWrite(t *testing.T) {
 	}
 }
 
+// TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite proves the
+// existing fail-safe (ValidateDetails' strict decode into SportDetails'
+// int Difficulty field) still rejects a whole merged payload when
+// Firecrawl hands back a fractional difficulty — the constrained schema
+// (integer, 1-5) is only a hint to the LLM, not a guarantee, so this test
+// is really re-proving the atomic-reject contract still holds, mirroring
+// TestSyncWebsiteContent_InvalidExtraction_SkipsWrite's shape.
+func TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-gym.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"difficulty":3.5,"effort_level":"Moderate to hard"}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
+	}
+	if repo.updateCalls != 0 {
+		t.Errorf("repo.Update calls = %d, want 0 — fractional difficulty must never be persisted, along with the rest of the payload (effort_level, duration, gear, what_to_bring)", repo.updateCalls)
+	}
+	if repo.gotUpdatePatch.Details != nil {
+		t.Errorf("repo.gotUpdatePatch.Details = %v, want zero-value", repo.gotUpdatePatch.Details)
+	}
+}
+
 // TestSyncWebsiteContent_AdminCreatedRow_SkipsPlacesCall proves an
 // admin-created row (no Google place_id) never calls PlaceDetails with an
 // empty ExternalID — which would otherwise happen on every weekly run
@@ -208,6 +236,8 @@ func TestIsComplete_PerCategory(t *testing.T) {
 		{"culture missing now_showing", activitiessvc.CategoryCulture, `{}`, false},
 		{"culture now_showing present", activitiessvc.CategoryCulture,
 			`{"now_showing":{"title":"Exhibit","description":"..."}}`, true},
+		{"culture stored now_showing with blank title", activitiessvc.CategoryCulture,
+			`{"now_showing":{"title":"","description":"leftover from before dropBlankBanner existed"}}`, false},
 		{"art missing current_exhibition", activitiessvc.CategoryArt, `{}`, false},
 		{"art current_exhibition present", activitiessvc.CategoryArt,
 			`{"current_exhibition":{"title":"Show","description":"..."}}`, true},
@@ -315,6 +345,49 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 			t.Errorf("upcoming_shows[0] = %v, want the newly scraped show, not the stale stored one", shows[0])
 		}
 	})
+}
+
+// TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows
+// proves upcoming_shows gets overwritten on re-scrape even when the row is
+// NOT complete (price_from still empty) — the overwrite must fire on
+// category alone, not on isComplete, or a row that never completes (the one
+// that re-scrapes most often) would never get its stale show list
+// refreshed.
+func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *testing.T) {
+	// price_from deliberately left empty — the row is not complete, so it
+	// uses retryFreshness (7 days); seed synced_at older than that so the
+	// sync actually proceeds to the merge step instead of being skipped as
+	// still-fresh.
+	incompleteDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Old Show"}],"good_to_know":["Note"],"typical_show_length":"2 hrs"}`
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryEntertainment, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(incompleteDetails),
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-theatre.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"upcoming_shows":[{"date":"2026-10-01","title":"New Show"}]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+		syncKey("website", "1", "entertainment", ""): time.Now().Add(-8 * 24 * time.Hour),
+	}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if repo.gotUpdatePatch.Details == nil {
+		t.Fatal("repo.Update was not called with Details")
+	}
+	var got map[string]any
+	if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+		t.Fatalf("unmarshal updated details: %v", err)
+	}
+	shows, ok := got["upcoming_shows"].([]any)
+	if !ok || len(shows) != 1 {
+		t.Fatalf("upcoming_shows = %v, want one fresh show", got["upcoming_shows"])
+	}
+	show, ok := shows[0].(map[string]any)
+	if !ok || show["title"] != "New Show" {
+		t.Errorf("upcoming_shows[0] = %v, want the newly scraped show, not the stale stored one — refresh must fire regardless of row completeness", shows[0])
+	}
 }
 
 // TestSyncWebsiteContent_SportDifficulty_SetsInferredFlag proves filling a
@@ -430,6 +503,30 @@ func TestSyncWebsiteContent_Culture_BlankBanner_NotTreatedAsFilled(t *testing.T)
 	}
 	if isComplete(activitiessvc.CategoryCulture, *repo.gotUpdatePatch.Details) {
 		t.Errorf("now_showing = %v, blank banner must not count as complete", got["now_showing"])
+	}
+}
+
+// TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled
+// proves dropBlankBanner treats a whitespace-only title the same as an
+// empty one, not as a real value.
+func TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"   ","description":""}}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if repo.gotUpdatePatch.Details == nil {
+		t.Fatal("repo.Update was not called with Details")
+	}
+	if isComplete(activitiessvc.CategoryCulture, *repo.gotUpdatePatch.Details) {
+		t.Error("whitespace-only banner title must not count as complete")
 	}
 }
 

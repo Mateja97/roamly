@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"backend/shared/models/activitiessvc"
@@ -132,7 +133,7 @@ var sportSchema = map[string]any{
 		"duration":      map[string]any{"type": "string"},
 		"gear":          map[string]any{"type": "string"},
 		"what_to_bring": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-		"difficulty":    map[string]any{"type": "number"},
+		"difficulty":    map[string]any{"type": "integer", "minimum": 1, "maximum": 5},
 	},
 }
 
@@ -165,8 +166,9 @@ var scraperOwnedFields = map[activitiessvc.Category][]string{
 // category except Entertainment (see SyncWebsiteContent). false for a
 // category with no entry in scraperOwnedFields (never complete, matches
 // "unsupported category" falling through to the extractionConfig guard
-// before this is ever consulted for such a category in practice). Reuses
-// isEmptyValue, the same emptiness rule fillGaps itself applies.
+// before this is ever consulted for such a category in practice). Uses
+// isFieldEmpty (below), not isEmptyValue directly — a stored blank banner
+// must not count as filled either.
 func isComplete(category activitiessvc.Category, details json.RawMessage) bool {
 	fields := scraperOwnedFields[category]
 	if len(fields) == 0 {
@@ -175,11 +177,30 @@ func isComplete(category activitiessvc.Category, details json.RawMessage) bool {
 	var m map[string]any
 	_ = json.Unmarshal(details, &m)
 	for _, f := range fields {
-		if isEmptyValue(m[f]) {
+		if isFieldEmpty(m[f]) {
 			return false
 		}
 	}
 	return true
+}
+
+// isFieldEmpty applies isEmptyValue's rule, plus one addition scoped to
+// isComplete only: a banner object (now_showing/current_exhibition) with a
+// blank title counts as empty too — the same "found nothing" treatment
+// dropBlankBanner already gives a fresh extraction, extended here to also
+// cover a row that already has a blank banner stored from before that fix
+// existed. isEmptyValue itself is deliberately untouched — fillGaps and
+// markDifficultyInferred both rely on its current, narrower behavior.
+func isFieldEmpty(v any) bool {
+	if isEmptyValue(v) {
+		return true
+	}
+	banner, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	title, _ := banner["title"].(string)
+	return strings.TrimSpace(title) == ""
 }
 
 // SyncWebsiteContent is cmd/websitesync's one per-row call. For every
@@ -271,7 +292,7 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("merging website content for %s: %w", id, err)
 	}
-	if complete && activity.Category == activitiessvc.CategoryEntertainment {
+	if activity.Category == activitiessvc.CategoryEntertainment {
 		merged = overwriteField(merged, extracted, "upcoming_shows")
 	}
 	if activity.Category == activitiessvc.CategorySport {
@@ -298,9 +319,9 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 }
 
 // overwriteField replaces key on merged with its value from extracted, when
-// extracted actually has a non-empty one — used only for Entertainment's
-// periodic refresh (see SyncWebsiteContent), where upcoming_shows must
-// actually update even though fillGaps' fill-only-if-empty rule would
+// extracted actually has a non-empty one — used only for Entertainment (see
+// SyncWebsiteContent), where upcoming_shows must actually update on every
+// sync, complete or not, even though fillGaps' fill-only-if-empty rule would
 // otherwise leave the old (already non-empty) list in place forever. Every
 // other scraper-owned field keeps fillGaps' normal admin-precedence rule.
 func overwriteField(merged, extracted json.RawMessage, key string) json.RawMessage {
@@ -351,7 +372,7 @@ func dropBlankBanner(category activitiessvc.Category, extracted json.RawMessage)
 		return extracted
 	}
 	title, _ := banner["title"].(string)
-	if title != "" {
+	if strings.TrimSpace(title) != "" {
 		return extracted
 	}
 	delete(m, key)

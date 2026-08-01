@@ -72,7 +72,7 @@ func main() {
 		logger.Error("listing rows", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("found wellness/entertainment rows", "count", len(rows))
+	logger.Info("found published rows", "count", len(rows))
 
 	if *dryRun {
 		for _, r := range rows {
