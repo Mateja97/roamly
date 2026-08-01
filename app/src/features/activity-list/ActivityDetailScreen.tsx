@@ -347,6 +347,7 @@ export function ActivityDetailScreen({
           <DifficultyMeter
             key="difficulty"
             difficulty={activity.details.difficulty}
+            inferred={activity.details.difficulty_inferred}
           />
         ) : null;
       case 'factstrip':

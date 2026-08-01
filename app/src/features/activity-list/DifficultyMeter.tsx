@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 
-type DifficultyMeterProps = { difficulty: number };
+type DifficultyMeterProps = { difficulty: number; inferred?: boolean };
 
 const SEGMENTS = 5;
 // No documented label set beyond design-spec.md's "Intermediate" example —
@@ -11,14 +11,17 @@ const LABELS = ['Beginner', 'Easy', 'Intermediate', 'Advanced', 'Expert'];
 // DESIGN_STANDARDS.md's "Difficulty meter (segmented)" recipe — Sport only.
 // Non-interactive, static; the filled count and the text label are
 // redundant so the value is never color-only.
-export function DifficultyMeter({ difficulty }: DifficultyMeterProps) {
+export function DifficultyMeter({ difficulty, inferred }: DifficultyMeterProps) {
   const level = Math.min(SEGMENTS, Math.max(1, Math.round(difficulty)));
   // design-spec.md T8 addendum #7: level label only — the filled segments
   // already convey the N/M count, so no redundant "· N/M" suffix.
   const readout = LABELS[level - 1];
 
   return (
-    <View accessible accessibilityLabel={`Difficulty: ${readout}`}>
+    <View
+      accessible
+      accessibilityLabel={`Difficulty: ${readout}${inferred ? ' (estimated)' : ''}`}
+    >
       <View style={styles.labelRow}>
         <Text style={styles.overline}>Difficulty</Text>
         <Text style={styles.level}>{readout}</Text>
@@ -31,6 +34,7 @@ export function DifficultyMeter({ difficulty }: DifficultyMeterProps) {
           />
         ))}
       </View>
+      {inferred ? <Text style={styles.estimated}>Estimated</Text> : null}
     </View>
   );
 }
@@ -65,5 +69,10 @@ const styles = StyleSheet.create({
   },
   segmentFilled: {
     backgroundColor: colors.primary,
+  },
+  estimated: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: space[2],
   },
 });

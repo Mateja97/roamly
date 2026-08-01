@@ -22,4 +22,14 @@ describe('DifficultyMeter', () => {
     render(<DifficultyMeter difficulty={4} />);
     expect(screen.getByLabelText('Difficulty: Advanced')).toBeTruthy();
   });
+
+  it('shows an Estimated caption when inferred is true', () => {
+    render(<DifficultyMeter difficulty={4} inferred />);
+    expect(screen.getByText('Estimated')).toBeTruthy();
+  });
+
+  it('omits the Estimated caption when inferred is false or absent', () => {
+    render(<DifficultyMeter difficulty={4} />);
+    expect(screen.queryByText('Estimated')).toBeNull();
+  });
 });
