@@ -95,7 +95,7 @@ func TestToAspectRating(t *testing.T) {
 func TestTripadvisorIngestActivity_AbsentOptionalFieldsStayAbsent(t *testing.T) {
 	d := tripadvisor.LocationDetails{LocationID: "1", Name: "Bare Bones", WebURL: "https://ta/1"}
 
-	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil)
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil, cellLocation{})
 
 	var details activitiessvc.RestaurantDetails
 	if err := json.Unmarshal(ingest.Details, &details); err != nil {
@@ -147,7 +147,7 @@ func TestTripadvisorIngestActivity_DescriptionAttributesVisitLengthCarried(t *te
 		RecommendedVisitLength: 2,
 	}
 
-	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil)
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, d, nil, nil, cellLocation{})
 
 	if ingest.Description != d.Description {
 		t.Errorf("Description = %q, want %q", ingest.Description, d.Description)

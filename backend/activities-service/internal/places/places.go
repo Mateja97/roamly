@@ -136,8 +136,9 @@ func (c *Client) SearchText(ctx context.Context, query, pageToken, fieldMask str
 // Places Terms §14.3 and are fetched live on detail view instead, so paying
 // for them here would be a no-op (the same trim scrapecity's fieldMask got).
 // addressComponents is in the same SKU tier as the rest of this mask (no
-// extra cost) — it's how syncGoogleRow derives City/Country for a discovered
-// place (see placesmap.CityCountry).
+// extra cost); City/Country are no longer derived from it (see
+// placesmap.Place.AddressComponents' doc — that's ReverseGeocodeCity's job
+// now), but it costs nothing to keep requesting.
 const NearbyFieldMask = "places.id,places.displayName,places.location," +
 	"places.formattedAddress,places.rating,places.userRatingCount," +
 	"places.googleMapsUri,places.photos,places.primaryType,places.types," +

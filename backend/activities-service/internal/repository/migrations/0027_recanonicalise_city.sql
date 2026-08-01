@@ -1,0 +1,21 @@
+-- Recanonicalise Tripadvisor-sourced cities.
+--
+-- Terra's own address field yields neighbourhood/sub-municipality names
+-- (Stari Grad, Novi Beograd, Dorcol, Vozdovac, ...) instead of the city —
+-- unlike the Google sync, which already resolves city by reverse-geocoding
+-- the sync cell (places.ReverseGeocodeCity) and collapses those same
+-- sub-municipalities to "Belgrade". This branch makes the Tripadvisor sync
+-- do the same per-anchor resolution (see syncTripadvisorAnchor).
+--
+-- Clearing sync_regions for provider = 'tripadvisor' makes every anchor
+-- look stale, so the next query for each area re-sweeps it and rewrites
+-- city/country from coordinates instead of Terra's text. Deliberately NOT a
+-- string-matching UPDATE (e.g. mapping "Dorcol" -> "Belgrade"): that would
+-- need a new entry per neighbourhood per city forever, and would have to
+-- special-case the 5 genuinely-correct San Francisco rows to avoid
+-- mismapping them. Re-deriving from coordinates needs neither.
+--
+-- Scoped strictly to provider = 'tripadvisor' — Google's rows are already
+-- correct (see 0026's own provider = 'google' scoping) and re-sweeping them
+-- would be pure spend for no benefit.
+DELETE FROM sync_regions WHERE provider = 'tripadvisor';

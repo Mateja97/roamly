@@ -77,8 +77,13 @@ type Place struct {
 	PrimaryType string   `json:"primaryType"`
 	Types       []string `json:"types"`
 	// AddressComponents is the place's structured address breakdown.
-	// Consumed by CityCountry (address.go) — City/Country are storable
-	// (Places Terms §14.3 permits them), unlike hours/price/venue-type.
+	// Unused for City/Country derivation — that fragmented one city into
+	// eight stored strings when it fed a per-venue fallback (see
+	// service.cellLocation's doc); city/country are now derived solely from
+	// the sync cell's own reverse-geocoded coordinates
+	// (places.Client.ReverseGeocodeCity). Kept only because Places (New)
+	// still returns it and NearbyFieldMask still requests it at no extra
+	// cost.
 	AddressComponents []AddressComponent `json:"addressComponents"`
 }
 

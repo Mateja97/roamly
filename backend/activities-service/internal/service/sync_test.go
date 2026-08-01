@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -542,6 +543,108 @@ func TestTripadvisorReviews_FilterAndTruncation(t *testing.T) {
 				if got[i] != tt.want[i] {
 					t.Errorf("tripadvisorReviews()[%d] = %+v, want %+v", i, got[i], tt.want[i])
 				}
+			}
+		})
+	}
+}
+
+// TestActivities_Query_TripadvisorSync_CityResolution is the regression
+// guard for the six-strings-one-city bug (Belgrade stored as Belgrade,
+// Belgrade Waterfront, Stari Grad, Novi Beograd, Dorcol, Vozdovac — all
+// Tripadvisor rows) that motivated resolveTripadvisorCity: Terra's own
+// address field is neighbourhood-level, so the anchor's city must be
+// resolved once via a.places.ReverseGeocodeCity (fakeGooglePlaces doubles
+// as the placesClient fixture here, same as the Google sync tests) and
+// applied to every venue the sweep upserts, rather than trusting Terra's
+// per-venue value.
+//
+// Two candidates per case, deliberately given two DIFFERENT Terra cities
+// ("Stari Grad" / "Novi Beograd") in the fixture: that's what proves the
+// resolved city is shared across the whole sweep rather than merely passed
+// through per venue.
+//
+// Calls syncTripadvisorIfNeeded directly rather than through Query (the
+// same sanctioned exception googleDueRows' own tests use — see this file's
+// package doc): configuring WithPlaces to exercise ReverseGeocodeCity would
+// otherwise also arm Query's unrelated background Google discovery sync
+// (syncGoogleIfNeeded doesn't gate on the request's categories), which
+// races this test's own gp.geocodeCalls counter and outlives the subtest
+// unless separately awaited. Calling the Tripadvisor path directly sidesteps
+// that entirely — it runs synchronously with no goroutine to leak.
+func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
+	tests := []struct {
+		name           string
+		withPlaces     bool
+		geocodeCity    string
+		geocodeCountry string
+		geocodeErr     error
+		wantCity       string
+		wantCountry    string
+	}{
+		{
+			name:           "places client configured resolves city from the anchor, overriding terra",
+			withPlaces:     true,
+			geocodeCity:    "Belgrade",
+			geocodeCountry: "Serbia",
+			wantCity:       "Belgrade",
+			wantCountry:    "Serbia",
+		},
+		{
+			name:        "no places client configured falls back to terra's per-venue value",
+			withPlaces:  false,
+			wantCity:    "", // set per-candidate below from the fixture
+			wantCountry: "Serbia (Terra)",
+		},
+		{
+			name:        "geocode failure degrades to terra's per-venue value",
+			withPlaces:  true,
+			geocodeErr:  errors.New("geocode 503"),
+			wantCity:    "", // set per-candidate below from the fixture
+			wantCountry: "Serbia (Terra)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+			ta := &fakeTripadvisor{
+				nearbyOut: []tripadvisor.LocationSummary{
+					{LocationID: "1", Name: "Restaurant One", WebURL: "https://ta/Restaurant_Review-1"},
+					{LocationID: "2", Name: "Restaurant Two", WebURL: "https://ta/Restaurant_Review-2"},
+				},
+				detailsOut: map[string]tripadvisor.LocationDetails{
+					"1": {LocationID: "1", Name: "Restaurant One", WebURL: "https://ta/Restaurant_Review-1", City: "Stari Grad", Country: "Serbia (Terra)"},
+					"2": {LocationID: "2", Name: "Restaurant Two", WebURL: "https://ta/Restaurant_Review-2", City: "Novi Beograd", Country: "Serbia (Terra)"},
+				},
+			}
+			gp := &fakeGooglePlaces{geocodeCity: tt.geocodeCity, geocodeCountry: tt.geocodeCountry, geocodeErr: tt.geocodeErr}
+			svc := New(repo).WithTripadvisor(ta)
+			if tt.withPlaces {
+				svc = svc.WithPlaces(gp)
+			}
+
+			req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+			svc.syncTripadvisorIfNeeded(context.Background(), req)
+
+			if len(repo.gotUpserts) != 2 {
+				t.Fatalf("upserts = %d, want 2", len(repo.gotUpserts))
+			}
+			wantByExternalID := map[string]string{"1": "Stari Grad", "2": "Novi Beograd"}
+			for _, u := range repo.gotUpserts {
+				wantCity := tt.wantCity
+				if wantCity == "" {
+					wantCity = wantByExternalID[u.ExternalID]
+				}
+				if u.City != wantCity || u.Country != tt.wantCountry {
+					t.Errorf("upsert %s city/country = %q/%q, want %q/%q", u.ExternalID, u.City, u.Country, wantCity, tt.wantCountry)
+				}
+			}
+
+			if tt.withPlaces && gp.geocodeCalls != 1 {
+				t.Errorf("ReverseGeocodeCity calls = %d, want exactly 1 per sweep regardless of venue count", gp.geocodeCalls)
+			}
+			if !tt.withPlaces && gp.geocodeCalls != 0 {
+				t.Errorf("ReverseGeocodeCity calls = %d, want 0 — no places client was configured", gp.geocodeCalls)
 			}
 		})
 	}

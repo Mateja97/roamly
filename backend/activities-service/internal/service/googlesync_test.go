@@ -106,16 +106,15 @@ func TestActivities_Query_GoogleSync_UpsertsWithArbitratedSubtype(t *testing.T) 
 	// from a reverted row.Subtype passthrough; a fixture whose PrimaryType
 	// happens to map to the same subtype as the row (e.g. "beach"/"beach")
 	// would pass either way.
-	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{
-		ID: "monument-1", Rating: 4.4, UserRatingCount: 30,
-		GoogleMapsURI: "https://maps.google/monument-1",
-		PrimaryType:   "monument",
-		Types:         []string{"monument", "historical_place", "tourist_attraction"},
-		AddressComponents: []placesmap.AddressComponent{
-			{LongText: "Belgrade", Types: []string{"locality", "political"}},
-			{LongText: "Serbia", Types: []string{"country", "political"}},
-		},
-	}}}
+	gp := &fakeGooglePlaces{
+		nearbyOut: []placesmap.Place{{
+			ID: "monument-1", Rating: 4.4, UserRatingCount: 30,
+			GoogleMapsURI: "https://maps.google/monument-1",
+			PrimaryType:   "monument",
+			Types:         []string{"monument", "historical_place", "tourist_attraction"},
+		}},
+		geocodeCity: "Belgrade", geocodeCountry: "Serbia",
+	}
 	gp.nearbyOut[0].DisplayName.Text = "Pobednik"
 	gp.nearbyOut[0].Location.Latitude = 44.82
 	gp.nearbyOut[0].Location.Longitude = 20.45
@@ -146,9 +145,10 @@ func TestActivities_Query_GoogleSync_UpsertsWithArbitratedSubtype(t *testing.T) 
 	if got.Source != "google_places" || got.ExternalID != "monument-1" {
 		t.Errorf("upsert source/external id = %s/%s, want google_places/monument-1", got.Source, got.ExternalID)
 	}
-	// City/Country come from the place's own address components, not the
-	// discovery row — without this, BuildLiveDetails' opening-hours timezone
-	// lookup (keyed on Country) always misses for a sweep-ingested row.
+	// City/Country come from the sync cell's reverse-geocoded resolution,
+	// not the discovery row — without this, BuildLiveDetails' opening-hours
+	// timezone lookup (keyed on Country) always misses for a sweep-ingested
+	// row.
 	if got.City != "Belgrade" || got.Country != "Serbia" {
 		t.Errorf("upsert city/country = %s/%s, want Belgrade/Serbia", got.City, got.Country)
 	}
@@ -275,13 +275,18 @@ func TestActivities_Query_GoogleSync_CityResolvedOncePerCell(t *testing.T) {
 	}
 }
 
-func TestActivities_Query_GoogleSync_GeocodeFailureFallsBackPerVenue(t *testing.T) {
+// TestActivities_Query_GoogleSync_GeocodeFailureWritesEmptyCity covers the
+// deliberate removal of toIngest's old per-venue placesmap.CityCountry
+// fallback: a geocode failure must still let the sweep upsert the venue
+// (never dropped), but with an empty city/country rather than whatever the
+// place's own address components said. Per-venue derivation from
+// addressComponents is exactly what fragmented one city into eight stored
+// strings in the first place (see cellLocation's doc) — an empty value here
+// is safe because Upsert's own ON CONFLICT COALESCE(NULLIF(...), ...)
+// preserves any already-stored city instead of blanking it.
+func TestActivities_Query_GoogleSync_GeocodeFailureWritesEmptyCity(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	p := placesmap.Place{ID: "a", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/a"}
-	p.AddressComponents = []placesmap.AddressComponent{
-		{LongText: "Beograd", Types: []string{"locality"}},
-		{LongText: "Serbia", Types: []string{"country"}},
-	}
 	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{p}, geocodeErr: errors.New("geocode 503")}
 	svc := New(repo).WithPlaces(gp)
 	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}}
@@ -293,8 +298,9 @@ func TestActivities_Query_GoogleSync_GeocodeFailureFallsBackPerVenue(t *testing.
 	if len(repo.gotUpserts) == 0 {
 		t.Fatal("no upserts — a geocode failure must degrade, not drop the sweep")
 	}
-	if repo.gotUpserts[0].City != "Beograd" {
-		t.Errorf("city = %q, want the per-venue fallback Beograd", repo.gotUpserts[0].City)
+	if repo.gotUpserts[0].City != "" || repo.gotUpserts[0].Country != "" {
+		t.Errorf("city/country = %q/%q, want empty — no per-venue fallback, Upsert's own COALESCE is what protects an already-stored value",
+			repo.gotUpserts[0].City, repo.gotUpserts[0].Country)
 	}
 }
 

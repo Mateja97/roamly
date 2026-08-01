@@ -1093,6 +1093,15 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 		return
 	}
 
+	// Resolved once for the whole sweep, not once per venue or per
+	// candidate — see resolveTripadvisorCity's doc for why per-venue
+	// derivation from Terra's own address field is exactly the bug this
+	// exists to fix. Skipped entirely when there is nothing to upsert.
+	var cellLoc cellLocation
+	if len(candidates) > 0 {
+		cellLoc = a.resolveTripadvisorCity(syncCtx, anchor)
+	}
+
 	work := make(chan candidate)
 	var wg sync.WaitGroup
 	for range min(syncVenueConcurrency, len(candidates)) {
@@ -1117,7 +1126,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 					photos = nil
 				}
 
-				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, details, reviews, photos)); err != nil {
+				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, details, reviews, photos, cellLoc)); err != nil {
 					slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
 				}
 			}
@@ -1139,6 +1148,31 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
 		}
 	}
+}
+
+// resolveTripadvisorCity resolves anchor's city/country once for a whole
+// Tripadvisor sweep, on the same principle syncGoogleIfNeeded already
+// applies per Google sync cell (see cellLocation): city is derived from
+// coordinates, never from provider-supplied text. Terra's own address field
+// yields neighbourhood/sub-municipality names (Stari Grad, Novi Beograd,
+// Dorcol, Vozdovac, ...) instead of the city, exactly the way Places'
+// addressComponents used to before ReverseGeocodeCity replaced it — see
+// this migration's 0027 comment for the live counts that motivated this.
+//
+// Degrades to a zero-value cellLocation — never an error — when no Places
+// client is configured (a.places == nil, see WithPlaces) or the geocode
+// call itself fails; tripadvisorIngestActivity then falls back to Terra's
+// own City/Country, exactly as it did before this existed.
+func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activitiessvc.Point) cellLocation {
+	if a.places == nil {
+		return cellLocation{}
+	}
+	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
+	if err != nil {
+		slog.Warn("tripadvisor reverse geocode failed; falling back to terra city", "error", err)
+		return cellLocation{}
+	}
+	return cellLocation{City: city, Country: country}
 }
 
 // terraNearbySearchCategory is the Terra nearby-search category value used
@@ -1273,7 +1307,13 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 	if err != nil {
 		return err
 	}
-	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, nil)); err != nil {
+	// No anchor here — a direct-by-ID backfill has no sweep to resolve a
+	// city once for (see resolveTripadvisorCity) — so this always falls
+	// back to Terra's own City/Country, same as every call before this
+	// param existed. Fine for its one caller (cmd/backfilltripadvisor):
+	// every row it touches already has a stored city that COALESCE(NULLIF(
+	// ..., ''), ...) in Upsert preserves if Terra's own value is empty.
+	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, details, reviews, nil, cellLocation{})); err != nil {
 		return fmt.Errorf("upserting tripadvisor activity %s: %w", locationID, err)
 	}
 	return nil
@@ -1286,7 +1326,15 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 // from the real rankings[]/awards[]/price_level/categories[] fields Terra
 // returns (see LocationDetails' doc) — each stays empty/nil only when
 // Tripadvisor itself returned nothing for it, never a fabricated value.
-func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo) activitiessvc.IngestActivity {
+//
+// City/Country prefer cell — resolved once per sweep via
+// resolveTripadvisorCity, consistent across every venue the sweep ingests —
+// and fall back per field to Terra's own d.City/d.Country when the cell
+// resolution is empty (no Places client configured, or a geocode failure).
+// Upsert's own ON CONFLICT also refuses to let an empty incoming city/
+// country clobber a stored one, so an empty cell resolution here degrades
+// safely either way.
+func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
 		RatingImageURL: d.RatingImageURL,
 		ReviewCount:    d.ReviewCount,
@@ -1318,6 +1366,14 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 	}
 	detailsJSON, _ := json.Marshal(tripadvisorDetailsPayload(category, attribution, reviews))
 
+	city, country := cell.City, cell.Country
+	if city == "" {
+		city = d.City
+	}
+	if country == "" {
+		country = d.Country
+	}
+
 	return activitiessvc.IngestActivity{
 		Title:       d.Name,
 		Description: d.Description,
@@ -1325,8 +1381,8 @@ func tripadvisorIngestActivity(category activitiessvc.Category, d tripadvisor.Lo
 		Lat:         d.Lat,
 		Lng:         d.Lng,
 		Address:     d.Address,
-		City:        d.City,
-		Country:     d.Country,
+		City:        city,
+		Country:     country,
 		Rating:      d.Rating,
 		Status:      activitiessvc.StatusPublished,
 		Details:     detailsJSON,
