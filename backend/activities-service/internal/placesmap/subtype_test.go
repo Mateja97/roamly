@@ -60,7 +60,7 @@ func TestSubtype(t *testing.T) {
 		{
 			name:        "unmapped primaryType, no types fallback, yields empty",
 			cat:         activitiessvc.CategoryRestaurants,
-			primaryType: "restaurant",
+			primaryType: "point_of_interest",
 			want:        "",
 		},
 		{

@@ -41,9 +41,10 @@ var GoogleCategories = []activitiessvc.Category{
 	activitiessvc.CategoryEntertainment,
 }
 
-// DiscoveryRows is the table. Exactly one row per (Google category, subtype)
-// pair, plus one subtype-"" row per category for its un-subtyped venues —
-// enforced by TestDiscoveryRows_CoversEveryGoogleSubtype.
+// DiscoveryRows is the table. Exactly one row per (category, subtype) pair
+// for every category except Tours & Experiences (still deliberately
+// unsourced), plus one subtype-"" row per category for its un-subtyped
+// venues — enforced by TestDiscoveryRows_CoversEveryGoogleSubtype.
 //
 // A Table A type that could plausibly mean two different subtypes is
 // deliberately left out rather than guessed (e.g. the generic "museum", when
@@ -54,13 +55,39 @@ var GoogleCategories = []activitiessvc.Category{
 // https://developers.google.com/maps/documentation/places/web-service/place-types
 // (page footer: "Last updated 2026-07-28 UTC") on 2026-07-31 by scraping the
 // live page's Table A section (478 distinct types) and diffing every type
-// string used here against it — zero corrections were needed.
+// string used here against it — zero corrections were needed. The
+// Restaurants and Bars rows below were verified the same way on 2026-08-01
+// (footer unchanged, still 2026-07-28 UTC) — zero corrections needed there
+// either.
+//
+// Restaurants and Bars are NOT in GoogleCategories (see below), so these
+// rows are never read forward — no searchNearby ever runs for them, keeping
+// discovery Tripadvisor-exclusive for both. They exist purely for the
+// backward (classification) direction: Subtype resolves a Tripadvisor
+// venue's Google primaryType/types against these rows, same as any other
+// category's.
 var DiscoveryRows = []DiscoveryRow{
+	// Restaurants (classification-only — see the file comment above)
+	{activitiessvc.CategoryRestaurants, "fine_dining", []string{"fine_dining_restaurant"}, ""},
+	{activitiessvc.CategoryRestaurants, "casual_dining", []string{"restaurant", "family_restaurant", "diner", "bistro", "buffet_restaurant"}, ""},
+	{activitiessvc.CategoryRestaurants, "fast_casual", []string{"fast_food_restaurant"}, ""},
+	{activitiessvc.CategoryRestaurants, "street_food", nil, "street food"},
+	{activitiessvc.CategoryRestaurants, "bakery_dessert", []string{"dessert_restaurant", "dessert_shop", "donut_shop", "ice_cream_shop", "chocolate_shop", "candy_store", "confectionery", "pastry_shop", "cake_shop"}, ""},
+	{activitiessvc.CategoryRestaurants, "", []string{"food_court", "meal_delivery", "meal_takeaway"}, ""},
+
 	// Cafés
 	{activitiessvc.CategoryCafes, "coffee_shop", []string{"coffee_shop"}, ""},
 	{activitiessvc.CategoryCafes, "tea_house", []string{"tea_house"}, ""},
 	{activitiessvc.CategoryCafes, "bakery_cafe", []string{"bakery"}, ""},
 	{activitiessvc.CategoryCafes, "", []string{"cafe", "cat_cafe", "dog_cafe", "internet_cafe"}, ""},
+
+	// Bars (classification-only — see the file comment above)
+	{activitiessvc.CategoryBars, "cocktail_bar", []string{"cocktail_bar"}, ""},
+	{activitiessvc.CategoryBars, "wine_bar", []string{"wine_bar"}, ""},
+	{activitiessvc.CategoryBars, "brewery", []string{"brewery"}, ""},
+	{activitiessvc.CategoryBars, "sports_bar", []string{"sports_bar"}, ""},
+	{activitiessvc.CategoryBars, "pub", []string{"pub", "irish_pub"}, ""},
+	{activitiessvc.CategoryBars, "", []string{"bar", "hookah_bar", "beer_garden"}, ""},
 
 	// Nightlife
 	{activitiessvc.CategoryNightlife, "nightclub", []string{"night_club"}, ""},
@@ -148,9 +175,6 @@ var typeToSubtype = func() map[string]string {
 			m[ty] = r.Subtype
 		}
 	}
-	for ty, sub := range classifyOnlyTypes {
-		m[ty] = sub
-	}
 	return m
 }()
 
@@ -187,19 +211,6 @@ var typeToCategory = func() map[string]activitiessvc.Category {
 	}
 	return m
 }()
-
-// classifyOnlyTypes covers subtypes we classify but never discover from
-// Google — Restaurants and Bars are Tripadvisor-sourced, but a Tripadvisor
-// venue can still carry Google types when the two providers overlap.
-var classifyOnlyTypes = map[string]string{
-	"fine_dining_restaurant": "fine_dining",
-	"fast_food_restaurant":   "fast_casual",
-	"cocktail_bar":           "cocktail_bar",
-	"wine_bar":               "wine_bar",
-	"brewery":                "brewery",
-	"sports_bar":             "sports_bar",
-	"pub":                    "pub",
-}
 
 // MinRating and MinReviews are the discovery quality floor, deliberately far
 // below the old batch pipeline's 4.0/50. Those floors existed to compensate

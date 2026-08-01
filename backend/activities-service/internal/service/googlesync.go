@@ -69,6 +69,13 @@ func googleDueRows(req Request, fresh func(cell, category, subtype string) bool)
 	for _, anchor := range syncAnchors(req) {
 		cell := syncCellKey(anchor.Lat, anchor.Lng)
 		for _, row := range placesmap.DiscoveryRows {
+			// Restaurants/Bars rows exist in DiscoveryRows for
+			// classification only (placesmap.Subtype) — discovery stays
+			// Tripadvisor-exclusive for them, so skip before they ever reach
+			// a searchNearby call.
+			if !slices.Contains(placesmap.GoogleCategories, row.Category) {
+				continue
+			}
 			if fresh(cell, string(row.Category), row.Subtype) {
 				continue
 			}
@@ -326,6 +333,11 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 		cell = cellLocation{City: city, Country: country}
 	}
 	for _, row := range placesmap.DiscoveryRows {
+		// Same gate as googleDueRows: Restaurants/Bars rows classify
+		// Tripadvisor venues but are never discovered from Google.
+		if !slices.Contains(placesmap.GoogleCategories, row.Category) {
+			continue
+		}
 		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell)
 	}
 }
