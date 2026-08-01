@@ -582,24 +582,14 @@ func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (act
 // a third-party call.
 const detailResolveTimeout = 4 * time.Second
 
-// withLiveDetails live-merges fresh Google Place Details onto activity for
-// a Places-sourced row (T2, places-live-details), mirroring GetPhotos'
-// fallback-on-error contract exactly: an unconfigured places client, any
-// resolve error, or a timeout all fall back to the bare stored row, no
-// error surfaced. Tripadvisor-sourced rows (source == "tripadvisor") and
-// admin-created rows (source == "") never reach a.places. The one
-// deliberate difference from GetPhotos: this result is never passed to
-// a.repo.Update or any other persistence call — Places Terms §14.3 forbids
-// caching anything but place_id/lat-lng, so every call re-fetches fresh.
-//
 // mergeLiveDetails overlays live's keys onto stored, preserving every key
 // stored already carries — the fix for withLiveDetails' former wholesale
 // replace, which was harmless only while Wellness/Entertainment details
-// were always blank (see this function's former doc comment) and became
-// unsafe the moment those rows could carry curated Treatments/GoodToKnow/
-// UpcomingShows content. Malformed JSON on either side degrades to "live
-// wins outright" rather than erroring the whole request — mirrors every
-// other fallback-on-error contract in this file.
+// were always blank and became unsafe the moment those rows could carry
+// curated Treatments/GoodToKnow/UpcomingShows content. Malformed JSON on
+// either side degrades to "live wins outright" rather than erroring the
+// whole request — mirrors every other fallback-on-error contract in this
+// file.
 func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
 	merged := map[string]any{}
 	_ = json.Unmarshal(stored, &merged) // best-effort; empty/absent stored is fine
@@ -617,6 +607,16 @@ func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
 	return b
 }
 
+// withLiveDetails live-merges fresh Google Place Details onto activity for
+// a Places-sourced row (T2, places-live-details), mirroring GetPhotos'
+// fallback-on-error contract exactly: an unconfigured places client, any
+// resolve error, or a timeout all fall back to the bare stored row, no
+// error surfaced. Tripadvisor-sourced rows (source == "tripadvisor") and
+// admin-created rows (source == "") never reach a.places. The one
+// deliberate difference from GetPhotos: this result is never passed to
+// a.repo.Update or any other persistence call — Places Terms §14.3 forbids
+// caching anything but place_id/lat-lng, so every call re-fetches fresh.
+//
 // Details is merged (mergeLiveDetails), not replaced outright: live-sourced
 // keys (action_url/opening_hours/venue_type/...) win, everything else
 // already on the stored row (e.g. admin-curated Treatments/GoodToKnow) is
