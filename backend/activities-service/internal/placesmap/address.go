@@ -9,9 +9,9 @@ package placesmap
 // address carries no matching component — never a guess.
 //
 // This is what feeds IngestActivity.City/Country for a sync-discovered row:
-// without it, BuildLiveDetails' opening-hours timezone lookup
-// (TimezoneForCity("")) always misses, and Upsert's ON CONFLICT would blank
-// an existing row's city on rediscovery.
+// without it, Upsert's ON CONFLICT would blank an existing row's city/country
+// on rediscovery, and — Country specifically — BuildLiveDetails' opening-hours
+// timezone lookup (TimezoneForCountry("")) always misses.
 func CityCountry(components []AddressComponent) (city, country string) {
 	var postalTown string
 	for _, c := range components {

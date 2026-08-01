@@ -54,7 +54,7 @@ func TestActivities_GetByID_NeverLiveMerges(t *testing.T) {
 // the one deliberate deviation from GetPhotos' otherwise-identical pattern.
 func TestActivities_GetByID_LiveDetails(t *testing.T) {
 	cafe := activitiessvc.Activity{
-		ID: "1", Category: activitiessvc.CategoryCafes, City: "Belgrade",
+		ID: "1", Category: activitiessvc.CategoryCafes, City: "Belgrade", Country: "Serbia",
 		Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1",
 	}
 
@@ -68,7 +68,7 @@ func TestActivities_GetByID_LiveDetails(t *testing.T) {
 	review.Text.Text = "Lovely spot."
 	detail := placesmap.PlaceDetail{Reviews: []placesmap.Review{review}, ServesCoffee: true, Rating: 4.7, UserRatingCount: 214}
 	detail.EditorialSummary.Text = "A cozy cafe with great coffee."
-	wantDetailsJSON := string(placesmap.BuildLiveDetails(activitiessvc.CategoryCafes, "Belgrade", detail))
+	wantDetailsJSON := string(placesmap.BuildLiveDetails(activitiessvc.CategoryCafes, "Serbia", detail))
 
 	tests := []struct {
 		name            string

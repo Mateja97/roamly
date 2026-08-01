@@ -610,7 +610,7 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		return activity
 	}
 
-	activity.Details = placesmap.BuildLiveDetails(activity.Category, activity.City, detail)
+	activity.Details = placesmap.BuildLiveDetails(activity.Category, activity.Country, detail)
 	if desc := liveDescription(detail); desc != "" {
 		activity.Description = desc
 	}

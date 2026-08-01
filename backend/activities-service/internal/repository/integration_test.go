@@ -1220,8 +1220,8 @@ func TestUpsertStoresPlaceIDAsExternalIDWithGooglePlacesSource(t *testing.T) {
 // city/country fix: a Google reverse-geocode failure or ZERO_RESULTS sends
 // toIngest an empty city/country for the whole cell's sweep (see
 // service.cellLocation), and a re-upsert of an already-healed row must not
-// blank it back out — that would break TimezoneForCity and SuggestCities for
-// up to maxGoogleRowsPerQuery x ~20 venues in one bad sweep.
+// blank it back out — that would break TimezoneForCountry and SuggestCities
+// for up to maxGoogleRowsPerQuery x ~20 venues in one bad sweep.
 func TestUpsertEmptyCityDoesNotClobberStoredCity(t *testing.T) {
 	ctx := context.Background()
 	db := startTestPostgres(t)

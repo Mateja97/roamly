@@ -90,15 +90,35 @@ type AddressComponent struct {
 	Types     []string `json:"types"`
 }
 
-// cityTimezones maps a scraped city to its IANA zone, the timezone structured
-// opening_hours are evaluated against. One line per city we ingest; an unknown
-// city yields no opening_hours (free-text hours still stands).
-var cityTimezones = map[string]string{
-	"Belgrade": "Europe/Belgrade",
+// countryTimezones maps a scraped country to its IANA zone, the timezone
+// structured opening_hours are evaluated against. Keyed on country, not city:
+// city is what Google actually varies on for a single place — the same
+// Belgrade venue has shown up as "Beograd", "Belgrade", "Београд", "Novi
+// Beograd" and "Борча" across sync cells, which missed this map for ~87% of
+// rows when it was keyed on city. Country is stable across all of those.
+//
+// This is exact, not approximate, only because every country below is
+// single-timezone. "Serbia": "Europe/Belgrade" holds for 100% of Serbian
+// rows. It stops holding the moment a multi-timezone country is ingested —
+// US, Canada, Brazil, Russia, Australia, Mexico, Indonesia all span more than
+// one zone, so a single country->zone entry for any of them would be wrong
+// for some fraction of their venues. Do not add one of those countries here
+// without a per-venue (or at least per-cell) resolution.
+//
+// The intended upgrade path is Google's Time Zone API
+// (https://maps.googleapis.com/maps/api/timezone/json) — already enabled and
+// authorized on this project's key, verified returning correct zones for
+// Belgrade, New York, London, Tokyo and Sydney. Resolve it once per sync cell
+// alongside the existing ReverseGeocodeCity call (see googlesync.go's
+// toIngest/cellLocation) and store the zone per row instead of deriving it
+// here from country. Until that lands, an unknown country yields no
+// opening_hours (free-text hours still stands) rather than a fabricated zone.
+var countryTimezones = map[string]string{
+	"Serbia": "Europe/Belgrade",
 }
 
-// TimezoneForCity returns the IANA zone for city, or "" if unknown.
-func TimezoneForCity(city string) string { return cityTimezones[city] }
+// TimezoneForCountry returns the IANA zone for country, or "" if unknown.
+func TimezoneForCountry(country string) string { return countryTimezones[country] }
 
 // placeDayNames maps Places' 0=Sunday … 6=Saturday onto the model's weekday names.
 var placeDayNames = [7]activitiessvc.DayOfWeek{
@@ -119,10 +139,10 @@ func validClock(t placeDayTime) bool {
 // zero-padded HH:MM times, valid weekday names, and never always_open=false
 // with no periods. Periods without a close time are skipped (never fabricate
 // a close); the sole 24/7 sentinel (one open at Sunday 00:00, no close)
-// becomes always_open. Shared by BuildLiveDetails (city comes from the
-// activity's stored city; roh from the live PlaceDetail).
-func buildOpeningHours(city string, roh RegularOpeningHours) *activitiessvc.OpeningHours {
-	tz := TimezoneForCity(city)
+// becomes always_open. Shared by BuildLiveDetails (country comes from the
+// activity's stored country; roh from the live PlaceDetail).
+func buildOpeningHours(country string, roh RegularOpeningHours) *activitiessvc.OpeningHours {
+	tz := TimezoneForCountry(country)
 	if tz == "" {
 		return nil
 	}
@@ -322,7 +342,7 @@ func cafeKnownFor(d PlaceDetail) []string {
 // source is empty/false/absent — including the every-false and
 // every-absent amenity cases, which are indistinguishable in Go's zero-value
 // bool and so behave identically (both omit the section).
-func BuildLiveDetails(cat activitiessvc.Category, city string, d PlaceDetail) json.RawMessage {
+func BuildLiveDetails(cat activitiessvc.Category, country string, d PlaceDetail) json.RawMessage {
 	out := map[string]any{}
 	set := func(key, val string) {
 		if val != "" {
@@ -335,7 +355,7 @@ func BuildLiveDetails(cat activitiessvc.Category, city string, d PlaceDetail) js
 		}
 	}
 	setOpeningHours := func() {
-		if oh := buildOpeningHours(city, d.RegularOpeningHours); oh != nil {
+		if oh := buildOpeningHours(country, d.RegularOpeningHours); oh != nil {
 			out["opening_hours"] = oh
 		}
 	}
