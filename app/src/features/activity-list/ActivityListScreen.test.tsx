@@ -169,9 +169,9 @@ describe('ActivityListScreen', () => {
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
-    // T1: a category pick no longer gets its own removable chip (the
-    // quick-filter row owns that state) — use the rating group here so this
-    // test still exercises the sheet-apply + removable-chip mechanism.
+    // T4: a category pick no longer gets its own removable chip (the header
+    // pill row owns that state) — use the rating group here so this test
+    // still exercises the sheet-apply + removable-chip mechanism.
     fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
 
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
@@ -259,7 +259,10 @@ describe('ActivityListScreen', () => {
 
     fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
     await flush();
-    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+    // "Sport" now matches both the header pill row (T4) and the sheet's own
+    // Category option — press the sheet's (opened second, so it's last).
+    const sportChipsBeforeApply = screen.getAllByRole('button', { name: 'Sport' });
+    fireEvent.press(sportChipsBeforeApply[sportChipsBeforeApply.length - 1]);
     mockedQuery.mockResolvedValueOnce(successResult([activity]));
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
@@ -269,7 +272,7 @@ describe('ActivityListScreen', () => {
     // already selected (the now-applied filter), not the pre-Apply draft.
     fireEvent.press(screen.getByRole('button', { name: /^filters/i }));
     await flush();
-    expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /sport, selected/i })).toHaveLength(2);
   });
 
   it('T2: Anywhere with one selected city shows just its name in the subtitle', async () => {
@@ -322,97 +325,226 @@ describe('ActivityListScreen', () => {
     expect(screen.queryByText(/·/)).toBeNull();
   });
 
-  describe('Category quick-filter row (T1)', () => {
-    it('renders "All" selected by default, and the headline category chips unselected', async () => {
+  describe('Category header pill row (T4)', () => {
+    it('renders "All" plus all 13 categories, "All" selected by default', async () => {
       mockedQuery.mockResolvedValue(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
-      expect(screen.getByRole('button', { name: 'All, selected' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Restaurants' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Bars' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Culture' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All categories, selected' })).toBeTruthy();
+      for (const label of ['Restaurants', 'Cafés', 'Bars', 'Nightlife', 'Nature', 'Sport', 'Kids', 'Culture', 'Art', 'Wellness', 'Shopping', 'Entertainment', 'Tours & Experiences']) {
+        expect(screen.getByRole('button', { name: label })).toBeTruthy();
+      }
     });
 
-    it('tapping a headline chip re-queries with just that category and marks it selected', async () => {
+    it('selecting a previously non-headline category (Sport) marks it active and leaves All inactive — the fixed defect', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       await act(async () => {
-        fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
+        fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
       });
 
       expect(mockedQuery).toHaveBeenLastCalledWith({
         scope: 'nearby',
         current_location: LOCATION,
-        categories: ['restaurants'],
+        categories: ['sport'],
       });
-      expect(screen.getByRole('button', { name: 'Restaurants, selected' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'All' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Sport, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All categories' })).toBeTruthy();
     });
 
-    it('tapping "All" after a headline chip clears the category filter', async () => {
+    it('selecting a second category marks both pills active', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       await act(async () => {
-        fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
+        fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
       });
-      expect(screen.getByRole('button', { name: 'Restaurants, selected' })).toBeTruthy();
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Culture' }));
+      });
+
+      expect(mockedQuery).toHaveBeenLastCalledWith({
+        scope: 'nearby',
+        current_location: LOCATION,
+        categories: ['sport', 'culture'],
+      });
+      expect(screen.getByRole('button', { name: 'Sport, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Culture, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All categories' })).toBeTruthy();
+    });
+
+    it('deselecting the last selected category returns All to active', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       await act(async () => {
-        fireEvent.press(screen.getByRole('button', { name: 'All' }));
+        fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      });
+      expect(screen.getByRole('button', { name: 'Sport, selected' })).toBeTruthy();
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Sport, selected' }));
       });
 
       expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION });
-      expect(screen.getByRole('button', { name: 'All, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All categories, selected' })).toBeTruthy();
     });
 
-    it('a sheet-applied non-headline category (e.g. Sport) reads as "All" active in the quick-filter row', async () => {
+    it('tapping "All" while already active is a no-op — no extra query', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      expect(mockedQuery).toHaveBeenCalledTimes(1);
+      fireEvent.press(screen.getByRole('button', { name: 'All categories, selected' }));
+      expect(mockedQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('a stale response from an earlier tap never overwrites a later one (retarget mid-flight, design-spec.md T4)', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      let resolveSport!: (r: ActivitiesQueryResult) => void;
+      let resolveCulture!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveSport = resolve)));
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveCulture = resolve)));
+
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Culture' }));
+
+      const cultureResult = { ...activity, id: '2', title: 'Sport+Culture result' };
+      const sportOnlyResult = { ...activity, id: '3', title: 'Sport-only result' };
+      // Culture's request (fired second) resolves first; Sport's (fired
+      // first, so it's stale) resolves after — the exact "last-resolved
+      // isn't last-requested" ordering the fix guards against.
+      await act(async () => resolveCulture(successResult([cultureResult])));
+      await waitFor(() => expect(screen.getByText('Sport+Culture result')).toBeTruthy());
+
+      await act(async () => resolveSport(successResult([sportOnlyResult])));
+
+      expect(screen.getByText('Sport+Culture result')).toBeTruthy();
+      expect(screen.queryByText('Sport-only result')).toBeNull();
+    });
+
+    it('a pill tap while the initial load is still in flight leaves the pill-filtered result standing, not the initial load', async () => {
+      let resolveInitial!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveInitial = resolve)));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+
+      // Row stays operable while the initial fetch is still pending
+      // (design-spec.md T4) — tap a pill before it resolves.
+      let resolveSport!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveSport = resolve)));
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+
+      const sportResult = { ...activity, id: '2', title: 'Sport-filtered result' };
+      const initialResult = { ...activity, id: '1', title: 'Unfiltered initial result' };
+      // Sport's request (fired second) resolves first; the initial load's
+      // (fired first, now stale) resolves after it.
+      await act(async () => resolveSport(successResult([sportResult])));
+      await waitFor(() => expect(screen.getByText('Sport-filtered result')).toBeTruthy());
+
+      await act(async () => resolveInitial(successResult([initialResult])));
+
+      expect(screen.getByText('Sport-filtered result')).toBeTruthy();
+      expect(screen.queryByText('Unfiltered initial result')).toBeNull();
+    });
+
+    it('"Try again" after an error, then a pill tap before retry resolves, leaves the pill-filtered result standing', async () => {
+      mockedQuery.mockResolvedValueOnce({ status: 500, message: 'internal error' });
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('internal error')).toBeTruthy());
+
+      let resolveRetry!: (r: ActivitiesQueryResult) => void;
+      let resolveSport!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveRetry = resolve)));
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveSport = resolve)));
+
+      fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+      // The pill row sits in the header, unaffected by the error body below
+      // it — still tappable the instant retry fires.
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+
+      const sportResult = { ...activity, id: '2', title: 'Sport-filtered result' };
+      const retryResult = { ...activity, id: '1', title: 'Unfiltered retry result' };
+      // Sport's request (fired second) resolves first; retry's (fired first,
+      // now stale) resolves after it.
+      await act(async () => resolveSport(successResult([sportResult])));
+      await waitFor(() => expect(screen.getByText('Sport-filtered result')).toBeTruthy());
+
+      await act(async () => resolveRetry(successResult([retryResult])));
+
+      expect(screen.getByText('Sport-filtered result')).toBeTruthy();
+      expect(screen.queryByText('Unfiltered retry result')).toBeNull();
+    });
+
+    it('a sheet-applied category (e.g. Sport) reads as active in the pill row too — no more lossy projection', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
       fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
       await flush();
-      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      // "Sport" matches both the header pill and the sheet's own Category
+      // option — press the sheet's (opened second, so it's the last match).
+      const sportChips = screen.getAllByRole('button', { name: 'Sport' });
+      fireEvent.press(sportChips[sportChips.length - 1]);
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
       });
 
-      expect(screen.getByRole('button', { name: 'All, selected' })).toBeTruthy();
-      // design-spec.md T1: no duplicate removable chip for a category filter
-      // — the quick-filter row (here, its "All" resting state) is the only
-      // representation; the Filters button's count badge covers the rest.
+      expect(screen.getByRole('button', { name: 'Sport, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'All categories' })).toBeTruthy();
+      // design-spec.md T4: no duplicate removable chip — the pill row is the
+      // only representation; the Filters button's count badge covers the rest.
       expect(screen.queryByRole('button', { name: 'Remove Sport filter' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
     });
 
-    it('applying a headline category via the sheet does not also add a removable chip', async () => {
+    it('deselecting a category from the header pill clears only that category\'s subtypes, applied via the sheet', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
 
+      // Select Sport from the header pill row, then apply one of its
+      // subtypes from the sheet (still gated to a single category pre-T5).
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      });
       fireEvent.press(screen.getByRole('button', { name: 'Filters' }));
       await flush();
-      // "Restaurants" now matches two chips at once — the header's
-      // quick-filter chip (unselected) and the sheet's own category option
-      // — so press the sheet's (the one opened second, per render order).
-      const restaurantsChips = screen.getAllByRole('button', { name: 'Restaurants' });
-      fireEvent.press(restaurantsChips[restaurantsChips.length - 1]);
+      fireEvent.press(screen.getByRole('button', { name: 'Climbing Gym' }));
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
       });
+      expect(mockedQuery).toHaveBeenLastCalledWith({
+        scope: 'nearby',
+        current_location: LOCATION,
+        categories: ['sport'],
+        subcategories: ['climbing_gym'],
+      });
 
-      expect(screen.getByRole('button', { name: 'Restaurants, selected' })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Remove Restaurants filter' })).toBeNull();
+      // Deselecting Sport from the header pill drops the category and its
+      // subtype together — no orphaned subcategory left on the wire.
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Sport, selected' }));
+      });
+      expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION });
     });
   });
 
