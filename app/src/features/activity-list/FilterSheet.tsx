@@ -17,6 +17,7 @@ import {
   RATING_OPTIONS,
   SUBCATEGORIES,
   defaultFilters,
+  toggleCategory,
 } from './filters';
 import type { Filters } from './types';
 import type { Scope } from '../scope-picker/types';
@@ -132,7 +133,7 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.scroll}>
+          <ScrollView style={styles.body} contentContainerStyle={styles.scroll}>
             <FilterGroup label="Category">
               {CATEGORY_OPTIONS.map((option) => (
                 <FilterChip
@@ -140,52 +141,42 @@ export function FilterSheet({ visible, initialFilters, scope, hasLocationAnchor,
                   variant="select"
                   label={option.label}
                   selected={draft.categories.includes(option.value)}
-                  onPress={() =>
-                    setDraft((prev) => {
-                      const categories = prev.categories.includes(option.value)
-                        ? prev.categories.filter((c) => c !== option.value)
-                        : [...prev.categories, option.value];
-                      // Orphan-clearing (design-spec.md T3): subtypes only
-                      // ever get selected while exactly one category is
-                      // selected, so any transition away from that single
-                      // category (to 0, to >1, or — reachable only via an
-                      // intermediate 0/>1 step, since each click toggles one
-                      // category — to a different one) drops them. Keeping
-                      // `prev.subtypes` when `categories.length === 1` is
-                      // therefore always keeping subtypes scoped to that same
-                      // category, never a stale one.
-                      const subtypes = categories.length === 1 ? prev.subtypes : [];
-                      return { ...prev, categories, subtypes };
-                    })
-                  }
+                  onPress={() => setDraft((prev) => toggleCategory(prev, option.value))}
                 />
               ))}
             </FilterGroup>
 
-            {/* Progressive disclosure driven by the Category group directly
-                above — present only for exactly one selected category, gone
-                (not disabled/empty) otherwise, same conditional-render
-                pattern as the Anywhere distance slider below. */}
-            {draft.categories.length === 1 && (
-              <FilterGroup label="Subtype">
-                {SUBCATEGORIES[draft.categories[0]].map((option) => (
-                  <FilterChip
-                    key={option.value}
-                    variant="select"
-                    label={option.label}
-                    selected={draft.subtypes.includes(option.value)}
-                    onPress={() =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        subtypes: prev.subtypes.includes(option.value)
-                          ? prev.subtypes.filter((s) => s !== option.value)
-                          : [...prev.subtypes, option.value],
-                      }))
-                    }
-                  />
-                ))}
-              </FilterGroup>
-            )}
+            {/* design-spec.md T5: one Subtype group per selected category,
+                in the fixed CATEGORY_OPTIONS order (never selection order),
+                each under its own "<Category> subtypes" heading — replaces
+                the old "exactly one category selected" gate. Deselecting a
+                category (toggleCategory, above) drops its subtypes from
+                `draft.subtypes`, which removes its group here too — no
+                separate cleanup needed. */}
+            {CATEGORY_OPTIONS.filter((option) => draft.categories.includes(option.value)).map((option) => {
+              const subtypeOptions = SUBCATEGORIES[option.value];
+              if (subtypeOptions.length === 0) return null; // omit-rather-than-blank
+              return (
+                <FilterGroup key={option.value} label={`${option.label} subtypes`}>
+                  {subtypeOptions.map((subOption) => (
+                    <FilterChip
+                      key={subOption.value}
+                      variant="select"
+                      label={subOption.label}
+                      selected={draft.subtypes.includes(subOption.value)}
+                      onPress={() =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          subtypes: prev.subtypes.includes(subOption.value)
+                            ? prev.subtypes.filter((s) => s !== subOption.value)
+                            : [...prev.subtypes, subOption.value],
+                        }))
+                      }
+                    />
+                  ))}
+                </FilterGroup>
+              );
+            })}
 
             <FilterGroup label="Minimum rating">
               {singleSelectChips(RATING_OPTIONS, draft.minRating, (minRating) =>
@@ -368,6 +359,15 @@ const styles = StyleSheet.create({
     borderTopColor: colors.cardHighlight,
     paddingHorizontal: space[6],
     paddingTop: space[3],
+  },
+  // design-spec.md T5: RN's default flexShrink: 0 would let this region
+  // overflow the panel's maxHeight and push the footer off-screen once
+  // several subtype groups stack up — flexShrink: 1 makes the scrolling
+  // body the region that yields, while the handle/header above and the
+  // error box/footer below (plain Views, still flexShrink: 0) stay fixed
+  // and always visible.
+  body: {
+    flexShrink: 1,
   },
   handle: {
     alignSelf: 'center',

@@ -191,7 +191,7 @@ describe('FilterSheet', () => {
     expect(screen.getByRole('button', { name: /sport, selected/i })).toBeTruthy();
   });
 
-  describe('Subtype group (T3)', () => {
+  describe('Subtype groups (T5 — one per selected category)', () => {
     it('is absent when 0 categories are selected', async () => {
       render(
         <FilterSheet
@@ -204,10 +204,10 @@ describe('FilterSheet', () => {
         />
       );
       await flush();
-      expect(screen.queryByText('Subtype')).toBeNull();
+      expect(screen.queryByText('Sport subtypes')).toBeNull();
     });
 
-    it('renders the selected category\'s subtype chips when exactly 1 category is selected', async () => {
+    it("renders the selected category's own subtype group when exactly 1 category is selected", async () => {
       const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
       render(
         <FilterSheet
@@ -220,14 +220,16 @@ describe('FilterSheet', () => {
         />
       );
       await flush();
-      expect(screen.getByText('Subtype')).toBeTruthy();
+      expect(screen.getByText('Sport subtypes')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Climbing Gym' })).toBeTruthy();
       // A different category's subtype never leaks in.
       expect(screen.queryByText('Fine Dining')).toBeNull();
     });
 
-    it('is absent again when a second category is added (many selected)', async () => {
-      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+    it('renders one group per category, in fixed CATEGORY_OPTIONS order, when several are selected', async () => {
+      // Selected out of taxonomy order (bars before sport) — groups must
+      // still render in the fixed Restaurants/Cafés/Bars/…/Sport order.
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport', 'bars'] };
       render(
         <FilterSheet
           visible
@@ -239,15 +241,21 @@ describe('FilterSheet', () => {
         />
       );
       await flush();
-      expect(screen.getByText('Subtype')).toBeTruthy();
-
-      fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
-
-      expect(screen.queryByText('Subtype')).toBeNull();
+      const barsHeading = screen.getByText('Bars subtypes');
+      const sportHeading = screen.getByText('Sport subtypes');
+      expect(barsHeading).toBeTruthy();
+      expect(sportHeading).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Wine Bar' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Climbing Gym' })).toBeTruthy();
+      // Bars comes before Sport in CATEGORY_OPTIONS, so its heading must be
+      // laid out first regardless of selection order.
+      const allHeadings = screen.getAllByText(/subtypes$/);
+      const headingLabels = allHeadings.map((node) => node.props.children);
+      expect(headingLabels.indexOf('Bars subtypes')).toBeLessThan(headingLabels.indexOf('Sport subtypes'));
     });
 
-    it('multi-selects subtype chips (OR)', async () => {
-      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+    it('selecting a subtype in one group does not disturb the other group', async () => {
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport', 'bars'] };
       const onApply = jest.fn().mockResolvedValue({ status: 'success', activities: [] });
       render(
         <FilterSheet
@@ -262,19 +270,19 @@ describe('FilterSheet', () => {
       await flush();
 
       fireEvent.press(screen.getByRole('button', { name: 'Climbing Gym' }));
-      fireEvent.press(screen.getByRole('button', { name: 'Golf Course' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Wine Bar' }));
 
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
       });
 
       expect(onApply).toHaveBeenCalledWith(
-        expect.objectContaining({ subtypes: ['climbing_gym', 'golf_course'] })
+        expect.objectContaining({ subtypes: ['climbing_gym', 'wine_bar'] })
       );
     });
 
-    it('clears orphaned subtype selections when the category selection changes', async () => {
-      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport'] };
+    it('deselecting one category removes only that category\'s subtype group and selections', async () => {
+      const initial: Filters = { ...EMPTY_FILTERS, categories: ['sport', 'bars'] };
       const onApply = jest.fn().mockResolvedValue({ status: 'success', activities: [] });
       render(
         <FilterSheet
@@ -289,20 +297,41 @@ describe('FilterSheet', () => {
       await flush();
 
       fireEvent.press(screen.getByRole('button', { name: 'Climbing Gym' }));
-      // Deselect Sport entirely -> 0 categories, group disappears.
-      fireEvent.press(screen.getByRole('button', { name: /sport, selected/i }));
-      expect(screen.queryByText('Subtype')).toBeNull();
+      fireEvent.press(screen.getByRole('button', { name: 'Wine Bar' }));
 
-      // Re-select a single (different) category — subtype selection must
-      // come back empty, never the stale Sport subtype.
-      fireEvent.press(screen.getByRole('button', { name: 'Restaurants' }));
-      expect(screen.getByText('Subtype')).toBeTruthy();
-      expect(screen.queryByRole('button', { name: /climbing gym, selected/i })).toBeNull();
+      // Deselect Sport only — its group and selection must go; Bars stays.
+      fireEvent.press(screen.getByRole('button', { name: /sport, selected/i }));
+
+      expect(screen.queryByText('Sport subtypes')).toBeNull();
+      expect(screen.getByText('Bars subtypes')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /wine bar, selected/i })).toBeTruthy();
 
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: /^apply filters$/i }));
       });
-      expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ subtypes: [] }));
+      expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ subtypes: ['wine_bar'] }));
+    });
+
+    it('Clear all resets categories and every subtype group in one step', async () => {
+      const initial: Filters = { categories: ['sport', 'bars'], subtypes: ['climbing_gym', 'wine_bar'], minRating: null, maxDistanceKm: null };
+      render(
+        <FilterSheet
+          visible
+          initialFilters={initial}
+          scope="nearby"
+          hasLocationAnchor
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+      expect(screen.getByText('Sport subtypes')).toBeTruthy();
+      expect(screen.getByText('Bars subtypes')).toBeTruthy();
+
+      fireEvent.press(screen.getByRole('button', { name: 'Clear all' }));
+
+      expect(screen.queryByText('Sport subtypes')).toBeNull();
+      expect(screen.queryByText('Bars subtypes')).toBeNull();
     });
   });
 });
