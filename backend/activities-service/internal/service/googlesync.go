@@ -37,13 +37,17 @@ type googleSyncJob struct {
 }
 
 // cellLocation is a sync cell's resolved place name, applied to every venue
-// the sweep ingests there. Resolved once per cell (see
+// the sweep ingests there — Google and (see resolveTripadvisorCity)
+// Tripadvisor both use this same shape. Resolved once per cell (see
 // places.Client.ReverseGeocodeCity): per-venue derivation from each place's
 // own addressComponents fragmented one city into eight strings in a live
 // Belgrade sweep (Beograd 225, Belgrade 80, Београд 4, …), because
 // `locality` carries the local name and sometimes a sub-municipality. A
-// zero-value cellLocation means resolution failed or came back empty —
-// toIngest falls back to placesmap.CityCountry per venue in that case.
+// zero-value cellLocation means resolution failed, came back empty, or no
+// Places client is configured — toIngest then writes an empty city/country,
+// which Upsert's ON CONFLICT COALESCE(NULLIF(...), ...) preserves against
+// whatever is already stored rather than blanking it, so a genuinely new
+// row is the only case that lands with no city at all.
 type cellLocation struct {
 	City    string
 	Country string
@@ -254,24 +258,45 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		})
 
 		// Resolve each distinct anchor's city once, before running its jobs —
-		// not once per venue and not once per row. A geocode failure degrades
-		// to a zero-value cellLocation rather than dropping the sweep;
-		// toIngest falls back to per-venue extraction for that cell.
+		// not once per venue and not once per row.
+		//
+		// A geocode ERROR must drop that cell's jobs entirely rather than
+		// proceed with an empty cellLocation: for a cell being swept for the
+		// first time there is no already-stored row for Upsert's
+		// COALESCE(NULLIF(...), ...) to protect, so an empty city/country
+		// would actually be written — dropping new venues out of
+		// SuggestCities' Anywhere picker and out of TimezoneForCountry's
+		// lookup. Skipping the jobs here (never calling syncGoogleRow) is
+		// what keeps them unmarked, same as a failed search row, so a later
+		// query retries the cell instead of freezing it stale for
+		// googleSyncTTL.
+		//
+		// ZERO_RESULTS is different: err == nil, city/country simply empty —
+		// a genuinely unnamed location (mid-ocean, say). Its jobs still run
+		// and still get marked normally, or an unnamed cell would re-search
+		// forever (the unbounded-spend failure mode an earlier round fixed).
 		cellLocations := make(map[string]cellLocation)
+		erroredCells := make(map[string]bool)
 		for _, job := range jobs {
 			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
-			if _, ok := cellLocations[key]; ok {
+			if _, ok := cellLocations[key]; ok || erroredCells[key] {
 				continue
 			}
 			city, country, err := a.places.ReverseGeocodeCity(syncCtx, job.anchor.Lat, job.anchor.Lng)
 			if err != nil {
-				slog.Warn("google reverse geocode failed; falling back to per-venue city", "cell", key, "error", err)
+				slog.Warn("google reverse geocode failed; leaving cell unmarked to retry", "cell", key, "error", err)
+				erroredCells[key] = true
+				continue
 			}
 			cellLocations[key] = cellLocation{City: city, Country: country}
 		}
 
 		for _, job := range jobs {
-			a.syncGoogleRow(syncCtx, job, cellLocations[syncCellKey(job.anchor.Lat, job.anchor.Lng)])
+			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
+			if erroredCells[key] {
+				continue
+			}
+			a.syncGoogleRow(syncCtx, job, cellLocations[key])
 		}
 	}()
 }
@@ -292,7 +317,11 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 	var cell cellLocation
 	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
 	if err != nil {
-		slog.Warn("google reverse geocode failed; falling back to per-venue city", "error", err)
+		// Unlike syncGoogleIfNeeded, this manual seed tool proceeds anyway
+		// with an empty city/country rather than skipping the anchor — an
+		// operator running this by hand can see the warning and rerun it,
+		// so there's no unattended-14-day-freeze risk to guard against here.
+		slog.Warn("google reverse geocode failed; seeding with empty city/country", "error", err)
 	} else {
 		cell = cellLocation{City: city, Country: country}
 	}
@@ -400,38 +429,32 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 
 // toIngest maps one discovered place onto the ingest shape. Category always
 // comes from the discovery row. Subcategory is arbitrated (see subtypeFor).
-// City/Country prefer cell — resolved once per sync cell via
-// ReverseGeocodeCity, consistent across every venue the sweep ingests there —
-// and fall back per field to the place's own address components
-// (placesmap.CityCountry) when the cell resolution came back empty (a
-// geocode failure or ZERO_RESULTS). Both are storable under Places Terms
-// §14.3 (only hours/price/venue-type are not) and Country in particular is
-// load-bearing: BuildLiveDetails' opening-hours timezone lookup keys off it.
-// Falling back per-field here is belt-and-suspenders — Upsert's ON CONFLICT
-// also refuses to let an empty incoming city/country clobber a stored one —
-// but this fallback is what supplies a value at all when the cell-level
-// resolution is empty and the row is genuinely new.
+// City/Country come from cell — resolved once per sync cell via
+// ReverseGeocodeCity, consistent across every venue the sweep ingests there.
+// Deliberately no per-venue fallback to the place's own address components
+// (placesmap.CityCountry used to fill this gap): that field yields the
+// place's *local* name (e.g. "Beograd") rather than the canonical one cell
+// resolution produces, and per-venue derivation was the original source of
+// one city fragmenting into eight stored strings (see cellLocation's doc).
+// An empty cell resolution (geocode failure, ZERO_RESULTS, or no Places
+// client) is written through as empty — Upsert's ON CONFLICT
+// COALESCE(NULLIF(EXCLUDED.city, empty-string), activities.city) preserves what is
+// already stored rather than blanking it, and Country in particular stays
+// load-bearing regardless: BuildLiveDetails' opening-hours timezone lookup
+// keys off it.
 //
 // Details is deliberately empty — Places Terms §14.3 permits caching only
 // place_id and lat/lng, so hours, price and venue type are fetched live on
 // detail view instead (see placesmap.BuildLiveDetails).
 func toIngest(row placesmap.DiscoveryRow, p placesmap.Place, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
-	fallbackCity, fallbackCountry := placesmap.CityCountry(p.AddressComponents)
-	city, country := cell.City, cell.Country
-	if city == "" {
-		city = fallbackCity
-	}
-	if country == "" {
-		country = fallbackCountry
-	}
 	return activitiessvc.IngestActivity{
 		Title:       p.DisplayName.Text,
 		Category:    row.Category,
 		Subcategory: subtypeFor(row, p),
 		Lat:         p.Location.Latitude,
 		Lng:         p.Location.Longitude,
-		City:        city,
-		Country:     country,
+		City:        cell.City,
+		Country:     cell.Country,
 		Address:     p.FormattedAddress,
 		Rating:      p.Rating,
 		Status:      activitiessvc.StatusPublished,
