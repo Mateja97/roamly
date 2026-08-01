@@ -226,6 +226,10 @@ export type ActivityDetails =
   | {
       category: 'sport';
       difficulty?: number;
+      // True only when `difficulty` was filled by the weekly website-scrape
+      // job's own LLM estimate, never by an admin — absent for an
+      // admin-entered value.
+      difficulty_inferred?: boolean;
       effort_level?: string;
       duration?: string;
       gear?: string;

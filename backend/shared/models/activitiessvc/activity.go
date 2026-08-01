@@ -456,6 +456,14 @@ type SportDetails struct {
 	ActionURL *string `json:"action_url,omitempty"`
 	// Discipline (T8) is the badge subtype qualifier, e.g. "Climbing".
 	Discipline string `json:"discipline,omitempty"`
+	// DifficultyInferred marks Difficulty as a website-scrape LLM estimate
+	// rather than an admin-entered fact — most venue websites don't state a
+	// numeric difficulty explicitly, so the weekly sync job's own merge sets
+	// this alongside a value it fills, never trusted from Firecrawl's
+	// response itself (see internal/service/websitesync.go's
+	// markDifficultyInferred). Absent (omitted, not false) for an
+	// admin-set Difficulty.
+	DifficultyInferred bool `json:"difficulty_inferred,omitempty"`
 }
 
 // KidsDetails is CategoryKids' detail payload.

@@ -3,6 +3,7 @@ package activitiessvc
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -147,6 +148,41 @@ func TestEntertainmentDetails_RoundTripsNewFields(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip = %+v, want %+v", got, want)
+	}
+}
+
+func TestSportDetails_RoundTripsDifficultyInferred(t *testing.T) {
+	want := SportDetails{
+		Difficulty:         4,
+		DifficultyInferred: true,
+		EffortLevel:        "High intensity",
+		Duration:           "90 min",
+		Gear:               "Climbing shoes provided",
+		WhatToBring:        []string{"Water bottle", "Comfortable clothes"},
+		Discipline:         "Climbing",
+	}
+
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	var got SportDetails
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal() error: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("round trip = %+v, want %+v", got, want)
+	}
+}
+
+func TestSportDetails_DifficultyInferredOmittedWhenFalse(t *testing.T) {
+	admin := SportDetails{Difficulty: 3, EffortLevel: "Moderate"}
+	data, err := json.Marshal(admin)
+	if err != nil {
+		t.Fatalf("Marshal() error: %v", err)
+	}
+	if strings.Contains(string(data), "difficulty_inferred") {
+		t.Errorf("marshaled admin-set difficulty = %s, want no difficulty_inferred key when false", data)
 	}
 }
 
