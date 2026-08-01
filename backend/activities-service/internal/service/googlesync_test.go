@@ -349,6 +349,34 @@ func TestSubtypeFor(t *testing.T) {
 	}
 }
 
+// TestVenueWrongCategory covers item 3's arbitration rule directly, the
+// category-level sibling of TestSubtypeFor above.
+func TestVenueWrongCategory(t *testing.T) {
+	// The motivating bug: a Nature row's includedTypes overlap far enough
+	// that it also returns a children's playroom, whose own primaryType
+	// ("amusement_center") plainly belongs to Kids. The row must not win.
+	natureRow := placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}}
+	playroom := placesmap.Place{PrimaryType: "amusement_center", Types: []string{"amusement_center"}}
+	if !venueWrongCategory(natureRow, playroom) {
+		t.Error("venueWrongCategory = false, want true — amusement_center belongs to Kids, not Nature")
+	}
+
+	// primaryType agreeing with the row's own category is not a mismatch,
+	// regardless of which subtype it resolves to within that category.
+	botanicalGarden := placesmap.Place{PrimaryType: "botanical_garden", Types: []string{"botanical_garden"}}
+	if venueWrongCategory(natureRow, botanicalGarden) {
+		t.Error("venueWrongCategory = true, want false — botanical_garden belongs to Nature, same as the row")
+	}
+
+	// A primaryType CategoryForType can't map at all must not be treated as
+	// a mismatch — the row is still the best signal available, same
+	// fallback shape as subtypeFor trusting the row when Subtype yields "".
+	unmappable := placesmap.Place{PrimaryType: "point_of_interest", Types: []string{"point_of_interest"}}
+	if venueWrongCategory(natureRow, unmappable) {
+		t.Error("venueWrongCategory = true, want false — an unmappable primaryType must fall back to trusting the row")
+	}
+}
+
 // The two tests below call syncGoogleRow directly (sanctioned — see
 // googleDueRows/subtypeFor above) rather than going through Query. Query's
 // due-row selection always schedules up to maxGoogleRowsPerQuery (8) rows
@@ -429,6 +457,96 @@ func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a venue with no photo is still worth ingesting", len(repo.gotUpserts))
+	}
+}
+
+// The four tests below cover item 3's arbitration rule end to end through
+// syncGoogleRow (venueWrongCategory itself is unit-tested directly in
+// TestVenueWrongCategory above) — same "call syncGoogleRow directly" reason
+// as the photo tests above: isolating one row's ingestion decisions from
+// Query's 8-row budget.
+
+func TestActivities_SyncGoogleRow_SkipsVenueWithMismatchedPrimaryType(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		// The motivating bug: a Nature row's includedTypes happen to also
+		// catch a children's playroom, whose own primaryType says Kids.
+		{ID: "playroom", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/playroom",
+			PrimaryType: "amusement_center", Types: []string{"amusement_center"}},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+	}
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+
+	if len(repo.gotUpserts) != 0 {
+		t.Errorf("upserts = %v, want none — the venue's own primaryType belongs to Kids, not this Nature row", repo.gotUpserts)
+	}
+}
+
+func TestActivities_SyncGoogleRow_IngestsVenueMatchingRowCategory(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		{ID: "garden", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/garden",
+			PrimaryType: "botanical_garden", Types: []string{"botanical_garden"}},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+	}
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+
+	if len(repo.gotUpserts) != 1 {
+		t.Fatalf("upserts = %d, want 1 — the venue's primaryType agrees with the row's own category", len(repo.gotUpserts))
+	}
+	if repo.gotUpserts[0].Category != activitiessvc.CategoryNature {
+		t.Errorf("category = %s, want nature", repo.gotUpserts[0].Category)
+	}
+}
+
+func TestActivities_SyncGoogleRow_IngestsVenueWithUnmappablePrimaryType(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		{ID: "poi", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/poi",
+			PrimaryType: "point_of_interest", Types: []string{"point_of_interest"}},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+	}
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+
+	if len(repo.gotUpserts) != 1 {
+		t.Fatalf("upserts = %d, want 1 — an unmappable primaryType must fall back to trusting the row", len(repo.gotUpserts))
+	}
+	if repo.gotUpserts[0].Category != activitiessvc.CategoryNature {
+		t.Errorf("category = %s, want nature (the row's own category)", repo.gotUpserts[0].Category)
+	}
+}
+
+func TestActivities_SyncGoogleRow_AllSkippedStillMarksSynced(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{
+		{ID: "playroom", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/playroom",
+			PrimaryType: "amusement_center", Types: []string{"amusement_center"}},
+	}}
+	svc := New(repo).WithPlaces(gp)
+	job := googleSyncJob{
+		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+	}
+	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+
+	if len(repo.gotUpserts) != 0 {
+		t.Fatalf("upserts = %v, want none", repo.gotUpserts)
+	}
+	wantKey := syncKey(ProviderGoogle, syncCellKey(job.anchor.Lat, job.anchor.Lng), string(activitiessvc.CategoryNature), "botanical_garden")
+	if !slices.Contains(repo.markSynced, wantKey) {
+		t.Errorf("markSynced = %v, want it to contain %q — a row whose every venue is skipped has nothing to ingest through no fault of its own, exactly like an all-below-floor row", repo.markSynced, wantKey)
 	}
 }
 

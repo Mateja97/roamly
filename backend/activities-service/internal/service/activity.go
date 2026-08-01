@@ -43,6 +43,11 @@ type repository interface {
 	// SyncedAt reports the last successful sync time for
 	// (provider, cellKey, category, subtype), and whether one has happened.
 	SyncedAt(ctx context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error)
+	// FreshSyncRows returns every (category, subtype) pair for (provider,
+	// cellKey) synced more recently than since, keyed category+"|"+subtype —
+	// see googleDueRows' use of it for why this replaced ~53 SyncedAt calls
+	// per cell with one query.
+	FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time) (map[string]bool, error)
 	// MarkSynced records a fresh sync for (provider, cellKey, category, subtype).
 	MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error
 }

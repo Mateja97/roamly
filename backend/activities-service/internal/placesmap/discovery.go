@@ -154,6 +154,40 @@ var typeToSubtype = func() map[string]string {
 	return m
 }()
 
+// CategoryForType resolves a Google primaryType to the one category whose
+// discovery row(s) use it — the category-level analogue of Subtype, and the
+// arbitration signal service.syncGoogleRow uses to decide whether a
+// discovered venue belongs to the row that found it (see that function's
+// doc for the tradeoff this exists to accept). Returns false when
+// primaryType maps to nothing, matching Subtype's "never a guess" contract.
+//
+// Built from typeToCategory, itself DiscoveryRows read backward exactly like
+// typeToSubtype — one source of truth, so discovery and category
+// arbitration can't drift apart the same way discovery and subtype
+// classification can't.
+func CategoryForType(primaryType string) (activitiessvc.Category, bool) {
+	cat, ok := typeToCategory[primaryType]
+	return cat, ok
+}
+
+// typeToCategory is DiscoveryRows read backward at the category level: every
+// Types entry maps to its row's Category, including category-level rows
+// (Subtype "") — unlike typeToSubtype, there's no fallback-loop ambiguity to
+// protect against here, since CategoryForType has no types[] fallback to
+// short-circuit. TestDiscoveryRows_TypesAreUnambiguous already guarantees
+// every Types string in the table belongs to exactly one row, so this
+// mapping is total and unambiguous by construction — no separate uniqueness
+// check needed here.
+var typeToCategory = func() map[string]activitiessvc.Category {
+	m := make(map[string]activitiessvc.Category)
+	for _, r := range DiscoveryRows {
+		for _, ty := range r.Types {
+			m[ty] = r.Category
+		}
+	}
+	return m
+}()
+
 // classifyOnlyTypes covers subtypes we classify but never discover from
 // Google — Restaurants and Bars are Tripadvisor-sourced, but a Tripadvisor
 // venue can still carry Google types when the two providers overlap.

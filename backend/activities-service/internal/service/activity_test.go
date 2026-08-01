@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -103,6 +104,24 @@ func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (a
 func (f *fakeRepo) SyncedAt(_ context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
 	t, ok := f.syncedAtOut[syncKey(provider, cellKey, category, subtype)]
 	return t, ok, nil
+}
+
+// FreshSyncRows derives its answer from the same syncedAtOut fixture SyncedAt
+// already reads, rather than a second fixture field, so a test only has to
+// set up freshness once regardless of which of the two paths (or both) it
+// exercises. category/subtype are recovered from the key syncKey built, which
+// only fully round-trips for non-Tripadvisor keys (see syncKey) — fine here,
+// since Google is FreshSyncRows' only caller.
+func (f *fakeRepo) FreshSyncRows(_ context.Context, provider, cellKey string, since time.Time) (map[string]bool, error) {
+	fresh := make(map[string]bool)
+	prefix := provider + "|" + cellKey + "|"
+	for key, syncedAt := range f.syncedAtOut {
+		if !strings.HasPrefix(key, prefix) || !syncedAt.After(since) {
+			continue
+		}
+		fresh[strings.TrimPrefix(key, prefix)] = true
+	}
+	return fresh, nil
 }
 
 func (f *fakeRepo) MarkSynced(_ context.Context, provider, cellKey, category, subtype string) error {

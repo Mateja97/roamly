@@ -1394,6 +1394,59 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 	}
 }
 
+// TestFreshSyncRows proves the one-query-per-cell replacement for
+// googleDueRows' former ~53-SyncedAt-calls-per-cell shape returns exactly
+// the same answer SyncedAt would, keyed category+"|"+subtype.
+func TestFreshSyncRows(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	since := time.Now().Add(-14 * 24 * time.Hour)
+
+	fresh, err := repo.FreshSyncRows(ctx, "google", "44.8,20.5", since)
+	if err != nil {
+		t.Fatalf("FreshSyncRows() error: %v", err)
+	}
+	if len(fresh) != 0 {
+		t.Fatalf("fresh = %v, want empty for a never-synced cell", fresh)
+	}
+
+	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", "beach"); err != nil {
+		t.Fatalf("MarkSynced() error: %v", err)
+	}
+	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", ""); err != nil {
+		t.Fatalf("MarkSynced() error: %v", err)
+	}
+	// A different cell and a different provider must not leak into this
+	// cell's result.
+	if err := repo.MarkSynced(ctx, "google", "10.0,10.0", "nature", "park"); err != nil {
+		t.Fatalf("MarkSynced() error: %v", err)
+	}
+	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
+		t.Fatalf("MarkSynced() error: %v", err)
+	}
+
+	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", since)
+	if err != nil {
+		t.Fatalf("FreshSyncRows() error: %v", err)
+	}
+	want := map[string]bool{"nature|beach": true, "nature|": true}
+	if len(fresh) != len(want) || !fresh["nature|beach"] || !fresh["nature|"] {
+		t.Errorf("fresh = %v, want %v", fresh, want)
+	}
+
+	// A since cutoff after the mark must exclude it — the same TTL-expiry
+	// behavior SyncedAt's caller derives from time.Since(syncedAt) today.
+	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("FreshSyncRows() error: %v", err)
+	}
+	if len(fresh) != 0 {
+		t.Errorf("fresh = %v, want empty once since is after the mark (TTL expired)", fresh)
+	}
+}
+
 // TestDeleteLegacyRestaurantsBars_Predicate proves 0016's cutover DELETE
 // targets exactly the rows it should. The migration itself already ran
 // (once, against an empty DB) by the time startTestPostgres returns —

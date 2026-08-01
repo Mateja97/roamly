@@ -22,7 +22,9 @@ func TestSearchText_Decoding(t *testing.T) {
 		if r.Header.Get("X-Goog-FieldMask") != "places.photos" {
 			t.Errorf("fieldMask = %q", r.Header.Get("X-Goog-FieldMask"))
 		}
-		io.WriteString(w, `{"places":[{"id":"p1","displayName":{"text":"Koffein"},"rating":4.5}],"nextPageToken":"tok2"}`)
+		if _, err := io.WriteString(w, `{"places":[{"id":"p1","displayName":{"text":"Koffein"},"rating":4.5}],"nextPageToken":"tok2"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -47,7 +49,9 @@ func TestPhotoMediaURL(t *testing.T) {
 		if r.URL.Query().Get("key") != "k" || r.URL.Query().Get("skipHttpRedirect") != "true" {
 			t.Errorf("query = %q", r.URL.RawQuery)
 		}
-		io.WriteString(w, `{"photoUri":"http://img/final.jpg"}`)
+		if _, err := io.WriteString(w, `{"photoUri":"http://img/final.jpg"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -63,7 +67,9 @@ func TestPhotoMediaURL(t *testing.T) {
 
 func TestPhotoMediaURL_MissingURI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{}`)
+		if _, err := io.WriteString(w, `{}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -79,10 +85,14 @@ func TestSearchText_RetriesOn429ThenSucceeds(t *testing.T) {
 		calls++
 		if calls == 1 {
 			w.WriteHeader(http.StatusTooManyRequests)
-			io.WriteString(w, `{"error":"rate limited"}`)
+			if _, err := io.WriteString(w, `{"error":"rate limited"}`); err != nil {
+				t.Errorf("writing response: %v", err)
+			}
 			return
 		}
-		io.WriteString(w, `{"places":[{"id":"p1"}]}`)
+		if _, err := io.WriteString(w, `{"places":[{"id":"p1"}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -141,10 +151,14 @@ func TestFirstPhoto(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mux := http.NewServeMux()
 			mux.HandleFunc("/v1/places:searchText", func(w http.ResponseWriter, r *http.Request) {
-				io.WriteString(w, tt.searchBody)
+				if _, err := io.WriteString(w, tt.searchBody); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			})
 			mux.HandleFunc("/v1/places/X/photos/Y/media", func(w http.ResponseWriter, r *http.Request) {
-				io.WriteString(w, `{"photoUri":"http://img/final.jpg"}`)
+				if _, err := io.WriteString(w, `{"photoUri":"http://img/final.jpg"}`); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			})
 			srv := httptest.NewServer(mux)
 			defer srv.Close()
@@ -173,17 +187,23 @@ func TestResolvePhotos(t *testing.T) {
 		if r.Header.Get("X-Goog-FieldMask") != "photos" {
 			t.Errorf("fieldMask = %q", r.Header.Get("X-Goog-FieldMask"))
 		}
-		io.WriteString(w, `{"photos":[
+		if _, err := io.WriteString(w, `{"photos":[
 			{"name":"places/place-1/photos/A","authorAttributions":[{"displayName":"Jane","uri":"http://author/jane"}]},
 			{"name":"places/place-1/photos/B"},
 			{"name":"places/place-1/photos/C"}
-		]}`)
+		]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("/v1/places/place-1/photos/A/media", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"photoUri":"http://img/a.jpg"}`)
+		if _, err := io.WriteString(w, `{"photoUri":"http://img/a.jpg"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("/v1/places/place-1/photos/B/media", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"photoUri":"http://img/b.jpg"}`)
+		if _, err := io.WriteString(w, `{"photoUri":"http://img/b.jpg"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("/v1/places/place-1/photos/C/media", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest) // one bad photo, shouldn't sink the rest
@@ -210,14 +230,20 @@ func TestResolvePhotos(t *testing.T) {
 func TestResolvePhotos_RespectsLimit(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/places/place-1", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"photos":[{"name":"places/place-1/photos/A"},{"name":"places/place-1/photos/B"}]}`)
+		if _, err := io.WriteString(w, `{"photos":[{"name":"places/place-1/photos/A"},{"name":"places/place-1/photos/B"}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("/v1/places/place-1/photos/A/media", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"photoUri":"http://img/a.jpg"}`)
+		if _, err := io.WriteString(w, `{"photoUri":"http://img/a.jpg"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	})
 	mux.HandleFunc("/v1/places/place-1/photos/B/media", func(w http.ResponseWriter, r *http.Request) {
 		t.Error("media call for photo B should not happen, limit is 1")
-		io.WriteString(w, `{"photoUri":"http://img/b.jpg"}`)
+		if _, err := io.WriteString(w, `{"photoUri":"http://img/b.jpg"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -300,7 +326,9 @@ func TestPlaceDetails(t *testing.T) {
 					t.Errorf("fieldMask = %q, want %q", got, wantDetailFieldMask)
 				}
 				w.WriteHeader(tt.status)
-				io.WriteString(w, tt.body)
+				if _, err := io.WriteString(w, tt.body); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			}))
 			defer srv.Close()
 
@@ -327,7 +355,7 @@ func TestPlaceDetails(t *testing.T) {
 
 func TestPlaceDetails_FullResponseDecodesEverything(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"rating": 4.6,
 			"userRatingCount": 214,
 			"reviews": [{
@@ -345,7 +373,9 @@ func TestPlaceDetails_FullResponseDecodesEverything(t *testing.T) {
 			"allowsDogs": true,
 			"parkingOptions": {"freeParkingLot": true},
 			"accessibilityOptions": {"wheelchairAccessibleEntrance": true}
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -382,7 +412,9 @@ func TestPlaceDetails_Timeout(t *testing.T) {
 		select {
 		case <-r.Context().Done():
 		case <-time.After(200 * time.Millisecond):
-			io.WriteString(w, `{"rating": 4.5}`)
+			if _, err := io.WriteString(w, `{"rating": 4.5}`); err != nil {
+				t.Errorf("writing response: %v", err)
+			}
 		}
 	}))
 	defer srv.Close()
@@ -401,7 +433,9 @@ func TestSearchText_NoRetryOnOther4xx(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusBadRequest)
-		io.WriteString(w, `{"error":"bad request"}`)
+		if _, err := io.WriteString(w, `{"error":"bad request"}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 

@@ -533,6 +533,38 @@ func (r *Activities) SyncedAt(ctx context.Context, provider, cellKey, category, 
 	return syncedAt, true, nil
 }
 
+// FreshSyncRows returns every (category, subtype) pair for (provider,
+// cellKey) synced more recently than since, keyed category+"|"+subtype —
+// one query for a whole cell instead of SyncedAt's one-row-at-a-time shape.
+// googleDueRows needs an answer for every one of DiscoveryRows' ~53 rows per
+// anchor; calling SyncedAt that many times was ~53 round-trips per query even
+// in the fully-fresh steady state. The caller checks membership in the
+// returned map instead.
+func (r *Activities) FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time) (map[string]bool, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT category, subtype FROM sync_regions
+		 WHERE provider = $1 AND cell_key = $2 AND synced_at > $3`,
+		provider, cellKey, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying fresh sync rows %s/%s: %w", provider, cellKey, err)
+	}
+	defer rows.Close()
+
+	fresh := make(map[string]bool)
+	for rows.Next() {
+		var category, subtype string
+		if err := rows.Scan(&category, &subtype); err != nil {
+			return nil, fmt.Errorf("scanning fresh sync row %s/%s: %w", provider, cellKey, err)
+		}
+		fresh[category+"|"+subtype] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating fresh sync rows %s/%s: %w", provider, cellKey, err)
+	}
+	return fresh, nil
+}
+
 // MarkSynced records a fresh sync for (provider, cellKey, category,
 // subtype), upserting the timestamp in place on a re-sync.
 func (r *Activities) MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error {

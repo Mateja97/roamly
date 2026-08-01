@@ -230,13 +230,27 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), googleSyncTimeout)
 		defer cancel()
 
-		jobs := googleDueRows(req, func(cell, category, subtype string) bool {
-			syncedAt, ok, err := a.repo.SyncedAt(syncCtx, ProviderGoogle, cell, category, subtype)
+		// One FreshSyncRows query per cell rather than one SyncedAt call per
+		// (cell, category, subtype): googleDueRows' fresh callback runs for
+		// every one of DiscoveryRows' ~53 rows per anchor, so the per-row
+		// query this replaced cost ~53 round-trips per cell even in the
+		// fully-fresh steady state, with no early exit once the 8-job budget
+		// filled. fresh still stays a pure in-memory lookup — see
+		// googleDueRows' own doc for why it takes a callback instead of a
+		// repo handle.
+		freshByCell := make(map[string]map[string]bool, len(cells))
+		since := time.Now().Add(-googleSyncTTL)
+		for _, cell := range cells {
+			set, err := a.repo.FreshSyncRows(syncCtx, ProviderGoogle, cell, since)
 			if err != nil {
-				slog.Warn("google synced-at lookup failed", "cell", cell, "category", category, "subtype", subtype, "error", err)
-				return false
+				slog.Warn("google fresh-sync-rows lookup failed; treating cell as fully stale", "cell", cell, "error", err)
+				continue
 			}
-			return ok && time.Since(syncedAt) < googleSyncTTL
+			freshByCell[cell] = set
+		}
+
+		jobs := googleDueRows(req, func(cell, category, subtype string) bool {
+			return freshByCell[cell][category+"|"+subtype]
 		})
 
 		// Resolve each distinct anchor's city once, before running its jobs —
@@ -288,22 +302,27 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 }
 
 // syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
-// then an Upsert per surviving place.
+// then an Upsert per surviving place — except a place arbitrated away by
+// venueWrongCategory (below), which is neither ingested nor counted as
+// eligible for this row.
 //
 // MarkSynced is called only when the search call itself succeeded AND every
-// place that should have been ingested (survived placesmap.PassesFloor) was
-// actually ingested — or the row genuinely had nothing eligible to ingest,
-// which is not a failure. A row whose search succeeded but whose every
-// eligible Upsert then failed is left unmarked — marking it would freeze the
-// cell at zero ingested rows for the whole TTL, the exact Belgrade failure
-// mode (2 restaurants for 14 days) the Tripadvisor sweep's own MarkSynced
-// gate exists to avoid. That must be distinguished from a row whose search
-// succeeded but returned only sub-floor venues (a common, unremarkable
-// outcome for a niche subtype in a smaller city): that row has nothing to
-// ingest through no fault of its own and must still be marked fresh, or it
-// re-searches on every future query forever — trading the stale-data bug for
-// an unbounded quota-spend one. A single Upsert failure is logged and
-// skipped without abandoning the rest of the row.
+// place that should have been ingested (survived placesmap.PassesFloor AND
+// venueWrongCategory) was actually ingested — or the row genuinely had
+// nothing eligible to ingest, which is not a failure. A row whose search
+// succeeded but whose every eligible Upsert then failed is left unmarked —
+// marking it would freeze the cell at zero ingested rows for the whole TTL,
+// the exact Belgrade failure mode (2 restaurants for 14 days) the
+// Tripadvisor sweep's own MarkSynced gate exists to avoid. That must be
+// distinguished from a row whose search succeeded but returned only
+// sub-floor or wrong-category venues (both a common, unremarkable outcome —
+// a niche subtype in a smaller city rarely clears the floor, and a
+// type-overlapping row often finds venues its own category doesn't own):
+// that row has nothing to ingest through no fault of its own and must still
+// be marked fresh, or it re-searches on every future query forever —
+// trading the stale-data bug for an unbounded quota-spend one. A single
+// Upsert failure is logged and skipped without abandoning the rest of the
+// row.
 func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation) {
 	var found []placesmap.Place
 	var err error
@@ -326,9 +345,19 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 		return
 	}
 
-	passed, kept := 0, 0
+	passed, kept, skipped := 0, 0, 0
 	for _, p := range found {
 		if !placesmap.PassesFloor(p) {
+			continue
+		}
+		if venueWrongCategory(job.row, p) {
+			// Arbitrated away, not a floor rejection and not an upsert
+			// failure — must not touch passed/kept, or a row whose every
+			// venue is skipped would look like "found eligible places but
+			// every upsert failed" below and get left unmarked forever
+			// instead of correctly marked fresh (see venueWrongCategory's
+			// doc and this function's own doc above).
+			skipped++
 			continue
 		}
 		passed++
@@ -361,7 +390,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 	}
 	slog.Info("google discovery row synced",
 		"cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype,
-		"found", len(found), "kept", kept)
+		"found", len(found), "kept", kept, "skipped_wrong_category", skipped)
 }
 
 // toIngest maps one discovered place onto the ingest shape. Category always
@@ -430,4 +459,42 @@ func subtypeFor(row placesmap.DiscoveryRow, p placesmap.Place) string {
 		return sub
 	}
 	return row.Subtype
+}
+
+// venueWrongCategory reports whether p was found by a row that is not its
+// own category, so syncGoogleRow should skip ingesting it under that row —
+// the venue will be, or already has been, upserted by its true category's
+// own row instead.
+//
+// The problem this fixes: the upsert key is (source_url, category), so a
+// venue whose types happen to satisfy two different categories' includedTypes
+// (a children's playroom typed "amusement_center" also matching Nature's
+// "park"-adjacent search, say) is upserted once per matching row — TWO rows,
+// TWO stored categories for one venue. The query layer only collapses that
+// down to one when no category filter is active; under a category chip the
+// misclassified copy still shows (the motivating case: "Igraonica New
+// Curance", a children's playroom, appearing under nature/botanical_garden).
+//
+// placesmap.CategoryForType is the same inverted DiscoveryRows index
+// subtypeFor's placesmap.Subtype call uses, just read at the category level
+// instead of the subtype level: it says what category the place's own
+// primaryType actually belongs to. When that disagrees with row.Category,
+// row is the wrong source for this venue and skips it. When primaryType maps
+// to nothing, there's no better signal than the row that found it, so the
+// existing behavior (trust the row) is kept — same fallback shape as
+// subtypeFor's "row's own subtype when primaryType maps to nothing".
+//
+// The tradeoff, stated plainly: this makes a venue single-category whenever
+// Google states a primary type, even when the venue genuinely belongs to
+// more than one — Tašmajdan really is both a park and a cluster of sports
+// courts, and after this change it surfaces only under its primaryType's
+// category. That's an accepted cost: correct category chips (no playroom
+// under Nature) matter more than preserving genuine multi-category
+// membership, and nothing in Places' response distinguishes "this venue
+// truly belongs to two categories" from "this venue was misclassified by an
+// overlapping type list" — there is no signal here to tell the two apart, so
+// the simpler, single-category rule is the one that's actually implementable.
+func venueWrongCategory(row placesmap.DiscoveryRow, p placesmap.Place) bool {
+	trueCategory, ok := placesmap.CategoryForType(p.PrimaryType)
+	return ok && trueCategory != row.Category
 }

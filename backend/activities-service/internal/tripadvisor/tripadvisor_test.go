@@ -26,7 +26,7 @@ func TestNearbySearch_Decoding(t *testing.T) {
 		if r.URL.Query().Get("locale") != "en-US" {
 			t.Errorf("locale = %q", r.URL.Query().Get("locale"))
 		}
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"data" : [ {
 				"location" : {
 					"id" : 26453069,
@@ -40,7 +40,9 @@ func TestNearbySearch_Decoding(t *testing.T) {
 				"bearing" : 25.311538986936455,
 				"distance_kilometers" : 0.005541395423669973
 			} ]
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -68,17 +70,27 @@ func TestNearbySearch_PagesUntilShortPage(t *testing.T) {
 			t.Errorf("size = %q, want 20", r.URL.Query().Get("size"))
 		}
 		if page == "1" {
-			io.WriteString(w, `{"data":[`)
+			if _, err := io.WriteString(w, `{"data":[`); err != nil {
+				t.Errorf("writing response: %v", err)
+			}
 			for i := range 20 {
 				if i > 0 {
-					io.WriteString(w, ",")
+					if _, err := io.WriteString(w, ","); err != nil {
+						t.Errorf("writing response: %v", err)
+					}
 				}
-				fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"Venue %d","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-%d.html"}}}}`, i+1, i+1, i+1)
+				if _, err := fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"Venue %d","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-%d.html"}}}}`, i+1, i+1, i+1); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			}
-			io.WriteString(w, `]}`)
+			if _, err := io.WriteString(w, `]}`); err != nil {
+				t.Errorf("writing response: %v", err)
+			}
 			return
 		}
-		io.WriteString(w, `{"data":[{"location":{"id":20,"names":[{"language":"en","value":"Venue 20","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-20.html"}}}},{"location":{"id":21,"names":[{"language":"en","value":"Last Venue","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Hotel_Review-21.html"}}}}]}`)
+		if _, err := io.WriteString(w, `{"data":[{"location":{"id":20,"names":[{"language":"en","value":"Venue 20","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Restaurant_Review-20.html"}}}},{"location":{"id":21,"names":[{"language":"en","value":"Last Venue","primary":true}],"urls":{"tripadvisor":{"main":"https://ta/Hotel_Review-21.html"}}}}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -105,14 +117,22 @@ func TestNearbySearch_PageCapStopsPaging(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		pages++
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		io.WriteString(w, `{"data":[`)
+		if _, err := io.WriteString(w, `{"data":[`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 		for i := range 20 {
 			if i > 0 {
-				io.WriteString(w, ",")
+				if _, err := io.WriteString(w, ","); err != nil {
+					t.Errorf("writing response: %v", err)
+				}
 			}
-			fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"V","primary":true}]}}`, page*100+i)
+			if _, err := fmt.Fprintf(w, `{"location":{"id":%d,"names":[{"language":"en","value":"V","primary":true}]}}`, page*100+i); err != nil {
+				t.Errorf("writing response: %v", err)
+			}
 		}
-		io.WriteString(w, `]}`)
+		if _, err := io.WriteString(w, `]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -134,7 +154,9 @@ func TestNearbySearch_MissingOverallRatingDoesNotError(t *testing.T) {
 	// yet — NearbySearch must tolerate that (LocationSummary doesn't carry
 	// rating anyway, but the parser must not choke on the missing key).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"data":[{"location":{"id":1,"names":[{"language":"en","value":"No Ratings Yet","primary":true}]}}]}`)
+		if _, err := io.WriteString(w, `{"data":[{"location":{"id":1,"names":[{"language":"en","value":"No Ratings Yet","primary":true}]}}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -156,7 +178,7 @@ func TestLocationDetails_Decoding(t *testing.T) {
 		if r.URL.Query().Get("locale") != "en-US" {
 			t.Errorf("locale = %q", r.URL.Query().Get("locale"))
 		}
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"id" : 13834051,
 			"geo_id" : 187791,
 			"geo" : "Rome",
@@ -179,7 +201,9 @@ func TestLocationDetails_Decoding(t *testing.T) {
 			},
 			"official_email" : "info@romashuttle.com",
 			"recommended_visit_length" : 3
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -219,7 +243,7 @@ func TestLocationDetails_SubratingsDecoding(t *testing.T) {
 	// type_name is what locale=en-US actually returns; type is matched too
 	// since the spec never enumerates its exact casing/values.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"id" : 26453069,
 			"names" : [ { "language" : "en", "value" : "Yugo Verse", "primary" : true } ],
 			"traveler_ratings" : {
@@ -232,7 +256,9 @@ func TestLocationDetails_SubratingsDecoding(t *testing.T) {
 					{ "type" : "cleanliness", "type_name" : "Cleanliness", "rating" : 5.0, "count" : 260, "icon_url" : "https://tripadvisor.com/img/cleanliness.png" }
 				]
 			}
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -259,7 +285,7 @@ func TestLocationDetails_SubratingsDecoding(t *testing.T) {
 // the spec doesn't fix type's exact casing.
 func TestLocationDetails_SubratingsMatchByTypeCaseInsensitive(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"id" : 1,
 			"names" : [ { "language" : "en", "value" : "X", "primary" : true } ],
 			"traveler_ratings" : {
@@ -267,7 +293,9 @@ func TestLocationDetails_SubratingsMatchByTypeCaseInsensitive(t *testing.T) {
 					{ "type" : "FOOD", "rating" : 3.5 }
 				]
 			}
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -285,7 +313,9 @@ func TestLocationDetails_MissingPhoneAndSubratingsParseAsZero(t *testing.T) {
 	// phone_numbers and subratings are both optional per the Terra API — a
 	// location without either must decode cleanly, not error the sync.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"id":222,"names":[{"language":"en","value":"New Place","primary":true}],"traveler_ratings":{}}`)
+		if _, err := io.WriteString(w, `{"id":222,"names":[{"language":"en","value":"New Place","primary":true}],"traveler_ratings":{}}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -301,7 +331,7 @@ func TestLocationDetails_MissingPhoneAndSubratingsParseAsZero(t *testing.T) {
 
 func TestLocationDetails_RankingsAwardsPriceLevelCategoriesDecoding(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"id" : 1,
 			"names" : [ { "language" : "en", "value" : "Yugo Verse", "primary" : true } ],
 			"price_level" : "Fine Dining",
@@ -316,7 +346,9 @@ func TestLocationDetails_RankingsAwardsPriceLevelCategoriesDecoding(t *testing.T
 			"categories" : [
 				{ "id" : "fine_dining", "display_name" : "Fine Dining", "hierarchy" : "restaurants > fine_dining" }
 			]
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -349,7 +381,9 @@ func TestLocationDetails_RankingsAwardsPriceLevelCategoriesAbsent(t *testing.T) 
 	// without them must decode with all four absent, not zero-valued
 	// placeholders (the design forbids fabricated 0/"" elements).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"id":1,"names":[{"language":"en","value":"Bare Place","primary":true}]}`)
+		if _, err := io.WriteString(w, `{"id":1,"names":[{"language":"en","value":"Bare Place","primary":true}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -365,7 +399,7 @@ func TestLocationDetails_RankingsAwardsPriceLevelCategoriesAbsent(t *testing.T) 
 
 func TestLocationDetails_AttributesDecoding(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{
+		if _, err := io.WriteString(w, `{
 			"id" : 1,
 			"names" : [ { "language" : "en", "value" : "Yugo Verse", "primary" : true } ],
 			"attributes" : [
@@ -373,7 +407,9 @@ func TestLocationDetails_AttributesDecoding(t *testing.T) {
 				{ "id" : "outdoor", "name" : "Outdoor Seating", "type" : "feature", "type_id" : "2" },
 				{ "id" : "unnamed", "name" : "", "type" : "amenity", "type_id" : "3" }
 			]
-		}`)
+		}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -391,7 +427,9 @@ func TestLocationDetails_AttributesDecoding(t *testing.T) {
 
 func TestLocationDetails_AttributesAbsent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"id":1,"names":[{"language":"en","value":"Bare Place","primary":true}]}`)
+		if _, err := io.WriteString(w, `{"id":1,"names":[{"language":"en","value":"Bare Place","primary":true}]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -410,7 +448,9 @@ func TestLocationDetails_MissingRatingsAndAddressParseAsZero(t *testing.T) {
 	// have an empty addresses array — both must parse as zero values, not
 	// error the whole call.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `{"id":222,"names":[{"language":"en","value":"New Place","primary":true}],"addresses":[],"traveler_ratings":{}}`)
+		if _, err := io.WriteString(w, `{"id":222,"names":[{"language":"en","value":"New Place","primary":true}],"addresses":[],"traveler_ratings":{}}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -432,11 +472,13 @@ func TestLocationPhotos_Decoding(t *testing.T) {
 		if r.URL.Path != "/locations/13834051/photos" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
-		io.WriteString(w, `{"data":[
+		if _, err := io.WriteString(w, `{"data":[
 			{"id":458242600,"location_id":13834051,"photo":{"key":"a.jpg","original_size_url":"https://dynamic-media.tacdn.com/media/1.jpg","original_height":1200,"original_width":1600,"media_type":"photo"},"publish_ts":"2020-05-09T10:55:33.259Z","source":{"name":"Traveler"},"user":{"username":"*********","geo_id":33028,"geo":"San Marcos"}},
 			{"id":458242601,"location_id":13834051,"photo":{"key":"b.jpg","original_size_url":"","media_type":"photo"},"user":{"username":"noimage"}},
 			{"id":458242602,"location_id":13834051,"photo":{"key":"c.jpg","original_size_url":"https://dynamic-media.tacdn.com/media/2.jpg","media_type":"photo"},"user":{"username":"bob"}}
-		],"pagination":{"page":1,"size":2,"total_pages":3,"total_elements":5}}`)
+		],"pagination":{"page":1,"size":2,"total_pages":3,"total_elements":5}}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -464,7 +506,7 @@ func TestLocationReviews_Decoding(t *testing.T) {
 		if r.URL.Path != "/locations/13834051/reviews" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
-		io.WriteString(w, `{"data":[{
+		if _, err := io.WriteString(w, `{"data":[{
 			"id":1056258071,
 			"publish_ts":"2026-04-12T01:13:01.907Z",
 			"rating":5,
@@ -477,7 +519,9 @@ func TestLocationReviews_Decoding(t *testing.T) {
 			"title":[{"language":"en","value":"Outstanding service - prompt and professional","primary":true}],
 			"text":[{"language":"en","value":"Outstanding service - prompt and professional. Reasonable rates...","primary":true}],
 			"subratings":[]
-		}],"pagination":{"page":1,"size":2,"total_pages":2,"total_elements":3}}`)
+		}],"pagination":{"page":1,"size":2,"total_pages":2,"total_elements":3}}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
@@ -505,7 +549,9 @@ func TestDoJSON_RetriesOn503ThenSucceeds(t *testing.T) {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		io.WriteString(w, `{"data":[]}`)
+		if _, err := io.WriteString(w, `{"data":[]}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
