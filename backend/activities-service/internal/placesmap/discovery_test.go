@@ -97,6 +97,25 @@ func TestDiscoveryRows_TypesAreUnambiguous(t *testing.T) {
 	}
 }
 
+// TestCategoryForType_RestaurantsAndBarsTypesDoNotMap pins the fix for the
+// critical review finding on this table: typeToCategory (unlike
+// typeToSubtype) must stay scoped to GoogleCategories. If it indexed
+// Restaurants/Bars rows too, a Google-discovered venue whose primaryType is
+// one of these would get arbitrated OUT of its Google-discovered category by
+// venueWrongCategory (googlesync.go) — into a category Google never
+// discovers, with no row left to ever re-ingest it.
+func TestCategoryForType_RestaurantsAndBarsTypesDoNotMap(t *testing.T) {
+	for _, ty := range []string{
+		"bar", "pub", "cocktail_bar", "wine_bar", "brewery", "sports_bar", "beer_garden",
+		"fine_dining_restaurant", "fast_food_restaurant", "family_restaurant",
+		"ice_cream_shop", "candy_store", "pastry_shop", "meal_takeaway",
+	} {
+		if cat, ok := CategoryForType(ty); ok {
+			t.Errorf("CategoryForType(%q) = (%q, true), want ok=false — Restaurants/Bars types classify via Subtype only, never via CategoryForType", ty, cat)
+		}
+	}
+}
+
 // TestDiscoveryRows_ExactlyOneDiscoveryMethod: a row searches by type or by
 // phrase, never both and never neither.
 func TestDiscoveryRows_ExactlyOneDiscoveryMethod(t *testing.T) {

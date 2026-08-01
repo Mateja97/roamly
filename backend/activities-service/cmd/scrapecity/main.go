@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"sort"
 
 	"activities-service/internal/places"
@@ -112,11 +113,22 @@ func main() {
 	}
 	ctx := context.Background()
 
+	// Restaurants/Bars rows exist in DiscoveryRows for classification only
+	// (placesmap.Subtype) — Google never discovers them, same gate as
+	// googleDueRows/PrewarmGoogle, so this dry run neither fires live calls
+	// for them nor reports yields nobody will ever ingest.
+	googleRows := make([]placesmap.DiscoveryRow, 0, len(placesmap.DiscoveryRows))
+	for _, row := range placesmap.DiscoveryRows {
+		if slices.Contains(placesmap.GoogleCategories, row.Category) {
+			googleRows = append(googleRows, row)
+		}
+	}
+
 	counts := map[string]yield{}
 	seen := map[string]bool{}
 	var duplicates int
 
-	for _, row := range placesmap.DiscoveryRows {
+	for _, row := range googleRows {
 		found, err := discover(ctx, c, row, *lat, *lng, *radiusKM)
 		if err != nil {
 			slog.Warn("discovery row failed", "category", row.Category, "subtype", row.Subtype, "error", err)
@@ -136,7 +148,7 @@ func main() {
 		counts[string(row.Category)+"|"+row.Subtype] = y
 	}
 
-	report(rowYield(placesmap.DiscoveryRows, counts), *city, len(seen), duplicates)
+	report(rowYield(googleRows, counts), *city, len(seen), duplicates)
 }
 
 // discover runs one row: searchNearby when the row has Table A types,
