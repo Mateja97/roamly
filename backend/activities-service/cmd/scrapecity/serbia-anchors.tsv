@@ -1,0 +1,38 @@
+# Serbia pre-warm anchors: name<TAB>lat<TAB>lng
+# Coordinates resolved via the Geocoding API, all verified country=RS.
+# Each anchor sweeps a 10km circle (googleSyncRadiusKM). Coverage is
+# places-people-go, not territory: filling Serbia geographically would be
+# ~280 cells and mostly empty countryside.
+#
+# Usage (see README):
+#   while IFS=$'	' read -r c lat lng; do [ "${c#\#}" = "$c" ] || continue;
+#     go run ./cmd/scrapecity -city "$c" -lat "$lat" -lng "$lng" -count-only=false; done < serbia-anchors.tsv
+Belgrade	44.8125	20.4612
+Novi Sad	45.2396	19.8227
+Nis	43.3209	21.8954
+Kragujevac	44.0128	20.9114
+Subotica	46.1028	19.6496
+Zrenjanin	45.3834	20.3906
+Pancevo	44.8706	20.6480
+Cacak	43.8914	20.3506
+Novi Pazar	43.1407	20.5181
+Kraljevo	43.7238	20.6873
+Smederevo	44.6620	20.9302
+Leskovac	42.9963	21.9430
+Valjevo	44.2742	19.8837
+Krusevac	43.5787	21.3357
+Vranje	42.5521	21.8989
+Sabac	44.7553	19.6923
+Uzice	43.8556	19.8425
+Sombor	45.7733	19.1151
+Pozarevac	44.6210	21.1845
+Pirot	43.1571	22.5840
+Zlatibor	43.7304	19.6982
+Kopaonik	43.2746	20.7858
+Vrnjacka Banja	43.6253	20.8952
+Sokobanja	43.6446	21.8706
+Sremska Mitrovica	44.9798	19.6102
+Jagodina	43.9835	21.2582
+Vrsac	45.1188	21.2950
+Loznica	44.5338	19.2238
+Bor	44.0699	22.0985
