@@ -783,6 +783,7 @@ func TestVenueNameMatches(t *testing.T) {
 		{name: "unrelated venue names", tripadvisorName: "Ambar Beograd", candidateName: "Little Bay", want: false},
 		{name: "short folded name does not false-positive via containment", tripadvisorName: "A", candidateName: "A Very Different Venue Entirely", want: false},
 		{name: "empty candidate name never matches", tripadvisorName: "Ambar Beograd", candidateName: "", want: false},
+		{name: "generic 3-letter venue name does not false-positive via containment", tripadvisorName: "Bar", candidateName: "Sky Bar", want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

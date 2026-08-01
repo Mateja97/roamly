@@ -87,9 +87,11 @@ same-named venue elsewhere in the city can't be matched), and the single
 resulting place's Google `primaryType`/`types` is classified through the same
 `placesmap.Subtype` table the Google-sourced categories use — no separate
 Tripadvisor subtype vocabulary. A venue with no match, an ambiguous match (more
-than one candidate in the tight radius), or a Places API error keeps subtype
-`""` — never a guess — and the venue is still ingested; the lookup failing
-never fails the sync.
+than one candidate in the tight radius), a Places API error, or a match whose
+own returned name doesn't plausibly match the venue's (guards against Text
+Search's best-ranked-neighbour result standing in for a venue missing from
+Google) keeps subtype `""` — never a guess — and the venue is still ingested;
+the lookup failing never fails the sync.
 
 City and country are resolved once per synced map cell by reverse geocoding
 the search anchor, not once per venue — deriving it per-venue from each

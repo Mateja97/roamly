@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
@@ -1243,11 +1244,12 @@ func (a *Activities) resolveTripadvisorSubtype(ctx context.Context, category act
 // punctuation-insensitive, and accepts either name containing the other so
 // a business-type suffix one provider adds and the other doesn't (e.g.
 // Tripadvisor "Ambar" vs Google "Ambar Beograd") doesn't reject a real
-// match. Containment only counts once both folded names are at least 3
-// characters — otherwise a short name (e.g. a folded "A") would trivially
-// "contain-match" almost anything, a false positive containment exists to
-// prevent, not create. Anything less overlapping than that is treated as a
-// different venue, never a guess.
+// match. Containment only counts once the shorter folded name has at
+// least 5 runes (rune count, not byte length, so a short non-Latin name
+// isn't let through by its multi-byte encoding) — otherwise a short name
+// (e.g. a folded "Bar") would trivially "contain-match" "Sky Bar", a false
+// positive containment exists to prevent, not create. Anything shorter
+// than that is treated as a different venue, never a guess.
 func venueNameMatches(tripadvisorName, candidateName string) bool {
 	a, b := foldVenueName(tripadvisorName), foldVenueName(candidateName)
 	if a == "" || b == "" {
@@ -1256,7 +1258,11 @@ func venueNameMatches(tripadvisorName, candidateName string) bool {
 	if a == b {
 		return true
 	}
-	if len(a) < 3 || len(b) < 3 {
+	shorter := a
+	if utf8.RuneCountInString(b) < utf8.RuneCountInString(a) {
+		shorter = b
+	}
+	if utf8.RuneCountInString(shorter) < 5 {
 		return false
 	}
 	return strings.Contains(a, b) || strings.Contains(b, a)
