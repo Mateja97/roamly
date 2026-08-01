@@ -79,6 +79,13 @@ export function ActivityListScreen({
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersButtonRef = useRef<ElementRef<typeof Pressable>>(null);
   const countRef = useRef<View>(null);
+  // T4: 14 multi-select pills make rapid re-toggling (tap Sport, then Culture
+  // before Sport's response lands) the normal flow, not an edge case — a
+  // stale in-flight response landing after a newer one would silently
+  // overwrite it (last-*resolved* wins, not last-requested). Bumped at the
+  // start of every handleFiltersChange call; a response only applies if it's
+  // still the most recent request when it lands.
+  const filtersRequestSeq = useRef(0);
 
   const runQuery = useCallback(
     (filters: Filters): Promise<ActivitiesQueryResult> => queryActivities(buildActivitiesRequest(selection, filters)),
@@ -146,9 +153,13 @@ export function ActivityListScreen({
   // immediately and re-queries; a failure here shows the generic Fetch
   // error state (no sheet involved to scope it to).
   async function handleFiltersChange(next: Filters) {
+    const seq = ++filtersRequestSeq.current;
     setAppliedFilters(next);
     setQueryState({ status: 'loading' });
     const result = await runQuery(next);
+    // A newer call already bumped the sequence — this response is stale,
+    // drop it so it can't paint over a request the user made after this one.
+    if (seq !== filtersRequestSeq.current) return;
     applyResult(result);
     // ponytail: focus always lands on the result count rather than tracking
     // "the next chip" precisely — chip order/refs shift on every removal,

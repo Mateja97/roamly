@@ -410,6 +410,33 @@ describe('ActivityListScreen', () => {
       expect(mockedQuery).toHaveBeenCalledTimes(1);
     });
 
+    it('a stale response from an earlier tap never overwrites a later one (retarget mid-flight, design-spec.md T4)', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      let resolveSport!: (r: ActivitiesQueryResult) => void;
+      let resolveCulture!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveSport = resolve)));
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveCulture = resolve)));
+
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      fireEvent.press(screen.getByRole('button', { name: 'Culture' }));
+
+      const cultureResult = { ...activity, id: '2', title: 'Sport+Culture result' };
+      const sportOnlyResult = { ...activity, id: '3', title: 'Sport-only result' };
+      // Culture's request (fired second) resolves first; Sport's (fired
+      // first, so it's stale) resolves after — the exact "last-resolved
+      // isn't last-requested" ordering the fix guards against.
+      await act(async () => resolveCulture(successResult([cultureResult])));
+      await waitFor(() => expect(screen.getByText('Sport+Culture result')).toBeTruthy());
+
+      await act(async () => resolveSport(successResult([sportOnlyResult])));
+
+      expect(screen.getByText('Sport+Culture result')).toBeTruthy();
+      expect(screen.queryByText('Sport-only result')).toBeNull();
+    });
+
     it('a sheet-applied category (e.g. Sport) reads as active in the pill row too — no more lossy projection', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
