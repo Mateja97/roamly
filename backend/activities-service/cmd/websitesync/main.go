@@ -1,9 +1,14 @@
-// Command websitesync scrapes each published Wellness/Entertainment venue's
-// own website (resolved live via Google Place Details, never stored — see
-// docs/superpowers/specs/2026-08-01-wellness-entertainment-detail-page-design.md)
-// for Treatments/Upcoming shows/Good-to-know content Google Places doesn't
-// provide, filling in whatever fields the row doesn't already have curated.
-// Run weekly. Never wired into activities-service's own startup path, same
+// Command websitesync scrapes each published Wellness/Entertainment/
+// Culture/Art/Sport venue's own website (resolved live via Google Place
+// Details, never stored — see
+// docs/superpowers/specs/2026-08-01-wellness-entertainment-detail-page-design.md
+// and
+// docs/superpowers/specs/2026-08-02-culture-art-sport-website-enrichment-design.md)
+// for content Google Places doesn't provide, filling in whatever fields
+// the row doesn't already have curated. Every category except
+// Entertainment is skipped permanently once its fields are all filled —
+// see internal/service/websitesync.go's isComplete. Run periodically —
+// never wired into activities-service's own startup path, same
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //
 // Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync [-dry-run]
@@ -28,11 +33,17 @@ import (
 // listPageSize is this tool's own List pagination page size.
 const listPageSize = 200
 
-// syncCategories are the two categories this job covers, per the design
-// spec's scope decision.
+// syncCategories are the categories this job covers, per the design specs'
+// scope decisions. Adding a category here also requires an entry in
+// internal/service/websitesync.go's extractionConfig and
+// scraperOwnedFields — this list alone doesn't teach SyncWebsiteContent
+// anything new, it only decides which rows get enumerated.
 var syncCategories = []activitiessvc.Category{
 	activitiessvc.CategoryWellness,
 	activitiessvc.CategoryEntertainment,
+	activitiessvc.CategoryCulture,
+	activitiessvc.CategoryArt,
+	activitiessvc.CategorySport,
 }
 
 func main() {
