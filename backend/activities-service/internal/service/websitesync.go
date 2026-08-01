@@ -93,6 +93,32 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return fmt.Errorf("getting activity %s: %w", id, err)
 	}
 
+	// Mirrors withLiveDetails' guard: an admin-created row (Source == "") or
+	// a Tripadvisor-sourced row has no Google place_id, so PlaceDetails below
+	// would be called with an empty/foreign ExternalID on every weekly run
+	// forever, guaranteed-invalid.
+	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" {
+		slog.Info("website sync skipped, no Google place id on file", "activity_id", id, "source", activity.Source)
+		return nil
+	}
+
+	var prompt string
+	var schema map[string]any
+	switch activity.Category {
+	case activitiessvc.CategoryWellness:
+		prompt, schema = wellnessPrompt, wellnessSchema
+	case activitiessvc.CategoryEntertainment:
+		prompt, schema = entertainmentPrompt, entertainmentSchema
+	default:
+		// ponytail: cmd/websitesync's own List call only ever queues
+		// Wellness/Entertainment ids, but SyncWebsiteContent is exported and
+		// takes a bare id — nothing stops any other caller from passing a
+		// row of any category directly, which would otherwise silently get
+		// the wellness prompt/schema applied to it.
+		slog.Info("website sync skipped, unsupported category", "activity_id", id, "category", activity.Category)
+		return nil
+	}
+
 	syncedAt, ok, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
 	if err != nil {
 		return fmt.Errorf("checking website sync freshness for %s: %w", id, err)
@@ -113,11 +139,6 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return nil
 	}
 
-	prompt, schema := wellnessPrompt, wellnessSchema
-	if activity.Category == activitiessvc.CategoryEntertainment {
-		prompt, schema = entertainmentPrompt, entertainmentSchema
-	}
-
 	extractCtx, cancel := context.WithTimeout(ctx, firecrawlTimeout)
 	extracted, err := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, prompt, schema)
 	cancel()
@@ -128,6 +149,16 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	merged, err := fillGaps(activity.Details, extracted)
 	if err != nil {
 		return fmt.Errorf("merging website content for %s: %w", id, err)
+	}
+
+	// Firecrawl's LLM extraction is not schema-guaranteed: an unexpected key
+	// or a type mismatch must never reach the DB unvalidated, or a
+	// subsequent admin edit to this row would fail ValidateDetails' strict
+	// decode. Skip and retry next week instead — same "nothing to do this
+	// cycle" contract as the freshness/no-website checks above.
+	if err := ValidateDetails(activity.Category, merged); err != nil {
+		slog.Warn("website sync produced invalid details, skipping write", "activity_id", id, "error", err)
+		return nil
 	}
 
 	if _, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Details: &merged}); err != nil {

@@ -1268,6 +1268,61 @@ func TestUpsertEmptyCityDoesNotClobberStoredCity(t *testing.T) {
 	}
 }
 
+// TestUpsertEmptyDetailsDoesNotClobberStoredDetails proves the ON CONFLICT
+// details fix: service.googlesync's toIngest deliberately sends an empty
+// Details ({}) on every re-ingest of a venue (Places Terms §14.3 forbids
+// storing Places content), and a re-upsert must not wipe out admin-curated
+// content or content the weekly website-sync job previously scraped and
+// stored — the write-path twin of the withLiveDetails read-path fix.
+func TestUpsertEmptyDetailsDoesNotClobberStoredDetails(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	const sourceURL = "https://places/details-clobber-fixture"
+	in := activitiessvc.IngestActivity{
+		Title: "Details Clobber Fixture", Category: activitiessvc.CategoryWellness,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "google_places", SourceURL: sourceURL, ExternalID: "details-clobber-1",
+		Details: []byte(`{"treatments":["Massage"]}`),
+	}
+	wantTreatments := func(t *testing.T, details json.RawMessage, label string) {
+		t.Helper()
+		var got map[string]any
+		if err := json.Unmarshal(details, &got); err != nil {
+			t.Fatalf("%s: unmarshal details %s: %v", label, details, err)
+		}
+		treatments, ok := got["treatments"].([]any)
+		if !ok || len(treatments) != 1 || treatments[0] != "Massage" {
+			t.Errorf("%s: details = %s, want the original curated {\"treatments\":[\"Massage\"]} to survive", label, details)
+		}
+	}
+
+	row, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, row.ID) })
+	wantTreatments(t, row.Details, "seed row")
+
+	in.Details = []byte(`{}`)
+	reUpserted, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("re-upsert with empty details: %v", err)
+	}
+	if reUpserted.ID != row.ID {
+		t.Fatalf("re-upsert created a new row (%s != %s)", reUpserted.ID, row.ID)
+	}
+	wantTreatments(t, reUpserted.Details, "re-upserted row")
+
+	got, err := repo.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	wantTreatments(t, got.Details, "persisted row")
+}
+
 // TestSyncRegionsPrimaryKey proves 0024's widened composite primary key
 // (provider, cell_key, category, subtype) — generalized from Tripadvisor's
 // original (cell_key, category) — still rejects an exact duplicate while

@@ -480,7 +480,12 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 // ZERO_RESULTS (see places.Client.ReverseGeocodeCity) sends in an empty
 // string for the whole cell's sweep, and an empty incoming value must never
 // clobber an already-resolved stored one across up to
-// maxGoogleRowsPerQuery x ~20 venues.
+// maxGoogleRowsPerQuery x ~20 venues. details uses the same
+// keep-existing-unless-real guard: service.googlesync's toIngest
+// deliberately sends "{}" on every re-ingest (Places Terms §14.3 forbids
+// storing Places content), so a bare EXCLUDED.details would wipe out
+// admin-curated content and the weekly website-sync job's scraped content
+// on every ~14-day re-sweep.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
@@ -496,7 +501,7 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			rating = EXCLUDED.rating,
 			city = COALESCE(NULLIF(EXCLUDED.city, ''), activities.city),
 			address = EXCLUDED.address,
-			details = EXCLUDED.details,
+			details = CASE WHEN EXCLUDED.details = '{}'::jsonb THEN activities.details ELSE EXCLUDED.details END,
 			source = EXCLUDED.source,
 			external_id = EXCLUDED.external_id,
 			raw = EXCLUDED.raw,
