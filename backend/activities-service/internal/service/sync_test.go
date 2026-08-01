@@ -655,8 +655,11 @@ func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
 }
 
 // TestActivities_ResolveTripadvisorSubtype covers resolveTripadvisorSubtype's
-// four "never a guess" outcomes plus its one success path, per T2's
-// acceptance criteria.
+// "never a guess" outcomes plus its one success path, per T2's acceptance
+// criteria. Every place fixture below carries a DisplayName that matches
+// "Some Venue" (case/punctuation-folded) unless the case is specifically
+// testing the name-identity guard, so the other rejections aren't
+// accidentally exercising it too.
 func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -668,13 +671,13 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 		{
 			name:     "primaryType maps to a valid subtype for its category",
 			category: activitiessvc.CategoryBars,
-			places:   []placesmap.Place{{PrimaryType: "wine_bar"}},
+			places:   []placesmap.Place{{PrimaryType: "wine_bar", DisplayName: displayName("Some Venue")}},
 			want:     "wine_bar",
 		},
 		{
 			name:     "primaryType maps to a subtype belonging to a different category yields empty, not a cross-category guess",
 			category: activitiessvc.CategoryBars,
-			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant"}},
+			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue")}},
 			want:     "",
 		},
 		{
@@ -686,8 +689,11 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 		{
 			name:     "ambiguous match (more than one candidate) resolves empty rather than guessing",
 			category: activitiessvc.CategoryRestaurants,
-			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant"}, {PrimaryType: "restaurant"}},
-			want:     "",
+			places: []placesmap.Place{
+				{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue")},
+				{PrimaryType: "restaurant", DisplayName: displayName("Some Venue")},
+			},
+			want: "",
 		},
 		{
 			name:     "a Places error resolves empty, never propagated to the caller",
@@ -695,13 +701,32 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 			err:      errors.New("places 500"),
 			want:     "",
 		},
+		{
+			name:     "sole candidate's name doesn't match the Tripadvisor venue's — a relevance-ranked neighbour, not the venue itself — resolves empty",
+			category: activitiessvc.CategoryRestaurants,
+			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Completely Different Place")}},
+			want:     "",
+		},
+		{
+			name:     "sole candidate's name loosely matches (a business-suffix Google appended) resolves normally",
+			category: activitiessvc.CategoryRestaurants,
+			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue Restaurant")}},
+			want:     "fine_dining",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := &fakeGooglePlaces{nearbyOut: tt.places, nearbyErr: tt.err}
 			svc := New(&fakeRepo{}).WithPlaces(gp)
-			if got := svc.resolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46); got != tt.want {
+			if got := svc.resolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111"); got != tt.want {
 				t.Errorf("resolveTripadvisorSubtype(...) = %q, want %q", got, tt.want)
+			}
+			if len(gp.gotSearchTextInArea) == 0 {
+				return
+			}
+			got := gp.gotSearchTextInArea[0]
+			if got.lat != 44.81 || got.lng != 20.46 || got.radiusKM != tripadvisorSubtypeRadiusKM {
+				t.Errorf("SearchTextInArea args = lat=%v lng=%v radiusKM=%v, want lat=44.81 lng=20.46 radiusKM=%v (the venue's own coords, not the sync anchor's)", got.lat, got.lng, got.radiusKM, tripadvisorSubtypeRadiusKM)
 			}
 		})
 	}
@@ -711,9 +736,73 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 // nil-safe degrade — no Places client attached must never panic or block.
 func TestActivities_ResolveTripadvisorSubtype_NoClientConfigured(t *testing.T) {
 	svc := New(&fakeRepo{})
-	if got := svc.resolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0); got != "" {
+	if got := svc.resolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111"); got != "" {
 		t.Errorf("resolveTripadvisorSubtype() = %q, want empty with no places client configured", got)
 	}
+}
+
+// TestActivities_ResolveTripadvisorSubtype_NoCoordsOrName proves the
+// coordinate/name guard skips the Places call entirely — no venue is ever
+// searchable at lat=0,lng=0 or by an empty name, so paying for the call
+// would be pure waste (or, for an empty textQuery, a guaranteed 400).
+func TestActivities_ResolveTripadvisorSubtype_NoCoordsOrName(t *testing.T) {
+	tests := []struct {
+		name string
+		lat  float64
+		lng  float64
+	}{
+		{name: "", lat: 44.81, lng: 20.46},
+		{name: "Some Venue", lat: 0, lng: 0},
+	}
+	for _, tt := range tests {
+		gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "wine_bar", DisplayName: displayName(tt.name)}}}
+		svc := New(&fakeRepo{}).WithPlaces(gp)
+		if got := svc.resolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111"); got != "" {
+			t.Errorf("resolveTripadvisorSubtype(name=%q, lat=%v, lng=%v) = %q, want empty", tt.name, tt.lat, tt.lng, got)
+		}
+		if len(gp.gotSearchTextInArea) != 0 {
+			t.Errorf("SearchTextInArea calls = %d, want 0 — no name or no coords must skip the Places call", len(gp.gotSearchTextInArea))
+		}
+	}
+}
+
+// TestVenueNameMatches covers the identity guard directly — the fold,
+// exact-match, containment, and short-string-false-positive-guard cases —
+// without needing a full resolveTripadvisorSubtype fixture per case.
+func TestVenueNameMatches(t *testing.T) {
+	tests := []struct {
+		name            string
+		tripadvisorName string
+		candidateName   string
+		want            bool
+	}{
+		{name: "exact match", tripadvisorName: "Ambar Beograd", candidateName: "Ambar Beograd", want: true},
+		{name: "case/punctuation-insensitive exact match", tripadvisorName: "Ambar, Beograd!", candidateName: "ambar beograd", want: true},
+		{name: "candidate has an added business suffix", tripadvisorName: "Ambar", candidateName: "Ambar Restaurant", want: true},
+		{name: "tripadvisor name has an added suffix", tripadvisorName: "Ambar Restaurant", candidateName: "Ambar", want: true},
+		{name: "unrelated venue names", tripadvisorName: "Ambar Beograd", candidateName: "Little Bay", want: false},
+		{name: "short folded name does not false-positive via containment", tripadvisorName: "A", candidateName: "A Very Different Venue Entirely", want: false},
+		{name: "empty candidate name never matches", tripadvisorName: "Ambar Beograd", candidateName: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := venueNameMatches(tt.tripadvisorName, tt.candidateName); got != tt.want {
+				t.Errorf("venueNameMatches(%q, %q) = %v, want %v", tt.tripadvisorName, tt.candidateName, got, tt.want)
+			}
+		})
+	}
+}
+
+// displayName builds a placesmap.Place's anonymous DisplayName field —
+// Place declares it inline (no named type to construct directly), so tests
+// that need to set it go through this helper instead of repeating the
+// struct literal shape everywhere.
+func displayName(text string) struct {
+	Text string `json:"text"`
+} {
+	return struct {
+		Text string `json:"text"`
+	}{Text: text}
 }
 
 // TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType is
@@ -728,7 +817,7 @@ func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *
 			"111": {LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, WebURL: "https://ta/Restaurant_Review-1"},
 		},
 	}
-	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "fine_dining_restaurant"}}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Ambar Beograd")}}}
 	svc := New(repo).WithTripadvisor(ta).WithPlaces(gp)
 
 	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
