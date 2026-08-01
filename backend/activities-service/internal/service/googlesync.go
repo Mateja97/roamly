@@ -258,24 +258,45 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		})
 
 		// Resolve each distinct anchor's city once, before running its jobs —
-		// not once per venue and not once per row. A geocode failure degrades
-		// to a zero-value cellLocation rather than dropping the sweep;
-		// toIngest falls back to per-venue extraction for that cell.
+		// not once per venue and not once per row.
+		//
+		// A geocode ERROR must drop that cell's jobs entirely rather than
+		// proceed with an empty cellLocation: for a cell being swept for the
+		// first time there is no already-stored row for Upsert's
+		// COALESCE(NULLIF(...), ...) to protect, so an empty city/country
+		// would actually be written — dropping new venues out of
+		// SuggestCities' Anywhere picker and out of TimezoneForCountry's
+		// lookup. Skipping the jobs here (never calling syncGoogleRow) is
+		// what keeps them unmarked, same as a failed search row, so a later
+		// query retries the cell instead of freezing it stale for
+		// googleSyncTTL.
+		//
+		// ZERO_RESULTS is different: err == nil, city/country simply empty —
+		// a genuinely unnamed location (mid-ocean, say). Its jobs still run
+		// and still get marked normally, or an unnamed cell would re-search
+		// forever (the unbounded-spend failure mode an earlier round fixed).
 		cellLocations := make(map[string]cellLocation)
+		erroredCells := make(map[string]bool)
 		for _, job := range jobs {
 			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
-			if _, ok := cellLocations[key]; ok {
+			if _, ok := cellLocations[key]; ok || erroredCells[key] {
 				continue
 			}
 			city, country, err := a.places.ReverseGeocodeCity(syncCtx, job.anchor.Lat, job.anchor.Lng)
 			if err != nil {
-				slog.Warn("google reverse geocode failed; falling back to per-venue city", "cell", key, "error", err)
+				slog.Warn("google reverse geocode failed; leaving cell unmarked to retry", "cell", key, "error", err)
+				erroredCells[key] = true
+				continue
 			}
 			cellLocations[key] = cellLocation{City: city, Country: country}
 		}
 
 		for _, job := range jobs {
-			a.syncGoogleRow(syncCtx, job, cellLocations[syncCellKey(job.anchor.Lat, job.anchor.Lng)])
+			key := syncCellKey(job.anchor.Lat, job.anchor.Lng)
+			if erroredCells[key] {
+				continue
+			}
+			a.syncGoogleRow(syncCtx, job, cellLocations[key])
 		}
 	}()
 }
@@ -296,7 +317,11 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 	var cell cellLocation
 	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
 	if err != nil {
-		slog.Warn("google reverse geocode failed; falling back to per-venue city", "error", err)
+		// Unlike syncGoogleIfNeeded, this manual seed tool proceeds anyway
+		// with an empty city/country rather than skipping the anchor — an
+		// operator running this by hand can see the warning and rerun it,
+		// so there's no unattended-14-day-freeze risk to guard against here.
+		slog.Warn("google reverse geocode failed; seeding with empty city/country", "error", err)
 	} else {
 		cell = cellLocation{City: city, Country: country}
 	}

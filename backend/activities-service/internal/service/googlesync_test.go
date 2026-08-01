@@ -275,16 +275,16 @@ func TestActivities_Query_GoogleSync_CityResolvedOncePerCell(t *testing.T) {
 	}
 }
 
-// TestActivities_Query_GoogleSync_GeocodeFailureWritesEmptyCity covers the
-// deliberate removal of toIngest's old per-venue placesmap.CityCountry
-// fallback: a geocode failure must still let the sweep upsert the venue
-// (never dropped), but with an empty city/country rather than whatever the
-// place's own address components said. Per-venue derivation from
-// addressComponents is exactly what fragmented one city into eight stored
-// strings in the first place (see cellLocation's doc) — an empty value here
-// is safe because Upsert's own ON CONFLICT COALESCE(NULLIF(...), ...)
-// preserves any already-stored city instead of blanking it.
-func TestActivities_Query_GoogleSync_GeocodeFailureWritesEmptyCity(t *testing.T) {
+// TestActivities_Query_GoogleSync_GeocodeErrorLeavesCellUnmarked is the
+// regression guard for a real bug an earlier round introduced: dropping
+// toIngest's per-venue placesmap.CityCountry fallback is only safe for a
+// cell with an already-stored row for Upsert's own ON CONFLICT
+// COALESCE(NULLIF(...), ...) to protect. For a cell being swept for the
+// first time there is nothing to coalesce against, so a geocode ERROR must
+// drop that cell's jobs entirely — never call SearchNearby, never upsert,
+// never mark synced — rather than ingest new venues with an empty
+// city/country and then freeze that state for the full TTL.
+func TestActivities_Query_GoogleSync_GeocodeErrorLeavesCellUnmarked(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	p := placesmap.Place{ID: "a", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/a"}
 	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{p}, geocodeErr: errors.New("geocode 503")}
@@ -295,12 +295,50 @@ func TestActivities_Query_GoogleSync_GeocodeFailureWritesEmptyCity(t *testing.T)
 	}
 	svc.waitForGoogleSync()
 
-	if len(repo.gotUpserts) == 0 {
-		t.Fatal("no upserts — a geocode failure must degrade, not drop the sweep")
+	if gp.nearbyCalls != 0 {
+		t.Errorf("SearchNearby calls = %d, want 0 — a geocode error must drop the cell's jobs before ever searching", gp.nearbyCalls)
 	}
-	if repo.gotUpserts[0].City != "" || repo.gotUpserts[0].Country != "" {
-		t.Errorf("city/country = %q/%q, want empty — no per-venue fallback, Upsert's own COALESCE is what protects an already-stored value",
-			repo.gotUpserts[0].City, repo.gotUpserts[0].Country)
+	if repo.upsertCalls != 0 {
+		t.Errorf("upsertCalls = %d, want 0 — never ingest a new venue with no city to fall back on", repo.upsertCalls)
+	}
+	if len(repo.markSynced) != 0 {
+		t.Errorf("markSynced = %v, want none — the cell must stay unmarked so a later query retries the geocode", repo.markSynced)
+	}
+}
+
+// TestActivities_Query_GoogleSync_ZeroResultsStillMarksSynced covers the
+// other half of the same fix: ZERO_RESULTS (err == nil, city/country simply
+// empty — a genuinely unnamed location) is not an error and must not be
+// treated like one. Its rows still search, still upsert with an empty
+// city/country (safe: Upsert's COALESCE only ever protects an
+// already-stored value, and there being none here is the correct outcome
+// for an unnamed place), and still get marked — or an unnamed cell would
+// re-search forever, the unbounded-spend bug an earlier round already
+// fixed.
+func TestActivities_Query_GoogleSync_ZeroResultsStillMarksSynced(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	p := placesmap.Place{ID: "a", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/a"}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{p}} // geocodeErr nil, geocodeCity/Country "" — ZERO_RESULTS
+	svc := New(repo).WithPlaces(gp)
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	if gp.nearbyCalls == 0 {
+		t.Fatal("SearchNearby calls = 0, want the rows to still run for a ZERO_RESULTS (non-error) geocode")
+	}
+	if len(repo.gotUpserts) == 0 {
+		t.Fatal("no upserts — ZERO_RESULTS must not drop the sweep")
+	}
+	for _, u := range repo.gotUpserts {
+		if u.City != "" || u.Country != "" {
+			t.Errorf("upsert city/country = %q/%q, want empty for an unnamed location", u.City, u.Country)
+		}
+	}
+	if len(repo.markSynced) == 0 {
+		t.Error("markSynced = none, want every due row still marked — an unnamed cell must not re-search forever")
 	}
 }
 

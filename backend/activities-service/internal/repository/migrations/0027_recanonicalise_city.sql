@@ -44,8 +44,11 @@ DELETE FROM sync_regions WHERE provider = 'tripadvisor';
 -- ReverseGeocodeCity at sync time (see syncTripadvisorAnchor /
 -- syncGoogleIfNeeded), which is what makes an ongoing version of this
 -- unnecessary.
+-- IS DISTINCT FROM, not <>: city is nullable (0005_city.sql) and
+-- NULL <> 'Belgrade' evaluates to NULL, which WHERE treats as false — a
+-- Belgrade-area row with a NULL city would silently survive a bare <>.
 UPDATE activities
 SET city = 'Belgrade'
 WHERE country = 'Serbia'
-  AND city <> 'Belgrade'
+  AND city IS DISTINCT FROM 'Belgrade'
   AND ST_DWithin(location, ST_SetSRID(ST_MakePoint(20.4612, 44.8125), 4326)::geography, 30000);
