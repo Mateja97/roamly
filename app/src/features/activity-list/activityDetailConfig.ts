@@ -27,7 +27,7 @@ import type {
 } from '../../api/activities';
 import type { Category } from './types';
 import { classifyField } from './fieldKind';
-import { CATEGORY_LABELS } from './filters';
+import { CATEGORY_LABELS, SUBCATEGORIES } from './filters';
 
 // design-spec.md's T4 "Config table" section: one lookup, built from
 // APP_STANDARDS.md's per-category table, driving the fact strip + unique
@@ -149,40 +149,78 @@ export function primaryActionURL(activity: Activity): string | undefined {
   }
 }
 
-// design-spec.md T8 addendum #3: per-category body-section top→bottom
-// order, replacing the previous single hardcoded order. Sections whose data
-// is absent are simply skipped by the renderer — this table only fixes
-// order, not the existing per-section omission rules.
+// design-spec.md's "Screen composition" section (T5): one fixed canonical
+// order replaces the 13 hand-maintained per-category arrays this retires
+// (`BODY_SECTION_ORDER`, deleted). Hero/title-block/action-chips/hours-row
+// live directly in ActivityDetailScreen.tsx (not category-dependent);
+// 'factstrip' below is the stat grid. Sections whose data is absent are
+// still skipped by the renderer — this only fixes order.
 export type BodySection = 'description' | 'difficulty' | 'factstrip' | 'unique' | 'goodtoknow';
 
-export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
-  restaurants: ['factstrip', 'description', 'unique'],
-  bars: ['factstrip', 'description', 'unique'],
-  cafes: ['description', 'factstrip', 'unique'],
-  nightlife: ['unique', 'factstrip'],
-  nature: ['factstrip', 'description', 'unique'],
-  sport: ['difficulty', 'factstrip', 'unique'],
-  kids: ['description', 'unique'],
-  culture: ['unique', 'factstrip', 'description'],
-  art: ['unique', 'factstrip', 'description'],
-  wellness: ['factstrip', 'description', 'unique', 'goodtoknow'],
-  entertainment: ['factstrip', 'description', 'unique', 'goodtoknow'],
-  shopping: ['description', 'unique', 'factstrip'],
-  // T3 (roa-5-category-subtypes): no bespoke detail UI in scope — `details`
-  // has no `tours_experiences` variant (ActivityDetails), so factstrip/unique
-  // simply omit themselves (no data); this is the same generic order as
-  // kids above.
-  tours_experiences: ['description', 'unique'],
+const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique', 'goodtoknow'];
+
+// "A category may promote exactly one slot above the stat grid. That is the
+// entire per-category layout freedom [...]" — 'difficulty' (Sport's
+// DifficultyMeter) has no canonical resting position of its own, since it
+// only ever appears promoted. T5 carries over each category's *current*
+// promoted section unchanged, proving the mechanism without deciding any
+// category's final composition (T6-T10's job) — cafes/nightlife/sport/
+// culture/art/shopping already promoted the same section under the old
+// per-category arrays, so the *promoted* slot itself matches exactly.
+//
+// The rest of each row is NOT guaranteed byte-identical, though, because
+// this table (unlike the old 13 arrays) has no way to structurally exclude
+// a slot — every category now renders every canonical slot its data fills.
+// That's a correct, data-driven consequence of the new model, not a bug,
+// but it does change what's on screen for three categories whose old array
+// had left a slot out on purpose: Nightlife and Sport's old arrays never
+// listed 'description' at all (both are Places-live, so Google's prose can
+// arrive and now does), and Shopping's old array had 'unique' before
+// 'factstrip' (now 'factstrip' comes first, per the fixed canonical order).
+// See engineering-notes.md's T5 entry for the full disclosure.
+//
+// Kids has no entry here even though the spec's canonical composition names
+// "Promote: description" for it — a deliberate no-op today, not a miss:
+// `factStripFields` returns `[]` unconditionally for kids, so description
+// already leads the canonical order with nothing above it to promote past.
+// T8 (Kids) should add `kids: 'description'` once that stat-grid gap closes,
+// rather than reading this table's silence as "already correct."
+// Not exported — `bodySectionOrder` below is the only thing any other
+// module needs; T6-T10 edit this table in place.
+type PromotableSection = 'description' | 'difficulty' | 'unique';
+
+const PROMOTE_ABOVE_STAT_GRID: Partial<Record<Category, PromotableSection>> = {
+  cafes: 'description',
+  nightlife: 'unique',
+  sport: 'difficulty',
+  culture: 'unique',
+  art: 'unique',
+  shopping: 'description',
 };
 
-// design-spec.md T8 addendum #8: Entertainment's genre + neighborhood move
-// into the rating/meta row (muted, "·"-separated) instead of the removed
-// fact strip. No other category uses this — everything else keeps its
-// scalar meta-row item (openStatus) or omits.
+export function bodySectionOrder(category: Category): BodySection[] {
+  const promoted = PROMOTE_ABOVE_STAT_GRID[category];
+  if (!promoted) return CANONICAL_BODY_ORDER;
+  return [promoted, ...CANONICAL_BODY_ORDER.filter((section) => section !== promoted)];
+}
+
+// design-spec.md T8 addendum #8 + spec's Entertainment composition
+// (`Entertainment · Cinema · Neighborhood · 700 m`): Entertainment's
+// neighborhood moves into the rating/meta row (muted, "·"-separated)
+// instead of the removed fact strip. No other category uses this —
+// everything else keeps its scalar meta-row item (openStatus) or omits.
+// `genre` deliberately excluded here (T5 round-2 fix): once T5 also
+// prepends category-noun + subtype into the same row (`metaLineLeadItems`),
+// category + subtype + distance + genre + neighborhood overflows
+// `MetaLine`'s `MAX_ITEMS = 4` and silently truncates neighborhood — a
+// production regression T5's own "carry over current values unchanged"
+// scope must not introduce. `genre` isn't in the spec's canonical
+// Entertainment meta line at all, so dropping it both fixes the overflow
+// and matches the final composition T9 will land.
 export function metaRowExtras(activity: Activity): string[] {
   const d = activity.details;
   if (!d || d.category !== 'entertainment') return [];
-  return [d.genre, d.neighborhood].filter((v): v is string => Boolean(v));
+  return [d.neighborhood].filter((v): v is string => Boolean(v));
 }
 
 // design-spec.md T8 addendum #5: Art's artist/work/medium/year attribution
@@ -299,45 +337,42 @@ export function tripadvisorEyebrow(activity: Activity, distanceText: string): st
     .join(' · ');
 }
 
-// Per-category subtype qualifier, pulled from an existing `details` field —
-// omitted (no dangling "·") when that field is absent, per the
-// omit-rather-than-blank rule.
-export function badgeQualifier(activity: Activity): string | undefined {
-  const d = activity.details;
-  if (!d) return undefined;
-  switch (d.category) {
-    case 'restaurants':
-      return d.cuisine;
-    case 'cafes':
-      return d.known_for_brew;
-    case 'nightlife':
-      return d.venue_type;
-    case 'sport':
-      return d.discipline;
-    case 'kids':
-      return d.age_range ? `Ages ${d.age_range}` : undefined;
-    case 'culture':
-    case 'art':
-    case 'shopping':
-      return d.venue_type;
-    case 'wellness':
-      return d.venue_type;
-    case 'entertainment':
-      return d.genre;
-    default:
-      return undefined;
-  }
+// design-spec.md's "Two rules applied to all 13" (T5): subtype comes from
+// the activity's own `subcategory` slug — already taxonomy-validated
+// (BUSINESS_STANDARDS.md), translatable, always scalar by construction —
+// never from a generated field. Retires `badgeQualifier`'s 9-branch switch
+// over per-category generated fields (cuisine/venue_type/discipline/etc.).
+// `""`/absent (documented as common for the three Tripadvisor categories,
+// whose subtype is only set when the per-venue Google name lookup
+// succeeds) reads as "no subtype" — no fallback is invented, and the
+// retired generated qualifier is not resurrected as a stand-in.
+export function subtypeLabel(activity: Activity): string | undefined {
+  if (!activity.subcategory) return undefined;
+  // `activity.category` comes off an unvalidated wire cast (api/activities.ts)
+  // — a category the app doesn't yet recognize has no `SUBCATEGORIES` entry,
+  // so this degrades to "no subtype" instead of crashing (the retired
+  // `badgeQualifier` switch had a `default:` doing the same job).
+  return SUBCATEGORIES[activity.category]?.find((option) => option.value === activity.subcategory)
+    ?.label;
 }
 
-export function badgeLabel(activity: Activity): string {
-  const qualifier = badgeQualifier(activity);
-  const noun = categoryNoun(activity.category);
-  return qualifier ? `${noun} · ${qualifier}` : noun;
+// design-spec.md's "Meta line" slot composition (§B1): "category noun,
+// subtype, price level, distance" — category noun leads, subtype follows
+// when present. Both are app-computed/taxonomy data, not LLM-generated, so
+// — like distance/country — they bypass `classifyField` entirely (see
+// MetaLine's `rawItems`) rather than being subject to the scalar kind's
+// length/word-count checks meant for generated content. Price level
+// (Tripadvisor-only today, via `tripadvisorEyebrow`) and any other
+// category-specific meta-line content is T6-T10's composition work, not
+// this mechanism.
+export function metaLineLeadItems(activity: Activity): (string | undefined)[] {
+  return [categoryNoun(activity.category), subtypeLabel(activity)];
 }
 
 // opening-hours T3: the seven in-scope categories may carry a structured
 // `opening_hours` object — this is the one place that reads it off the
-// discriminated `ActivityDetails` union (mirrors `badgeQualifier`'s switch).
+// discriminated `ActivityDetails` union (mirrors `factStripFields`'s own
+// per-category switch below).
 function openingHoursOf(d: ActivityDetails): OpeningHours | undefined {
   switch (d.category) {
     case 'restaurants':
@@ -708,7 +743,18 @@ function dateBlockRow(show: {
       // ponytail: Intl unavailable — falls back to the raw date string above.
     }
   }
-  return { day, date, title: show.title, subline: show.time_or_price ?? '' };
+  // T5 round-3 fix: `time_or_price` is LLM-generated (same field the
+  // production-bug report's "Not specified" hedges leaked from on legacy
+  // rows — T1 only guards new writes) — run it through `classifyField` like
+  // any other generated trailing value so a leaked hedge omits per the
+  // spec's "List rows" trailing-omit rule instead of rendering verbatim.
+  // T5 round-4 fix: the spec declares no kind for this field; `scalar`'s
+  // 18-char/4-word cap is stricter than the subline needs and newly dropped
+  // legitimate legacy values (e.g. "Fri 20:00, from €15" = 19 chars). The
+  // hedge this guards against is a denylist hit, which `phrase` catches
+  // identically (denylist runs before the kind check) at its more permissive
+  // 80-char cap — use `phrase`.
+  return { day, date, title: show.title, subline: classifyField('phrase', show.time_or_price) ?? '' };
 }
 
 // Whole-section omission lives here too: every branch returns `undefined`

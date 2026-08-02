@@ -324,6 +324,13 @@ export type Activity = {
   // place-facts address row omits itself when both are absent.
   address?: string;
   city?: string;
+  // design-spec.md's "Two rules applied to all 13" (T5): the taxonomy-
+  // validated subtype slug (BUSINESS_STANDARDS.md) — always present as ""
+  // on the wire (proxy-service's activityDTO has no `omitempty` on this
+  // field) when unset, typed optional here only so existing fixtures
+  // without it still type-check. `activityDetailConfig.ts`'s
+  // `subtypeLabel` treats both `""` and `undefined` as "no subtype".
+  subcategory?: string;
   // T6: Google Places live reviews, merged in by ActivityDetailScreen's
   // `getActivity` upgrade fetch. Cross-cutting across all 10 Places-sourced
   // categories (like `image_refs`), so it lives here rather than nested in

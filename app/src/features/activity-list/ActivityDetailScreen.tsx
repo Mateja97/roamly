@@ -35,13 +35,14 @@ import {
   radius,
   space,
 } from '../../theme/tokens';
+import { classifyField } from './fieldKind';
 import {
   artAttribution,
-  badgeLabel,
-  BODY_SECTION_ORDER,
+  bodySectionOrder,
   factStripFields,
   genericActionLabel,
   goodToKnowSection,
+  metaLineLeadItems,
   metaRowExtras,
   openStatus,
   priceContextLine,
@@ -252,6 +253,22 @@ export function ActivityDetailScreen({
   // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
   // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
+  // T5 round-4 fix: round 3's guard counted *assumed* candidates (2 lead
+  // items, always) instead of what MetaLine will actually render, so it
+  // evicted `metaText` even when the real count never reached the 4-item
+  // cap — e.g. empty/off-taxonomy `subcategory` (no subtype item) or a
+  // >18-char neighborhood (`classifyField` drops it). Count the same items
+  // MetaLine's `rawItems`/`items` will render (lead items raw, `metaExtras`
+  // through the same `classifyField('scalar', …)` MetaLine's `items` prop
+  // applies — `foldedFactChip.value` is already classifyField'd output via
+  // `classifyFactChips`, so it's passed as-is) and only yield `metaText`'s
+  // slot when that real count already fills the cap.
+  const metaLineOverflow =
+    [
+      ...metaLineLeadItems(activity),
+      ...metaExtras.map((v) => classifyField('scalar', v)),
+      foldedFactChip?.value,
+    ].filter(Boolean).length >= 4;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
@@ -268,6 +285,14 @@ export function ActivityDetailScreen({
   // that exact case so it still carries the rating alone whenever the
   // Reviews slot doesn't (pending, or a settled merge with no review count).
   const reviewsScoreShown = isPlacesLive && activity.rating > 0 && activity.review_count !== undefined;
+  // T5: the title-block rating cluster (star + number, or its loading
+  // skeleton) is the only thing left in that row now that the category
+  // pill has moved into MetaLine below (see `metaLineLeadItems`) — render
+  // the row at all only when this cluster itself has something to show, so
+  // a non-Tripadvisor row with a settled zero rating doesn't leave an empty
+  // spacer box.
+  const showRatingCluster =
+    !reviewsScoreShown && (activity.rating > 0 || (isPlacesLive && detailsPending && activity.rating <= 0));
   // design-spec.md T8 (Tripadvisor initiative): presence of this field is
   // the sole detection signal for the Tripadvisor-branded treatment below.
   const tripadvisor = tripadvisorAttribution(activity);
@@ -286,6 +311,18 @@ export function ActivityDetailScreen({
   // `todayRow` — isn't already showing it). The whole row collapses when
   // even that isn't true, so no empty row/gap survives it.
   const showMetaRow = !tripadvisor || Boolean(status && !todayRow);
+  // T5 round-2 fix: whether the Places-live reviews card below renders at
+  // all this pass (vs. its loading skeleton) — same condition as the JSX
+  // branch just below. T5 round-2 also gated a footer `GoogleAttributionPlate`
+  // on this (to avoid a duplicate "View on Google Maps" link once the
+  // reviews card's own `detail`-variant plate renders it); round-3 review
+  // found that gated branch was provably unreachable (its two preconditions
+  // — pending and no `google_maps_uri` — mean the footer plate is always
+  // called with no uri, which renders null on its own) and deleted it
+  // rather than keep dead code around. This flag's sole remaining consumer
+  // is the reviews-card skeleton branch below.
+  const googleReviewsCardShown =
+    isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -411,14 +448,17 @@ export function ActivityDetailScreen({
         />
 
         <View style={styles.titleBlock}>
-          {/* §5b: the badge pill (category · qualifier) and the gold-star
-              rating are both suppressed for a Tripadvisor row — the eyebrow
-              carries category, the TripadvisorBlock below carries rating
-              (compliance rule 03). `attribution` (art's artist/work/medium
-              line) never co-occurs with `tripadvisor` (art can't be a
-              Tripadvisor category), so the whole group is safely omitted
-              rather than left as an empty View + phantom gap. */}
-          {(attribution || !tripadvisor) && (
+          {/* §5b: the gold-star rating is suppressed for a Tripadvisor row —
+              the TripadvisorBlock below carries rating instead (compliance
+              rule 03). `attribution` (art's artist/work/medium line) never
+              co-occurs with `tripadvisor` (art can't be a Tripadvisor
+              category), so the whole group is safely omitted rather than
+              left as an empty View + phantom gap. T5: the old category ·
+              qualifier badge pill (`badgeLabel`/`badgeQualifier`) is
+              retired — category noun + subtype now lead the meta line below
+              instead (see `metaLineLeadItems`), so this cluster is
+              rating-only. */}
+          {(attribution || (!tripadvisor && showRatingCluster)) && (
             <View style={styles.badgeGroup}>
               {attribution && (
                 <Text style={styles.attributionLine}>
@@ -436,39 +476,34 @@ export function ActivityDetailScreen({
                 </Text>
               )}
 
-              {!tripadvisor && (
-                <View style={styles.row}>
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeLabel}>{badgeLabel(activity)}</Text>
+              {/* T6: "Rating value" — skeletoned only while the live fetch
+                  is pending and the seed genuinely has nothing yet (rule 1:
+                  never pulse over an already-good value); once settled with
+                  no rating (failed/empty merge), the whole block collapses
+                  (rule 3: no fabricated "0.0", no empty frame) rather than
+                  falling back to a pre-T6-style zero. T4 round-2: once the
+                  Reviews slot below is genuinely showing this same score
+                  (`reviewsScoreShown`), this cluster stays hidden — one
+                  focal rating number, not two (folded into
+                  `showRatingCluster` above). */}
+              {!tripadvisor && showRatingCluster && (
+                isPlacesLive && detailsPending && activity.rating <= 0 ? (
+                  <View style={styles.rating}>
+                    <RatingSkeleton />
                   </View>
-                  {/* T6: "Rating value" — skeletoned only while the live
-                      fetch is pending and the seed genuinely has nothing
-                      yet (rule 1: never pulse over an already-good value);
-                      once settled with no rating (failed/empty merge), the
-                      whole block collapses (rule 3: no fabricated "0.0",
-                      no empty frame) rather than falling back to a
-                      pre-T6-style zero. T4 round-2: once the Reviews slot
-                      below is genuinely showing this same score
-                      (`reviewsScoreShown`), this cluster stays hidden —
-                      one focal rating number, not two. */}
-                  {reviewsScoreShown ? null : isPlacesLive && detailsPending && activity.rating <= 0 ? (
-                    <View style={styles.rating}>
-                      <RatingSkeleton />
-                    </View>
-                  ) : activity.rating > 0 ? (
-                    <View style={styles.rating}>
-                      <Star
-                        size={16}
-                        color={colors.primary}
-                        strokeWidth={1.75}
-                        fill={colors.primary}
-                      />
-                      <Text style={styles.ratingLabel}>
-                        {activity.rating.toFixed(1)}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+                ) : (
+                  <View style={styles.rating}>
+                    <Star
+                      size={16}
+                      color={colors.primary}
+                      strokeWidth={1.75}
+                      fill={colors.primary}
+                    />
+                    <Text style={styles.ratingLabel}>
+                      {activity.rating.toFixed(1)}
+                    </Text>
+                  </View>
+                )
               )}
             </View>
           )}
@@ -482,32 +517,61 @@ export function ActivityDetailScreen({
           </View>
 
           {/* design-spec.md's "Meta line" slot (§B1): join-never-prefix,
-              one optional status/level chip — extracted out of this
-              screen's old hand-rolled meta row (including nightlife's old
-              leading-status-dot special case, which the new trailing pill
-              chip supersedes; T7 confirms nightlife's exact "Open tonight"
-              chip content). Composition (which items feed in) is unchanged
-              here — T5 is the task that rewires the meta line onto
-              `subcategory` and retires `badgeQualifier`. */}
+              one optional status/level chip. T5: category noun + subtype
+              (from the taxonomy-validated `subcategory` slug, never a
+              generated field) now lead the line via `metaLineLeadItems` —
+              retires `badgeQualifier`'s 9-branch switch and the separate
+              badge pill above the title; absent for a Tripadvisor row
+              (the eyebrow already carries category, per §5b). */}
           {showMetaRow && (
             <MetaLine
-              // T4 round-2: distance/country is app-computed structured
-              // data, not LLM-generated content — it bypasses `items`'
-              // classification pipeline entirely (see MetaLine's `rawItem`).
-              rawItem={!tripadvisor ? metaText : undefined}
+              // T5: category noun + subtype (from `subcategory`) lead,
+              // ahead of distance/country — all app-computed/taxonomy data,
+              // never run through `classifyField` (see MetaLine's
+              // `rawItems`). Absent entirely for a Tripadvisor row (its
+              // eyebrow above the title already carries category). T5
+              // round-3 fix: `metaText` drops out of the lead items (rather
+              // than the fold or neighborhood silently losing theirs — see
+              // `metaLineOverflow`) on the one Entertainment collision where
+              // all 5 candidates compete for 4 slots.
+              rawItems={
+                !tripadvisor
+                  ? [...metaLineLeadItems(activity), metaLineOverflow ? undefined : metaText]
+                  : undefined
+              }
               items={[...metaExtras, foldedFactChip?.value]}
               chip={status && !todayRow ? { kind: 'status', text: status.text, isOpen: status.isOpen } : undefined}
             />
           )}
+
+          {/* design-spec.md's "Hours row" slot (§B3): relocated out of the
+              stat grid entirely into its own tappable disclosure row —
+              present only when structured opening_hours is usable (same
+              `todayHoursRow` gate the screen already had). Canonical order
+              (T5): hero → title block → action chips → hours row → stat
+              grid → ... */}
+          <HoursRow data={todayRow} onPress={() => setHoursModalOpen(true)} />
+
+          {bodySectionOrder(activity.category).map(renderBodySection)}
+
+          {activity.tags.length > 0 ? (
+            <View style={styles.tagsRow}>
+              {activity.tags.map((tag) => (
+                <View key={tag} style={styles.tagPill}>
+                  <Text style={styles.tagLabel}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           {/* design-spec.md's "Reviews" slot (§B10): one shared wrapper
               replacing this screen's old mutually-exclusive
               TripadvisorBlock-vs-GoogleAttributionPlate top-level branch.
               Neither compliance-critical attribution plate is touched —
               this only owns the outer score/distribution/"See all" layout
-              around them. Position preserved as-is (right after the meta
-              row); T5's canonical order is what moves Reviews to its final
-              spot near the bottom of the page. */}
+              around them. T5: moved from right after the meta row down to
+              its canonical spot (after good-to-know, before the map),
+              matching "... → good-to-know → reviews → map → bottom bar". */}
           {tripadvisor && (
             <ReviewsSection
               attribution={
@@ -533,7 +597,7 @@ export function ActivityDetailScreen({
               second, Roamly-drawn aggregate rating beside Tripadvisor's own
               attribution plate. */}
           {isPlacesLive &&
-            (detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri ? (
+            (!googleReviewsCardShown ? (
               <ReviewsSkeleton />
             ) : (
               <ReviewsSection
@@ -548,26 +612,6 @@ export function ActivityDetailScreen({
                 }
               />
             ))}
-
-          {/* design-spec.md's "Hours row" slot (§B3): relocated out of the
-              stat grid entirely into its own tappable disclosure row —
-              present only when structured opening_hours is usable (same
-              `todayHoursRow` gate the screen already had). Position
-              preserved as-is; T5's canonical order finalizes exact
-              placement relative to action chips/stat grid. */}
-          <HoursRow data={todayRow} onPress={() => setHoursModalOpen(true)} />
-
-          {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
-
-          {activity.tags.length > 0 ? (
-            <View style={styles.tagsRow}>
-              {activity.tags.map((tag) => (
-                <View key={tag} style={styles.tagPill}>
-                  <Text style={styles.tagLabel}>{tag}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
 
           {hasMapsKey() && (
             <Pressable
@@ -655,11 +699,6 @@ export function ActivityDetailScreen({
             </View>
           )}
 
-          {/* T6: the Places-case analogue of the footer CTA above — never
-              skeletoned (design-spec.md: "a single link that either exists
-              after the merge or doesn't"); renders null on its own with no
-              maps link. */}
-          {isPlacesLive && <GoogleAttributionPlate variant="footer" googleMapsUri={activity.google_maps_uri} />}
         </View>
       </ScrollView>
 
@@ -790,32 +829,6 @@ const styles = StyleSheet.create({
   },
   attributionItalic: {
     fontStyle: 'italic',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: space[2],
-  },
-  badge: {
-    flexShrink: 1,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: radius.full,
-    paddingVertical: space[1],
-    paddingHorizontal: space[2],
-  },
-  badgeLabel: {
-    // design-spec.md's reconciliation note: a 12px gold label reads as UI
-    // (3.65:1, clears 3:1) but fails the 4.5:1 normal-text bar if treated as
-    // body text — engineer's documented preference is `--text` cream here
-    // (8.5:1, unambiguously AA), keeping the 1px gold border as the accent.
-    fontSize: fontSize.xs,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: colors.text,
   },
   rating: {
     flexDirection: 'row',

@@ -8,12 +8,15 @@ export type LevelChip = { kind: 'level'; text: string };
 const MAX_ITEMS = 4;
 
 type MetaLineProps = {
-  // App-computed structured data (e.g. distance/country) — already final,
-  // rendered first. Never run through `classifyField`: the kind contract
-  // gates LLM-generated content, and this isn't that (T4 round-2 review
-  // finding — a country name over 18 chars was silently dropped by the
-  // scalar check it was never meant to pass through).
-  rawItem?: string;
+  // App-computed/taxonomy-derived structured data (e.g. category noun,
+  // subtype, distance/country) — already final, rendered first, in order.
+  // Never run through `classifyField`: the kind contract gates
+  // LLM-generated content, and this isn't that (T4 round-2 review finding —
+  // a country name over 18 chars was silently dropped by the scalar check
+  // it was never meant to pass through). T5: was a single `rawItem`, widened
+  // to an array so category noun + subtype-from-slug can lead ahead of
+  // distance/country without a second bypass prop.
+  rawItems?: (string | undefined)[];
   items: (string | undefined)[];
   // Mutually exclusive per design-spec.md's "Meta line" slot — a category
   // shows at most one of the two.
@@ -28,11 +31,11 @@ type MetaLineProps = {
 // rule — border in the semantic color, label always cream `--text` (a 12px
 // label in the semantic color itself would fail normal-text contrast on
 // `--bg`/`--surface`, same reasoning as the Scope pill's gold-vs-cream call).
-export function MetaLine({ rawItem, items, chip }: MetaLineProps) {
+export function MetaLine({ rawItems = [], items, chip }: MetaLineProps) {
   const classified = items
     .map((item) => classifyField('scalar', item))
     .filter((item): item is string => Boolean(item));
-  const allItems = [rawItem, ...classified]
+  const allItems = [...rawItems, ...classified]
     .filter((item): item is string => Boolean(item))
     .slice(0, MAX_ITEMS);
   if (allItems.length === 0 && !chip) return null;

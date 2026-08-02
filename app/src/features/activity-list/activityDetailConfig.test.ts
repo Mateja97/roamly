@@ -1,16 +1,19 @@
 import { Clock } from 'lucide-react-native';
 import type { Activity, OpeningHours } from '../../api/activities';
 import {
-  BODY_SECTION_ORDER,
+  bodySectionOrder,
   factStripFields,
   goodToKnowSection,
+  metaLineLeadItems,
   openStatus,
   priceContextLine,
+  subtypeLabel,
   todayHoursRow,
   tripadvisorAddressLine,
   tripadvisorAttribution,
   tripadvisorEyebrow,
   tripadvisorReviews,
+  uniqueSection,
   weekView,
 } from './activityDetailConfig';
 
@@ -529,13 +532,85 @@ describe('tripadvisorAddressLine (T4)', () => {
   });
 });
 
-describe('BODY_SECTION_ORDER — wellness/entertainment render fact strip + description', () => {
-  it('wellness includes factstrip, description, unique, goodtoknow in that order', () => {
-    expect(BODY_SECTION_ORDER.wellness).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+// T5: replaces the retired BODY_SECTION_ORDER's 13 hand-maintained arrays —
+// design-spec.md's "Screen composition" canonical order plus the single
+// promote-above-stat-grid rule ("that is the entire per-category layout
+// freedom"). The *promoted* slot named per category below reproduces
+// exactly what each category's old per-category array already promoted
+// (T5 carries the promotion choice over unchanged; T6-T10 decide final
+// composition). The rest of the row is data-driven, not carried over
+// verbatim: unlike the old arrays, this table can't structurally exclude a
+// slot, so Nightlife and Sport (whose old arrays never listed
+// 'description') now render it when Places prose is present, and
+// Shopping's 'unique'/'factstrip' order is now the fixed canonical order
+// instead of the old array's reversed pair — see engineering-notes.md's T5
+// entry for the full disclosure (also covers Nightlife, flagged in round 1).
+describe('bodySectionOrder — canonical order + single promote-above-stat-grid (T5)', () => {
+  it('returns the canonical [factstrip, description, unique, goodtoknow] order for a category with no configured promotion', () => {
+    for (const category of [
+      'restaurants',
+      'bars',
+      'nature',
+      'kids',
+      'wellness',
+      'entertainment',
+      'tours_experiences',
+    ] as const) {
+      expect(bodySectionOrder(category)).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+    }
   });
 
-  it('entertainment includes factstrip, description, unique, goodtoknow in that order', () => {
-    expect(BODY_SECTION_ORDER.entertainment).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+  it('promotes the configured slot above the stat grid, keeping the rest of the canonical order after it', () => {
+    expect(bodySectionOrder('cafes')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
+    expect(bodySectionOrder('nightlife')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
+    expect(bodySectionOrder('sport')).toEqual(['difficulty', 'factstrip', 'description', 'unique', 'goodtoknow']);
+    expect(bodySectionOrder('culture')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
+    expect(bodySectionOrder('art')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
+    expect(bodySectionOrder('shopping')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
+  });
+});
+
+// T5: badgeQualifier's 9-branch switch is retired — subtype now comes from
+// the taxonomy-validated `subcategory` slug alone, never a generated field.
+describe('subtypeLabel / metaLineLeadItems — subcategory-from-slug (T5)', () => {
+  it('translates a valid subcategory slug to its taxonomy label', () => {
+    const restaurant = { ...baseActivity({ category: 'restaurants' }), subcategory: 'fine_dining' };
+    expect(subtypeLabel(restaurant)).toBe('Fine Dining');
+    expect(metaLineLeadItems(restaurant)).toEqual(['Restaurant', 'Fine Dining']);
+  });
+
+  // This exact case — empty subcategory, no crash, no double-dot — is
+  // documented as common on the three Tripadvisor categories (whose
+  // subtype is only set when the per-venue Google name lookup succeeds).
+  // No fallback subtype is invented; the retired generated qualifier isn't
+  // resurrected as a stand-in.
+  it('reads as category noun + remaining items with no invented fallback when subcategory is empty', () => {
+    const noSubtype = baseActivity({ category: 'restaurants' });
+    expect(subtypeLabel(noSubtype)).toBeUndefined();
+    expect(metaLineLeadItems(noSubtype)).toEqual(['Restaurant', undefined]);
+  });
+
+  it('also reads as absent for an explicit empty-string subcategory (the wire\'s "unset" value)', () => {
+    const emptySubtype = { ...baseActivity({ category: 'restaurants' }), subcategory: '' };
+    expect(subtypeLabel(emptySubtype)).toBeUndefined();
+  });
+
+  it('is undefined (not a crash) for a slug that does not belong to the taxonomy', () => {
+    const badSlug = { ...baseActivity({ category: 'restaurants' }), subcategory: 'not-a-real-slug' };
+    expect(subtypeLabel(badSlug)).toBeUndefined();
+  });
+
+  // T5 round-2 fix: `activity.category` comes off an unvalidated wire cast
+  // (api/activities.ts), so a backend-first category add with no
+  // `SUBCATEGORIES` entry yet must degrade, not crash the whole screen —
+  // mirrors the retired `badgeQualifier` switch's `default:` case.
+  it('is undefined (not a crash) for a category the app taxonomy does not recognize', () => {
+    const unknownCategory = {
+      ...baseActivity({ category: 'restaurants' }),
+      category: 'not_a_real_category' as never,
+      subcategory: 'anything',
+    };
+    expect(subtypeLabel(unknownCategory)).toBeUndefined();
   });
 });
 
@@ -669,5 +744,44 @@ describe('priceContextLine', () => {
   it('is undefined for a category with no price_from field at all (e.g. nightlife)', () => {
     const activity = baseActivity({ category: 'nightlife' });
     expect(priceContextLine(activity)).toBeUndefined();
+  });
+});
+
+// T5 round-3 fix: `time_or_price` is LLM-generated (same denylist/prompt
+// surface as every other free-text field), so a leaked hedge on a legacy
+// row must omit per the spec's "List rows" trailing-omit rule, not render
+// verbatim.
+describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
+  it('carries a valid time_or_price through as the row subline', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: '2024-06-01', title: 'Live jazz night', time_or_price: '€15' }],
+    });
+    const section = uniqueSection(activity);
+    expect(section?.shape).toBe('schedule');
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '€15' });
+  });
+
+  it('omits the subline when time_or_price is denylisted (the production-bug hedge)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [
+        { date: '2024-06-01', title: 'Live jazz night', time_or_price: 'Not specified' },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
+  });
+
+  it('omits the subline when time_or_price is absent', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: '2024-06-01', title: 'Live jazz night' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
   });
 });
