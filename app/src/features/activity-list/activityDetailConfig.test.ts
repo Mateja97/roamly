@@ -7,12 +7,16 @@ import {
   factStripFields,
   goodToKnowSection,
   kidsAgeLabel,
+  metaDistanceText,
   metaLineLeadItems,
   nightlifeTonightChip,
   openStatus,
   priceContextLine,
   subtypeLabel,
   todayHoursRow,
+  toursIncludedChecklist,
+  toursItinerary,
+  toursMeetingPoint,
   tripadvisorAddressLine,
   tripadvisorAttribution,
   tripadvisorEyebrow,
@@ -971,6 +975,25 @@ describe('factStripFields — wellness/entertainment', () => {
   });
 });
 
+describe('factStripFields — tours_experiences (T10)', () => {
+  it('includes Duration, Group size, and Languages chips', () => {
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      duration: '2 h 30 min',
+      group_size: 'Max 12',
+      languages: 'EN, SR',
+    });
+    const chips = factStripFields(activity);
+    expect(chips.map((f) => f.label)).toEqual(['Duration', 'Group size', 'Languages']);
+    expect(chips.map((f) => f.value)).toEqual(['2 h 30 min', 'Max 12', 'EN, SR']);
+  });
+
+  it('omits chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'tours_experiences' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+});
+
 describe('goodToKnowSection', () => {
   it('renders a checklist for wellness when good_to_know is present', () => {
     const activity = baseActivity({
@@ -1231,5 +1254,138 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
     expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
+  });
+});
+
+// design-spec.md's Tours & Experiences composition (T10).
+describe('toursIncludedChecklist — What\'s included ✓/✗ (T10)', () => {
+  it('splits included/not_included into items/crossItems, each classifyField(\'phrase\', …)d', () => {
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      included: ['Licensed local guide', 'Fortress grounds entry'],
+      not_included: ['Museum tickets', 'Food and drink'],
+    });
+    expect(toursIncludedChecklist(activity)).toEqual({
+      shape: 'checklist',
+      heading: "What's included",
+      items: ['Licensed local guide', 'Fortress grounds entry'],
+      crossItems: ['Museum tickets', 'Food and drink'],
+    });
+  });
+
+  it('drops an individual item failing the phrase contract (>80 chars) without dropping its siblings', () => {
+    const tooLong = 'x'.repeat(81);
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      included: ['Licensed local guide', tooLong],
+      not_included: [],
+    });
+    const section = toursIncludedChecklist(activity);
+    if (section?.shape !== 'checklist') throw new Error('expected checklist shape');
+    expect(section.items).toEqual(['Licensed local guide']);
+  });
+
+  it('drops a denylisted item (leaked hedge)', () => {
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      included: ['Not specified'],
+      not_included: ['Museum tickets'],
+    });
+    const section = toursIncludedChecklist(activity);
+    if (section?.shape !== 'checklist') throw new Error('expected checklist shape');
+    expect(section.items).toEqual([]);
+    expect(section.crossItems).toEqual(['Museum tickets']);
+  });
+
+  it('is undefined (0 survivors omits the section) when both lists are absent', () => {
+    const activity = baseActivity({ category: 'tours_experiences' });
+    expect(toursIncludedChecklist(activity)).toBeUndefined();
+  });
+
+  it('is undefined when both lists are present but every item fails its kind', () => {
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      included: ['Not specified'],
+      not_included: ['n/a'],
+    });
+    expect(toursIncludedChecklist(activity)).toBeUndefined();
+  });
+
+  it('is undefined for a non-Tours category', () => {
+    const activity = baseActivity({ category: 'restaurants' });
+    expect(toursIncludedChecklist(activity)).toBeUndefined();
+  });
+});
+
+describe('toursItinerary — numbered compact rows (T10)', () => {
+  it('numbers each surviving stop, leading 1-based', () => {
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      itinerary: ['Fortress', 'Bazaar quarter', 'Riverfront market'],
+    });
+    expect(toursItinerary(activity)).toEqual({
+      shape: 'schedule',
+      heading: 'Itinerary',
+      density: 'compact',
+      rows: [
+        { leading: '1', main: 'Fortress', leadingStyle: 'number' },
+        { leading: '2', main: 'Bazaar quarter', leadingStyle: 'number' },
+        { leading: '3', main: 'Riverfront market', leadingStyle: 'number' },
+      ],
+    });
+  });
+
+  it('drops a stop failing the phrase contract and renumbers the survivors', () => {
+    const activity = baseActivity({
+      category: 'tours_experiences',
+      itinerary: ['Fortress', 'Not specified', 'Riverfront market'],
+    });
+    const section = toursItinerary(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows).toEqual([
+      { leading: '1', main: 'Fortress', leadingStyle: 'number' },
+      { leading: '2', main: 'Riverfront market', leadingStyle: 'number' },
+    ]);
+  });
+
+  it('is undefined (0 survivors omits the section) when itinerary is absent', () => {
+    const activity = baseActivity({ category: 'tours_experiences' });
+    expect(toursItinerary(activity)).toBeUndefined();
+  });
+});
+
+describe('toursMeetingPoint (T10)', () => {
+  it('classifies meeting_point as prose (no length rejection)', () => {
+    const longAddress =
+      'Republic Square, by the horse statue — enter through the northern gate and look for the guide holding a red umbrella.';
+    const activity = baseActivity({ category: 'tours_experiences', meeting_point: longAddress });
+    expect(toursMeetingPoint(activity)).toBe(longAddress);
+  });
+
+  it('is undefined when meeting_point is denylisted', () => {
+    const activity = baseActivity({ category: 'tours_experiences', meeting_point: 'Not specified' });
+    expect(toursMeetingPoint(activity)).toBeUndefined();
+  });
+
+  it('is undefined when meeting_point is absent', () => {
+    const activity = baseActivity({ category: 'tours_experiences' });
+    expect(toursMeetingPoint(activity)).toBeUndefined();
+  });
+});
+
+describe('metaDistanceText — Tours prefixes "Meets" (T10)', () => {
+  it('reads "Meets <n> km away" for tours_experiences with a distance anchor', () => {
+    const activity = { ...baseActivity({ category: 'tours_experiences' }), distance_km: 0.4 };
+    expect(metaDistanceText(activity, true)).toBe('Meets 0.4 km away');
+  });
+
+  it('reads plain "<n> km away" for every other category', () => {
+    const activity = { ...baseActivity({ category: 'restaurants' }), distance_km: 0.4 };
+    expect(metaDistanceText(activity, true)).toBe('0.4 km away');
+  });
+
+  it('reads the country, with no "Meets" prefix, for Anywhere scope (no distance anchor)', () => {
+    const activity = { ...baseActivity({ category: 'tours_experiences' }), country: 'Serbia' };
+    expect(metaDistanceText(activity, false)).toBe('Serbia');
   });
 });

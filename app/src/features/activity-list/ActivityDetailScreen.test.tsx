@@ -2257,6 +2257,162 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeNull();
       expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
       expect(screen.queryByText('Reviews')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+    });
+  });
+
+  // design-spec.md's Tours & Experiences composition (T10). No provider
+  // populates `details` yet, so this whole screen composition is
+  // exercised only via fixtures — the no-`details` fallback (a separate
+  // describe below) is what real users see until a provider lands.
+  describe('Tours & Experiences — full-data composition (T10)', () => {
+    const toursFull: Activity = {
+      ...activity,
+      category: 'tours_experiences',
+      subcategory: 'walking_tour',
+      distance_km: 0.4,
+      details: {
+        category: 'tours_experiences',
+        duration: '2 h 30 min',
+        group_size: 'Max 12',
+        languages: 'EN, SR',
+        difficulty_level: 'Moderate',
+        included: ['Licensed local guide', 'Fortress grounds entry'],
+        not_included: ['Museum tickets', 'Food and drink'],
+        meeting_point: 'Republic Square, by the horse statue',
+        itinerary: ['Fortress', 'Bazaar quarter', 'Riverfront market'],
+      },
+    };
+
+    beforeEach(() => {
+      process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    });
+
+    it('renders the meta line as "Tour · <subtype> · Meets <distance> away" plus a level chip (never the difficulty meter)', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Tour')).toBeTruthy();
+      expect(screen.getByText('Walking Tour')).toBeTruthy();
+      expect(screen.getByText('Meets 0.4 km away')).toBeTruthy();
+      expect(screen.getByText('Moderate')).toBeTruthy();
+      // DifficultyMeter is Sport's slot only (T7) — confirms Tours' level
+      // chip never coexists with it, per the spec's "no category shows
+      // both" rule.
+      expect(screen.queryByLabelText(/^Difficulty:/)).toBeNull();
+    });
+
+    it('renders the Duration/Group size/Languages stat grid', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('2 h 30 min')).toBeTruthy();
+      expect(screen.getByText('Duration')).toBeTruthy();
+      expect(screen.getByText('Max 12')).toBeTruthy();
+      expect(screen.getByText('Group size')).toBeTruthy();
+      expect(screen.getByText('EN, SR')).toBeTruthy();
+      expect(screen.getByText('Languages')).toBeTruthy();
+    });
+
+    it('renders "What\'s included" with ✓ items and ✗ not-included items, in order before Meeting point and Itinerary', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      const tree = JSON.stringify(screen.toJSON());
+      const includedHeadingIndex = tree.indexOf("What's included");
+      const meetingHeadingIndex = tree.indexOf('Meeting point');
+      const itineraryHeadingIndex = tree.indexOf('Itinerary');
+      expect(screen.getByText('Licensed local guide')).toBeTruthy();
+      expect(screen.getByText('Fortress grounds entry')).toBeTruthy();
+      expect(screen.getByText('Museum tickets')).toBeTruthy();
+      expect(screen.getByText('Food and drink')).toBeTruthy();
+      expect(includedHeadingIndex).toBeGreaterThan(-1);
+      expect(meetingHeadingIndex).toBeGreaterThan(includedHeadingIndex);
+      expect(itineraryHeadingIndex).toBeGreaterThan(meetingHeadingIndex);
+    });
+
+    it('renders the Meeting point address text and exactly one map (relocated here, not duplicated at the bottom)', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Republic Square, by the horse statue')).toBeTruthy();
+      expect(screen.getAllByTestId('activity-detail-map-image')).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Open in Google Maps' })).toHaveLength(1);
+    });
+
+    it('renders the Itinerary as numbered stops', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Fortress')).toBeTruthy();
+      expect(screen.getByText('Bazaar quarter')).toBeTruthy();
+      expect(screen.getByText('Riverfront market')).toBeTruthy();
+      expect(screen.getByText('1')).toBeTruthy();
+      expect(screen.getByText('2')).toBeTruthy();
+      expect(screen.getByText('3')).toBeTruthy();
+    });
+
+    it('the ✓/✗ checklist only renders items passing classifyField(\'phrase\', …) — a denylisted item is dropped', () => {
+      const withHedge: Activity = {
+        ...toursFull,
+        details: {
+          ...toursFull.details,
+          category: 'tours_experiences',
+          included: ['Licensed local guide', 'Not specified'],
+        },
+      };
+      render(<ActivityDetailScreen activity={withHedge} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Licensed local guide')).toBeTruthy();
+      expect(screen.queryByText('Not specified')).toBeNull();
+    });
+
+    it('renders the bottom bar as a disabled "Check availability" CTA (no backing action_url field on this category)', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      const cta = screen.getByRole('button', { name: 'Check availability' });
+      expect(cta.props.accessibilityState.disabled).toBe(true);
+      expect(screen.getByRole('button', { name: 'Directions' })).toBeTruthy();
+    });
+
+    it('renders no reviews section and no attribution plate for the full-data composition either (still no provider)', () => {
+      render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('Reviews')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+    });
+  });
+
+  // design-spec.md's Screen-level "No `details`" state: "This is also the
+  // Tours screen until its provider lands" — the primary state most users
+  // of this category will actually see (T10).
+  describe('Tours & Experiences — no-details fallback (T10)', () => {
+    it('renders hero, title, meta line (category + subcategory + distance), description if present, map, and Directions only — no stat grid/unique/level chip', () => {
+      process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+      const noDetails: Activity = {
+        ...activity,
+        category: 'tours_experiences',
+        subcategory: 'walking_tour',
+        distance_km: 0.4,
+        details: undefined,
+      };
+      render(<ActivityDetailScreen activity={noDetails} showDistance onBack={jest.fn()} />);
+
+      expect(screen.getByText(noDetails.title)).toBeTruthy();
+      expect(screen.getByText('Tour')).toBeTruthy();
+      expect(screen.getByText('Walking Tour')).toBeTruthy();
+      expect(screen.getByText('Meets 0.4 km away')).toBeTruthy();
+      expect(screen.getByText(noDetails.description)).toBeTruthy();
+      expect(screen.getByTestId('activity-detail-map-image')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Directions' })).toBeTruthy();
+
+      // No level chip, no stat grid, no unique-section content.
+      expect(screen.queryByText('Duration')).toBeNull();
+      expect(screen.queryByText("What's included")).toBeNull();
+      expect(screen.queryByText('Meeting point')).toBeNull();
+      expect(screen.queryByText('Itinerary')).toBeNull();
+    });
+
+    it('omits the description block too when it is also absent (details: {})', () => {
+      const bare: Activity = {
+        ...activity,
+        category: 'tours_experiences',
+        description: '',
+        details: {} as Activity['details'],
+      };
+      expect(() =>
+        render(<ActivityDetailScreen activity={bare} showDistance onBack={jest.fn()} />),
+      ).not.toThrow();
+      expect(screen.getByText(bare.title)).toBeTruthy();
     });
   });
 });
