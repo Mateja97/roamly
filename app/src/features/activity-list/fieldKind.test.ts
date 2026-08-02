@@ -64,14 +64,49 @@ describe('classifyField — phrase kind', () => {
     expect(classifyField('phrase', at81)).toBeUndefined();
   });
 
-  it('rejects a terminal period, exclamation, or question mark', () => {
-    expect(classifyField('phrase', 'Bring your own water.')).toBeUndefined();
-    expect(classifyField('phrase', 'Wow!')).toBeUndefined();
+  // T9 review: real captured Wellness data ("Excellence Massage Belgrade",
+  // a live venue) has short, legitimate good_to_know items that naturally
+  // end in a period — outright-rejecting any terminal punctuation dropped
+  // every one of them, so 0 survivors omitted the whole Good-to-know
+  // section. One trailing terminal-punctuation char is now stripped for the
+  // length check only; the value that renders still keeps its punctuation.
+  it('keeps a short phrase ending in terminal punctuation, punctuation intact', () => {
+    const real = 'Gift vouchers for massages are available; they never expire.';
+    expect(classifyField('phrase', real)).toBe(real);
+    expect(classifyField('phrase', 'Wow!')).toBe('Wow!');
+  });
+
+  // The rule's real target — long, multi-clause, sentence-shaped content —
+  // still gets omitted: stripping one trailing char isn't enough to bring a
+  // genuine sentence under the 80-char cap. Same venue, its own over-length
+  // item.
+  it('still omits a genuinely long sentence even after stripping trailing punctuation', () => {
+    const long =
+      "Visitors can come without reservation, but it's advisable to announce 30 minutes in advance.";
+    expect(long.length).toBeGreaterThan(81); // sanity: over cap even stripped
+    expect(classifyField('phrase', long)).toBeUndefined();
+  });
+
+  it('measures after stripping: accepts at 80 stripped chars + punctuation, rejects at 81', () => {
+    const at80Stripped = `${'x'.repeat(80)}.`;
+    const at81Stripped = `${'x'.repeat(81)}.`;
+    expect(classifyField('phrase', at80Stripped)).toBe(at80Stripped);
+    expect(classifyField('phrase', at81Stripped)).toBeUndefined();
   });
 
   it('has no word-count limit (unlike scalar)', () => {
     const words = new Array(10).fill('go').join(' '); // 29 chars, well within 80
     expect(classifyField('phrase', words)).toBe(words);
+  });
+
+  // T9 round-3 fix: the trailing-strip above leaves a punctuation-only value
+  // measuring as empty; the denylist can't catch it (nothing normalizes to
+  // "") and the length check alone doesn't reject an empty string, so
+  // without this it would survive as a checklist bullet with no content.
+  it('omits a punctuation-only value once stripped to nothing', () => {
+    expect(classifyField('phrase', '.')).toBeUndefined();
+    expect(classifyField('phrase', '...')).toBeUndefined();
+    expect(classifyField('phrase', '!')).toBeUndefined();
   });
 });
 

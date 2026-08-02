@@ -303,6 +303,16 @@ export function tripadvisorAddressLine(activity: Activity): string | undefined {
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
+// T9 review: T2's own worked example for a scraped price scalar already
+// includes a "from " prefix (websitesync.go wellnessPrompt/
+// entertainmentPrompt: "from €25"/"from €8"), so a compliant scrape can hand
+// us a value that's already prefixed — prepending our own "from "/"From "
+// on top would double it. Strip any existing leading "from" (case-
+// insensitive) before either call site adds its own prefix.
+function stripLeadingFrom(value: string): string {
+  return value.replace(/^from\s+/i, '');
+}
+
 // design-spec.md T8 addendum #6: Wellness' external-booking note, lifted
 // out of the Treatments rows into the bottom action bar (above the button
 // row) — always present for Wellness once this data exists.
@@ -335,7 +345,7 @@ export function priceContextLine(activity: Activity): string | undefined {
         ? d.entry_price
         : undefined;
   const price = classifyField('scalar', raw);
-  return price ? `From ${price}` : undefined;
+  return price ? `From ${stripLeadingFrom(price)}` : undefined;
 }
 
 // design-spec.md T8 addendum #2: the noun before the "·" is the *singular*
@@ -771,10 +781,13 @@ export function factStripFields(activity: Activity): FactChip[] {
       // line above the title already carries that context).
       return withHours(buildChips([[Euro, 'Tickets', d.ticket_price]]), d.hours);
     case 'shopping':
+      // T9: "Best day, plus Venue when it differs from the subtype" — reuses
+      // T8's `venueDiffersFromSubtype` (same conditional Culture's stat grid
+      // above uses), not a re-derivation of it.
       return withHours(
         buildChips([
-          [Store, 'Venue', d.venue_type],
           [Calendar, 'Best day', d.best_day],
+          [Store, 'Venue', venueDiffersFromSubtype(activity, d.venue_type)],
         ]),
         d.hours,
       );
@@ -812,9 +825,15 @@ export function factStripFields(activity: Activity): FactChip[] {
 }
 
 // Backend's `upcoming_shows[].date` has no fixed documented format; parse it
-// as a real date for the day/numeral split when possible, and fall back to
-// showing the raw string as the numeral (no day label) when it isn't a
-// parseable date — never throws on unexpected input.
+// as a real date for the day/numeral split when possible. When it isn't a
+// parseable date (or `Intl` throws), it's still an LLM-generated value —
+// T9 round-3 fix: route it through `classifyField('scalar', …)` like every
+// other generated field, instead of rendering the raw string, so a
+// denylisted/oversized placeholder (`"Not specified"`, `"N/A"` — 41 of 231
+// live Entertainment rows carry one) omits instead of walking onto the
+// screen at numeral size. `scalar` because the field is meant to be a short
+// date; the spec declares no kind for it explicitly. Never throws on
+// unexpected input.
 function dateBlockRow(show: {
   date: string;
   title: string;
@@ -823,7 +842,7 @@ function dateBlockRow(show: {
   const parsed = new Date(show.date);
   const valid = !Number.isNaN(parsed.getTime());
   let day = '';
-  let date = show.date;
+  let date = '';
   if (valid) {
     try {
       day = parsed
@@ -831,8 +850,12 @@ function dateBlockRow(show: {
         .toUpperCase();
       date = String(parsed.getDate());
     } catch {
-      // ponytail: Intl unavailable — falls back to the raw date string above.
+      // ponytail: Intl unavailable — falls through to the classifyField
+      // fallback below, same as an unparseable date.
     }
+  }
+  if (!date) {
+    date = classifyField('scalar', show.date) ?? '';
   }
   // T5 round-3 fix: `time_or_price` is LLM-generated (same field the
   // production-bug report's "Not specified" hedges leaked from on legacy
@@ -845,7 +868,12 @@ function dateBlockRow(show: {
   // hedge this guards against is a denylist hit, which `phrase` catches
   // identically (denylist runs before the kind check) at its more permissive
   // 80-char cap — use `phrase`.
-  return { day, date, title: show.title, subline: classifyField('phrase', show.time_or_price) ?? '' };
+  return {
+    day,
+    date,
+    title: show.title,
+    subline: classifyField('phrase', show.time_or_price) ?? '',
+  };
 }
 
 // Whole-section omission lives here too: every branch returns `undefined`
@@ -933,17 +961,29 @@ export function uniqueSection(
           }
         : undefined;
     case 'wellness':
+      // T9: switches from the generic "compact" density to the "duration"
+      // density the spec names for Treatments (name / duration / `from €X`).
+      // `price`/`duration` are both LLM-generated (same website-scrape
+      // surface the bug report's "Nije navedeno" placeholders leaked from)
+      // — each runs through `classifyField('scalar', …)` so a leaked
+      // placeholder/sentence omits that one value (row stays, per the "List
+      // rows" trailing-omit rule) instead of rendering verbatim. `item`
+      // (the row's name) isn't classified, matching every other name/price
+      // list's item field (popular_dishes, on_the_bar, signature_pours) —
+      // none of those are declared a kind in the spec either.
       return d.treatments?.length
         ? {
             shape: 'schedule',
             heading: 'Treatments',
-            density: 'compact',
-            rows: d.treatments.map((t) => ({
-              leading: t.duration ?? '',
-              main: t.item,
-              trailing: t.price,
-              trailingStyle: 'price' as const,
-            })),
+            density: 'duration',
+            rows: d.treatments.map((t) => {
+              const price = classifyField('scalar', t.price);
+              return {
+                name: t.item,
+                duration: classifyField('scalar', t.duration),
+                price: price ? `from ${stripLeadingFrom(price)}` : undefined,
+              };
+            }),
           }
         : undefined;
     case 'entertainment':
@@ -967,11 +1007,31 @@ export function uniqueSection(
 // UniqueSectionData's single-value shape can't hold at once. Reuses the
 // existing 'checklist' shape (same one Nature/Sport already render via
 // uniqueSection) as a second, independent instance.
+// T9: `good_to_know[]` is `phrase` kind (design-spec.md's "Kind declarations
+// on existing fields" — Wellness, Entertainment, Nature all share this
+// field). Every item now runs through `classifyField('phrase', …)`
+// individually — an item that's over-length or denylisted is dropped, the
+// rest of the list stays (same per-item survival rule as any other list),
+// and 0 survivors omits the section like every other shape's empty case.
+// This was the one real gap in the bug report's chain that isn't already
+// covered by a scalar/shape guard elsewhere: `factStripFields` uses
+// `classifyField('scalar', …)` for the stat grid and `dateBlockRow` already
+// classifies its trailing subline, but this function ran no validation at
+// all before this fix — see engineering-notes.md's T9 entry for why the
+// bug report's own sport-equipment string still passes this check (it's a
+// content-relevance defect, not a shape one, and this guard is scoped to
+// shape).
 export function goodToKnowSection(activity: Activity): UniqueSectionData | undefined {
   const d = activity.details;
   if (!d) return undefined;
-  const items = d.category === 'wellness' || d.category === 'entertainment' ? d.good_to_know : undefined;
-  return items?.length ? { shape: 'checklist', heading: 'Good to know', items } : undefined;
+  const raw =
+    d.category === 'wellness' || d.category === 'entertainment'
+      ? d.good_to_know
+      : undefined;
+  const items = (raw ?? [])
+    .map((item) => classifyField('phrase', item))
+    .filter((item): item is string => item !== undefined);
+  return items.length ? { shape: 'checklist', heading: 'Good to know', items } : undefined;
 }
 
 // Shared by the two Tours helpers below — both filter a `phrase[]` field

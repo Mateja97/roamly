@@ -994,6 +994,33 @@ describe('factStripFields — tours_experiences (T10)', () => {
   });
 });
 
+// T9: same "differs from the subtype" conditional the spec names for
+// Culture (T8) — reuses `venueDiffersFromSubtype` rather than a re-derived
+// copy (see the `venueDiffersFromSubtype (T8)` describe block above for the
+// absent-subtype/whitespace/case-insensitivity coverage shared by both
+// categories). Mirrors the "Kids/Culture/Art (T8)" describe block's two
+// cases, plus Shopping's own `Best day` leading the row.
+describe('factStripFields — shopping Venue (differs-from-subtype, T9)', () => {
+  it('shows Best day and Venue (differs from subtype), Best day leading', () => {
+    const activity = {
+      ...baseActivity({ category: 'shopping', venue_type: 'Grocery Store', best_day: 'Saturday' }),
+      subcategory: 'market_bazaar', // label: "Market/Bazaar"
+    };
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Best day', 'Venue']);
+    expect(factStripFields(activity).find((f) => f.label === 'Venue')?.value).toBe('Grocery Store');
+  });
+
+  it('omits Venue when it matches the subtype, keeping Best day', () => {
+    const activity = {
+      ...baseActivity({ category: 'shopping', venue_type: 'boutique', best_day: 'Friday' }),
+      subcategory: 'boutique', // label: "Boutique"
+    };
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Best day']);
+  });
+});
+
 describe('goodToKnowSection', () => {
   it('renders a checklist for wellness when good_to_know is present', () => {
     const activity = baseActivity({
@@ -1026,6 +1053,45 @@ describe('goodToKnowSection', () => {
 
   it('is undefined for a category with no good_to_know field at all (e.g. restaurants)', () => {
     const activity = baseActivity({ category: 'restaurants' });
+    expect(goodToKnowSection(activity)).toBeUndefined();
+  });
+
+  // T9: this function ran zero validation before this task — every item now
+  // goes through `classifyField('phrase', …)`, same contract as Pills/other
+  // phrase-kind slots. Uses a genuinely shape-violating example (denylisted
+  // Serbian placeholder), not the bug report's own good_to_know string —
+  // see engineering-notes.md's T9 entry for why that exact string isn't a
+  // usable test case for this guard.
+  it('drops a denylisted item, keeping the rest of the list', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      good_to_know: ['nije poznato', 'Book ahead on weekends'],
+    });
+    expect(goodToKnowSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Book ahead on weekends'],
+    });
+  });
+
+  it('drops an item over the phrase kind\'s 80-char limit', () => {
+    const overLong = 'A'.repeat(81);
+    const activity = baseActivity({
+      category: 'entertainment',
+      good_to_know: [overLong, 'Doors open 30 minutes before showtime'],
+    });
+    expect(goodToKnowSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Doors open 30 minutes before showtime'],
+    });
+  });
+
+  it('omits the whole section when every item fails classification', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      good_to_know: ['nije poznato', 'nema podataka'],
+    });
     expect(goodToKnowSection(activity)).toBeUndefined();
   });
 });
@@ -1216,6 +1282,22 @@ describe('priceContextLine', () => {
     const activity = baseActivity({ category: 'sport' });
     expect(priceContextLine(activity)).toBeUndefined();
   });
+
+  // T9 review: T2's own wellnessPrompt/entertainmentPrompt worked example
+  // for price_from is "from €25"/"from €8" — the backend can legitimately
+  // hand us a value that already carries the prefix. Don't double it.
+  it('does not double the prefix when price_from already starts with "from" (case-insensitive)', () => {
+    expect(
+      priceContextLine(
+        baseActivity({ category: 'entertainment', price_from: 'from €8' }),
+      ),
+    ).toBe('From €8');
+    expect(
+      priceContextLine(
+        baseActivity({ category: 'entertainment', price_from: 'From €8' }),
+      ),
+    ).toBe('From €8');
+  });
 });
 
 // T5 round-3 fix: `time_or_price` is LLM-generated (same denylist/prompt
@@ -1254,6 +1336,60 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
     expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
+  });
+
+  // T9 round-3 fix: an unparseable `date` is still an LLM-generated value
+  // (same surface `time_or_price` already guards) — a denylisted or
+  // over-length raw string must omit, not render verbatim at numeral size.
+  // The row itself survives (title + subline unaffected), per the same
+  // trailing-omit rule the subline already follows.
+  it('omits the date block when the raw date is denylisted (production bug: 41/231 live rows)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [
+        {
+          date: 'Not specified',
+          title: 'Live jazz night',
+          time_or_price: '€15',
+        },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({
+      day: '',
+      date: '',
+      title: 'Live jazz night',
+      subline: '€15',
+    });
+  });
+
+  it('omits the date block when the raw date fails the scalar shape (too long)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [
+        {
+          date: 'Details not provided for this listing',
+          title: 'Live jazz night',
+        },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ day: '', date: '' });
+  });
+
+  it('keeps a short unparseable raw date that survives the scalar shape (e.g. "TBA")', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ day: '', date: 'TBA' });
   });
 });
 
@@ -1387,5 +1523,69 @@ describe('metaDistanceText — Tours prefixes "Meets" (T10)', () => {
   it('reads the country, with no "Meets" prefix, for Anywhere scope (no distance anchor)', () => {
     const activity = { ...baseActivity({ category: 'tours_experiences' }), country: 'Serbia' };
     expect(metaDistanceText(activity, false)).toBe('Serbia');
+  });
+});
+
+// T9: Treatments switches from the generic "compact" density to the new
+// "duration" density (name / duration / `from €X`) — the UI rendering
+// itself is covered by UniqueSection.test.tsx; this covers the mapping
+// (classifyField wiring + the "from " prefix) that feeds it.
+describe('uniqueSection — wellness treatments (duration density, T9)', () => {
+  it('maps item/duration/price into a duration-density row, prefixing a valid price with "from "', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      treatments: [{ item: 'Swedish massage', duration: '60 min', price: '€35' }],
+    });
+    const section = uniqueSection(activity);
+    expect(section).toEqual({
+      shape: 'schedule',
+      heading: 'Treatments',
+      density: 'duration',
+      rows: [{ name: 'Swedish massage', duration: '60 min', price: 'from €35' }],
+    });
+  });
+
+  it('omits the trailing price for a row whose price fails its scalar shape, keeping the row (the bug-report shape)', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      treatments: [{ item: 'Deep tissue massage', price: 'Nije navedeno' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toEqual({ name: 'Deep tissue massage', duration: undefined, price: undefined });
+  });
+
+  it('omits the duration value when it fails its scalar shape, independently of price', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      treatments: [
+        { item: 'Hot stone massage', duration: 'The session length varies by therapist availability.', price: '€40' },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toEqual({ name: 'Hot stone massage', duration: undefined, price: 'from €40' });
+  });
+
+  it('is undefined when there are no treatments', () => {
+    const activity = baseActivity({ category: 'wellness' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  // T9 review: same doubled-prefix bug as priceContextLine — a treatment's
+  // price is the exact field T2's wellnessPrompt worked example prefixes
+  // itself ("from €25").
+  it('does not double the "from " prefix when the scraped price already carries one', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      treatments: [{ item: 'Swedish massage', price: 'from €35' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toEqual({
+      name: 'Swedish massage',
+      duration: undefined,
+      price: 'from €35',
+    });
   });
 });

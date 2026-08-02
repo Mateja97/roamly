@@ -303,4 +303,28 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Live at the Fort')).toBeTruthy();
     expect(screen.getByText('20:00 · from €15')).toBeTruthy();
   });
+
+  // T9 round-3 fix: `activityDetailConfig.ts`'s `dateBlockRow` now omits
+  // `date`/`day` (empty strings) when the raw date fails classification —
+  // this pins the renderer's half: no date-block column, title+subline
+  // still render, matching the "row keeps title+subline" trailing-omit rule.
+  it('shape F (schedule, date-block density): omits the date block entirely when date is empty', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Upcoming shows',
+      density: 'dateblock',
+      rows: [
+        {
+          day: '',
+          date: '',
+          title: 'Live at the Fort',
+          subline: '20:00 · from €15',
+        },
+      ],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Live at the Fort')).toBeTruthy();
+    expect(screen.getByText('20:00 · from €15')).toBeTruthy();
+    expect(screen.queryByText('FRI')).toBeNull();
+  });
 });
