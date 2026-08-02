@@ -213,10 +213,16 @@ const styles = StyleSheet.create({
   section: {
     gap: space[3],
   },
+  // T7 round-2 fix: matches ProseBlock's heading tokens exactly — every
+  // unique-section heading in the mockup is a 12px uppercase muted overline
+  // (same treatment as the "ABOUT" description heading on the same screen),
+  // not a loud cream sentence-case heading.
   heading: {
-    fontSize: fontSize.lg,
+    fontSize: fontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: fontSize.xs * 0.05,
+    color: colors.textMuted,
     fontWeight: '600',
-    color: colors.text,
   },
   // Shape A — name+price list
   nameRow: {

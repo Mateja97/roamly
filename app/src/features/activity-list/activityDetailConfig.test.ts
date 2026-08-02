@@ -1,11 +1,14 @@
 import { Clock } from 'lucide-react-native';
 import type { Activity, OpeningHours } from '../../api/activities';
+import { CATEGORY_LABELS } from './filters';
+import type { Category } from './types';
 import {
   bodySectionOrder,
   factStripFields,
   goodToKnowSection,
   kidsAgeLabel,
   metaLineLeadItems,
+  nightlifeTonightChip,
   openStatus,
   priceContextLine,
   subtypeLabel,
@@ -178,6 +181,47 @@ describe('openStatus — structured opening_hours', () => {
   it('returns undefined for an activity with no details at all', () => {
     const activity = baseActivity(undefined);
     expect(openStatus(activity)).toBeUndefined();
+  });
+});
+
+// T7 round-2 fix: distinct from `openStatus` — reads `open_tonight` directly
+// so it renders alongside HoursRow instead of losing to (or superseding) the
+// generic hours-derived status.
+describe('nightlifeTonightChip', () => {
+  it('reads "Open tonight" from the static flag even when opening_hours is also usable', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      open_tonight: true,
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'monday', open: '22:00', close: '06:00' }],
+      },
+    });
+    expect(nightlifeTonightChip(activity)).toEqual({ text: 'Open tonight', isOpen: true });
+  });
+
+  it('reads "Closed tonight" from the static flag even when opening_hours computes Open', () => {
+    jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
+    const activity = baseActivity({
+      category: 'nightlife',
+      open_tonight: false,
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+      },
+    });
+    expect(nightlifeTonightChip(activity)).toEqual({ text: 'Closed tonight', isOpen: false });
+    jest.useRealTimers();
+  });
+
+  it('is undefined for a non-nightlife category regardless of open_tonight', () => {
+    const activity = baseActivity({ category: 'restaurants', open_status: 'Open now' });
+    expect(nightlifeTonightChip(activity)).toBeUndefined();
+  });
+
+  it('is undefined when nightlife has no open_tonight flag', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(nightlifeTonightChip(activity)).toBeUndefined();
   });
 });
 
@@ -963,10 +1007,144 @@ describe('goodToKnowSection', () => {
   });
 });
 
+// T7: design-spec.md's Nightlife/Nature/Sport stat-grid compositions.
+// Per-value scalar classification is FactStrip's own job (see
+// FactStrip.test.tsx's classifyFactChips coverage) — this only pins which
+// fields each category surfaces, matching "The 13 screens".
+describe('factStripFields — nightlife/nature/sport (T7)', () => {
+  it('surfaces Entry, Dress code, Opens for nightlife', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      entry_price: '€10',
+      dress_code: 'Smart casual',
+      opens_time: '23:00',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Entry', 'Dress code', 'Opens']);
+  });
+
+  it('omits nightlife chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  it('surfaces Time to spend, Best time, Cost for nature', () => {
+    const activity = baseActivity({
+      category: 'nature',
+      time_to_spend: '2 h',
+      best_time: 'Morning',
+      cost: 'Free',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Time to spend', 'Best time', 'Cost']);
+  });
+
+  it('omits nature chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'nature' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  it('surfaces Effort, Duration, Gear for sport', () => {
+    const activity = baseActivity({
+      category: 'sport',
+      effort_level: 'Moderate',
+      duration: '2 h',
+      gear: 'Boots',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Effort', 'Duration', 'Gear']);
+  });
+
+  it('omits sport chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'sport' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+});
+
+// T7: design-spec.md's Nightlife "Tonight" (compact), Nature/Sport "Good to
+// know"/"What to bring" (checklist) unique sections.
+describe('uniqueSection — nightlife/nature/sport (T7)', () => {
+  it('builds the Tonight compact-density schedule from nightlife lineup', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      lineup: [{ time: '22:00', act: 'DJ Set', stage: 'Main' }],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'schedule',
+      heading: 'Tonight',
+      density: 'compact',
+      rows: [{ leading: '22:00', main: 'DJ Set', trailing: 'Main', trailingStyle: 'muted' }],
+    });
+  });
+
+  it('is undefined when nightlife has no lineup', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  it('builds the "Good to know" checklist from nature good_to_know', () => {
+    const activity = baseActivity({
+      category: 'nature',
+      good_to_know: ['Bring water', 'Trail closes at dusk'],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Bring water', 'Trail closes at dusk'],
+    });
+  });
+
+  it('is undefined when nature has no good_to_know', () => {
+    const activity = baseActivity({ category: 'nature' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  it('builds the "What to bring" checklist from sport what_to_bring', () => {
+    const activity = baseActivity({
+      category: 'sport',
+      what_to_bring: ['Climbing shoes', 'Chalk bag'],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'What to bring',
+      items: ['Climbing shoes', 'Chalk bag'],
+    });
+  });
+
+  it('is undefined when sport has no what_to_bring', () => {
+    const activity = baseActivity({ category: 'sport' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+});
+
+// T7 cross-check: the spec is explicit that the difficulty meter is Sport's
+// alone ("no category shows both" it and Tours' level chip) — pins that at
+// the promote-mechanism level, alongside ActivityDetailScreen.test.tsx's
+// render-level check. The AC's other half ("Tours & Experiences uses the
+// level chip instead") isn't asserted here or anywhere in T7: Tours has no
+// `ActivityDetails` variant / screen composition yet (T10's job, a separate
+// concurrent task). T10 (PR #134) owns that assertion directly — its Tours
+// composition test asserts `queryByLabelText(/^Difficulty:/)` is null on a
+// Tours row rendering the level chip — so it isn't duplicated here.
+describe('difficulty meter exclusivity — Sport only (T7 cross-check)', () => {
+  it('is the promoted slot for sport and never appears in any other category\'s body order', () => {
+    // Derived from the actual category list (not hand-written) so a 14th
+    // category added to `Category` can't silently skip this assertion —
+    // `CATEGORY_LABELS` is `Record<Category, string>`, exhaustive by
+    // construction (filters.ts).
+    const allCategories = Object.keys(CATEGORY_LABELS) as Category[];
+    for (const category of allCategories) {
+      expect(bodySectionOrder(category).includes('difficulty')).toBe(category === 'sport');
+    }
+  });
+});
+
 // design-spec.md's "Bottom bar" slot (§B12): optional price-context line —
-// wired for Entertainment today. Wellness explicitly does NOT get this line
-// (T9: "external-booking note + Visit website"; `price_from` surfaces only
-// in the stat grid) — a price line there would double the same figure.
+// wired for Entertainment (`price_from`) and, per T7, Nightlife
+// (`entry_price`, spec's "Bottom: `From €10` + `Guest list`"). Wellness
+// explicitly does NOT get this line (T9: "external-booking note + Visit
+// website"; `price_from` surfaces only in the stat grid) — a price line
+// there would double the same figure.
 describe('priceContextLine', () => {
   it('renders "From <price>" for entertainment when price_from is present', () => {
     const activity = baseActivity({ category: 'entertainment', price_from: '€8' });
@@ -991,8 +1169,28 @@ describe('priceContextLine', () => {
     expect(priceContextLine(activity)).toBeUndefined();
   });
 
-  it('is undefined for a category with no price_from field at all (e.g. nightlife)', () => {
+  // T7: same "same field feeds both the stat-grid chip and the bottom-bar
+  // line" pattern Entertainment already established, using `entry_price`.
+  it('renders "From <price>" for nightlife when entry_price is present', () => {
+    const activity = baseActivity({ category: 'nightlife', entry_price: '€10' });
+    expect(priceContextLine(activity)).toBe('From €10');
+  });
+
+  it('omits the line when nightlife entry_price is absent', () => {
     const activity = baseActivity({ category: 'nightlife' });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('omits the line when nightlife entry_price fails its scalar shape', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      entry_price: 'The entry fee is not explicitly stated.',
+    });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('is undefined for a category with no price field at all (e.g. sport)', () => {
+    const activity = baseActivity({ category: 'sport' });
     expect(priceContextLine(activity)).toBeUndefined();
   });
 });
