@@ -238,7 +238,10 @@ describe('queryActivities', () => {
     expect(result.status).toBe('success');
     if (result.status !== 'success') return;
     const activity = result.activities[0];
-    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Venue', 'Tickets', 'Hours']);
+    // T8: Culture's stat-grid order is Tickets, then Venue (only when it
+    // differs from the subtype — see `venueDiffersFromSubtype`). No
+    // `subcategory` on this wire fixture, so Venue always shows.
+    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Tickets', 'Venue', 'Hours']);
     expect(uniqueSection(activity)).toEqual({
       shape: 'banner',
       heading: 'Now showing',
