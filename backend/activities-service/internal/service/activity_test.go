@@ -505,6 +505,12 @@ func TestValidateDetails(t *testing.T) {
 			`{"year":9999}`, true},
 		{"art action_url and year together accepted", activitiessvc.CategoryArt,
 			`{"action_url":"https://tickets.example.com/show","year":1935}`, false},
+		{"matching tours_experiences shape accepted", activitiessvc.CategoryToursExperiences,
+			`{"duration":"2 h 30 min","group_size":"Max 12","languages":"EN, DE","difficulty_level":"Moderate","included":["Guide","Entry fee"],"not_included":["Lunch"],"meeting_point":"Meet at the fountain in the main square, look for the blue umbrella.","itinerary":["Old town square","Riverside walk","Castle viewpoint"]}`, false},
+		{"restaurant field on tours_experiences rejected", activitiessvc.CategoryToursExperiences,
+			`{"cuisine":"Italian"}`, true},
+		{"unknown field on tours_experiences rejected", activitiessvc.CategoryToursExperiences,
+			`{"treatments":[{"item":"Massage"}]}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -707,6 +713,24 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 	})
 
+	t.Run("wellness treatments row dropped entirely when item is whitespace-only, other rows kept (T2 fix)", func(t *testing.T) {
+		raw := `{"treatments":[{"item":"   ","duration":"60m","price":"from €40"},{"item":"Facial","duration":"45m","price":"from €35"}]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.WellnessDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.Treatments) != 1 {
+			t.Fatalf("treatments = %+v, want 1 row (whitespace-only item drops the whole row, same as a denylisted one — a bare denylist check let this through and would have locked the row via isComplete forever)", got.Treatments)
+		}
+		if got.Treatments[0].Item != "Facial" {
+			t.Errorf("treatments[0].item = %q, want %q kept", got.Treatments[0].Item, "Facial")
+		}
+	})
+
 	t.Run("wellness good_to_know drops only denylisted entries", func(t *testing.T) {
 		raw := `{"good_to_know":["Bring your own towel","Nije navedeno","Cash only"]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
@@ -779,6 +803,24 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if len(got.UpcomingShows) != 1 {
 			t.Fatalf("upcoming_shows = %+v, want 1 row (denylisted title drops the whole row)", got.UpcomingShows)
+		}
+		if got.UpcomingShows[0].Title != "Comedy Hour" {
+			t.Errorf("upcoming_shows[0].title = %q, want %q kept", got.UpcomingShows[0].Title, "Comedy Hour")
+		}
+	})
+
+	t.Run("entertainment upcoming_shows row dropped entirely when title is whitespace-only, other rows kept (T2 fix)", func(t *testing.T) {
+		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"   ","time_or_price":"from $20"},{"date":"2026-09-02","title":"Comedy Hour","time_or_price":"from $15"}]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.EntertainmentDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.UpcomingShows) != 1 {
+			t.Fatalf("upcoming_shows = %+v, want 1 row (whitespace-only title drops the whole row, same as a denylisted one)", got.UpcomingShows)
 		}
 		if got.UpcomingShows[0].Title != "Comedy Hour" {
 			t.Errorf("upcoming_shows[0].title = %q, want %q kept", got.UpcomingShows[0].Title, "Comedy Hour")
@@ -955,6 +997,151 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.CurrentExhibition == nil || got.CurrentExhibition.Title != "Modern Sculpture" || got.CurrentExhibition.Description != "A collection of works from local artists." {
 			t.Errorf("current_exhibition = %+v, want unchanged", got.CurrentExhibition)
+		}
+	})
+
+	// Tours & Experiences (T2): no provider populates these fields yet, but
+	// the kind guard is wired ahead of that integration — these subtests
+	// cover both halves it adds over every other category: denylist
+	// clearing (shared with everyone else) and, new in this task, the
+	// `scalar`/`phrase` shape check itself (clearInvalidScalar/
+	// dropInvalidPhrases), which no other category's fields are guarded by.
+	t.Run("tours_experiences scalar fields cleared for every denylist entry", func(t *testing.T) {
+		for _, entry := range contentkind.Denylist() {
+			raw := fmt.Sprintf(`{"duration":%q,"group_size":%q,"languages":%q,"difficulty_level":%q}`, entry, entry, entry, entry)
+			cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
+			if err != nil {
+				t.Fatalf("entry %q: unexpected error: %v", entry, err)
+			}
+			var got activitiessvc.ToursExperiencesDetails
+			if err := json.Unmarshal(cleaned, &got); err != nil {
+				t.Fatalf("entry %q: unmarshaling: %v", entry, err)
+			}
+			if got.Duration != "" || got.GroupSize != "" || got.Languages != "" || got.DifficultyLevel != "" {
+				t.Errorf("entry %q: got %+v, want every scalar field cleared", entry, got)
+			}
+		}
+	})
+
+	t.Run("tours_experiences scalar fields cleared when they violate the scalar shape, not just the denylist", func(t *testing.T) {
+		raw := `{"duration":"Approximately two and a half hours total","group_size":"Max 12.","languages":"EN, DE"}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ToursExperiencesDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.Duration != "" {
+			t.Errorf("duration = %q, want cleared (40 chars, exceeds ScalarMaxChars)", got.Duration)
+		}
+		if got.GroupSize != "" {
+			t.Errorf("group_size = %q, want cleared (terminal punctuation)", got.GroupSize)
+		}
+		if got.Languages != "EN, DE" {
+			t.Errorf("languages = %q, want unchanged (legitimate spec example)", got.Languages)
+		}
+	})
+
+	t.Run("tours_experiences included/not_included/itinerary drop entries that are denylisted or violate the phrase shape, keep the rest", func(t *testing.T) {
+		raw := `{"included":["Professional guide","Not specified","A description so long it clearly exceeds the eighty character phrase limit for a checklist item"],"not_included":["Lunch","Gratuities."],"itinerary":["Old town square","N/A"]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ToursExperiencesDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if want := []string{"Professional guide"}; !slices.Equal(got.Included, want) {
+			t.Errorf("included = %v, want %v (denylisted + over-length dropped)", got.Included, want)
+		}
+		if want := []string{"Lunch"}; !slices.Equal(got.NotIncluded, want) {
+			t.Errorf("not_included = %v, want %v (terminal punctuation dropped)", got.NotIncluded, want)
+		}
+		if want := []string{"Old town square"}; !slices.Equal(got.Itinerary, want) {
+			t.Errorf("itinerary = %v, want %v (denylisted dropped)", got.Itinerary, want)
+		}
+	})
+
+	t.Run("tours_experiences meeting_point cleared on denylist but not on length, since prose has no length-based rejection", func(t *testing.T) {
+		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(`{"meeting_point":"Not specified"}`))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ToursExperiencesDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.MeetingPoint != "" {
+			t.Errorf("meeting_point = %q, want cleared (denylisted)", got.MeetingPoint)
+		}
+
+		longButLegit := strings.Repeat("Meet your guide by the fountain in the main square. ", 6) // well over 280 chars
+		cleaned, err = ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(fmt.Sprintf(`{"meeting_point":%q}`, longButLegit)))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.MeetingPoint != longButLegit {
+			t.Errorf("meeting_point over 280 chars was cleared/changed, want unchanged (prose has no length-based rejection, per contentkind.ProseMaxChars' doc — it's a UI clamp threshold, not a rejection limit)")
+		}
+	})
+
+	t.Run("tours_experiences fully legitimate payload passes unchanged", func(t *testing.T) {
+		raw := `{"duration":"2 h 30 min","group_size":"Max 12","languages":"EN, DE","difficulty_level":"Moderate","included":["Guide","Entry fee"],"not_included":["Lunch"],"meeting_point":"Meet at the fountain in the main square.","itinerary":["Old town square","Riverside walk"]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ToursExperiencesDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.Duration != "2 h 30 min" || got.GroupSize != "Max 12" || got.Languages != "EN, DE" || got.DifficultyLevel != "Moderate" {
+			t.Errorf("scalar fields changed unexpectedly: %+v", got)
+		}
+		if want := []string{"Guide", "Entry fee"}; !slices.Equal(got.Included, want) {
+			t.Errorf("included = %v, want unchanged %v", got.Included, want)
+		}
+		if want := []string{"Lunch"}; !slices.Equal(got.NotIncluded, want) {
+			t.Errorf("not_included = %v, want unchanged %v", got.NotIncluded, want)
+		}
+		if want := []string{"Old town square", "Riverside walk"}; !slices.Equal(got.Itinerary, want) {
+			t.Errorf("itinerary = %v, want unchanged %v", got.Itinerary, want)
+		}
+		if got.MeetingPoint != "Meet at the fountain in the main square." {
+			t.Errorf("meeting_point = %q, want unchanged", got.MeetingPoint)
+		}
+	})
+
+	t.Run("tours_experiences whitespace-only values are cleared/dropped like empty ones", func(t *testing.T) {
+		raw := `{"duration":"   ","group_size":"\t","included":["  ",""],"itinerary":[""],"meeting_point":"  "}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ToursExperiencesDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.Duration != "" {
+			t.Errorf("duration = %q, want cleared (whitespace-only)", got.Duration)
+		}
+		if got.GroupSize != "" {
+			t.Errorf("group_size = %q, want cleared (whitespace-only)", got.GroupSize)
+		}
+		if len(got.Included) != 0 {
+			t.Errorf("included = %v, want all entries dropped (whitespace-only/empty)", got.Included)
+		}
+		if len(got.Itinerary) != 0 {
+			t.Errorf("itinerary = %v, want entry dropped (empty)", got.Itinerary)
+		}
+		if got.MeetingPoint != "" {
+			t.Errorf("meeting_point = %q, want cleared (whitespace-only)", got.MeetingPoint)
 		}
 	})
 }

@@ -572,6 +572,27 @@ type ShoppingDetails struct {
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
+// ToursExperiencesDetails is CategoryToursExperiences' detail payload (T2,
+// activity-detail-system). No provider populates these fields yet (spec's
+// "Data model additions" section) — the schema/struct is added ahead of any
+// sourcing integration so the screen (T10) has a target shape to render
+// against; until then every row of this category decodes to the zero value
+// and the screen falls back to its no-`details` state. Duration/GroupSize/
+// Languages/DifficultyLevel are `scalar`; Included/NotIncluded/Itinerary are
+// `phrase`; MeetingPoint is `prose` — see validateExtraFields for the
+// matching kind guards.
+type ToursExperiencesDetails struct {
+	Duration  string `json:"duration,omitempty"`
+	GroupSize string `json:"group_size,omitempty"`
+	Languages string `json:"languages,omitempty"`
+	// DifficultyLevel is enum-backed: "Easy", "Moderate", or "Challenging".
+	DifficultyLevel string   `json:"difficulty_level,omitempty"`
+	Included        []string `json:"included,omitempty"`
+	NotIncluded     []string `json:"not_included,omitempty"`
+	MeetingPoint    string   `json:"meeting_point,omitempty"`
+	Itinerary       []string `json:"itinerary,omitempty"`
+}
+
 // CitySuggestion is one typeahead result: a catalog city (T1) plus the
 // centroid of its activities, directly usable as a QueryFilter.Cities entry.
 type CitySuggestion struct {

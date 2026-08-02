@@ -359,7 +359,16 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 // to write a denylisted value" rule (the field is stored empty instead).
 // Every free-text field any of websitesync.go's 5 prompts can generate is
 // now guarded here — see engineering-notes.md's T1 round-3 entry for the
-// full per-prompt field audit.
+// full per-prompt field audit. (T2) Tours & Experiences' new fields — no
+// prompt generates them yet (no provider exists), but the shape guard is
+// wired ahead of that integration anyway: duration/group_size/languages/
+// difficulty_level clear on a denylist match, a whitespace-only value, or a
+// `scalar`-shape violation (see clearInvalidScalar), included[]/
+// not_included[]/itinerary[] drop entries the same way (denylisted,
+// whitespace-only, or a `phrase`-shape violation, dropInvalidPhrases), and
+// meeting_point (`prose`) clears on a denylist match or a whitespace-only
+// value, with no length-based rejection, per the spec's "no length-based
+// rejection" rule for prose.
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
@@ -418,6 +427,20 @@ func validateExtraFields(target any) error {
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.ShoppingDetails:
 		return validateOpeningHours(t.OpeningHours)
+	case *activitiessvc.ToursExperiencesDetails:
+		clearInvalidScalar(&t.Duration)
+		clearInvalidScalar(&t.GroupSize)
+		clearInvalidScalar(&t.Languages)
+		clearInvalidScalar(&t.DifficultyLevel)
+		dropInvalidPhrases(&t.Included)
+		dropInvalidPhrases(&t.NotIncluded)
+		dropInvalidPhrases(&t.Itinerary)
+		if strings.TrimSpace(t.MeetingPoint) == "" {
+			t.MeetingPoint = ""
+		} else {
+			clearDenylisted(&t.MeetingPoint)
+		}
+		return nil
 	default:
 		return nil
 	}
@@ -437,6 +460,31 @@ func clearDenylisted(s *string) {
 // clearDenylisted, applied per-item.
 func dropDenylisted(items *[]string) {
 	*items = slices.DeleteFunc(*items, contentkind.MatchesDenylist)
+}
+
+// clearInvalidScalar blanks *s in place when it matches the placeholder
+// denylist or fails the `scalar` kind's own shape rules (T2 —
+// contentkind.IsValidScalar: ≤18 chars, ≤4 words, no terminal punctuation).
+// contentkind.go's doc notes this per-field kind wiring didn't exist until
+// this task; it is deliberately scoped to Tours & Experiences' new fields
+// only — the pre-existing categories keep T1's denylist-only clearDenylisted,
+// since backing that out to a stricter shape check for already-shipped
+// fields is a separate, unrequested behavior change.
+func clearInvalidScalar(s *string) {
+	if strings.TrimSpace(*s) == "" || contentkind.MatchesDenylist(*s) || !contentkind.IsValidScalar(*s) {
+		*s = ""
+	}
+}
+
+// dropInvalidPhrases removes entries from a generated string slice in place
+// (T2) that match the placeholder denylist or fail the `phrase` kind's shape
+// rules (contentkind.IsValidPhrase: ≤80 chars, no terminal punctuation) —
+// the `phrase`-kind sibling of clearInvalidScalar, same Tours & Experiences
+// scoping note applies.
+func dropInvalidPhrases(items *[]string) {
+	*items = slices.DeleteFunc(*items, func(s string) bool {
+		return strings.TrimSpace(s) == "" || contentkind.MatchesDenylist(s) || !contentkind.IsValidPhrase(s)
+	})
 }
 
 // clearBannerDenylisted guards Culture's now_showing / Art's
@@ -471,11 +519,14 @@ func clearBannerDenylisted(b *activitiessvc.Banner) *activitiessvc.Banner {
 // denylisted Item drops the whole row exactly like clearBannerDenylisted
 // drops a whole banner on a denylisted title. Duration/Price are secondary:
 // cleared in place like any other clearDenylisted field, never dropping the
-// row on their own.
+// row on their own. A whitespace-only Item drops the row too (T2 fix, same
+// strings.TrimSpace rule clearBannerDenylisted already applies to Title) — a
+// bare denylist check let a whitespace-only name through and would have
+// locked the row via isComplete forever, since Item is non-`omitempty`.
 func clearTreatmentsDenylisted(items []activitiessvc.Treatment) []activitiessvc.Treatment {
 	kept := items[:0]
 	for _, it := range items {
-		if contentkind.MatchesDenylist(it.Item) {
+		if strings.TrimSpace(it.Item) == "" || contentkind.MatchesDenylist(it.Item) {
 			continue
 		}
 		clearDenylisted(&it.Duration)
@@ -489,11 +540,13 @@ func clearTreatmentsDenylisted(items []activitiessvc.Treatment) []activitiessvc.
 // same gap as clearTreatmentsDenylisted, for date/title/time_or_price (see
 // entertainmentSchema in websitesync.go) — previously entirely unguarded.
 // Title is the show's name, so a denylisted Title drops the whole row;
-// Date/TimeOrPrice are cleared in place, same rule as Treatment above.
+// Date/TimeOrPrice are cleared in place, same rule as Treatment above. A
+// whitespace-only Title drops the row too (T2 fix, same reasoning as
+// clearTreatmentsDenylisted above).
 func clearShowsDenylisted(items []activitiessvc.Show) []activitiessvc.Show {
 	kept := items[:0]
 	for _, it := range items {
-		if contentkind.MatchesDenylist(it.Title) {
+		if strings.TrimSpace(it.Title) == "" || contentkind.MatchesDenylist(it.Title) {
 			continue
 		}
 		clearDenylisted(&it.Date)
@@ -615,6 +668,8 @@ func detailsTarget(category activitiessvc.Category) (any, error) {
 		return &activitiessvc.EntertainmentDetails{}, nil
 	case activitiessvc.CategoryShopping:
 		return &activitiessvc.ShoppingDetails{}, nil
+	case activitiessvc.CategoryToursExperiences:
+		return &activitiessvc.ToursExperiencesDetails{}, nil
 	default:
 		return nil, fmt.Errorf("%w: unknown category %q", sharederrors.ErrInvalidInput, category)
 	}
