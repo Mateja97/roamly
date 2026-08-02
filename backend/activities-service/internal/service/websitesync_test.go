@@ -174,6 +174,31 @@ func TestSyncWebsiteContent_UpdateError_DoesNotMarkAttempted(t *testing.T) {
 	}
 }
 
+// TestSyncWebsiteContent_MalformedExtractionJSON_StillMarksAttempted proves
+// the fillGaps decode error path — Firecrawl returning success:true with a
+// body that isn't valid JSON at all, not just the wrong shape — is treated
+// as a content problem, same as an extraction error or a ValidateDetails
+// rejection: it still marks the attempt, since a retry would reproduce the
+// same malformed body.
+func TestSyncWebsiteContent_MalformedExtractionJSON_StillMarksAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`not valid json`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the decode error surfaced")
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — malformed extraction JSON must still count toward the give-up policy", repo.markSynced, wantKey)
+	}
+}
+
 // TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite proves the
 // existing fail-safe (ValidateDetails' strict decode into SportDetails'
 // int Difficulty field) still rejects a whole merged payload when
