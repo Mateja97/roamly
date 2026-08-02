@@ -5,6 +5,7 @@ import {
   factStripFields,
   goodToKnowSection,
   openStatus,
+  priceContextLine,
   todayHoursRow,
   tripadvisorAddressLine,
   tripadvisorAttribution,
@@ -330,8 +331,12 @@ describe('factStripFields — Hours chip (opening-hours T3)', () => {
     jest.useRealTimers();
   });
 
-  it('replaces the legacy free-text value with today status/hours and attaches onPress when structured data is usable', () => {
-    const onPressHours = jest.fn();
+  // T4 (activity-detail-system): structured opening_hours now renders as
+  // its own standalone HoursRow (design-spec.md's "Hours row" slot leaves
+  // the stat grid entirely) — see HoursRow.test.tsx for that behavior.
+  // `factStripFields` itself only ever appends the legacy free-text
+  // fallback, and only when there's no usable structured data.
+  it('omits any Hours chip from the fact strip when structured data is usable (moved to the standalone HoursRow)', () => {
     const activity = baseActivity({
       category: 'restaurants',
       hours: '9am–11pm',
@@ -340,25 +345,16 @@ describe('factStripFields — Hours chip (opening-hours T3)', () => {
         periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
       },
     });
-    const hours = factStripFields(activity, onPressHours).find(
-      (f) => f.label === '09:00–17:00',
-    );
-    expect(hours).toEqual({
-      icon: Clock,
-      label: '09:00–17:00',
-      value: 'Open',
-      onPress: onPressHours,
-    });
+    expect(factStripFields(activity).some((f) => f.label === '09:00–17:00')).toBe(false);
+    expect(factStripFields(activity).some((f) => f.label === 'Hours')).toBe(false);
   });
 
-  it('keeps the plain legacy chip (no onPress) when there is no usable structured data', () => {
+  it('keeps the plain legacy chip when there is no usable structured data', () => {
     const activity = baseActivity({
       category: 'restaurants',
       hours: '9am–11pm',
     });
-    const hours = factStripFields(activity, jest.fn()).find(
-      (f) => f.label === 'Hours',
-    );
+    const hours = factStripFields(activity).find((f) => f.label === 'Hours');
     expect(hours).toEqual({
       icon: Clock,
       label: 'Hours',
@@ -373,14 +369,12 @@ describe('factStripFields — Hours chip (opening-hours T3)', () => {
     );
   });
 
-  it('shows "Open 24 hours" / "Closed today" compactly for always_open and fully-closed-today venues', () => {
+  it('never appends a fact-strip Hours chip for always_open or fully-closed-today venues (HoursRow owns those now)', () => {
     const alwaysOpen = baseActivity({
       category: 'shopping',
       opening_hours: { timezone: 'UTC', always_open: true },
     });
-    expect(
-      factStripFields(alwaysOpen).find((f) => f.label === 'Open 24 hours'),
-    ).toMatchObject({ value: 'Open' });
+    expect(factStripFields(alwaysOpen).some((f) => f.label === 'Open 24 hours')).toBe(false);
 
     const closedToday = baseActivity({
       category: 'cafes',
@@ -389,9 +383,7 @@ describe('factStripFields — Hours chip (opening-hours T3)', () => {
         periods: [{ day: 'tuesday', open: '09:00', close: '17:00' }],
       },
     });
-    expect(
-      factStripFields(closedToday).find((f) => f.label === 'Closed today'),
-    ).toMatchObject({ value: 'Closed' });
+    expect(factStripFields(closedToday).some((f) => f.label === 'Closed today')).toBe(false);
   });
 });
 
@@ -575,7 +567,10 @@ describe('factStripFields — wellness/entertainment', () => {
     expect(labels).toContain('Price from');
   });
 
-  describe('Hours chip appends when opening_hours is usable (Task 6 wiring)', () => {
+  // T4 (activity-detail-system): superseded by HoursRow — usable structured
+  // opening_hours no longer appends anything to the fact strip for any
+  // category (moved out to its own slot, see HoursRow.test.tsx).
+  describe('Hours never appends to the fact strip when opening_hours is usable', () => {
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
     });
@@ -583,7 +578,7 @@ describe('factStripFields — wellness/entertainment', () => {
       jest.useRealTimers();
     });
 
-    it('appends the Hours chip for wellness', () => {
+    it('does not append an Hours chip for wellness', () => {
       const activity = baseActivity({
         category: 'wellness',
         opening_hours: {
@@ -591,13 +586,10 @@ describe('factStripFields — wellness/entertainment', () => {
           periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
         },
       });
-      const hours = factStripFields(activity).find(
-        (f) => f.label === '09:00–17:00',
-      );
-      expect(hours).toMatchObject({ icon: Clock, value: 'Open' });
+      expect(factStripFields(activity).some((f) => f.label === '09:00–17:00')).toBe(false);
     });
 
-    it('appends the Hours chip for entertainment', () => {
+    it('does not append an Hours chip for entertainment', () => {
       const activity = baseActivity({
         category: 'entertainment',
         opening_hours: {
@@ -605,10 +597,7 @@ describe('factStripFields — wellness/entertainment', () => {
           periods: [{ day: 'monday', open: '10:00', close: '23:00' }],
         },
       });
-      const hours = factStripFields(activity).find(
-        (f) => f.label === '10:00–23:00',
-      );
-      expect(hours).toMatchObject({ icon: Clock, value: 'Open' });
+      expect(factStripFields(activity).some((f) => f.label === '10:00–23:00')).toBe(false);
     });
   });
 });
@@ -646,5 +635,39 @@ describe('goodToKnowSection', () => {
   it('is undefined for a category with no good_to_know field at all (e.g. restaurants)', () => {
     const activity = baseActivity({ category: 'restaurants' });
     expect(goodToKnowSection(activity)).toBeUndefined();
+  });
+});
+
+// design-spec.md's "Bottom bar" slot (§B12): optional price-context line —
+// wired for Entertainment today. Wellness explicitly does NOT get this line
+// (T9: "external-booking note + Visit website"; `price_from` surfaces only
+// in the stat grid) — a price line there would double the same figure.
+describe('priceContextLine', () => {
+  it('renders "From <price>" for entertainment when price_from is present', () => {
+    const activity = baseActivity({ category: 'entertainment', price_from: '€8' });
+    expect(priceContextLine(activity)).toBe('From €8');
+  });
+
+  it('omits the line when price_from is absent', () => {
+    const activity = baseActivity({ category: 'entertainment' });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('omits the line when price_from fails its scalar shape (the production-bug shape)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      price_from: 'The starting price is not explicitly stated.',
+    });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('is undefined for wellness even when price_from is present (stat grid owns it there)', () => {
+    const activity = baseActivity({ category: 'wellness', price_from: '€25' });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('is undefined for a category with no price_from field at all (e.g. nightlife)', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(priceContextLine(activity)).toBeUndefined();
   });
 });

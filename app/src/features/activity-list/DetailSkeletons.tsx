@@ -27,44 +27,6 @@ export const PLACES_LIVE_CATEGORIES: ReadonlySet<Category> = new Set([
   'entertainment',
 ]);
 
-// design-spec.md's Fact strip row: "2 or 3 ... the count that category's
-// fact-strip config can actually produce, never more than 3" — that's a
-// ceiling, not a floor. Rule 2 ("only skeleton what the merge can fill")
-// means this table has to be the count of chips T1's live mapper
-// (BuildLiveDetails, see its engineering-notes.md breakdown) can actually
-// populate for that category, not activityDetailConfig.ts's full
-// potential chip count:
-// - cafes: mapper emits `hours`/`opening_hours` (feeds the Hours chip via
-//   `withHours`) but not `known_for_brew`/`wifi_quality` — 1.
-// - culture/art/shopping: mapper emits `venue_type` + `hours` — 2 (their
-//   other field, `ticket_price`/`best_day`, is never emitted).
-// - nightlife/nature/sport: none of their fact-strip fields (`entry_price`/
-//   `dress_code`/`opens_time`, `time_to_spend`/`best_time`/`cost`,
-//   `effort_level`/`duration`/`gear`) are in the mapper's output at all — 0.
-// - kids: `factStripFields` always returns `[]` for it regardless of merge
-//   — 0 (unchanged, was already right).
-// - wellness/entertainment: mapper emits `opening_hours`, which feeds the
-//   Hours chip via `withHours` same as cafes — 1.
-const FACT_STRIP_CHIP_COUNT: Record<Category, number> = {
-  restaurants: 0,
-  bars: 0,
-  cafes: 1,
-  nightlife: 0,
-  nature: 0,
-  sport: 0,
-  kids: 0,
-  culture: 2,
-  art: 2,
-  wellness: 1,
-  shopping: 2,
-  entertainment: 1,
-  tours_experiences: 0,
-};
-
-export function factStripSkeletonCount(category: Category): number {
-  return FACT_STRIP_CHIP_COUNT[category] ?? 0;
-}
-
 // design-spec.md's unique-section shape table, narrowed by rule 2: only a
 // category whose live mapper can actually fill its unique-section field
 // gets a placeholder. Per T1's engineering-notes.md, the mapper only ever
@@ -91,22 +53,6 @@ export function RatingSkeleton() {
   return (
     <View testID="rating-skeleton">
       <Skeleton width={48} height={20} />
-    </View>
-  );
-}
-
-// "Fact strip" row: N equal-flex 90px-tall blocks, --space-3 apart —
-// mirrors FactStrip.tsx's own `row`/`chip` layout. Renders nothing when
-// this category's fact strip can never produce a live-fillable chip
-// (nightlife/nature/sport/kids/wellness/entertainment — see
-// FACT_STRIP_CHIP_COUNT above).
-export function FactStripSkeleton({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <View testID="fact-strip-skeleton" style={styles.factStripRow}>
-      {Array.from({ length: count }, (_, i) => (
-        <Skeleton key={i} width="100%" height={90} style={styles.flexItem} />
-      ))}
     </View>
   );
 }
@@ -192,13 +138,6 @@ function ReviewGroupSkeleton({ hairline }: { hairline?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  factStripRow: {
-    flexDirection: 'row',
-    gap: space[3],
-  },
-  flexItem: {
-    flex: 1,
-  },
   descriptionWrap: {
     gap: space[2],
     paddingVertical: space[1],

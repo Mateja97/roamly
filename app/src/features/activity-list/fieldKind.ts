@@ -52,6 +52,13 @@ const SCALAR_MAX_WORDS = 4;
 const PHRASE_MAX_CHARS = 80;
 const TERMINAL_PUNCTUATION = /[.!?]$/;
 
+// T4: classifyField is now called per field per render (every slot wires it
+// in) — a leaked denylisted value would otherwise re-log on every re-render.
+// warn-once per distinct value, not a full log-throttle library: the whole
+// point is "stays visible", so this dedupes noise without ever going silent
+// on a *new* leaked value.
+const warnedDenylistValues = new Set<string>();
+
 // The spec's Absence rule: undefined when the value is empty, denylisted,
 // or fails its kind's limits. Never relocated, never placeheld — the caller
 // simply omits the slot. `prose` gets absence checks only (no length
@@ -65,13 +72,17 @@ export function classifyField(
   if (value === '') return undefined;
 
   if (matchesDenylist(value)) {
-    // ponytail: plain console.warn — no logging convention exists in
-    // app/src today (grepped first). Greppable prefix per spec: "a denylist
-    // hit is logged, not silently dropped, so a backend regression stays
-    // visible." Not deduped: classifyField isn't wired to any render yet
-    // (T4 scope) so there's no per-render repeat to dedupe against — add a
-    // warn-once Set here if T4 wiring makes this noisy.
-    console.warn(`[fieldKind] denylisted value omitted: "${value}"`);
+    // ponytail: plain console.warn, deduped per distinct value via a module
+    // Set — no logging convention exists in app/src today (grepped first).
+    // Greppable prefix per spec: "a denylist hit is logged, not silently
+    // dropped, so a backend regression stays visible." warn-once (not a
+    // time-windowed throttle) is the right ceiling here: a slot re-renders
+    // the same leaked value on every parent re-render, and re-logging it
+    // every time buys nothing over logging it once per session.
+    if (!warnedDenylistValues.has(value)) {
+      warnedDenylistValues.add(value);
+      console.warn(`[fieldKind] denylisted value omitted: "${value}"`);
+    }
     return undefined;
   }
 

@@ -86,6 +86,22 @@ describe('ActivityDetailScreen', () => {
     expect(screen.getByText('Serbia')).toBeTruthy();
   });
 
+  // T4 round-2 review finding: a country name is app-computed structured
+  // data, not LLM-generated content — it must never be silently dropped by
+  // the meta line's `scalar` kind check (>18 chars/4 words), unlike a
+  // generated field failing that same check.
+  it('shows a long country name in full, even past the scalar kind\'s 18-char limit', () => {
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    render(
+      <ActivityDetailScreen
+        activity={{ ...activity, country: 'Bosnia and Herzegovina' }}
+        showDistance={false}
+        onBack={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Bosnia and Herzegovina')).toBeTruthy();
+  });
+
   it('calls onBack when the on-screen Back control is pressed', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     const onBack = jest.fn();
@@ -657,6 +673,42 @@ describe('ActivityDetailScreen', () => {
       ).toBeTruthy();
     });
 
+    it('omits the bottom-bar price-context line for wellness even when price_from is present', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '€25' },
+      };
+      render(
+        <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByText(/^From /)).toBeNull();
+    });
+
+    it('shows the bottom-bar price-context line for entertainment when price_from is present', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        details: { category: 'entertainment', price_from: '€8' },
+      };
+      render(
+        <ActivityDetailScreen activity={entertainment} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('From €8')).toBeTruthy();
+    });
+
+    it('omits the price-context line entirely when price_from is absent', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness' },
+      };
+      render(
+        <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByText(/^From /)).toBeNull();
+    });
+
     it('renders a Good to know checklist for a wellness activity that has good_to_know data', () => {
       const wellness: Activity = {
         ...activity,
@@ -762,10 +814,14 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('0.2 km away')).toBeTruthy();
     });
 
-    it('skeletons the rating/fact-strip/description/reviews blocks while pending (cafes)', () => {
+    it('skeletons the rating/description/reviews blocks while pending (cafes)', () => {
       render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
       expect(screen.getByTestId('rating-skeleton')).toBeTruthy();
-      expect(screen.getByTestId('fact-strip-skeleton')).toBeTruthy();
+      // T4 (activity-detail-system): cafes' only live-fillable fact-strip
+      // field was `opening_hours`, now owned by HoursRow (not skeletoned —
+      // its presence genuinely depends on data, design-spec.md's Screen-
+      // level loading rule) — no fact-strip skeleton left to reserve.
+      expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
       expect(screen.getByTestId('description-skeleton')).toBeTruthy();
       expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
       // cafes' unique-section field (`on_the_bar`) is never in T1's live
@@ -789,6 +845,10 @@ describe('ActivityDetailScreen', () => {
         activity: {
           ...placesActivity,
           rating: 4.5,
+          // T4 (activity-detail-system): ReviewsSection's score header needs
+          // this alongside `rating` — regression coverage for the merge
+          // effect actually copying it onto local state.
+          review_count: 128,
           details: {
             category: 'cafes',
             known_for_brew: 'Turkish coffee',
@@ -809,12 +869,17 @@ describe('ActivityDetailScreen', () => {
       });
       render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
 
-      await waitFor(() => expect(screen.getByText('4.5')).toBeTruthy());
+      await waitFor(() => expect(screen.getByText('128 reviews')).toBeTruthy());
       expect(screen.getByText('Turkish coffee')).toBeTruthy();
       expect(screen.getByText('Cozy corner cafe with a garden terrace.')).toBeTruthy();
       expect(screen.getByText('Baklava')).toBeTruthy();
       expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy();
       expect(screen.getByTestId('google-attribution-plate-footer')).toBeTruthy();
+
+      // T4 round-2 review finding: the aggregate score has exactly one home
+      // once the Reviews slot is genuinely showing it — the title-block gold
+      // star must not duplicate it.
+      expect(screen.getAllByText('4.5')).toHaveLength(1);
 
       // Every placeholder is gone — one settle, not a per-block cascade.
       expect(screen.queryByTestId('rating-skeleton')).toBeNull();
@@ -822,6 +887,27 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByTestId('description-skeleton')).toBeNull();
       expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
       expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+    });
+
+    it('caps Google review cards at 3, even when the merge carries more', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesActivity,
+          rating: 4.1,
+          review_count: 4,
+          google_reviews: Array.from({ length: 4 }, (_, i) => ({
+            authorAttribution: { displayName: `Reviewer ${i}`, uri: `https://maps.google.com/contrib/${i}` },
+            rating: 5,
+            text: `Review number ${i}.`,
+            date: '2026-06-01T00:00:00Z',
+          })),
+        },
+      });
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+
+      await waitFor(() => expect(screen.getByText('4 reviews')).toBeTruthy());
+      expect(screen.getAllByTestId('google-review-row')).toHaveLength(3);
     });
 
     it('silently drops every skeletoned block on failure — no error UI, seeded page intact', async () => {
@@ -908,7 +994,7 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
-  describe('Hours fact chip (opening-hours T1+T3 — folded back into FactStrip)', () => {
+  describe('Hours row (opening-hours T1+T3, relocated out of FactStrip by T4)', () => {
     // 2024-01-01 is a Monday, noon UTC — fixes the venue-local weekday/time
     // the same way activityDetailConfig.test.ts does.
     beforeEach(() => {
@@ -942,13 +1028,14 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText('9am–11pm')).toBeNull(); // legacy free-text suppressed
     });
 
-    it('keeps the venue-type sibling chip in the same FactStrip grid, not pushed down by any extra row', () => {
+    it('renders the FactStrip grid and the standalone HoursRow together without either pushing the other out', () => {
       const cultureVenue: Activity = {
         ...activity,
         category: 'culture',
         details: {
           category: 'culture',
-          venue_type: 'Historical Landmark',
+          venue_type: 'Fortress',
+          ticket_price: '€10',
           opening_hours: {
             timezone: 'UTC',
             periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
@@ -962,11 +1049,33 @@ describe('ActivityDetailScreen', () => {
           onBack={jest.fn()}
         />,
       );
-      // Both chips render together in FactStrip — no standalone full-width
-      // row inserted above it that would push the venue-type chip down.
-      expect(screen.getByText('Historical Landmark')).toBeTruthy();
+      // FactStrip's own 2-chip grid (Hours no longer among them — T4 moved
+      // it to its own row) …
+      expect(screen.getByText('Fortress')).toBeTruthy();
       expect(screen.getByText('Venue')).toBeTruthy();
+      expect(screen.getByText('€10')).toBeTruthy();
+      // … and the standalone HoursRow, both present.
       expect(screen.getByText('09:00–17:00')).toBeTruthy();
+    });
+
+    it('folds a single surviving fact-strip value into the meta line instead of a 1-cell grid', () => {
+      // Only `venue_type` survives (no ticket_price) — the stat grid's own
+      // degradation rule (design-spec.md) folds the lone value into the
+      // meta line rather than rendering a 1-cell grid.
+      const cultureVenue: Activity = {
+        ...activity,
+        category: 'culture',
+        details: { category: 'culture', venue_type: 'Fortress' },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={cultureVenue}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Fortress')).toBeTruthy();
+      expect(screen.queryByText('Venue')).toBeNull(); // the chip's label doesn't survive the fold, only its value
     });
 
     it('shows "Closed today" when today has zero periods', () => {
@@ -1009,7 +1118,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Open 24 hours')).toBeTruthy();
     });
 
-    it('legacy-only fallback: keeps showing the free-text Hours chip (non-interactive) and the meta-row status, no regression', () => {
+    it('legacy-only fallback: the free-text hours value folds into the meta line (sole surviving fact-strip value), meta-row status unaffected, no regression', () => {
       const legacyOnly: Activity = {
         ...activity,
         details: {
@@ -1025,6 +1134,9 @@ describe('ActivityDetailScreen', () => {
           onBack={jest.fn()}
         />,
       );
+      // '9am–11pm' is the lone surviving fact-strip value (restaurants has
+      // no cuisine/price here) — the stat grid's own degradation rule folds
+      // it into the meta line rather than a 1-cell grid.
       expect(screen.getByText('9am–11pm')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
       expect(
@@ -1032,7 +1144,7 @@ describe('ActivityDetailScreen', () => {
       ).toBeNull();
     });
 
-    it('degrades to the legacy chip when opening_hours has an unresolvable timezone', () => {
+    it('falls back to the legacy hours value (folded into the meta line) when opening_hours has an unresolvable timezone', () => {
       const badTimezone: Activity = {
         ...activity,
         details: {

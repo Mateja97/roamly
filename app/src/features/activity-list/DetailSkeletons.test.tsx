@@ -1,8 +1,6 @@
 import { render, screen } from '@testing-library/react-native';
 import {
   DescriptionSkeleton,
-  factStripSkeletonCount,
-  FactStripSkeleton,
   PLACES_LIVE_CATEGORIES,
   RatingSkeleton,
   ReviewsSkeleton,
@@ -27,50 +25,10 @@ describe('PLACES_LIVE_CATEGORIES', () => {
   });
 });
 
-describe('factStripSkeletonCount', () => {
-  it('gives the count of chips the live mapper can actually fill, not the config ceiling', () => {
-    // cafes: mapper emits hours/opening_hours only (feeds the Hours chip) —
-    // known_for_brew/wifi_quality are never emitted, so 1, not the config's 3.
-    expect(factStripSkeletonCount('cafes')).toBe(1);
-    // culture/art/shopping: mapper emits venue_type + hours — 2, not 3.
-    expect(factStripSkeletonCount('culture')).toBe(2);
-    expect(factStripSkeletonCount('art')).toBe(2);
-    expect(factStripSkeletonCount('shopping')).toBe(2);
-  });
-
-  it('gives 0 for a category whose fact-strip fields are never in the mapper output', () => {
-    expect(factStripSkeletonCount('nightlife')).toBe(0);
-    expect(factStripSkeletonCount('nature')).toBe(0);
-    expect(factStripSkeletonCount('sport')).toBe(0);
-  });
-
-  it('gives 0 for a category whose fact strip never produces a chip regardless of merge', () => {
-    expect(factStripSkeletonCount('kids')).toBe(0);
-  });
-
-  it('gives 1 for wellness/entertainment — mapper emits opening_hours, same Hours-chip case as cafes', () => {
-    expect(factStripSkeletonCount('wellness')).toBe(1);
-    expect(factStripSkeletonCount('entertainment')).toBe(1);
-  });
-});
-
 describe('RatingSkeleton', () => {
   it('renders a single placeholder bar', () => {
     render(<RatingSkeleton />);
     expect(screen.getByTestId('rating-skeleton')).toBeTruthy();
-  });
-});
-
-describe('FactStripSkeleton', () => {
-  it('renders one placeholder block per chip count', () => {
-    const { toJSON } = render(<FactStripSkeleton count={3} />);
-    expect(screen.getByTestId('fact-strip-skeleton')).toBeTruthy();
-    expect(toJSON()?.children).toHaveLength(3);
-  });
-
-  it('renders nothing when the count is 0 (category has no fact strip)', () => {
-    const { toJSON } = render(<FactStripSkeleton count={0} />);
-    expect(toJSON()).toBeNull();
   });
 });
 

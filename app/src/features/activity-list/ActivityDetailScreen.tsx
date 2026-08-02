@@ -15,7 +15,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { ArrowUpRight, Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
+import { ArrowUpRight, Info, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity, ActivityPhoto } from '../../api/activities';
 import { getActivity, getActivityPhotos } from '../../api/activities';
 import {
@@ -44,6 +44,7 @@ import {
   goodToKnowSection,
   metaRowExtras,
   openStatus,
+  priceContextLine,
   PRIMARY_CTA_LABEL,
   primaryActionURL,
   primaryCTAIsDirections,
@@ -60,16 +61,18 @@ import {
 import { DifficultyMeter } from './DifficultyMeter';
 import {
   DescriptionSkeleton,
-  FactStripSkeleton,
-  factStripSkeletonCount,
   PLACES_LIVE_CATEGORIES,
   RatingSkeleton,
   ReviewsSkeleton,
   UniqueSectionSkeleton,
 } from './DetailSkeletons';
-import { FactStrip } from './FactStrip';
+import { classifyFactChips, FactStrip } from './FactStrip';
 import { HeroCarousel } from './HeroCarousel';
+import { HoursRow } from './HoursRow';
+import { MetaLine } from './MetaLine';
 import { PhotoViewerModal } from './PhotoViewerModal';
+import { ProseBlock } from './ProseBlock';
+import { ReviewsSection } from './ReviewsSection';
 import { TripadvisorBlock } from './TripadvisorBlock';
 import { UniqueSection } from './UniqueSection';
 import { WeekHoursModal } from './WeekHoursModal';
@@ -88,6 +91,11 @@ import { WeekHoursModal } from './WeekHoursModal';
 // surfaces here: hero/map images, CTA OS-handoff failures.
 const DETAIL_MAP_WIDTH = 600;
 const DETAIL_MAP_HEIGHT = 400; // 3:2, per the map box's reserved aspect ratio.
+// design-spec.md's "Reviews" slot (§B10): "up to three cards" — the Google
+// attribution plate itself renders every review it's given (no cap of its
+// own, and it's compliance-critical so its internals stay untouched), so
+// the cap is enforced at this call site instead.
+const MAX_REVIEW_CARDS = 3;
 
 type ActivityDetailScreenProps = {
   activity: Activity;
@@ -199,6 +207,11 @@ export function ActivityDetailScreen({
           description: merged.description || prev.description,
           google_reviews: merged.google_reviews,
           google_maps_uri: merged.google_maps_uri,
+          // T4 (activity-detail-system): ReviewsSection's score header needs
+          // this alongside `rating` — dropped from the merge until now, so
+          // the header silently never rendered for any Places-live venue
+          // (`reviewCount` stayed the seed's `undefined` forever).
+          review_count: merged.review_count,
         }));
         // Only announce "added" when the merge genuinely put something new
         // on screen — a merge that collapsed every block is nothing to
@@ -219,18 +232,26 @@ export function ActivityDetailScreen({
   const status = openStatus(activity);
   // opening-hours T1: when this is defined, it supersedes the meta row's
   // own Open/Closed item below (single home for the status, per
-  // design-spec.md) — opening-hours T3 moved the actual rendering of
-  // today's status/hours into the FactStrip Hours chip (see `fields`
-  // below), this flag now only gates the meta-row suppression.
+  // design-spec.md) — T4 moved the actual rendering of today's status/hours
+  // into the standalone HoursRow (see below), this flag now only gates the
+  // meta-row suppression.
   const todayRow = todayHoursRow(activity);
   // opening-hours T2: same usability gate as `todayRow` — defined exactly
-  // when the Hours chip's tap affordance below should be interactive.
+  // when the Hours row's tap affordance below should be interactive.
   const weekData = weekHoursModalData(activity);
   const metaExtras = metaRowExtras(activity);
-  // opening-hours T3: threads the modal-open callback into the Hours chip —
-  // `factStripFields` only attaches it when structured opening_hours is
-  // usable (see `hoursChip` there), so this is a no-op for the legacy chip.
-  const fields = factStripFields(activity, () => setHoursModalOpen(true));
+  const fields = factStripFields(activity);
+  // design-spec.md's Stat grid degradation rule: 1 valid value folds into
+  // the meta line rather than rendering a 1-cell grid — FactStrip below
+  // independently reaches the identical "omit below 2" decision via the
+  // same pure `classifyFactChips`, so there's no risk of the two disagreeing.
+  const classifiedFactChips = classifyFactChips(fields);
+  // ponytail: the fold keeps only `.value`, dropping `.label` — deliberate,
+  // not an oversight (see the meta-line test asserting the label doesn't
+  // survive). Every folded field observed so far reads fine unlabelled
+  // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
+  // `label` fold for a field where the bare value reads as context-free.
+  const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
@@ -239,6 +260,14 @@ export function ActivityDetailScreen({
   const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
+  const priceContext = priceContextLine(activity);
+  // T4 round-2 review finding: a Places-live row's aggregate score has
+  // exactly one home — the Reviews slot below — once it actually renders a
+  // score header there (both `rating` and `review_count` present); the
+  // title-block gold star is this flag's sole consumer, suppressed only in
+  // that exact case so it still carries the rating alone whenever the
+  // Reviews slot doesn't (pending, or a settled merge with no review count).
+  const reviewsScoreShown = isPlacesLive && activity.rating > 0 && activity.review_count !== undefined;
   // design-spec.md T8 (Tripadvisor initiative): presence of this field is
   // the sole detection signal for the Tripadvisor-branded treatment below.
   const tripadvisor = tripadvisorAttribution(activity);
@@ -253,7 +282,7 @@ export function ActivityDetailScreen({
   // which can never carry `tripadvisor` — see `tripadvisorAttribution`'s
   // switch), so the only thing the meta row can still uniquely carry for a
   // Tripadvisor row is the legacy free-text Open/Closed `status` (when
-  // `opening_hours` isn't usable and the FactStrip's Hours chip — gated by
+  // `opening_hours` isn't usable and the standalone HoursRow — gated by
   // `todayRow` — isn't already showing it). The whole row collapses when
   // even that isn't true, so no empty row/gap survives it.
   const showMetaRow = !tripadvisor || Boolean(status && !todayRow);
@@ -331,12 +360,11 @@ export function ActivityDetailScreen({
       case 'description':
         // T6 rule 1: only skeleton when the seed description is genuinely
         // empty — never pulse over text the user could already be reading.
+        // design-spec.md's "Prose block" slot (§B5): the one legal home for
+        // a generated sentence — replaces this screen's old inline `<Text>`
+        // description render.
         if (activity.description) {
-          return (
-            <Text key="description" style={styles.description}>
-              {activity.description}
-            </Text>
-          );
+          return <ProseBlock key="description" heading="About" value={activity.description} />;
         }
         return isPlacesLive && detailsPending ? (
           <DescriptionSkeleton key="description" />
@@ -351,11 +379,7 @@ export function ActivityDetailScreen({
           />
         ) : null;
       case 'factstrip':
-        return isPlacesLive && detailsPending && fields.length === 0 ? (
-          <FactStripSkeleton key="factstrip" count={factStripSkeletonCount(activity.category)} />
-        ) : (
-          <FactStrip key="factstrip" fields={fields} />
-        );
+        return <FactStrip key="factstrip" fields={fields} />;
       case 'unique':
         return isPlacesLive && detailsPending && !unique ? (
           <UniqueSectionSkeleton key="unique" category={activity.category} />
@@ -423,8 +447,11 @@ export function ActivityDetailScreen({
                       once settled with no rating (failed/empty merge), the
                       whole block collapses (rule 3: no fabricated "0.0",
                       no empty frame) rather than falling back to a
-                      pre-T6-style zero. */}
-                  {isPlacesLive && detailsPending && activity.rating <= 0 ? (
+                      pre-T6-style zero. T4 round-2: once the Reviews slot
+                      below is genuinely showing this same score
+                      (`reviewsScoreShown`), this cluster stays hidden —
+                      one focal rating number, not two. */}
+                  {reviewsScoreShown ? null : isPlacesLive && detailsPending && activity.rating <= 0 ? (
                     <View style={styles.rating}>
                       <RatingSkeleton />
                     </View>
@@ -454,81 +481,45 @@ export function ActivityDetailScreen({
             )}
           </View>
 
+          {/* design-spec.md's "Meta line" slot (§B1): join-never-prefix,
+              one optional status/level chip — extracted out of this
+              screen's old hand-rolled meta row (including nightlife's old
+              leading-status-dot special case, which the new trailing pill
+              chip supersedes; T7 confirms nightlife's exact "Open tonight"
+              chip content). Composition (which items feed in) is unchanged
+              here — T5 is the task that rewires the meta line onto
+              `subcategory` and retires `badgeQualifier`. */}
           {showMetaRow && (
-            <View style={styles.metaRow}>
-              {activity.category === 'nightlife' && status && !todayRow ? (
-                // design-spec.md T8 addendum #9: the status dot + label is the
-                // only place a leading status dot appears, and sits first,
-                // before the usual "·"-separated items. (Nightlife can never
-                // carry `tripadvisor` — see `tripadvisorAttribution`'s
-                // switch — so this branch is unaffected by the §5b change.)
-                <>
-                  <View style={styles.statusGroup}>
-                    {status.isOpen && (
-                      <View
-                        style={styles.statusDot}
-                        accessibilityElementsHidden
-                        importantForAccessibility="no"
-                      />
-                    )}
-                    <Text
-                      style={
-                        status.isOpen ? styles.statusOpen : styles.statusClosed
-                      }
-                    >
-                      {status.text}
-                    </Text>
-                  </View>
-                  <Text style={styles.metaSeparator}>·</Text>
-                  <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-                  <Text style={styles.metaText}>{metaText}</Text>
-                </>
-              ) : (
-                <>
-                  {/* §5b: distance is now the eyebrow's trailing segment for
-                      a Tripadvisor row — never shown here too. */}
-                  {!tripadvisor && (
-                    <>
-                      <MapPin size={16} color={colors.textMuted} strokeWidth={1.75} />
-                      <Text style={styles.metaText}>{metaText}</Text>
-                    </>
-                  )}
-                  {metaExtras.map((extra) => (
-                    <View key={extra} style={styles.metaExtraGroup}>
-                      <Text style={styles.metaSeparator}>·</Text>
-                      <Text style={styles.metaText}>{extra}</Text>
-                    </View>
-                  ))}
-                  {status && !todayRow && (
-                    <View style={styles.metaExtraGroup}>
-                      {/* No leading "·" when this is the row's only content
-                          (the Tripadvisor case — distance/metaExtras both
-                          suppressed/empty above). */}
-                      {!tripadvisor && <Text style={styles.metaSeparator}>·</Text>}
-                      <Text
-                        style={
-                          status.isOpen
-                            ? styles.statusOpen
-                            : styles.statusClosed
-                        }
-                      >
-                        {status.text}
-                      </Text>
-                    </View>
-                  )}
-                </>
-              )}
-            </View>
+            <MetaLine
+              // T4 round-2: distance/country is app-computed structured
+              // data, not LLM-generated content — it bypasses `items`'
+              // classification pipeline entirely (see MetaLine's `rawItem`).
+              rawItem={!tripadvisor ? metaText : undefined}
+              items={[...metaExtras, foldedFactChip?.value]}
+              chip={status && !todayRow ? { kind: 'status', text: status.text, isOpen: status.isOpen } : undefined}
+            />
           )}
 
+          {/* design-spec.md's "Reviews" slot (§B10): one shared wrapper
+              replacing this screen's old mutually-exclusive
+              TripadvisorBlock-vs-GoogleAttributionPlate top-level branch.
+              Neither compliance-critical attribution plate is touched —
+              this only owns the outer score/distribution/"See all" layout
+              around them. Position preserved as-is (right after the meta
+              row); T5's canonical order is what moves Reviews to its final
+              spot near the bottom of the page. */}
           {tripadvisor && (
-            <TripadvisorBlock
-              tripadvisor={tripadvisor}
-              rating={activity.rating}
-              reviews={reviews}
-              address={address}
-              ctaBusy={ctaBusy}
-              onCallPhone={handleCallPhone}
+            <ReviewsSection
+              attribution={
+                <TripadvisorBlock
+                  tripadvisor={tripadvisor}
+                  rating={activity.rating}
+                  reviews={reviews}
+                  address={address}
+                  ctaBusy={ctaBusy}
+                  onCallPhone={handleCallPhone}
+                />
+              }
             />
           )}
 
@@ -537,17 +528,34 @@ export function ActivityDetailScreen({
               never `isPlacesLive`). Skeletoned only while pending and
               genuinely empty; GoogleAttributionPlate renders nothing on
               its own once merged with no reviews/maps link (silent
-              degrade, no error UI). */}
+              degrade, no error UI). No generic score/distribution header for
+              the Tripadvisor case above — compliance rule 03 forbids a
+              second, Roamly-drawn aggregate rating beside Tripadvisor's own
+              attribution plate. */}
           {isPlacesLive &&
             (detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri ? (
               <ReviewsSkeleton />
             ) : (
-              <GoogleAttributionPlate
-                variant="detail"
-                reviews={activity.google_reviews}
-                googleMapsUri={activity.google_maps_uri}
+              <ReviewsSection
+                score={activity.rating > 0 ? activity.rating : undefined}
+                reviewCount={activity.review_count}
+                attribution={
+                  <GoogleAttributionPlate
+                    variant="detail"
+                    reviews={activity.google_reviews?.slice(0, MAX_REVIEW_CARDS)}
+                    googleMapsUri={activity.google_maps_uri}
+                  />
+                }
               />
             ))}
+
+          {/* design-spec.md's "Hours row" slot (§B3): relocated out of the
+              stat grid entirely into its own tappable disclosure row —
+              present only when structured opening_hours is usable (same
+              `todayHoursRow` gate the screen already had). Position
+              preserved as-is; T5's canonical order finalizes exact
+              placement relative to action chips/stat grid. */}
+          <HoursRow data={todayRow} onPress={() => setHoursModalOpen(true)} />
 
           {BODY_SECTION_ORDER[activity.category].map(renderBodySection)}
 
@@ -668,6 +676,10 @@ export function ActivityDetailScreen({
             <Text style={styles.bookingNoteText}>{bookingNote}</Text>
           </View>
         )}
+        {/* design-spec.md's "Bottom bar" slot (§B12): optional
+            price-context line above the button row — omits only this line
+            when the category's price_from is absent/invalid. */}
+        {priceContext && <Text style={styles.priceContextText}>{priceContext}</Text>}
         <View style={styles.footerButtons}>
         <Pressable
           onPress={handleGenericPress}
@@ -846,48 +858,6 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     lineHeight: fontSize.xl * 1.1,
   },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-  },
-  metaText: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-  },
-  metaSeparator: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-  },
-  metaExtraGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-  },
-  statusGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.full,
-    backgroundColor: colors.success,
-  },
-  statusOpen: {
-    fontSize: fontSize.sm,
-    color: colors.success,
-  },
-  statusClosed: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-  },
-  description: {
-    fontSize: fontSize.md,
-    color: colors.text,
-    lineHeight: fontSize.md * 1.5,
-  },
   tripadvisorFooterCta: {
     gap: space[4],
   },
@@ -953,6 +923,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textMuted,
   },
+  // .dc.html's bottom-bar price line: 15px/600 cream — rounds up to the
+  // nearest token per DESIGN_STANDARDS.md's Typography rounding convention
+  // (body text floor is --font-size-sm/14px; 15px rounds up to --font-size-md/16px).
+  priceContextText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: space[3],
+  },
   footerButtons: {
     flexDirection: 'row',
     gap: space[3],
@@ -989,8 +968,11 @@ const styles = StyleSheet.create({
   primaryButtonFocused: {
     backgroundColor: colors.primaryHover,
   },
+  // AC: disabled CTA is `--text-disabled` on a flat `--surface` fill —
+  // `--surface-hover` was a raised/interactive fill, wrong for a non-
+  // interactive disabled state.
   primaryButtonDisabled: {
-    backgroundColor: colors.surfaceHover,
+    backgroundColor: colors.surface,
   },
   primaryLabel: {
     fontSize: fontSize.md,

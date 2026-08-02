@@ -36,6 +36,14 @@ type UniqueSectionProps = { data: UniqueSectionData | undefined };
 // data for it (the `undefined` case, decided upstream in activityDetailConfig).
 export function UniqueSection({ data }: UniqueSectionProps) {
   if (!data) return null;
+  // "duration" density filters name-absent rows at render time (see below),
+  // which the other shapes' upstream callers already do before ever
+  // constructing `data` — so this is the one shape that can still reach here
+  // with zero rows to show. 0 survivors omits the section and its heading,
+  // same as every other shape's "0 items" case.
+  const isEmptyDurationList =
+    data.shape === 'schedule' && data.density === 'duration' && data.rows.every((row) => !row.name);
+  if (isEmptyDurationList) return null;
 
   return (
     <View style={styles.section}>
@@ -143,6 +151,27 @@ export function UniqueSection({ data }: UniqueSectionProps) {
               ) : null}
             </View>
           ))}
+        </View>
+      )}
+
+      {data.shape === 'schedule' && data.density === 'duration' && (
+        <View style={styles.compactContainer}>
+          {/* design-spec.md's List rows "duration" density (§B6): name +
+              duration (muted subtitle) + trailing `from €X`. A row whose
+              *name* is absent is dropped entirely (distinct from the
+              trailing-omits-per-row rule below it) — a price with nothing
+              to price isn't a row. */}
+          {data.rows
+            .filter((row): row is typeof row & { name: string } => Boolean(row.name))
+            .map((row, i) => (
+              <View key={row.name} style={[styles.durationRow, i > 0 && styles.hairlineTop]}>
+                <View style={styles.durationNameGroup}>
+                  <Text style={styles.rowName}>{row.name}</Text>
+                  {row.duration && <Text style={styles.durationSubline}>{row.duration}</Text>}
+                </View>
+                {row.price && <Text style={styles.rowPrice}>{row.price}</Text>}
+              </View>
+            ))}
         </View>
       )}
 
@@ -338,6 +367,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     fontVariant: ['tabular-nums'],
+  },
+  // Shape F — scheduled-items list (duration density)
+  durationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[3],
+    paddingVertical: space[3],
+    paddingHorizontal: space[4],
+  },
+  durationNameGroup: {
+    flex: 1,
+    minWidth: 0,
+  },
+  durationSubline: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
   },
   // Shape F — scheduled-items list (date-block density)
   dateBlockList: {
