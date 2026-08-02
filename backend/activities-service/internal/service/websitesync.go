@@ -19,19 +19,14 @@ import (
 // later... no schema change."
 const websiteSyncProvider = "website"
 
-// retryFreshness bounds how soon a row that hasn't yet succeeded (no
-// website on file, extraction failed, validation failed, not yet
-// attempted) gets tried again — short, since these are transient failure
-// states worth retrying often. Applies to every category alike.
-const retryFreshness = 7 * 24 * time.Hour
-
-// entertainmentRefreshFreshness bounds how often an already-complete
-// Entertainment row gets re-scraped anyway. Entertainment is the one
-// category whose scraper-owned content (upcoming_shows) genuinely goes
-// stale over time — every other category is skipped permanently once
-// complete (see isComplete/SyncWebsiteContent), because static content
-// like a spa's treatment menu or a museum's current exhibit description
-// doesn't need repeat scraping once it's been captured.
+// entertainmentRefreshFreshness bounds how often an Entertainment row gets
+// re-scraped — complete or not. Entertainment is the one category whose
+// scraper-owned content (upcoming_shows) genuinely goes stale over time, so
+// unlike every other category it keeps a periodic re-scan indefinitely
+// rather than giving up after one incomplete attempt (see SyncWebsiteContent).
+// Every other category is skipped permanently once complete (isComplete),
+// because static content like a spa's treatment menu or a museum's current
+// exhibit description doesn't need repeat scraping once it's been captured.
 const entertainmentRefreshFreshness = 30 * 24 * time.Hour
 
 // websiteResolveTimeout bounds the one live Places call this job makes per
@@ -212,7 +207,16 @@ func isFieldEmpty(v any) bool {
 // all already filled is skipped permanently, except Entertainment, which
 // still re-checks every entertainmentRefreshFreshness because
 // upcoming_shows genuinely goes stale over time.
-func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
+//
+// A non-Entertainment row that stays incomplete gets exactly one automatic
+// attempt from the batch job, ever — a second failure means the venue's
+// site is missing that field for good (or is unscrapable), so retrying it
+// every cycle would burn Firecrawl credits with no ceiling (the design
+// spec's credit-cost review flagged this: an indefinitely-retried row was
+// never accounted for in the cost estimate). force skips that
+// already-attempted gate (and Entertainment's freshness window) for a
+// single explicitly-requested row — see cmd/websitesync's -retry-id flag.
+func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bool) error {
 	if a.places == nil || a.firecrawl == nil {
 		return fmt.Errorf("places and firecrawl clients must both be configured")
 	}
@@ -252,21 +256,26 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return nil
 	}
 
-	freshness := retryFreshness
-	if complete {
-		// Only reachable for Entertainment here — the permanent-skip branch
-		// above already returned for every other complete category. A
-		// complete show list still needs periodic refreshing, just far less
-		// often than a row that hasn't succeeded at all yet.
-		freshness = entertainmentRefreshFreshness
-	}
-	syncedAt, ok, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
+	syncedAt, attemptedBefore, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
 	if err != nil {
 		return fmt.Errorf("checking website sync freshness for %s: %w", id, err)
 	}
-	if ok && time.Since(syncedAt) < freshness {
-		slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
-		return nil
+	if !force {
+		switch {
+		case activity.Category == activitiessvc.CategoryEntertainment:
+			// Reachable here whether complete or not — Entertainment's show
+			// listings go stale regardless of completeness, so unlike every
+			// other category it keeps a periodic re-scan instead of giving up.
+			if attemptedBefore && time.Since(syncedAt) < entertainmentRefreshFreshness {
+				slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
+				return nil
+			}
+		case attemptedBefore:
+			// Every other category: one automatic attempt, ever. See the
+			// SyncWebsiteContent doc comment for why.
+			slog.Info("website sync skipped, already attempted and still incomplete", "activity_id", id)
+			return nil
+		}
 	}
 
 	resolveCtx, cancel := context.WithTimeout(ctx, websiteResolveTimeout)

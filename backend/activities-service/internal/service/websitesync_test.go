@@ -43,7 +43,7 @@ func TestSyncWebsiteContent_FillsGapsOnly(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestSyncWebsiteContent_NoWebsite_SkipsFirecrawl(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if firecrawl.calls != 0 {
@@ -104,7 +104,7 @@ func TestSyncWebsiteContent_InvalidExtraction_SkipsWrite(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
 	}
 	if repo.updateCalls != 0 {
@@ -132,7 +132,7 @@ func TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
 	}
 	if repo.updateCalls != 0 {
@@ -157,7 +157,7 @@ func TestSyncWebsiteContent_AdminCreatedRow_SkipsPlacesCall(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -181,7 +181,7 @@ func TestSyncWebsiteContent_TripadvisorRow_SkipsPlacesCall(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -205,7 +205,7 @@ func TestSyncWebsiteContent_UnsupportedCategory_Skips(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -271,7 +271,7 @@ func TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}} // never synced — would be eligible under the old flat cadence
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -303,7 +303,7 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 		}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		if firecrawl.calls != 0 {
@@ -323,7 +323,7 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 		}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		if firecrawl.calls != 1 {
@@ -354,9 +354,11 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 // that re-scrapes most often) would never get its stale show list
 // refreshed.
 func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *testing.T) {
-	// price_from deliberately left empty — the row is not complete, so it
-	// uses retryFreshness (7 days); seed synced_at older than that so the
-	// sync actually proceeds to the merge step instead of being skipped as
+	// price_from deliberately left empty — the row is not complete, so an
+	// Entertainment row keeps entertainmentRefreshFreshness's periodic
+	// re-scan (30 days) rather than the one-attempt-and-give-up rule every
+	// other category gets; seed synced_at older than that so the sync
+	// actually proceeds to the merge step instead of being skipped as
 	// still-fresh.
 	incompleteDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Old Show"}],"good_to_know":["Note"],"typical_show_length":"2 hrs"}`
 	stored := activitiessvc.Activity{
@@ -366,11 +368,11 @@ func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *te
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-theatre.rs"}}
 	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"upcoming_shows":[{"date":"2026-10-01","title":"New Show"}]}`)}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
-		syncKey("website", "1", "entertainment", ""): time.Now().Add(-8 * 24 * time.Hour),
+		syncKey("website", "1", "entertainment", ""): time.Now().Add(-31 * 24 * time.Hour),
 	}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if repo.gotUpdatePatch.Details == nil {
@@ -404,7 +406,7 @@ func TestSyncWebsiteContent_SportDifficulty_SetsInferredFlag(t *testing.T) {
 		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		if repo.gotUpdatePatch.Details == nil {
@@ -433,7 +435,7 @@ func TestSyncWebsiteContent_SportDifficulty_SetsInferredFlag(t *testing.T) {
 		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		var got map[string]any
@@ -463,7 +465,7 @@ func TestSyncWebsiteContent_CultureArt_FillNestedBanner(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	var got map[string]any
@@ -491,7 +493,7 @@ func TestSyncWebsiteContent_Culture_BlankBanner_NotTreatedAsFilled(t *testing.T)
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if repo.gotUpdatePatch.Details == nil {
@@ -519,7 +521,7 @@ func TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled(t *t
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if repo.gotUpdatePatch.Details == nil {
@@ -530,7 +532,13 @@ func TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled(t *t
 	}
 }
 
-func TestSyncWebsiteContent_RecentlySynced_Skips(t *testing.T) {
+// TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt proves a
+// non-Entertainment row that already had one automatic attempt (however
+// long ago) is skipped forever afterward, not retried on any timer — the
+// credit-cost fix: an unbounded 7-day retry loop on a row that will never
+// complete (a missing field on the venue's site, permanently) was never
+// accounted for in the design spec's cost estimate.
+func TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt(t *testing.T) {
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
 		Source: "google_places", ExternalID: "place-1",
@@ -538,14 +546,38 @@ func TestSyncWebsiteContent_RecentlySynced_Skips(t *testing.T) {
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
 	firecrawl := &fakeFirecrawl{}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
-		syncKey("website", "1", "wellness", ""): time.Now(),
+		// 400 days ago — far past the old 7-day retry window — proves the
+		// skip is permanent, not just a longer timer.
+		syncKey("website", "1", "wellness", ""): time.Now().Add(-400 * 24 * time.Hour),
 	}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if firecrawl.calls != 0 {
-		t.Errorf("firecrawl.calls = %d, want 0 — synced less than 7 days ago", firecrawl.calls)
+		t.Errorf("firecrawl.calls = %d, want 0 — already attempted once, must not auto-retry", firecrawl.calls)
+	}
+}
+
+// TestSyncWebsiteContent_Force_RetriesGivenUpRow proves force bypasses the
+// already-attempted skip above — cmd/websitesync's -retry-id path.
+func TestSyncWebsiteContent_Force_RetriesGivenUpRow(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Massage"}]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+		syncKey("website", "1", "wellness", ""): time.Now().Add(-400 * 24 * time.Hour),
+	}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", true); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if firecrawl.calls != 1 {
+		t.Errorf("firecrawl.calls = %d, want 1 — force must bypass the already-attempted skip", firecrawl.calls)
 	}
 }
