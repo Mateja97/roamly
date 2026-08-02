@@ -822,6 +822,116 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('mixed media')).toBeTruthy();
     });
 
+    // T8: Kids/Culture/Art screen compositions.
+    describe('Kids/Culture/Art composition (T8)', () => {
+      it("shows Kids' meta line as `Kids · <subtype> · Ages X–Y · <distance>`, no stat grid, description promoted above Facilities", () => {
+        const kids: Activity = {
+          ...activity,
+          category: 'kids',
+          subcategory: 'playground',
+          description: 'A shaded playground with a small splash pad.',
+          details: {
+            category: 'kids',
+            age_range: '3-10',
+            facilities: ['Parking', 'Restrooms'],
+          },
+        };
+        render(<ActivityDetailScreen activity={kids} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Kids')).toBeTruthy();
+        expect(screen.getByText('Playground')).toBeTruthy();
+        expect(screen.getByText('Ages 3-10')).toBeTruthy();
+        expect(screen.getByText(`${kids.distance_km.toFixed(1)} km away`)).toBeTruthy();
+        // No stat grid — Facilities uses the existing icongrid shape.
+        expect(screen.getByText('Facilities')).toBeTruthy();
+        expect(screen.getByText('Parking')).toBeTruthy();
+        // Promoted slot: description renders before Facilities.
+        const tree = JSON.stringify(screen.toJSON());
+        expect(tree.indexOf('A shaded playground with a small splash pad.')).toBeLessThan(
+          tree.indexOf('Facilities'),
+        );
+      });
+
+      it('omits the Ages line for Kids when age_range is absent, without breaking the meta line', () => {
+        const kids: Activity = {
+          ...activity,
+          category: 'kids',
+          subcategory: 'playground',
+          details: { category: 'kids', facilities: ['Parking'] },
+        };
+        render(<ActivityDetailScreen activity={kids} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Kids')).toBeTruthy();
+        expect(screen.getByText('Playground')).toBeTruthy();
+        expect(screen.queryByText(/^Ages /)).toBeNull();
+      });
+
+      // Venue matching the subtype leaves Tickets as the only surviving
+      // chip — the stat grid's own degradation rule (1 survivor folds into
+      // the meta line, unlabelled) applies here same as any other category,
+      // so "Tickets" the label never renders; only its value does.
+      it("folds Culture's lone Tickets value into the meta line and promotes the Now-showing banner, Venue omitted when it matches the subtype", () => {
+        const culture: Activity = {
+          ...activity,
+          category: 'culture',
+          subcategory: 'historical_site',
+          details: {
+            category: 'culture',
+            venue_type: 'Historical Site',
+            ticket_price: '€10',
+            now_showing: { title: 'Roman Belgrade, Rebuilt', description: 'Until 14 September.' },
+          },
+        };
+        render(<ActivityDetailScreen activity={culture} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('€10')).toBeTruthy();
+        expect(screen.queryByText('Tickets')).toBeNull();
+        expect(screen.queryByText('Venue')).toBeNull();
+        // The folded value lives in the title-block meta line, which
+        // precedes every body section (including the promoted banner) in
+        // DOM order regardless of promotion — promotion only orders the
+        // banner relative to the *other* body sections.
+        const tree = JSON.stringify(screen.toJSON());
+        expect(tree.indexOf('€10')).toBeLessThan(tree.indexOf('Now showing'));
+      });
+
+      it("shows Culture's Tickets and Venue stats as a 2-column grid when Venue differs from the subtype", () => {
+        const culture: Activity = {
+          ...activity,
+          category: 'culture',
+          subcategory: 'historical_site',
+          details: { category: 'culture', venue_type: 'Fortress', ticket_price: '€10' },
+        };
+        render(<ActivityDetailScreen activity={culture} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('Fortress')).toBeTruthy();
+        expect(screen.getByText('Venue')).toBeTruthy();
+        expect(screen.getByText('€10')).toBeTruthy();
+        expect(screen.getByText('Tickets')).toBeTruthy();
+      });
+
+      // Art never has a second stat to pair with Tickets (no Venue chip at
+      // all), so the lone value always folds the same way Culture's does
+      // above — this pins "no Venue, ever" rather than "Venue happens to be
+      // absent this time".
+      it("folds Art's lone Tickets value into the meta line, never showing a Venue chip even though venue_type differs from the subtype", () => {
+        const art: Activity = {
+          ...activity,
+          category: 'art',
+          subcategory: 'art_museum',
+          details: {
+            category: 'art',
+            venue_type: 'Museum',
+            ticket_price: '€6',
+            current_exhibition: { title: 'Bodies of Evidence' },
+          },
+        };
+        render(<ActivityDetailScreen activity={art} showDistance onBack={jest.fn()} />);
+        expect(screen.getByText('€6')).toBeTruthy();
+        expect(screen.queryByText('Tickets')).toBeNull();
+        expect(screen.queryByText('Venue')).toBeNull();
+        expect(screen.queryByText('Museum')).toBeNull();
+        const tree = JSON.stringify(screen.toJSON());
+        expect(tree.indexOf('€6')).toBeLessThan(tree.indexOf('Current exhibition'));
+      });
+    });
+
     it("shows Wellness' external-booking note above the footer button row, not among the treatments", () => {
       const wellness: Activity = {
         ...activity,

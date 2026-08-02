@@ -42,6 +42,7 @@ import {
   factStripFields,
   genericActionLabel,
   goodToKnowSection,
+  kidsAgeLabel,
   metaLineLeadItems,
   metaRowExtras,
   openStatus,
@@ -253,6 +254,10 @@ export function ActivityDetailScreen({
   // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
   // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
+  // design-spec.md T8's Kids composition: already-classified (see
+  // `kidsAgeLabel`), so it's counted here as-is, same treatment as
+  // `foldedFactChip.value` below.
+  const kidsAge = kidsAgeLabel(activity);
   // T5 round-4 fix: round 3's guard counted *assumed* candidates (2 lead
   // items, always) instead of what MetaLine will actually render, so it
   // evicted `metaText` even when the real count never reached the 4-item
@@ -266,6 +271,7 @@ export function ActivityDetailScreen({
   const metaLineOverflow =
     [
       ...metaLineLeadItems(activity),
+      kidsAge,
       ...metaExtras.map((v) => classifyField('scalar', v)),
       foldedFactChip?.value,
     ].filter(Boolean).length >= 4;
@@ -536,7 +542,7 @@ export function ActivityDetailScreen({
               // all 5 candidates compete for 4 slots.
               rawItems={
                 !tripadvisor
-                  ? [...metaLineLeadItems(activity), metaLineOverflow ? undefined : metaText]
+                  ? [...metaLineLeadItems(activity), kidsAge, metaLineOverflow ? undefined : metaText]
                   : undefined
               }
               items={[...metaExtras, foldedFactChip?.value]}

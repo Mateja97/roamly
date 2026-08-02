@@ -5,7 +5,6 @@ import {
   Clock,
   Coffee,
   Euro,
-  Image as ImageIcon,
   Landmark,
   Martini,
   Shirt,
@@ -179,12 +178,13 @@ const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique
 // 'factstrip' (now 'factstrip' comes first, per the fixed canonical order).
 // See engineering-notes.md's T5 entry for the full disclosure.
 //
-// Kids has no entry here even though the spec's canonical composition names
-// "Promote: description" for it — a deliberate no-op today, not a miss:
-// `factStripFields` returns `[]` unconditionally for kids, so description
-// already leads the canonical order with nothing above it to promote past.
-// T8 (Kids) should add `kids: 'description'` once that stat-grid gap closes,
-// rather than reading this table's silence as "already correct."
+// T8: Kids now has an explicit entry. `factStripFields` returns `[]`
+// unconditionally for kids (no stat grid per spec), so this promotion is a
+// no-op on the *rendered* order (description already leads with nothing
+// above it) — kept explicit anyway so this table states the spec's
+// composition truthfully instead of relying on a side effect of another
+// function to read as "already correct" (T5/T5-round-2/3's own gap, closed
+// here).
 // Not exported — `bodySectionOrder` below is the only thing any other
 // module needs; T6-T10 edit this table in place.
 type PromotableSection = 'description' | 'difficulty' | 'unique';
@@ -193,6 +193,7 @@ const PROMOTE_ABOVE_STAT_GRID: Partial<Record<Category, PromotableSection>> = {
   cafes: 'description',
   nightlife: 'unique',
   sport: 'difficulty',
+  kids: 'description',
   culture: 'unique',
   art: 'unique',
   shopping: 'description',
@@ -367,6 +368,34 @@ export function subtypeLabel(activity: Activity): string | undefined {
 // this mechanism.
 export function metaLineLeadItems(activity: Activity): (string | undefined)[] {
   return [categoryNoun(activity.category), subtypeLabel(activity)];
+}
+
+// design-spec.md T8's Kids composition: `Kids · <subtype> · Ages X–Y ·
+// <distance>` — the one meta-line item so far that must land *before*
+// distance rather than after it (unlike `metaRowExtras`, which only ever
+// appends), so it's classified here (generated content, same
+// `classifyField('scalar', …)` guard every other meta-line value gets) and
+// handed to the caller as an already-final string for `rawItems`, not
+// `items` (see ActivityDetailScreen.tsx's meta-line wiring).
+export function kidsAgeLabel(activity: Activity): string | undefined {
+  const d = activity.details;
+  if (!d || d.category !== 'kids') return undefined;
+  const range = classifyField('scalar', d.age_range);
+  return range ? `Ages ${range}` : undefined;
+}
+
+// design-spec.md T8 addendum #7 (Culture/Shopping's shared "Venue" stat):
+// "Venue only when it differs from the subtype" — comparing the *labels*
+// (subtype's taxonomy label, not the raw `subcategory` slug) so a venue_type
+// that merely repeats the subtype in different casing/whitespace still
+// counts as the same value and the tile doesn't just duplicate the meta
+// line. Absent subtype (see subtypeLabel's own absence rule) always counts
+// as "differs" — nothing to compare against, so the raw value is shown.
+export function venueDiffersFromSubtype(activity: Activity, venueType: string | undefined): string | undefined {
+  if (!venueType) return undefined;
+  const subtype = subtypeLabel(activity);
+  if (subtype && subtype.trim().toLowerCase() === venueType.trim().toLowerCase()) return undefined;
+  return venueType;
 }
 
 // opening-hours T3: the seven in-scope categories may carry a structured
@@ -670,21 +699,20 @@ export function factStripFields(activity: Activity): FactChip[] {
         [Wrench, 'Gear', d.gear],
       ]);
     case 'culture':
+      // design-spec.md's Culture composition: `Tickets`, plus `Venue` only
+      // when it differs from the subtype (see `venueDiffersFromSubtype`).
       return withHours(
         buildChips([
-          [Landmark, 'Venue', d.venue_type],
           [Euro, 'Tickets', d.ticket_price],
+          [Landmark, 'Venue', venueDiffersFromSubtype(activity, d.venue_type)],
         ]),
         d.hours,
       );
     case 'art':
-      return withHours(
-        buildChips([
-          [ImageIcon, 'Venue', d.venue_type],
-          [Euro, 'Tickets', d.ticket_price],
-        ]),
-        d.hours,
-      );
+      // design-spec.md's Art composition: `Tickets` only — unlike Culture/
+      // Shopping, Art has no Venue stat at all (the artist/work attribution
+      // line above the title already carries that context).
+      return withHours(buildChips([[Euro, 'Tickets', d.ticket_price]]), d.hours);
     case 'shopping':
       return withHours(
         buildChips([

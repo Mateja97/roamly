@@ -4,6 +4,7 @@ import {
   bodySectionOrder,
   factStripFields,
   goodToKnowSection,
+  kidsAgeLabel,
   metaLineLeadItems,
   openStatus,
   priceContextLine,
@@ -14,6 +15,7 @@ import {
   tripadvisorEyebrow,
   tripadvisorReviews,
   uniqueSection,
+  venueDiffersFromSubtype,
   weekView,
 } from './activityDetailConfig';
 
@@ -551,7 +553,6 @@ describe('bodySectionOrder — canonical order + single promote-above-stat-grid 
       'restaurants',
       'bars',
       'nature',
-      'kids',
       'wellness',
       'entertainment',
       'tours_experiences',
@@ -564,6 +565,11 @@ describe('bodySectionOrder — canonical order + single promote-above-stat-grid 
     expect(bodySectionOrder('cafes')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
     expect(bodySectionOrder('nightlife')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
     expect(bodySectionOrder('sport')).toEqual(['difficulty', 'factstrip', 'description', 'unique', 'goodtoknow']);
+    // T8: Kids' promotion is a no-op on the rendered order (its stat grid is
+    // always empty — see `factStripFields`'s `kids` case), but the table
+    // states it explicitly per the spec rather than relying on that side
+    // effect — see the promotion table's own comment in activityDetailConfig.ts.
+    expect(bodySectionOrder('kids')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
     expect(bodySectionOrder('culture')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
     expect(bodySectionOrder('art')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
     expect(bodySectionOrder('shopping')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
@@ -611,6 +617,103 @@ describe('subtypeLabel / metaLineLeadItems — subcategory-from-slug (T5)', () =
       subcategory: 'anything',
     };
     expect(subtypeLabel(unknownCategory)).toBeUndefined();
+  });
+});
+
+// T8: Kids' meta line places "Ages X–Y" before distance (`Kids · Playground
+// · Ages 3–10 · 600 m`) — the one meta-line item that must go through
+// `classifyField` itself rather than lean on MetaLine's own `items` prop,
+// since `items` only ever appends after distance.
+describe('kidsAgeLabel (T8)', () => {
+  it('renders "Ages X–Y" for a valid age_range', () => {
+    const activity = baseActivity({ category: 'kids', age_range: '3-10' });
+    expect(kidsAgeLabel(activity)).toBe('Ages 3-10');
+  });
+
+  it('omits the line when age_range is absent', () => {
+    const activity = baseActivity({ category: 'kids' });
+    expect(kidsAgeLabel(activity)).toBeUndefined();
+  });
+
+  it('omits the line when age_range fails its scalar shape (denylist hedge)', () => {
+    const activity = baseActivity({ category: 'kids', age_range: 'Not specified' });
+    expect(kidsAgeLabel(activity)).toBeUndefined();
+  });
+
+  it('is undefined for a category with no age_range field at all', () => {
+    const activity = baseActivity({ category: 'culture' });
+    expect(kidsAgeLabel(activity)).toBeUndefined();
+  });
+});
+
+// T8: Culture's (and T9's Shopping's) shared "Venue only when it differs
+// from the subtype" conditional — the comparison direction is the easy part
+// to get backwards, so both directions get their own case.
+describe('venueDiffersFromSubtype (T8)', () => {
+  it('shows the venue value when it differs from the subtype label', () => {
+    const activity = { ...baseActivity({ category: 'culture' }), subcategory: 'historical_site' };
+    expect(subtypeLabel(activity)).toBe('Historical Site');
+    expect(venueDiffersFromSubtype(activity, 'Fortress')).toBe('Fortress');
+  });
+
+  it('hides the venue value when it matches the subtype label exactly', () => {
+    const activity = { ...baseActivity({ category: 'art' }), subcategory: 'art_museum' };
+    expect(subtypeLabel(activity)).toBe('Art Museum');
+    expect(venueDiffersFromSubtype(activity, 'Art Museum')).toBeUndefined();
+  });
+
+  it('hides the venue value when it matches the subtype label case/whitespace-insensitively', () => {
+    const activity = { ...baseActivity({ category: 'art' }), subcategory: 'art_museum' };
+    expect(venueDiffersFromSubtype(activity, '  art museum  ')).toBeUndefined();
+  });
+
+  it('shows the venue value when there is no subtype to compare against', () => {
+    const activity = baseActivity({ category: 'culture' });
+    expect(subtypeLabel(activity)).toBeUndefined();
+    expect(venueDiffersFromSubtype(activity, 'Fortress')).toBe('Fortress');
+  });
+
+  it('is undefined when the venue value itself is absent, regardless of subtype', () => {
+    const activity = { ...baseActivity({ category: 'culture' }), subcategory: 'historical_site' };
+    expect(venueDiffersFromSubtype(activity, undefined)).toBeUndefined();
+  });
+});
+
+describe('factStripFields — Kids/Culture/Art (T8)', () => {
+  it('Kids has no stat grid at all, even with age_range/facilities present', () => {
+    const activity = baseActivity({
+      category: 'kids',
+      age_range: '3-10',
+      facilities: ['Parking', 'Restrooms'],
+    });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  it('Culture shows Tickets and Venue (differs from subtype), Tickets leading', () => {
+    const activity = {
+      ...baseActivity({ category: 'culture', venue_type: 'Fortress', ticket_price: '€10' }),
+      subcategory: 'historical_site',
+    };
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Tickets', 'Venue']);
+  });
+
+  it('Culture omits Venue when it matches the subtype, keeping Tickets', () => {
+    const activity = {
+      ...baseActivity({ category: 'culture', venue_type: 'Historical Site', ticket_price: '€10' }),
+      subcategory: 'historical_site',
+    };
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Tickets']);
+  });
+
+  it('Art shows only Tickets, never a Venue chip, even when venue_type differs from the subtype', () => {
+    const activity = {
+      ...baseActivity({ category: 'art', venue_type: 'Museum', ticket_price: '€6' }),
+      subcategory: 'art_museum',
+    };
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Tickets']);
   });
 });
 
