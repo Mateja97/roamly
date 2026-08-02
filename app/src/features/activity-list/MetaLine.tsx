@@ -5,29 +5,41 @@ import { classifyField } from './fieldKind';
 export type StatusChip = { kind: 'status'; text: string; isOpen: boolean };
 export type LevelChip = { kind: 'level'; text: string };
 
+const MAX_ITEMS = 4;
+
 type MetaLineProps = {
+  // App-computed structured data (e.g. distance/country) — already final,
+  // rendered first. Never run through `classifyField`: the kind contract
+  // gates LLM-generated content, and this isn't that (T4 round-2 review
+  // finding — a country name over 18 chars was silently dropped by the
+  // scalar check it was never meant to pass through).
+  rawItem?: string;
   items: (string | undefined)[];
   // Mutually exclusive per design-spec.md's "Meta line" slot — a category
   // shows at most one of the two.
   chip?: StatusChip | LevelChip;
 };
 
-// design-spec.md's "Meta line" slot (§B1): `·`-joined, each item a `scalar`,
-// join-never-prefix so a single survivor renders alone with no dangling
-// separator. One optional trailing status/level chip, styled per
+// design-spec.md's "Meta line" slot (§B1): `·`-joined, each *generated*
+// item a `scalar`, join-never-prefix so a single survivor renders alone
+// with no dangling separator. Capped at 4 items per the spec's "≤4 items"
+// contract (§B1). One optional trailing status/level chip, styled per
 // DESIGN_STANDARDS.md's Scope indicator pill "gold-structure/cream-label"
 // rule — border in the semantic color, label always cream `--text` (a 12px
 // label in the semantic color itself would fail normal-text contrast on
 // `--bg`/`--surface`, same reasoning as the Scope pill's gold-vs-cream call).
-export function MetaLine({ items, chip }: MetaLineProps) {
+export function MetaLine({ rawItem, items, chip }: MetaLineProps) {
   const classified = items
     .map((item) => classifyField('scalar', item))
     .filter((item): item is string => Boolean(item));
-  if (classified.length === 0 && !chip) return null;
+  const allItems = [rawItem, ...classified]
+    .filter((item): item is string => Boolean(item))
+    .slice(0, MAX_ITEMS);
+  if (allItems.length === 0 && !chip) return null;
 
   return (
     <View style={styles.row}>
-      {classified.map((item, i) => (
+      {allItems.map((item, i) => (
         <View key={`${i}-${item}`} style={styles.itemGroup}>
           {i > 0 && <Text style={styles.separator}>·</Text>}
           <Text style={styles.text}>{item}</Text>
@@ -35,7 +47,7 @@ export function MetaLine({ items, chip }: MetaLineProps) {
       ))}
       {chip && (
         <View style={styles.itemGroup}>
-          {classified.length > 0 && <Text style={styles.separator}>·</Text>}
+          {allItems.length > 0 && <Text style={styles.separator}>·</Text>}
           <MetaLineChip chip={chip} />
         </View>
       )}

@@ -12,6 +12,10 @@ type ReviewsSectionProps = {
   // and the attribution slot still render alone.
   score?: number;
   reviewCount?: number;
+  // ponytail: no caller passes this yet — the mockup's "See all" opens a
+  // full reviews screen that doesn't exist in this app today. Wire it once
+  // that screen (or an equivalent modal) lands; until then the control
+  // itself correctly never renders (see `onSeeAll &&` below).
   onSeeAll?: () => void;
   // The provider-swapped attribution slot (§B10) — Google or Tripadvisor
   // plate composition, supplied by the caller. Neither compliance-critical
@@ -45,7 +49,9 @@ export function ReviewsSection({ score, reviewCount, onSeeAll, attribution }: Re
           </View>
           <View style={styles.scoreBlock}>
             <Text style={styles.scoreNumber}>{score.toFixed(1)}</Text>
-            <Text style={styles.scoreCount}>{`${reviewCount} reviews`}</Text>
+            <Text style={styles.scoreCount}>
+              {`${reviewCount.toLocaleString()} ${reviewCount === 1 ? 'review' : 'reviews'}`}
+            </Text>
           </View>
         </>
       )}

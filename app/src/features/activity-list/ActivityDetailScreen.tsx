@@ -44,6 +44,7 @@ import {
   goodToKnowSection,
   metaRowExtras,
   openStatus,
+  priceContextLine,
   PRIMARY_CTA_LABEL,
   primaryActionURL,
   primaryCTAIsDirections,
@@ -60,8 +61,6 @@ import {
 import { DifficultyMeter } from './DifficultyMeter';
 import {
   DescriptionSkeleton,
-  FactStripSkeleton,
-  factStripSkeletonCount,
   PLACES_LIVE_CATEGORIES,
   RatingSkeleton,
   ReviewsSkeleton,
@@ -92,6 +91,11 @@ import { WeekHoursModal } from './WeekHoursModal';
 // surfaces here: hero/map images, CTA OS-handoff failures.
 const DETAIL_MAP_WIDTH = 600;
 const DETAIL_MAP_HEIGHT = 400; // 3:2, per the map box's reserved aspect ratio.
+// design-spec.md's "Reviews" slot (§B10): "up to three cards" — the Google
+// attribution plate itself renders every review it's given (no cap of its
+// own, and it's compliance-critical so its internals stay untouched), so
+// the cap is enforced at this call site instead.
+const MAX_REVIEW_CARDS = 3;
 
 type ActivityDetailScreenProps = {
   activity: Activity;
@@ -242,6 +246,11 @@ export function ActivityDetailScreen({
   // independently reaches the identical "omit below 2" decision via the
   // same pure `classifyFactChips`, so there's no risk of the two disagreeing.
   const classifiedFactChips = classifyFactChips(fields);
+  // ponytail: the fold keeps only `.value`, dropping `.label` — deliberate,
+  // not an oversight (see the meta-line test asserting the label doesn't
+  // survive). Every folded field observed so far reads fine unlabelled
+  // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
+  // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
@@ -251,6 +260,14 @@ export function ActivityDetailScreen({
   const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
+  const priceContext = priceContextLine(activity);
+  // T4 round-2 review finding: a Places-live row's aggregate score has
+  // exactly one home — the Reviews slot below — once it actually renders a
+  // score header there (both `rating` and `review_count` present); the
+  // title-block gold star is this flag's sole consumer, suppressed only in
+  // that exact case so it still carries the rating alone whenever the
+  // Reviews slot doesn't (pending, or a settled merge with no review count).
+  const reviewsScoreShown = isPlacesLive && activity.rating > 0 && activity.review_count !== undefined;
   // design-spec.md T8 (Tripadvisor initiative): presence of this field is
   // the sole detection signal for the Tripadvisor-branded treatment below.
   const tripadvisor = tripadvisorAttribution(activity);
@@ -362,11 +379,7 @@ export function ActivityDetailScreen({
           />
         ) : null;
       case 'factstrip':
-        return isPlacesLive && detailsPending && fields.length === 0 ? (
-          <FactStripSkeleton key="factstrip" count={factStripSkeletonCount(activity.category)} />
-        ) : (
-          <FactStrip key="factstrip" fields={fields} />
-        );
+        return <FactStrip key="factstrip" fields={fields} />;
       case 'unique':
         return isPlacesLive && detailsPending && !unique ? (
           <UniqueSectionSkeleton key="unique" category={activity.category} />
@@ -434,8 +447,11 @@ export function ActivityDetailScreen({
                       once settled with no rating (failed/empty merge), the
                       whole block collapses (rule 3: no fabricated "0.0",
                       no empty frame) rather than falling back to a
-                      pre-T6-style zero. */}
-                  {isPlacesLive && detailsPending && activity.rating <= 0 ? (
+                      pre-T6-style zero. T4 round-2: once the Reviews slot
+                      below is genuinely showing this same score
+                      (`reviewsScoreShown`), this cluster stays hidden —
+                      one focal rating number, not two. */}
+                  {reviewsScoreShown ? null : isPlacesLive && detailsPending && activity.rating <= 0 ? (
                     <View style={styles.rating}>
                       <RatingSkeleton />
                     </View>
@@ -475,7 +491,11 @@ export function ActivityDetailScreen({
               `subcategory` and retires `badgeQualifier`. */}
           {showMetaRow && (
             <MetaLine
-              items={[!tripadvisor ? metaText : undefined, ...metaExtras, foldedFactChip?.value]}
+              // T4 round-2: distance/country is app-computed structured
+              // data, not LLM-generated content — it bypasses `items`'
+              // classification pipeline entirely (see MetaLine's `rawItem`).
+              rawItem={!tripadvisor ? metaText : undefined}
+              items={[...metaExtras, foldedFactChip?.value]}
               chip={status && !todayRow ? { kind: 'status', text: status.text, isOpen: status.isOpen } : undefined}
             />
           )}
@@ -522,7 +542,7 @@ export function ActivityDetailScreen({
                 attribution={
                   <GoogleAttributionPlate
                     variant="detail"
-                    reviews={activity.google_reviews}
+                    reviews={activity.google_reviews?.slice(0, MAX_REVIEW_CARDS)}
                     googleMapsUri={activity.google_maps_uri}
                   />
                 }
@@ -656,6 +676,10 @@ export function ActivityDetailScreen({
             <Text style={styles.bookingNoteText}>{bookingNote}</Text>
           </View>
         )}
+        {/* design-spec.md's "Bottom bar" slot (§B12): optional
+            price-context line above the button row — omits only this line
+            when the category's price_from is absent/invalid. */}
+        {priceContext && <Text style={styles.priceContextText}>{priceContext}</Text>}
         <View style={styles.footerButtons}>
         <Pressable
           onPress={handleGenericPress}
@@ -899,6 +923,15 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textMuted,
   },
+  // .dc.html's bottom-bar price line: 15px/600 cream — rounds up to the
+  // nearest token per DESIGN_STANDARDS.md's Typography rounding convention
+  // (body text floor is --font-size-sm/14px; 15px rounds up to --font-size-md/16px).
+  priceContextText: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: space[3],
+  },
   footerButtons: {
     flexDirection: 'row',
     gap: space[3],
@@ -935,8 +968,11 @@ const styles = StyleSheet.create({
   primaryButtonFocused: {
     backgroundColor: colors.primaryHover,
   },
+  // AC: disabled CTA is `--text-disabled` on a flat `--surface` fill —
+  // `--surface-hover` was a raised/interactive fill, wrong for a non-
+  // interactive disabled state.
   primaryButtonDisabled: {
-    backgroundColor: colors.surfaceHover,
+    backgroundColor: colors.surface,
   },
   primaryLabel: {
     fontSize: fontSize.md,

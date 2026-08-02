@@ -25,6 +25,18 @@ describe('ReviewsSection', () => {
     expect(screen.getByText('Attribution content')).toBeTruthy();
   });
 
+  it('formats the review count with a thousands separator', () => {
+    render(
+      <ReviewsSection score={4.4} reviewCount={3933} attribution={<Text>x</Text>} />,
+    );
+    expect(screen.getByText('3,933 reviews')).toBeTruthy();
+  });
+
+  it('uses the singular "review" for a count of exactly 1', () => {
+    render(<ReviewsSection score={4.4} reviewCount={1} attribution={<Text>x</Text>} />);
+    expect(screen.getByText('1 review')).toBeTruthy();
+  });
+
   it('omits "See all" when no handler is given, calls it when tapped when one is', () => {
     const onSeeAll = jest.fn();
     render(

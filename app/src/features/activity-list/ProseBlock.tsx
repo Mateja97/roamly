@@ -82,6 +82,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.md,
     color: colors.text,
     lineHeight: LINE_HEIGHT,
+    // Android's Text defaults to includeFontPadding:true, adding a few px
+    // above/below — enough to push an exactly-3-line block's `onLayout`
+    // measurement past the clamp tolerance below and show a "Show more"
+    // that expands to nothing. iOS/web ignore this prop.
+    includeFontPadding: false,
   },
   measure: {
     position: 'absolute',

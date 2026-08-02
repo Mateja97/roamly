@@ -26,6 +26,7 @@ import type {
   TripadvisorReview,
 } from '../../api/activities';
 import type { Category } from './types';
+import { classifyField } from './fieldKind';
 import { CATEGORY_LABELS } from './filters';
 
 // design-spec.md's T4 "Config table" section: one lookup, built from
@@ -252,6 +253,21 @@ export function tripadvisorAddressLine(activity: Activity): string | undefined {
 export function wellnessBookingNote(activity: Activity): string | undefined {
   const d = activity.details;
   return d?.category === 'wellness' ? d.external_booking_note : undefined;
+}
+
+// design-spec.md's "Bottom bar" slot (§B12): optional price-context line
+// (`From €12`) above the button row, omitting only that line when absent —
+// `price_from` is `scalar` per "Kind declarations on existing fields", so it
+// goes through the same classifyField guard as any other generated field.
+// Wired for the two categories carrying `price_from` today (Wellness,
+// Entertainment); T7/T9/T10 add the remaining categories' own starting-price
+// field (Nightlife's `entry_price`, Tours' future field) as their screens
+// land — this task only builds the slot mechanics.
+export function priceContextLine(activity: Activity): string | undefined {
+  const d = activity.details;
+  if (!d || (d.category !== 'wellness' && d.category !== 'entertainment')) return undefined;
+  const price = classifyField('scalar', d.price_from);
+  return price ? `From ${price}` : undefined;
 }
 
 // design-spec.md T8 addendum #2: the noun before the "·" is the *singular*

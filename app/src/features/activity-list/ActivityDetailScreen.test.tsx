@@ -86,6 +86,22 @@ describe('ActivityDetailScreen', () => {
     expect(screen.getByText('Serbia')).toBeTruthy();
   });
 
+  // T4 round-2 review finding: a country name is app-computed structured
+  // data, not LLM-generated content — it must never be silently dropped by
+  // the meta line's `scalar` kind check (>18 chars/4 words), unlike a
+  // generated field failing that same check.
+  it('shows a long country name in full, even past the scalar kind\'s 18-char limit', () => {
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
+    render(
+      <ActivityDetailScreen
+        activity={{ ...activity, country: 'Bosnia and Herzegovina' }}
+        showDistance={false}
+        onBack={jest.fn()}
+      />,
+    );
+    expect(screen.getByText('Bosnia and Herzegovina')).toBeTruthy();
+  });
+
   it('calls onBack when the on-screen Back control is pressed', () => {
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
     const onBack = jest.fn();
@@ -657,6 +673,42 @@ describe('ActivityDetailScreen', () => {
       ).toBeTruthy();
     });
 
+    it('shows the bottom-bar price-context line for wellness when price_from is present', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '€25' },
+      };
+      render(
+        <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('From €25')).toBeTruthy();
+    });
+
+    it('shows the bottom-bar price-context line for entertainment when price_from is present', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        details: { category: 'entertainment', price_from: '€8' },
+      };
+      render(
+        <ActivityDetailScreen activity={entertainment} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('From €8')).toBeTruthy();
+    });
+
+    it('omits the price-context line entirely when price_from is absent', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness' },
+      };
+      render(
+        <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.queryByText(/^From /)).toBeNull();
+    });
+
     it('renders a Good to know checklist for a wellness activity that has good_to_know data', () => {
       const wellness: Activity = {
         ...activity,
@@ -824,12 +876,38 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy();
       expect(screen.getByTestId('google-attribution-plate-footer')).toBeTruthy();
 
+      // T4 round-2 review finding: the aggregate score has exactly one home
+      // once the Reviews slot is genuinely showing it — the title-block gold
+      // star must not duplicate it.
+      expect(screen.getAllByText('4.5')).toHaveLength(1);
+
       // Every placeholder is gone — one settle, not a per-block cascade.
       expect(screen.queryByTestId('rating-skeleton')).toBeNull();
       expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
       expect(screen.queryByTestId('description-skeleton')).toBeNull();
       expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
       expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+    });
+
+    it('caps Google review cards at 3, even when the merge carries more', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesActivity,
+          rating: 4.1,
+          review_count: 4,
+          google_reviews: Array.from({ length: 4 }, (_, i) => ({
+            authorAttribution: { displayName: `Reviewer ${i}`, uri: `https://maps.google.com/contrib/${i}` },
+            rating: 5,
+            text: `Review number ${i}.`,
+            date: '2026-06-01T00:00:00Z',
+          })),
+        },
+      });
+      render(<ActivityDetailScreen activity={placesActivity} showDistance onBack={jest.fn()} />);
+
+      await waitFor(() => expect(screen.getByText('4 reviews')).toBeTruthy());
+      expect(screen.getAllByTestId('google-review-row')).toHaveLength(3);
     });
 
     it('silently drops every skeletoned block on failure — no error UI, seeded page intact', async () => {

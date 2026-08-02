@@ -5,6 +5,7 @@ import {
   factStripFields,
   goodToKnowSection,
   openStatus,
+  priceContextLine,
   todayHoursRow,
   tripadvisorAddressLine,
   tripadvisorAttribution,
@@ -634,5 +635,38 @@ describe('goodToKnowSection', () => {
   it('is undefined for a category with no good_to_know field at all (e.g. restaurants)', () => {
     const activity = baseActivity({ category: 'restaurants' });
     expect(goodToKnowSection(activity)).toBeUndefined();
+  });
+});
+
+// design-spec.md's "Bottom bar" slot (§B12): optional price-context line —
+// wired for the two categories with `price_from` today (Wellness,
+// Entertainment).
+describe('priceContextLine', () => {
+  it('renders "From <price>" for wellness when price_from is present', () => {
+    const activity = baseActivity({ category: 'wellness', price_from: '€25' });
+    expect(priceContextLine(activity)).toBe('From €25');
+  });
+
+  it('renders "From <price>" for entertainment when price_from is present', () => {
+    const activity = baseActivity({ category: 'entertainment', price_from: '€8' });
+    expect(priceContextLine(activity)).toBe('From €8');
+  });
+
+  it('omits the line when price_from is absent', () => {
+    const activity = baseActivity({ category: 'wellness' });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('omits the line when price_from fails its scalar shape (the production-bug shape)', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      price_from: 'The starting price is not explicitly stated.',
+    });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('is undefined for a category with no price_from field at all (e.g. nightlife)', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(priceContextLine(activity)).toBeUndefined();
   });
 });

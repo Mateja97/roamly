@@ -27,50 +27,6 @@ export const PLACES_LIVE_CATEGORIES: ReadonlySet<Category> = new Set([
   'entertainment',
 ]);
 
-// design-spec.md's Fact strip row: "2 or 3 ... the count that category's
-// fact-strip config can actually produce, never more than 3" — that's a
-// ceiling, not a floor. Rule 2 ("only skeleton what the merge can fill")
-// means this table has to be the count of chips T1's live mapper
-// (BuildLiveDetails, see its engineering-notes.md breakdown) can actually
-// populate for that category, not activityDetailConfig.ts's full
-// potential chip count:
-// - cafes: mapper emits `hours`/`opening_hours` but not
-//   `known_for_brew`/`wifi_quality` — 0. T4 (activity-detail-system) moved
-//   `opening_hours` out of the fact strip entirely into the standalone
-//   HoursRow (design-spec.md's "Hours row" slot); the legacy `hours`
-//   fallback `withHours` can still append is superseded whenever
-//   `opening_hours` is usable, which the live mapper's payload always is.
-// - culture/art/shopping: mapper emits `venue_type` + `hours` — 1 now
-//   (`venue_type` only; `hours` contributes 0 for the same reason as
-//   cafes above). Their other field, `ticket_price`/`best_day`, is never
-//   emitted.
-// - nightlife/nature/sport: none of their fact-strip fields (`entry_price`/
-//   `dress_code`/`opens_time`, `time_to_spend`/`best_time`/`cost`,
-//   `effort_level`/`duration`/`gear`) are in the mapper's output at all — 0.
-// - kids: `factStripFields` always returns `[]` for it regardless of merge
-//   — 0 (unchanged, was already right).
-// - wellness/entertainment: mapper emits only `opening_hours` — 0, same
-//   reasoning as cafes.
-const FACT_STRIP_CHIP_COUNT: Record<Category, number> = {
-  restaurants: 0,
-  bars: 0,
-  cafes: 0,
-  nightlife: 0,
-  nature: 0,
-  sport: 0,
-  kids: 0,
-  culture: 1,
-  art: 1,
-  wellness: 0,
-  shopping: 1,
-  entertainment: 0,
-  tours_experiences: 0,
-};
-
-export function factStripSkeletonCount(category: Category): number {
-  return FACT_STRIP_CHIP_COUNT[category] ?? 0;
-}
-
 // design-spec.md's unique-section shape table, narrowed by rule 2: only a
 // category whose live mapper can actually fill its unique-section field
 // gets a placeholder. Per T1's engineering-notes.md, the mapper only ever
@@ -97,23 +53,6 @@ export function RatingSkeleton() {
   return (
     <View testID="rating-skeleton">
       <Skeleton width={48} height={20} />
-    </View>
-  );
-}
-
-// "Fact strip" row: N equal-flex 90px-tall blocks, --space-3 apart —
-// mirrors FactStrip.tsx's own `row`/`chip` layout. Renders nothing below 2,
-// matching FactStrip.tsx's own degradation rule (1 valid value folds into
-// the meta line rather than a 1-cell grid, so reserving a 1-cell skeleton
-// for it would resolve into a different slot entirely — the exact
-// "skeleton resolves to nothing" jump rule 2 forbids).
-export function FactStripSkeleton({ count }: { count: number }) {
-  if (count < 2) return null;
-  return (
-    <View testID="fact-strip-skeleton" style={styles.factStripRow}>
-      {Array.from({ length: count }, (_, i) => (
-        <Skeleton key={i} width="100%" height={90} style={styles.flexItem} />
-      ))}
     </View>
   );
 }
@@ -199,13 +138,6 @@ function ReviewGroupSkeleton({ hairline }: { hairline?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  factStripRow: {
-    flexDirection: 'row',
-    gap: space[3],
-  },
-  flexItem: {
-    flex: 1,
-  },
   descriptionWrap: {
     gap: space[2],
     paddingVertical: space[1],
