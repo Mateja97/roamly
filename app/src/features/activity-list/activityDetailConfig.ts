@@ -166,9 +166,20 @@ const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique
 // promoted section unchanged, proving the mechanism without deciding any
 // category's final composition (T6-T10's job) — cafes/nightlife/sport/
 // culture/art/shopping already promoted the same section under the old
-// per-category arrays, so this table reproduces exactly what was already
-// on screen, nothing new. Not exported — `bodySectionOrder` below is the
-// only thing any other module needs; T6-T10 edit this table in place.
+// per-category arrays, so the *promoted* slot itself matches exactly.
+//
+// The rest of each row is NOT guaranteed byte-identical, though, because
+// this table (unlike the old 13 arrays) has no way to structurally exclude
+// a slot — every category now renders every canonical slot its data fills.
+// That's a correct, data-driven consequence of the new model, not a bug,
+// but it does change what's on screen for three categories whose old array
+// had left a slot out on purpose: Nightlife and Sport's old arrays never
+// listed 'description' at all (both are Places-live, so Google's prose can
+// arrive and now does), and Shopping's old array had 'unique' before
+// 'factstrip' (now 'factstrip' comes first, per the fixed canonical order).
+// See engineering-notes.md's T5 entry for the full disclosure.
+// Not exported — `bodySectionOrder` below is the only thing any other
+// module needs; T6-T10 edit this table in place.
 type PromotableSection = 'description' | 'difficulty' | 'unique';
 
 const PROMOTE_ABOVE_STAT_GRID: Partial<Record<Category, PromotableSection>> = {
@@ -186,14 +197,23 @@ export function bodySectionOrder(category: Category): BodySection[] {
   return [promoted, ...CANONICAL_BODY_ORDER.filter((section) => section !== promoted)];
 }
 
-// design-spec.md T8 addendum #8: Entertainment's genre + neighborhood move
-// into the rating/meta row (muted, "·"-separated) instead of the removed
-// fact strip. No other category uses this — everything else keeps its
-// scalar meta-row item (openStatus) or omits.
+// design-spec.md T8 addendum #8 + spec's Entertainment composition
+// (`Entertainment · Cinema · Neighborhood · 700 m`): Entertainment's
+// neighborhood moves into the rating/meta row (muted, "·"-separated)
+// instead of the removed fact strip. No other category uses this —
+// everything else keeps its scalar meta-row item (openStatus) or omits.
+// `genre` deliberately excluded here (T5 round-2 fix): once T5 also
+// prepends category-noun + subtype into the same row (`metaLineLeadItems`),
+// category + subtype + distance + genre + neighborhood overflows
+// `MetaLine`'s `MAX_ITEMS = 4` and silently truncates neighborhood — a
+// production regression T5's own "carry over current values unchanged"
+// scope must not introduce. `genre` isn't in the spec's canonical
+// Entertainment meta line at all, so dropping it both fixes the overflow
+// and matches the final composition T9 will land.
 export function metaRowExtras(activity: Activity): string[] {
   const d = activity.details;
   if (!d || d.category !== 'entertainment') return [];
-  return [d.genre, d.neighborhood].filter((v): v is string => Boolean(v));
+  return [d.neighborhood].filter((v): v is string => Boolean(v));
 }
 
 // design-spec.md T8 addendum #5: Art's artist/work/medium/year attribution
@@ -321,7 +341,11 @@ export function tripadvisorEyebrow(activity: Activity, distanceText: string): st
 // retired generated qualifier is not resurrected as a stand-in.
 export function subtypeLabel(activity: Activity): string | undefined {
   if (!activity.subcategory) return undefined;
-  return SUBCATEGORIES[activity.category].find((option) => option.value === activity.subcategory)
+  // `activity.category` comes off an unvalidated wire cast (api/activities.ts)
+  // — a category the app doesn't yet recognize has no `SUBCATEGORIES` entry,
+  // so this degrades to "no subtype" instead of crashing (the retired
+  // `badgeQualifier` switch had a `default:` doing the same job).
+  return SUBCATEGORIES[activity.category]?.find((option) => option.value === activity.subcategory)
     ?.label;
 }
 

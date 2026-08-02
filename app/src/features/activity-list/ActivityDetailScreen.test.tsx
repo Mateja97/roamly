@@ -631,7 +631,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Open tonight')).toBeTruthy();
     });
 
-    it('shows Entertainment genre + neighborhood inline in the meta row instead of a fact strip', () => {
+    it("shows Entertainment's neighborhood inline in the meta row instead of a fact strip", () => {
       const entertainment: Activity = {
         ...activity,
         category: 'entertainment',
@@ -648,9 +648,39 @@ describe('ActivityDetailScreen', () => {
           onBack={jest.fn()}
         />,
       );
-      expect(screen.getByText('Concerts & theatre')).toBeTruthy();
       expect(screen.getByText('Dorćol')).toBeTruthy();
       expect(screen.queryByText('Genre')).toBeNull();
+      // T5 round-2 fix: `genre` deliberately dropped from the meta row (see
+      // `metaRowExtras`) — kept alongside neighborhood it would overflow
+      // `MetaLine`'s 4-item cap once category+subtype also lead the row,
+      // silently dropping neighborhood (the regression test right below).
+      expect(screen.queryByText('Concerts & theatre')).toBeNull();
+    });
+
+    // T5 round-2 fix: probe-verified regression — once `metaLineLeadItems`
+    // also prepends category noun + subtype, a subtype-carrying Entertainment
+    // row overflowed `MetaLine`'s `MAX_ITEMS = 4` (category, subtype,
+    // distance, neighborhood = 4 already), silently dropping neighborhood.
+    // Pins the fix, not just the no-subtype case above.
+    it('still shows the neighborhood when the row also carries a subtype (no overflow)', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        subcategory: 'cinema',
+        details: {
+          category: 'entertainment',
+          genre: 'Arthouse',
+          neighborhood: 'Dorćol',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={entertainment}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Dorćol')).toBeTruthy();
     });
 
     it("shows Art's artist/work/year/medium attribution line above the badge, not inside the exhibition banner", () => {
@@ -899,7 +929,12 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Cozy corner cafe with a garden terrace.')).toBeTruthy();
       expect(screen.getByText('Baklava')).toBeTruthy();
       expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy();
-      expect(screen.getByTestId('google-attribution-plate-footer')).toBeTruthy();
+      // T5 round-2 fix: the footer copy of the plate is suppressed once the
+      // reviews card above is showing (its own `detail`-variant attribution
+      // plate already carries the "View on Google Maps" link) — otherwise
+      // the same link renders twice, right on top of each other.
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+      expect(screen.getAllByText('View on Google Maps')).toHaveLength(1);
 
       // T4 round-2 review finding: the aggregate score has exactly one home
       // once the Reviews slot is genuinely showing it — the title-block gold

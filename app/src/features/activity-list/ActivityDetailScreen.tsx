@@ -294,6 +294,16 @@ export function ActivityDetailScreen({
   // `todayRow` — isn't already showing it). The whole row collapses when
   // even that isn't true, so no empty row/gap survives it.
   const showMetaRow = !tripadvisor || Boolean(status && !todayRow);
+  // T5 round-2 fix: whether the Places-live reviews card below renders at
+  // all this pass (vs. its loading skeleton) — same condition as the JSX
+  // branch just below. Reused to gate the footer `GoogleAttributionPlate`
+  // so its "View on Google Maps" link doesn't duplicate the one the
+  // reviews card's own `detail`-variant attribution plate already renders
+  // whenever `google_maps_uri` is present (both plates read the same
+  // field). The footer plate still covers the loading-skeleton gap, where
+  // the card shows no maps link yet.
+  const googleReviewsCardShown =
+    isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
 
   // OS handoff: opens the device's maps app on the activity's coordinates.
   // Surfaces the generic error banner (never a silent no-op) when the intent
@@ -560,7 +570,7 @@ export function ActivityDetailScreen({
               second, Roamly-drawn aggregate rating beside Tripadvisor's own
               attribution plate. */}
           {isPlacesLive &&
-            (detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri ? (
+            (!googleReviewsCardShown ? (
               <ReviewsSkeleton />
             ) : (
               <ReviewsSection
@@ -662,11 +672,17 @@ export function ActivityDetailScreen({
             </View>
           )}
 
-          {/* T6: the Places-case analogue of the footer CTA above — never
-              skeletoned (design-spec.md: "a single link that either exists
-              after the merge or doesn't"); renders null on its own with no
-              maps link. */}
-          {isPlacesLive && <GoogleAttributionPlate variant="footer" googleMapsUri={activity.google_maps_uri} />}
+          {/* T6: the Places-case analogue of the footer CTA above
+              (design-spec.md: "a single link that either exists after the
+              merge or doesn't"); renders null on its own with no maps link.
+              T5 round-2 fix: shown only while the reviews card above is
+              still skeletoned — once it renders, its own `detail`-variant
+              attribution plate already carries this exact maps link (both
+              plates read the same `google_maps_uri`), so showing this
+              footer copy too duplicated it. */}
+          {isPlacesLive && !googleReviewsCardShown && (
+            <GoogleAttributionPlate variant="footer" googleMapsUri={activity.google_maps_uri} />
+          )}
         </View>
       </ScrollView>
 

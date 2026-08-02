@@ -534,9 +534,16 @@ describe('tripadvisorAddressLine (T4)', () => {
 // T5: replaces the retired BODY_SECTION_ORDER's 13 hand-maintained arrays —
 // design-spec.md's "Screen composition" canonical order plus the single
 // promote-above-stat-grid rule ("that is the entire per-category layout
-// freedom"). Every value here reproduces exactly what each category's old
-// per-category array already rendered (T5 carries current values over
-// unchanged; T6-T10 decide final composition).
+// freedom"). The *promoted* slot named per category below reproduces
+// exactly what each category's old per-category array already promoted
+// (T5 carries the promotion choice over unchanged; T6-T10 decide final
+// composition). The rest of the row is data-driven, not carried over
+// verbatim: unlike the old arrays, this table can't structurally exclude a
+// slot, so Nightlife and Sport (whose old arrays never listed
+// 'description') now render it when Places prose is present, and
+// Shopping's 'unique'/'factstrip' order is now the fixed canonical order
+// instead of the old array's reversed pair — see engineering-notes.md's T5
+// entry for the full disclosure (also covers Nightlife, flagged in round 1).
 describe('bodySectionOrder — canonical order + single promote-above-stat-grid (T5)', () => {
   it('returns the canonical [factstrip, description, unique, goodtoknow] order for a category with no configured promotion', () => {
     for (const category of [
@@ -590,6 +597,19 @@ describe('subtypeLabel / metaLineLeadItems — subcategory-from-slug (T5)', () =
   it('is undefined (not a crash) for a slug that does not belong to the taxonomy', () => {
     const badSlug = { ...baseActivity({ category: 'restaurants' }), subcategory: 'not-a-real-slug' };
     expect(subtypeLabel(badSlug)).toBeUndefined();
+  });
+
+  // T5 round-2 fix: `activity.category` comes off an unvalidated wire cast
+  // (api/activities.ts), so a backend-first category add with no
+  // `SUBCATEGORIES` entry yet must degrade, not crash the whole screen —
+  // mirrors the retired `badgeQualifier` switch's `default:` case.
+  it('is undefined (not a crash) for a category the app taxonomy does not recognize', () => {
+    const unknownCategory = {
+      ...baseActivity({ category: 'restaurants' }),
+      category: 'not_a_real_category' as never,
+      subcategory: 'anything',
+    };
+    expect(subtypeLabel(unknownCategory)).toBeUndefined();
   });
 });
 
