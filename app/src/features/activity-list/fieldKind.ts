@@ -3,20 +3,21 @@
 // truth for everything below — copied verbatim, not paraphrased. The
 // backend half of this same contract lives in
 // `backend/shared/contentkind/` (different language/repo, hand-copied
-// independently — T11 adds a parity test asserting the two lists stay
-// textually identical). If you touch the denylist or the kind limits here,
-// update that package too.
+// independently — a parity test in `fieldKind.test.ts` asserts the two
+// denylists stay textually identical). If you touch the denylist or the
+// kind limits here, update that package too.
 //
-// KNOWN DIVERGENCE (T9 round 3, flagged for T11 to reconcile — not fixed
-// here, out of this file's scope): the `phrase` kind below strips one
-// trailing terminal-punctuation char before the length check (rejects only
-// on measured length, keeps the punctuation in the returned value). Go's
-// `contentkind.IsValidPhrase` (backend/shared/contentkind/contentkind.go)
-// still rejects outright on any terminal punctuation — same content can now
-// survive here but still get destructively cleared server-side on Tours'
-// write path (`dropInvalidPhrases` in activities-service). The spec's data
-// contract table (L146, L421) still documents the old reject-on-punctuation
-// rule too. See engineering-notes.md's T9 section for the full writeup.
+// T11: closed the T9-round-3 divergence between this file's `phrase` kind
+// (strips one trailing terminal-punctuation char before the length check)
+// and Go's `contentkind.IsValidPhrase`, which used to reject outright on any
+// terminal punctuation — the two now apply the identical rule, so the same
+// content can no longer pass here and still get destructively cleared on
+// Tours' write path (`dropInvalidPhrases` in activities-service). The
+// spec's data contract table (docs' L146/L421) still documents the old
+// stricter wording verbatim, but that doc is a read-only historical record
+// of the imported design, not part of this branch's tree — left as-is per
+// its own "only touch if genuinely warranted" note; the code (both sides,
+// now identical) and this comment are the current source of truth.
 
 export type FieldKind = 'scalar' | 'phrase' | 'prose';
 

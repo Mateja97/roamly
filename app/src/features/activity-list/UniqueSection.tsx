@@ -246,6 +246,12 @@ export function UniqueSection({ data }: UniqueSectionProps) {
                 </View>
               ) : null}
               <View style={styles.dateBlockBody}>
+                {/* T11: a scalar-valid but unparseable date (e.g. "TBA")
+                    renders here instead of being crushed into the numeral
+                    column above, which stays empty for this row. */}
+                {row.dateLabel ? (
+                  <Text style={styles.dateBlockLabel}>{row.dateLabel}</Text>
+                ) : null}
                 <Text style={styles.dateBlockTitle}>{row.title}</Text>
                 {row.subline ? (
                   <Text style={styles.dateBlockSubline}>{row.subline}</Text>
@@ -486,6 +492,14 @@ const styles = StyleSheet.create({
   dateBlockBody: {
     flex: 1,
     gap: space[1],
+  },
+  // T11: same muted-overline treatment as the structured `dateBlockDay` —
+  // an unstructured fallback label reads the same, just in the row body
+  // instead of the tight numeral column.
+  dateBlockLabel: {
+    fontSize: fontSize.xs,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
   },
   dateBlockTitle: {
     fontSize: fontSize.sm,

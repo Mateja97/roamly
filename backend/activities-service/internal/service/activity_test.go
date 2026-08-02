@@ -1045,6 +1045,11 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 	})
 
 	t.Run("tours_experiences included/not_included/itinerary drop entries that are denylisted or violate the phrase shape, keep the rest", func(t *testing.T) {
+		// T11: "Gratuities." (a short phrase ending in a period) is now kept
+		// — IsValidPhrase strips one trailing terminal-punctuation char for
+		// the length check only, matching fieldKind.ts's T9-round-3 fix. The
+		// over-length item still drops even though it too ends without
+		// punctuation (already over PhraseMaxChars before any stripping).
 		raw := `{"included":["Professional guide","Not specified","A description so long it clearly exceeds the eighty character phrase limit for a checklist item"],"not_included":["Lunch","Gratuities."],"itinerary":["Old town square","N/A"]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
 		if err != nil {
@@ -1057,8 +1062,8 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		if want := []string{"Professional guide"}; !slices.Equal(got.Included, want) {
 			t.Errorf("included = %v, want %v (denylisted + over-length dropped)", got.Included, want)
 		}
-		if want := []string{"Lunch"}; !slices.Equal(got.NotIncluded, want) {
-			t.Errorf("not_included = %v, want %v (terminal punctuation dropped)", got.NotIncluded, want)
+		if want := []string{"Lunch", "Gratuities."}; !slices.Equal(got.NotIncluded, want) {
+			t.Errorf("not_included = %v, want %v (short phrase ending in a period is kept, punctuation intact)", got.NotIncluded, want)
 		}
 		if want := []string{"Old town square"}; !slices.Equal(got.Itinerary, want) {
 			t.Errorf("itinerary = %v, want %v (denylisted dropped)", got.Itinerary, want)

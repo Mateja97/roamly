@@ -327,4 +327,28 @@ describe('UniqueSection', () => {
     expect(screen.getByText('20:00 · from €15')).toBeTruthy();
     expect(screen.queryByText('FRI')).toBeNull();
   });
+
+  // T11 fix: a scalar-valid but unparseable raw date ("TBA") no longer gets
+  // crushed into the 44px numeral column — it renders as an unstructured
+  // label in the row body instead, and the date-block column itself omits
+  // (day/date both empty).
+  it('shape F (schedule, date-block density): renders dateLabel in the row body, not the numeral column, when date is empty', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Upcoming shows',
+      density: 'dateblock',
+      rows: [
+        {
+          day: '',
+          date: '',
+          dateLabel: 'TBA',
+          title: 'Live at the Fort',
+          subline: '',
+        },
+      ],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('TBA')).toBeTruthy();
+    expect(screen.getByText('Live at the Fort')).toBeTruthy();
+  });
 });

@@ -1381,7 +1381,13 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     expect(section.rows[0]).toMatchObject({ day: '', date: '' });
   });
 
-  it('keeps a short unparseable raw date that survives the scalar shape (e.g. "TBA")', () => {
+  // T11 fix: a short unparseable-but-scalar-valid raw date ("TBA") used to
+  // be forced into `date` (the 44px numeral column), which crushed longer
+  // examples of this same shape ("Q4 2026") into a couple of glyphs. It now
+  // goes to `dateLabel` instead — `date`/`day` stay empty, so the row's
+  // structured date-block box omits, and the caller renders `dateLabel` as
+  // an unstructured label in the row body.
+  it('routes a short unparseable raw date to dateLabel, not the numeral column (e.g. "TBA")', () => {
     const activity = baseActivity({
       category: 'entertainment',
       upcoming_shows: [{ date: 'TBA', title: 'Live jazz night' }],
@@ -1389,8 +1395,20 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule')
       throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ day: '', date: 'TBA' });
+    expect(section.rows[0]).toMatchObject({ day: '', date: '', dateLabel: 'TBA' });
   });
+
+  it('routes a longer unparseable-but-scalar-valid raw date to dateLabel the same way (e.g. "Q4 2026")', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'Q4 2026', title: 'Live jazz night' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ day: '', date: '', dateLabel: 'Q4 2026' });
+  });
+
 });
 
 // design-spec.md's Tours & Experiences composition (T10).
