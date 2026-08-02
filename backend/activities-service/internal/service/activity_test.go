@@ -655,7 +655,7 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 			t.Fatalf("unmarshaling: %v", err)
 		}
 		if len(got.Treatments) != 2 {
-			t.Fatalf("treatments = %+v, want 2 rows (T1 clears fields, never drops rows)", got.Treatments)
+			t.Fatalf("treatments = %+v, want 2 rows (only price denylisted, item is legitimate)", got.Treatments)
 		}
 		if got.Treatments[0].Price != "" {
 			t.Errorf("treatments[0].price = %q, want cleared", got.Treatments[0].Price)
@@ -665,6 +665,45 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.Treatments[1].Price != "from €40" {
 			t.Errorf("treatments[1].price = %q, want unchanged", got.Treatments[1].Price)
+		}
+	})
+
+	t.Run("wellness treatments[].duration cleared per-entry when denylisted", func(t *testing.T) {
+		raw := `{"treatments":[{"item":"Massage","duration":"not specified","price":"from €40"}]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.WellnessDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.Treatments) != 1 {
+			t.Fatalf("treatments = %+v, want 1 row (item is legitimate)", got.Treatments)
+		}
+		if got.Treatments[0].Duration != "" {
+			t.Errorf("treatments[0].duration = %q, want cleared", got.Treatments[0].Duration)
+		}
+		if got.Treatments[0].Item != "Massage" || got.Treatments[0].Price != "from €40" {
+			t.Errorf("treatments[0] item/price changed unexpectedly: %+v", got.Treatments[0])
+		}
+	})
+
+	t.Run("wellness treatments row dropped entirely when item is denylisted, other rows kept", func(t *testing.T) {
+		raw := `{"treatments":[{"item":"Not specified","duration":"60m","price":"from €40"},{"item":"Facial","duration":"45m","price":"from €35"}]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.WellnessDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.Treatments) != 1 {
+			t.Fatalf("treatments = %+v, want 1 row (denylisted item drops the whole row)", got.Treatments)
+		}
+		if got.Treatments[0].Item != "Facial" {
+			t.Errorf("treatments[0].item = %q, want %q kept", got.Treatments[0].Item, "Facial")
 		}
 	})
 
@@ -701,6 +740,48 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if want := []string{"Doors open early"}; !slices.Equal(got.GoodToKnow, want) {
 			t.Errorf("good_to_know = %v, want %v", got.GoodToKnow, want)
+		}
+	})
+
+	t.Run("entertainment upcoming_shows[].date/time_or_price cleared per-entry, title-legitimate rows kept", func(t *testing.T) {
+		raw := `{"upcoming_shows":[{"date":"not available","title":"Jazz Night","time_or_price":"unknown"},{"date":"2026-09-01","title":"Comedy Hour","time_or_price":"from $20"}]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.EntertainmentDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.UpcomingShows) != 2 {
+			t.Fatalf("upcoming_shows = %+v, want 2 rows (both titles legitimate)", got.UpcomingShows)
+		}
+		if got.UpcomingShows[0].Date != "" || got.UpcomingShows[0].TimeOrPrice != "" {
+			t.Errorf("upcoming_shows[0] = %+v, want date/time_or_price cleared", got.UpcomingShows[0])
+		}
+		if got.UpcomingShows[0].Title != "Jazz Night" {
+			t.Errorf("upcoming_shows[0].title = %q, want unchanged", got.UpcomingShows[0].Title)
+		}
+		if got.UpcomingShows[1].Date != "2026-09-01" || got.UpcomingShows[1].TimeOrPrice != "from $20" {
+			t.Errorf("upcoming_shows[1] changed unexpectedly: %+v", got.UpcomingShows[1])
+		}
+	})
+
+	t.Run("entertainment upcoming_shows row dropped entirely when title is denylisted, other rows kept", func(t *testing.T) {
+		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"N/A","time_or_price":"from $20"},{"date":"2026-09-02","title":"Comedy Hour","time_or_price":"from $15"}]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.EntertainmentDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.UpcomingShows) != 1 {
+			t.Fatalf("upcoming_shows = %+v, want 1 row (denylisted title drops the whole row)", got.UpcomingShows)
+		}
+		if got.UpcomingShows[0].Title != "Comedy Hour" {
+			t.Errorf("upcoming_shows[0].title = %q, want %q kept", got.UpcomingShows[0].Title, "Comedy Hour")
 		}
 	})
 
@@ -808,6 +889,21 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.NowShowing != nil {
 			t.Errorf("now_showing = %+v, want nil (denylisted title drops the whole banner)", got.NowShowing)
+		}
+	})
+
+	t.Run("culture now_showing dropped entirely when title is whitespace-only", func(t *testing.T) {
+		raw := `{"now_showing":{"title":"   ","description":"A real description of the current show."}}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryCulture, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.CultureDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.NowShowing != nil {
+			t.Errorf("now_showing = %+v, want nil (whitespace-only title counts as absent, same as blank)", got.NowShowing)
 		}
 	})
 

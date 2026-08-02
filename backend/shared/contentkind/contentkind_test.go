@@ -32,6 +32,7 @@ func TestMatchesDenylist(t *testing.T) {
 		{"trailing exclamation", "Nije navedeno!", true},
 		{"trailing comma", "n/a,", true},
 		{"case + whitespace + punctuation combined", "  NIJE NAVEDENO.  ", true},
+		{"space before trailing period", "Not specified .", true},
 
 		// Legitimate values from the spec's exact examples must all pass.
 		{"duration range", "60–90 min", false},

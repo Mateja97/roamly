@@ -346,14 +346,20 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 // (T1, the 7 categories that already show an hours chip) must be a
 // well-formed weekly schedule, and (T1) every generated free-text field
 // present on any per-category detail struct — typical_visit, price_from,
-// treatments[].price, good_to_know[], vibe, Entertainment's
-// typical_show_length, Sport's effort_level/duration/gear/what_to_bring[],
-// and Culture/Art's now_showing/current_exhibition banner (title +
-// description, see clearBannerDenylisted) — is cleared to empty when it
-// matches contentkind's placeholder denylist. A denylist match never fails
-// the whole request: only that field is blanked, per the spec's "the
-// backend refuses to write a denylisted value" rule (the field is stored
-// empty instead).
+// good_to_know[], vibe, Entertainment's typical_show_length, Sport's
+// effort_level/duration/gear/what_to_bring[], Wellness'
+// treatments[].item/duration/price (see clearTreatmentsDenylisted),
+// Entertainment's upcoming_shows[].date/title/time_or_price (see
+// clearShowsDenylisted), and Culture/Art's now_showing/current_exhibition
+// banner (title + description, see clearBannerDenylisted) — is cleared to
+// empty when it matches contentkind's placeholder denylist. A denylist
+// match never fails the whole request: only that field is blanked (or, for
+// treatments/shows, the whole row dropped when the row's name field is the
+// match — see the two helpers above), per the spec's "the backend refuses
+// to write a denylisted value" rule (the field is stored empty instead).
+// Every free-text field any of websitesync.go's 5 prompts can generate is
+// now guarded here — see engineering-notes.md's T1 round-3 entry for the
+// full per-prompt field audit.
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
@@ -402,14 +408,13 @@ func validateExtraFields(target any) error {
 		clearDenylisted(&t.TypicalVisit)
 		clearDenylisted(&t.PriceFrom)
 		dropDenylisted(&t.GoodToKnow)
-		for i := range t.Treatments {
-			clearDenylisted(&t.Treatments[i].Price)
-		}
+		t.Treatments = clearTreatmentsDenylisted(t.Treatments)
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.EntertainmentDetails:
 		clearDenylisted(&t.PriceFrom)
 		clearDenylisted(&t.TypicalShowLength)
 		dropDenylisted(&t.GoodToKnow)
+		t.UpcomingShows = clearShowsDenylisted(t.UpcomingShows)
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.ShoppingDetails:
 		return validateOpeningHours(t.OpeningHours)
@@ -452,10 +457,50 @@ func clearBannerDenylisted(b *activitiessvc.Banner) *activitiessvc.Banner {
 	}
 	clearDenylisted(&b.Title)
 	clearDenylisted(&b.Description)
-	if b.Title == "" {
+	if strings.TrimSpace(b.Title) == "" {
 		return nil
 	}
 	return b
+}
+
+// clearTreatmentsDenylisted guards Wellness' treatments[] (T1 round 3): every
+// string sub-field Firecrawl generates (item, duration, price — see
+// wellnessSchema in websitesync.go) carries the same hedge risk as any other
+// generated field, not just price (round 1/2's partial fix). Item is the
+// treatment's name, the array-of-struct equivalent of Banner.Title, so a
+// denylisted Item drops the whole row exactly like clearBannerDenylisted
+// drops a whole banner on a denylisted title. Duration/Price are secondary:
+// cleared in place like any other clearDenylisted field, never dropping the
+// row on their own.
+func clearTreatmentsDenylisted(items []activitiessvc.Treatment) []activitiessvc.Treatment {
+	kept := items[:0]
+	for _, it := range items {
+		if contentkind.MatchesDenylist(it.Item) {
+			continue
+		}
+		clearDenylisted(&it.Duration)
+		clearDenylisted(&it.Price)
+		kept = append(kept, it)
+	}
+	return kept
+}
+
+// clearShowsDenylisted guards Entertainment's upcoming_shows[] (T1 round 3):
+// same gap as clearTreatmentsDenylisted, for date/title/time_or_price (see
+// entertainmentSchema in websitesync.go) — previously entirely unguarded.
+// Title is the show's name, so a denylisted Title drops the whole row;
+// Date/TimeOrPrice are cleared in place, same rule as Treatment above.
+func clearShowsDenylisted(items []activitiessvc.Show) []activitiessvc.Show {
+	kept := items[:0]
+	for _, it := range items {
+		if contentkind.MatchesDenylist(it.Title) {
+			continue
+		}
+		clearDenylisted(&it.Date)
+		clearDenylisted(&it.TimeOrPrice)
+		kept = append(kept, it)
+	}
+	return kept
 }
 
 // validateActionURL rejects a non-nil action_url that isn't an absolute
