@@ -15,7 +15,7 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { ArrowUpRight, Info, MapPinOff, Star } from 'lucide-react-native';
+import { ArrowUpRight, Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
 import type { Activity, ActivityPhoto } from '../../api/activities';
 import { getActivity, getActivityPhotos } from '../../api/activities';
 import {
@@ -43,6 +43,7 @@ import {
   genericActionLabel,
   goodToKnowSection,
   kidsAgeLabel,
+  metaDistanceText,
   metaLineLeadItems,
   metaRowExtras,
   nightlifeTonightChip,
@@ -52,6 +53,9 @@ import {
   primaryActionURL,
   primaryCTAIsDirections,
   todayHoursRow,
+  toursIncludedChecklist,
+  toursItinerary,
+  toursMeetingPoint,
   tripadvisorAddressLine,
   tripadvisorAttribution,
   tripadvisorEyebrow,
@@ -229,10 +233,17 @@ export function ActivityDetailScreen({
   }, [seedActivity.id, isPlacesLive]);
 
   const heroPhoto = photos[heroIndex];
-  const metaText = showDistance
-    ? `${activity.distance_km.toFixed(1)} km away`
-    : activity.country;
+  const metaText = metaDistanceText(activity, showDistance);
   const status = openStatus(activity);
+  // design-spec.md's Tours & Experiences composition (T10): "Tour ·
+  // <subtype> · Meets <distance> away" + a level chip (never the
+  // difficulty meter — that's Sport's, per T7's cross-check). Mutually
+  // exclusive with the status chip below (Tours never has one — not in
+  // `openingHoursOf`'s switch, no `open_status`/`open_tonight` fields).
+  const levelChipText =
+    activity.details?.category === 'tours_experiences'
+      ? classifyField('scalar', activity.details.difficulty_level)
+      : undefined;
   // opening-hours T1: when this is defined, it supersedes the meta row's
   // own Open/Closed item below (single home for the status, per
   // design-spec.md) — T4 moved the actual rendering of today's status/hours
@@ -282,6 +293,14 @@ export function ActivityDetailScreen({
     ].filter(Boolean).length >= 4;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
+  // design-spec.md's Tours & Experiences composition (T10): three ordered
+  // sub-sections share the single canonical 'unique' body slot (see
+  // `renderBodySection`'s 'unique' case below) — `uniqueSection()` itself
+  // has no tours_experiences case (stays undefined, the generic no-details
+  // path), since a single `UniqueSectionData` can't hold three sections.
+  const toursChecklist = toursIncludedChecklist(activity);
+  const toursItineraryData = toursItinerary(activity);
+  const meetingPointText = toursMeetingPoint(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
   const genericLabel = genericActionLabel(activity.category);
   const actionURL = primaryActionURL(activity);
@@ -399,6 +418,51 @@ export function ActivityDetailScreen({
     return openExternalLink(`tel:${phone}`);
   }
 
+  // design-spec.md's "Map + address" slot (§B11): existing, unchanged —
+  // extracted to a function only so Tours' "Meeting point" section (below)
+  // can render the same box in its own position instead of the generic
+  // bottom spot (design-import mockup: "Tours replaces this with its own
+  // Meeting point map"). Every other category still calls this once, at the
+  // same bottom position it always has.
+  function renderMapBox(): ReactNode {
+    if (!hasMapsKey()) return null;
+    return (
+      <Pressable
+        onPress={openDirections}
+        onFocus={mapFocus.onFocus}
+        onBlur={mapFocus.onBlur}
+        disabled={!hasValidCoordinates(activity.location) || ctaBusy}
+        accessibilityRole="button"
+        accessibilityLabel="Open in Google Maps"
+        style={[styles.mapBox, mapFocus.focused && styles.mapBoxFocused]}
+      >
+        {hasValidCoordinates(activity.location) && mapState !== 'broken' ? (
+          <>
+            <Image
+              testID="activity-detail-map-image"
+              source={{
+                uri: staticMapUrl(activity.location, DETAIL_MAP_WIDTH, DETAIL_MAP_HEIGHT),
+              }}
+              style={styles.image}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              accessibilityIgnoresInvertColors
+              onLoad={() => setMapState('loaded')}
+              onError={() => setMapState('broken')}
+            />
+            {mapState === 'loading' && (
+              <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />
+            )}
+          </>
+        ) : (
+          <View style={styles.imageFallback}>
+            <MapPinOff size={20} color={colors.textMuted} strokeWidth={1.75} />
+          </View>
+        )}
+      </Pressable>
+    );
+  }
+
   // design-spec.md T8 addendum #3: per-category body-section order.
   // FactStrip/UniqueSection/DifficultyMeter each already render nothing
   // when their own data is absent, so this only controls order, not
@@ -429,6 +493,30 @@ export function ActivityDetailScreen({
       case 'factstrip':
         return <FactStrip key="factstrip" fields={fields} />;
       case 'unique':
+        // design-spec.md's Tours & Experiences composition (T10): "What's
+        // included" → "Meeting point" → "Itinerary", three sections sharing
+        // this one canonical slot — see `toursChecklist`/`meetingPointText`/
+        // `toursItineraryData` above. Every other category keeps the plain
+        // single-`UniqueSection` render below, unchanged.
+        if (activity.details?.category === 'tours_experiences') {
+          if (!toursChecklist && !meetingPointText && !toursItineraryData) return null;
+          return (
+            <View key="unique" style={styles.toursUniqueGroup}>
+              {toursChecklist && <UniqueSection data={toursChecklist} />}
+              {meetingPointText && (
+                <View style={styles.toursMeetingPoint}>
+                  <Text style={styles.uniqueSectionHeading}>Meeting point</Text>
+                  {renderMapBox()}
+                  <View style={styles.toursMeetingPointAddressRow}>
+                    <MapPin size={15} color={colors.textMuted} strokeWidth={1.75} />
+                    <Text style={styles.toursMeetingPointAddressText}>{meetingPointText}</Text>
+                  </View>
+                </View>
+              )}
+              {toursItineraryData && <UniqueSection data={toursItineraryData} />}
+            </View>
+          );
+        }
         return isPlacesLive && detailsPending && !unique ? (
           <UniqueSectionSkeleton key="unique" category={activity.category} />
         ) : (
@@ -561,11 +649,16 @@ export function ActivityDetailScreen({
               // `metaChipStatus` above) takes priority over, and unlike, the
               // generic status chip is never suppressed by `todayRow` — the
               // mockup shows the chip and HoursRow together, not one
-              // replacing the other.
+              // replacing the other. Falls through to T10's Tours-only
+              // `levelChipText` — the two are mutually exclusive (Tours
+              // never has a status/open-tonight chip, see `levelChipText`'s
+              // definition above).
               chip={
                 metaChipStatus
                   ? { kind: 'status', text: metaChipStatus.text, isOpen: metaChipStatus.isOpen }
-                  : undefined
+                  : levelChipText
+                    ? { kind: 'level', text: levelChipText }
+                    : undefined
               }
             />
           )}
@@ -639,57 +732,13 @@ export function ActivityDetailScreen({
               />
             ))}
 
-          {hasMapsKey() && (
-            <Pressable
-              onPress={openDirections}
-              onFocus={mapFocus.onFocus}
-              onBlur={mapFocus.onBlur}
-              disabled={!hasValidCoordinates(activity.location) || ctaBusy}
-              accessibilityRole="button"
-              accessibilityLabel="Open in Google Maps"
-              style={[
-                styles.mapBox,
-                mapFocus.focused && styles.mapBoxFocused,
-              ]}
-            >
-              {hasValidCoordinates(activity.location) &&
-              mapState !== 'broken' ? (
-                <>
-                  <Image
-                    testID="activity-detail-map-image"
-                    source={{
-                      uri: staticMapUrl(
-                        activity.location,
-                        DETAIL_MAP_WIDTH,
-                        DETAIL_MAP_HEIGHT,
-                      ),
-                    }}
-                    style={styles.image}
-                    contentFit="cover"
-                    cachePolicy="memory-disk"
-                    accessibilityIgnoresInvertColors
-                    onLoad={() => setMapState('loaded')}
-                    onError={() => setMapState('broken')}
-                  />
-                  {mapState === 'loading' && (
-                    <Skeleton
-                      width="100%"
-                      height="100%"
-                      style={styles.imageSkeleton}
-                    />
-                  )}
-                </>
-              ) : (
-                <View style={styles.imageFallback}>
-                  <MapPinOff
-                    size={20}
-                    color={colors.textMuted}
-                    strokeWidth={1.75}
-                  />
-                </View>
-              )}
-            </Pressable>
-          )}
+          {/* design-spec.md's "Map + address" slot (§B11): skipped here only
+              when Tours' own "Meeting point" section (above, in the 'unique'
+              body slot) is already rendering this same box — every other
+              category (and Tours' own no-details/no-meeting_point states)
+              renders it at this, its usual bottom position. */}
+          {!(activity.details?.category === 'tours_experiences' && meetingPointText) &&
+            renderMapBox()}
 
           {/* design-spec.md T4's Footer CTAs + disclaimer section: the
               deep-link button + disclaimer are the trailing elements of the
@@ -925,6 +974,32 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     lineHeight: fontSize.xs * 1.55,
+  },
+  // Tours & Experiences' three-part 'unique' body slot (T10) — same
+  // top-level rhythm as the other body sections' own space[6] gap.
+  toursUniqueGroup: {
+    gap: space[6],
+  },
+  toursMeetingPoint: {
+    gap: space[3],
+  },
+  // Matches UniqueSection.tsx's own (unexported) `heading` style exactly —
+  // duplicated rather than imported since that style object isn't exported
+  // and this is the section's only consumer outside that file.
+  uniqueSectionHeading: {
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  toursMeetingPointAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
+  toursMeetingPointAddressText: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
   },
   tagsRow: {
     flexDirection: 'row',

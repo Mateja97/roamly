@@ -42,6 +42,66 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Wear boots')).toBeTruthy();
   });
 
+  // design-import mockup's slot #8 "extended" note — the ✗ variant, Tours &
+  // Experiences' only consumer (T10).
+  it('shape C (checklist, ✗ variant): renders both the ✓ items and the ✗ crossItems', () => {
+    const data: UniqueSectionData = {
+      shape: 'checklist',
+      heading: "What's included",
+      items: ['Licensed local guide'],
+      crossItems: ['Museum tickets'],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText("What's included")).toBeTruthy();
+    expect(screen.getByText('Licensed local guide')).toBeTruthy();
+    expect(screen.getByText('Museum tickets')).toBeTruthy();
+  });
+
+  it('shape C (checklist, ✗ variant): renders the ✓ list alone when crossItems is empty', () => {
+    const data: UniqueSectionData = {
+      shape: 'checklist',
+      heading: "What's included",
+      items: ['Licensed local guide'],
+      crossItems: [],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Licensed local guide')).toBeTruthy();
+  });
+
+  it('shape C (checklist, ✗ variant): renders the ✗ list alone when items is empty', () => {
+    const data: UniqueSectionData = {
+      shape: 'checklist',
+      heading: "What's included",
+      items: [],
+      crossItems: ['Museum tickets'],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Museum tickets')).toBeTruthy();
+  });
+
+  it('shape C (checklist, ✗ variant): uses success-green ✓ / error-coral ✗ icons, distinct from the plain checklist\'s gold', () => {
+    const paired: UniqueSectionData = {
+      shape: 'checklist',
+      heading: "What's included",
+      items: ['Licensed local guide'],
+      crossItems: ['Museum tickets'],
+    };
+    const { UNSAFE_getAllByType: getAllPaired } = render(<UniqueSection data={paired} />);
+    const { Check, X } = jest.requireActual('lucide-react-native');
+    const checkIcon = getAllPaired(Check)[0];
+    const xIcon = getAllPaired(X)[0];
+    expect(checkIcon.props.color).toBe('#A3D18E');
+    expect(xIcon.props.color).toBe('#F5B79B');
+
+    const plain: UniqueSectionData = {
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Bring water'],
+    };
+    const { UNSAFE_getAllByType: getAllPlain } = render(<UniqueSection data={plain} />);
+    expect(getAllPlain(Check)[0].props.color).toBe('#CE9042');
+  });
+
   it('shape D (icon grid): renders each cell label', () => {
     const data: UniqueSectionData = {
       shape: 'icongrid',

@@ -9,6 +9,7 @@ import {
   Coffee,
   Toilet,
   Trees,
+  X,
 } from 'lucide-react-native';
 import type { LucideProps } from 'lucide-react-native';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
@@ -81,10 +82,26 @@ export function UniqueSection({ data }: UniqueSectionProps) {
             <View key={item} style={styles.checkRow}>
               <Check
                 size={18}
-                color={colors.primary}
-                strokeWidth={1.75}
+                // design-import mockup's slot #8 "extended" note: the ✓/✗
+                // pairing (Tours' `crossItems` present, even if empty) uses
+                // semantic success-green so it reads against the ✗'s
+                // error-coral; the plain single-polarity checklist every
+                // other category uses (no `crossItems`) keeps its existing
+                // gold bullet-style treatment, unchanged.
+                color={data.crossItems !== undefined ? colors.success : colors.primary}
+                strokeWidth={data.crossItems !== undefined ? 2.2 : 1.75}
                 style={styles.checkIcon}
               />
+              <Text style={styles.checkText}>{item}</Text>
+            </View>
+          ))}
+          {/* design-import mockup's slot #8 "extended" note: the ✗ variant,
+              for Tours & Experiences' what's-not-included list — every other
+              checklist consumer never sets `crossItems`, so this simply
+              never renders for them. */}
+          {data.crossItems?.map((item) => (
+            <View key={item} style={styles.checkRow}>
+              <X size={18} color={colors.error} strokeWidth={2.2} style={styles.checkIcon} />
               <Text style={styles.checkText}>{item}</Text>
             </View>
           ))}

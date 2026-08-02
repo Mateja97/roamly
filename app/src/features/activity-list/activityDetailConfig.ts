@@ -6,10 +6,12 @@ import {
   Coffee,
   Euro,
   Landmark,
+  Languages as LanguagesIcon,
   Martini,
   Shirt,
   Store,
   Sun,
+  Users,
   Utensils,
   Wifi,
   Wrench,
@@ -68,7 +70,15 @@ export type UniqueSectionData =
       items: { name: string; price: string }[];
     }
   | { shape: 'pills'; heading: string; items: string[] }
-  | { shape: 'checklist'; heading: string; items: string[] }
+  | {
+      shape: 'checklist';
+      heading: string;
+      items: string[];
+      // design-import mockup's slot #8 "extended" note: the ✗ variant, added
+      // for Tours & Experiences' what's-not-included list — every other
+      // checklist consumer simply omits this and keeps the plain ✓ list.
+      crossItems?: string[];
+    }
   | { shape: 'icongrid'; heading: string; items: string[] }
   | {
       shape: 'banner';
@@ -113,10 +123,12 @@ export const PRIMARY_CTA_LABEL: Record<Category, string> = {
   wellness: 'Visit website',
   entertainment: 'Get tickets',
   shopping: 'Get directions',
-  // T3 (roa-5-category-subtypes): new category, no bespoke detail UI in
-  // scope (see product-tasks.md's T3 out-of-scope) — generic label, same
-  // treatment as any other non-directions category.
-  tours_experiences: 'Book now',
+  // design-spec.md's Tours & Experiences composition (T10): "Bottom:
+  // `From €18` + `Check availability`" — label is fixed regardless of
+  // `details` being present (no `action_url`-equivalent field exists on
+  // this category's schema; the CTA is disabled until one does, same as
+  // any other category with no `primaryActionURL`).
+  tours_experiences: 'Check availability',
 };
 
 export function primaryCTAIsDirections(category: Category): boolean {
@@ -319,13 +331,15 @@ export function priceContextLine(activity: Activity): string | undefined {
 }
 
 // design-spec.md T8 addendum #2: the noun before the "·" is the *singular*
-// category word, not the plural CATEGORY_LABELS value — only these three
-// differ from their plural label (Kids stays "Kids", every other category's
-// label word is already singular).
+// category word, not the plural CATEGORY_LABELS value — every other
+// category's label word is already singular (Kids stays "Kids"). T10:
+// Tours & Experiences' meta line reads "Tour · ..." (spec's own composition
+// example), not the plural "Tours & Experiences" filter-list label.
 const SINGULAR_NOUN: Partial<Record<Category, string>> = {
   restaurants: 'Restaurant',
   cafes: 'Café',
   bars: 'Bar',
+  tours_experiences: 'Tour',
 };
 
 function categoryNoun(category: Category): string {
@@ -774,6 +788,12 @@ export function factStripFields(activity: Activity): FactChip[] {
         ]),
         undefined,
       );
+    case 'tours_experiences':
+      return buildChips([
+        [Clock, 'Duration', d.duration],
+        [Users, 'Group size', d.group_size],
+        [LanguagesIcon, 'Languages', d.languages],
+      ]);
     default:
       // ponytail: proxy sends `details: {}` (no omitempty) for every
       // activity with no category-specific data — `.category` is missing,
@@ -944,4 +964,75 @@ export function goodToKnowSection(activity: Activity): UniqueSectionData | undef
   if (!d) return undefined;
   const items = d.category === 'wellness' || d.category === 'entertainment' ? d.good_to_know : undefined;
   return items?.length ? { shape: 'checklist', heading: 'Good to know', items } : undefined;
+}
+
+// Shared by the two Tours helpers below — both filter a `phrase[]` field
+// down to its survivors the same way (classify, drop the failures).
+function classifyPhrases(items: string[] | undefined): string[] {
+  return (items ?? [])
+    .map((item) => classifyField('phrase', item))
+    .filter((item): item is string => Boolean(item));
+}
+
+// design-spec.md's Tours & Experiences composition (T10): "What's included"
+// (✓/✗ checklist) — the sole consumer of the checklist shape's new ✗
+// variant (design-import mockup's slot #8 "extended" note). Each item is a
+// `phrase` per the data contract, so both lists pass through
+// `classifyField('phrase', …)` individually (a failing item drops on its
+// own, same "items failing the phrase contract drop individually" rule the
+// spec's Checklist slot states) — 0 survivors on both lists omits the whole
+// section, same as every other checklist consumer's "0 items" case.
+export function toursIncludedChecklist(activity: Activity): UniqueSectionData | undefined {
+  const d = activity.details;
+  if (!d || d.category !== 'tours_experiences') return undefined;
+  const items = classifyPhrases(d.included);
+  const crossItems = classifyPhrases(d.not_included);
+  if (items.length === 0 && crossItems.length === 0) return undefined;
+  return { shape: 'checklist', heading: "What's included", items, crossItems };
+}
+
+// design-spec.md's Tours composition: "Itinerary" (numbered rows using the
+// `compact` density over `itinerary[]`) — `compact`'s existing `leading`
+// slot carries the stop number here instead of a time, same shape
+// Nightlife's lineup already puts there. 0 survivors omits the whole
+// section (UniqueSection's own "0 rows" rule already covers this once
+// `rows` is empty — no extra guard needed here beyond returning undefined
+// so the heading doesn't render over zero rows).
+export function toursItinerary(activity: Activity): UniqueSectionData | undefined {
+  const d = activity.details;
+  if (!d || d.category !== 'tours_experiences') return undefined;
+  const stops = classifyPhrases(d.itinerary);
+  if (stops.length === 0) return undefined;
+  return {
+    shape: 'schedule',
+    heading: 'Itinerary',
+    density: 'compact',
+    rows: stops.map((stop, i) => ({ leading: String(i + 1), main: stop })),
+  };
+}
+
+// design-spec.md's Tours composition: "Meeting point" (address + map).
+// `meeting_point` is `prose` per the data contract — free text, no
+// length-based rejection, only the absence rule. The map half of this slot
+// is the existing Map + address slot (§B11, unchanged) — for this one
+// category it renders here instead of at its usual bottom-of-screen spot
+// (design-import mockup: "Tours replaces this with its own Meeting point
+// map"), which is why ActivityDetailScreen gates the bottom map on this
+// same value rather than rendering both.
+export function toursMeetingPoint(activity: Activity): string | undefined {
+  const d = activity.details;
+  if (!d || d.category !== 'tours_experiences') return undefined;
+  return classifyField('prose', d.meeting_point);
+}
+
+// design-spec.md's Tours meta line: "Tour · <subtype> · Meets <distance>
+// away" — every other category's distance item reads plain "<n> km away"
+// (or the country, Anywhere-scope); Tours prefixes "Meets" since the
+// distance is to the tour's meeting point, not a venue you walk into.
+// Bypasses `classifyField` like `metaText` itself — app-computed, not
+// generated content.
+export function metaDistanceText(activity: Activity, showDistance: boolean): string {
+  if (!showDistance) return activity.country;
+  const distance = `${activity.distance_km.toFixed(1)} km away`;
+  return activity.category === 'tours_experiences' ? `Meets ${distance}` : distance;
 }

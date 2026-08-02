@@ -301,6 +301,26 @@ export type ActivityDetails =
       hours?: string;
       what_youll_find?: string[];
       opening_hours?: OpeningHours;
+    }
+  | {
+      // T10 (activity-detail-system): mirrors T2's backend
+      // `ToursExperiencesDetails` field-for-field (same names/kinds — see
+      // that struct's own doc comment). No provider populates these yet;
+      // every row of this category decodes to `{}` today and the screen
+      // falls back to its no-`details` state until sourcing lands.
+      category: 'tours_experiences';
+      duration?: string;
+      group_size?: string;
+      languages?: string;
+      // enum-backed: "Easy" | "Moderate" | "Challenging" — kept a plain
+      // string (not a literal union) to match every other backend-enum
+      // field on this union (e.g. wellness's venue_type), none of which
+      // narrow either; classifyField('scalar', …) still gates it.
+      difficulty_level?: string;
+      included?: string[];
+      not_included?: string[];
+      meeting_point?: string;
+      itinerary?: string[];
     };
 
 export type Activity = {
