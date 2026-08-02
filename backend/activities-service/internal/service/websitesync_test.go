@@ -761,18 +761,26 @@ func TestWellnessAndEntertainmentPrompts_ScalarAndPhraseWording(t *testing.T) {
 		"never generic",
 		"80 characters or fewer",
 		"no trailing period",
+		"18 characters or fewer",
+		"Answer in English",
 	}
 	for _, tt := range []struct {
-		name   string
-		prompt string
+		name        string
+		prompt      string
+		extractAsks []string // sentence-1 asks specific to this category's scalar fields
 	}{
-		{"wellness", wellnessPrompt},
-		{"entertainment", entertainmentPrompt},
+		{"wellness", wellnessPrompt, []string{"the typical length of a visit", "the starting price of its cheapest offering"}},
+		{"entertainment", entertainmentPrompt, []string{"the typical length of a show", "the starting ticket price"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, want := range wantSubstrings {
 				if !strings.Contains(tt.prompt, want) {
 					t.Errorf("%s prompt missing expected instruction %q:\n%s", tt.name, want, tt.prompt)
+				}
+			}
+			for _, want := range tt.extractAsks {
+				if !strings.Contains(tt.prompt, want) {
+					t.Errorf("%s prompt missing extraction ask %q:\n%s", tt.name, want, tt.prompt)
 				}
 			}
 		})

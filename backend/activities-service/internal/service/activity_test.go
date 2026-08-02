@@ -1034,7 +1034,7 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 			t.Fatalf("unmarshaling: %v", err)
 		}
 		if got.Duration != "" {
-			t.Errorf("duration = %q, want cleared (6 words, exceeds ScalarMaxWords)", got.Duration)
+			t.Errorf("duration = %q, want cleared (40 chars, exceeds ScalarMaxChars)", got.Duration)
 		}
 		if got.GroupSize != "" {
 			t.Errorf("group_size = %q, want cleared (terminal punctuation)", got.GroupSize)
@@ -1115,6 +1115,33 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.MeetingPoint != "Meet at the fountain in the main square." {
 			t.Errorf("meeting_point = %q, want unchanged", got.MeetingPoint)
+		}
+	})
+
+	t.Run("tours_experiences whitespace-only values are cleared/dropped like empty ones", func(t *testing.T) {
+		raw := `{"duration":"   ","group_size":"\t","included":["  ",""],"itinerary":[""],"meeting_point":"  "}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryToursExperiences, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ToursExperiencesDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.Duration != "" {
+			t.Errorf("duration = %q, want cleared (whitespace-only)", got.Duration)
+		}
+		if got.GroupSize != "" {
+			t.Errorf("group_size = %q, want cleared (whitespace-only)", got.GroupSize)
+		}
+		if len(got.Included) != 0 {
+			t.Errorf("included = %v, want all entries dropped (whitespace-only/empty)", got.Included)
+		}
+		if len(got.Itinerary) != 0 {
+			t.Errorf("itinerary = %v, want entry dropped (empty)", got.Itinerary)
+		}
+		if got.MeetingPoint != "" {
+			t.Errorf("meeting_point = %q, want cleared (whitespace-only)", got.MeetingPoint)
 		}
 	})
 }

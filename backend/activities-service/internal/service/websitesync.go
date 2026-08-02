@@ -45,23 +45,19 @@ type extraction struct {
 	schema map[string]any
 }
 
-// ponytail: the spec's language rule ("generated values render in the app's
-// language... enforcement is at generation time, the prompt receives the
-// target language") is NOT implemented on any of the 5 prompts below (T2,
-// activity-detail-system) — this job (SyncWebsiteContent, cmd/websitesync's
-// batch caller) carries no per-venue target-locale value anywhere today.
-// The one `locale` in this service (internal/tripadvisor's `const locale =
-// "en-US"`) is a fixed outbound API-request parameter for Tripadvisor calls,
-// not a per-venue value this job could reuse — SyncWebsiteContent doesn't
-// even call that package. Activity.Country is a country, not a language;
-// inferring one from the other is a lookup table this task would be
-// inventing, not reusing. Building that inference or plumbing a locale
-// through this batch job is new infrastructure, out of scope for a
-// prompt-wording task per the task's own instruction not to invent one.
-// Recorded as a follow-up in engineering-notes.md; add real enforcement here
-// (thread the locale into extraction.prompt, extend contentkind with a
-// wrong-language check) once this pipeline actually carries a target-locale
-// value to thread through.
+// ponytail: the spec's language rule has two halves. The render-language
+// half is trivial here — app/src has zero i18n (no i18n/intl/locale dep in
+// app/package.json, zero locale/Localization/i18n hits), every label is a
+// hardcoded English literal, so the target language is the fixed constant
+// "English", not per-venue infra that needs building — both prompts below
+// now instruct the model to answer in English. What's still NOT implemented
+// is the *validator*-side half: T1's contentkind package has no
+// confidently-wrong-language check, so a value that ignores the prompt's
+// instruction and answers in another language isn't rejected server-side.
+// That check is a real language-detection dependency this task's scope (a
+// prompt-wording fix) doesn't justify adding — add it if this class of
+// failure recurs after the prompt fix ships. Recorded as a follow-up in
+// engineering-notes.md.
 
 // wellnessPrompt (T2, activity-detail-system): rewritten from its original
 // open-ended wording, which was satisfiable by a full-sentence hedge like
@@ -73,8 +69,8 @@ type extraction struct {
 // contentkind.MatchesDenylist guard on the write path still catches whatever
 // slips past this wording — this is the generation-time half of the
 // defense-in-depth, not a replacement for it.
-var wellnessPrompt = "Extract this wellness/spa venue's treatments menu (name, duration, price). " +
-	"For typical_visit, price_from, and each treatment's price: answer with a short scalar only — a duration or starting price in 4 words or fewer (e.g. \"60-90 min\", \"from €25\"), never a full sentence. If the venue's page doesn't state a value, omit that field entirely — never write a hedge like \"not specified\", \"not available\", or an equivalent phrase in any language. " +
+var wellnessPrompt = "Extract this wellness/spa venue's treatments menu (name, duration, price), the typical length of a visit, and the starting price of its cheapest offering. Answer in English throughout, regardless of the page's own language. " +
+	"For typical_visit, price_from, and each treatment's price: answer with a short scalar only — a duration or starting price in 4 words or fewer and 18 characters or fewer (e.g. \"60-90 min\", \"from €25\"), never a full sentence. If the venue's page doesn't state a value, omit that field entirely — never write a hedge like \"not specified\", \"not available\", or an equivalent phrase, in English or any other language. " +
 	"For good_to_know, list only practical facts specific to this venue, drawn from its own page — never generic advice about this category of venue in general (for example, do not mention typical spa/wellness equipment unless this page specifically describes it). Each item must be a short phrase of 80 characters or fewer with no trailing period."
 
 var wellnessSchema = map[string]any{
@@ -100,8 +96,8 @@ var wellnessSchema = map[string]any{
 // entertainmentPrompt (T2, activity-detail-system): same rewrite as
 // wellnessPrompt above, for the same reason — typical_show_length/price_from
 // are now explicitly scalar, good_to_know is now explicitly venue-specific.
-var entertainmentPrompt = "Extract this venue's upcoming shows/events (date, title, time or price). " +
-	"For typical_show_length and price_from: answer with a short scalar only — a duration or starting price in 4 words or fewer (e.g. \"2 h 30 min\", \"from €8\"), never a full sentence. If the venue's page doesn't state a value, omit that field entirely — never write a hedge like \"not specified\", \"not available\", or an equivalent phrase in any language. " +
+var entertainmentPrompt = "Extract this venue's upcoming shows/events (date, title, time or price), the typical length of a show, and the starting ticket price. Answer in English throughout, regardless of the page's own language. " +
+	"For typical_show_length and price_from: answer with a short scalar only — a duration or starting price in 4 words or fewer and 18 characters or fewer (e.g. \"2 h 30 min\", \"from €8\"), never a full sentence. If the venue's page doesn't state a value, omit that field entirely — never write a hedge like \"not specified\", \"not available\", or an equivalent phrase, in English or any other language. " +
 	"For good_to_know, list only practical facts specific to this venue, drawn from its own page — never generic advice about this category of venue in general. Each item must be a short phrase of 80 characters or fewer with no trailing period."
 
 var entertainmentSchema = map[string]any{

@@ -362,11 +362,13 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 // full per-prompt field audit. (T2) Tours & Experiences' new fields — no
 // prompt generates them yet (no provider exists), but the shape guard is
 // wired ahead of that integration anyway: duration/group_size/languages/
-// difficulty_level clear on a denylist match or a `scalar`-shape violation
-// (see clearInvalidScalar), included[]/not_included[]/itinerary[] drop
-// entries the same way for the `phrase` shape (dropInvalidPhrases), and
-// meeting_point (`prose`) only gets the denylist check, per the spec's "no
-// length-based rejection" rule for prose.
+// difficulty_level clear on a denylist match, a whitespace-only value, or a
+// `scalar`-shape violation (see clearInvalidScalar), included[]/
+// not_included[]/itinerary[] drop entries the same way (denylisted,
+// whitespace-only, or a `phrase`-shape violation, dropInvalidPhrases), and
+// meeting_point (`prose`) clears on a denylist match or a whitespace-only
+// value, with no length-based rejection, per the spec's "no length-based
+// rejection" rule for prose.
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
@@ -433,7 +435,11 @@ func validateExtraFields(target any) error {
 		dropInvalidPhrases(&t.Included)
 		dropInvalidPhrases(&t.NotIncluded)
 		dropInvalidPhrases(&t.Itinerary)
-		clearDenylisted(&t.MeetingPoint)
+		if strings.TrimSpace(t.MeetingPoint) == "" {
+			t.MeetingPoint = ""
+		} else {
+			clearDenylisted(&t.MeetingPoint)
+		}
 		return nil
 	default:
 		return nil
@@ -465,7 +471,7 @@ func dropDenylisted(items *[]string) {
 // since backing that out to a stricter shape check for already-shipped
 // fields is a separate, unrequested behavior change.
 func clearInvalidScalar(s *string) {
-	if contentkind.MatchesDenylist(*s) || !contentkind.IsValidScalar(*s) {
+	if strings.TrimSpace(*s) == "" || contentkind.MatchesDenylist(*s) || !contentkind.IsValidScalar(*s) {
 		*s = ""
 	}
 }
@@ -477,7 +483,7 @@ func clearInvalidScalar(s *string) {
 // scoping note applies.
 func dropInvalidPhrases(items *[]string) {
 	*items = slices.DeleteFunc(*items, func(s string) bool {
-		return contentkind.MatchesDenylist(s) || !contentkind.IsValidPhrase(s)
+		return strings.TrimSpace(s) == "" || contentkind.MatchesDenylist(s) || !contentkind.IsValidPhrase(s)
 	})
 }
 

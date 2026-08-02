@@ -128,10 +128,10 @@ func TestEntertainmentDetails_RoundTripsNewFields(t *testing.T) {
 		UpcomingShows: []Show{
 			{Date: "2026-08-18", Title: "Jazz Night: Bilja Krstić", TimeOrPrice: "20:00 · from €15"},
 		},
-		ActionURL:          &url,
-		TypicalShowLength:  "2 hrs",
-		PriceFrom:          "from €12",
-		GoodToKnow:         []string{"Unnumbered seating — arrive early"},
+		ActionURL:         &url,
+		TypicalShowLength: "2 hrs",
+		PriceFrom:         "from €12",
+		GoodToKnow:        []string{"Unnumbered seating — arrive early"},
 		OpeningHours: &OpeningHours{
 			Timezone: "Europe/Belgrade",
 			Periods:  []Period{{Day: Friday, Open: "19:00", Close: "23:00"}},
