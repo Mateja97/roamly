@@ -178,6 +178,13 @@ const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique
 // arrive and now does), and Shopping's old array had 'unique' before
 // 'factstrip' (now 'factstrip' comes first, per the fixed canonical order).
 // See engineering-notes.md's T5 entry for the full disclosure.
+//
+// Kids has no entry here even though the spec's canonical composition names
+// "Promote: description" for it — a deliberate no-op today, not a miss:
+// `factStripFields` returns `[]` unconditionally for kids, so description
+// already leads the canonical order with nothing above it to promote past.
+// T8 (Kids) should add `kids: 'description'` once that stat-grid gap closes,
+// rather than reading this table's silence as "already correct."
 // Not exported — `bodySectionOrder` below is the only thing any other
 // module needs; T6-T10 edit this table in place.
 type PromotableSection = 'description' | 'difficulty' | 'unique';
@@ -736,7 +743,12 @@ function dateBlockRow(show: {
       // ponytail: Intl unavailable — falls back to the raw date string above.
     }
   }
-  return { day, date, title: show.title, subline: show.time_or_price ?? '' };
+  // T5 round-3 fix: `time_or_price` is LLM-generated (same field the
+  // production-bug report's "Not specified" hedges leaked from on legacy
+  // rows — T1 only guards new writes) — run it through `classifyField` like
+  // any other generated trailing value so a leaked hedge omits per the
+  // spec's "List rows" trailing-omit rule instead of rendering verbatim.
+  return { day, date, title: show.title, subline: classifyField('scalar', show.time_or_price) ?? '' };
 }
 
 // Whole-section omission lives here too: every branch returns `undefined`

@@ -683,6 +683,38 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Dorćol')).toBeTruthy();
     });
 
+    // T5 round-3 fix: probe-verified regression — category + subtype (2) +
+    // distance/country (1) already fill 3 of MetaLine's 4 slots; when the
+    // row also carries a neighborhood (metaExtras) *and* a single surviving
+    // stat (the fold), that's 5 candidates for 4 slots and round 2's fix
+    // only closed the no-fold case. The fold is the value's only home
+    // (FactStrip nulls out below 2 chips) so it must survive alongside
+    // neighborhood — distance/country is what yields.
+    it('keeps both the neighborhood and a folded lone stat when they collide with category+subtype+distance', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        subcategory: 'cinema',
+        details: {
+          category: 'entertainment',
+          neighborhood: 'Dorćol',
+          price_from: 'EUR8',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={entertainment}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Entertainment')).toBeTruthy();
+      expect(screen.getByText('Cinema')).toBeTruthy();
+      expect(screen.getByText('Dorćol')).toBeTruthy();
+      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(screen.queryByText(`${entertainment.distance_km.toFixed(1)} km away`)).toBeNull();
+    });
+
     it("shows Art's artist/work/year/medium attribution line above the badge, not inside the exhibition banner", () => {
       const art: Activity = {
         ...activity,

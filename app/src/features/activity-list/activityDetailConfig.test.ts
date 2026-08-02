@@ -13,6 +13,7 @@ import {
   tripadvisorAttribution,
   tripadvisorEyebrow,
   tripadvisorReviews,
+  uniqueSection,
   weekView,
 } from './activityDetailConfig';
 
@@ -743,5 +744,44 @@ describe('priceContextLine', () => {
   it('is undefined for a category with no price_from field at all (e.g. nightlife)', () => {
     const activity = baseActivity({ category: 'nightlife' });
     expect(priceContextLine(activity)).toBeUndefined();
+  });
+});
+
+// T5 round-3 fix: `time_or_price` is LLM-generated (same denylist/prompt
+// surface as every other free-text field), so a leaked hedge on a legacy
+// row must omit per the spec's "List rows" trailing-omit rule, not render
+// verbatim.
+describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
+  it('carries a valid time_or_price through as the row subline', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: '2024-06-01', title: 'Live jazz night', time_or_price: '€15' }],
+    });
+    const section = uniqueSection(activity);
+    expect(section?.shape).toBe('schedule');
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '€15' });
+  });
+
+  it('omits the subline when time_or_price fails its scalar shape (the production-bug hedge)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [
+        { date: '2024-06-01', title: 'Live jazz night', time_or_price: 'Not specified' },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
+  });
+
+  it('omits the subline when time_or_price is absent', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: '2024-06-01', title: 'Live jazz night' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
   });
 });

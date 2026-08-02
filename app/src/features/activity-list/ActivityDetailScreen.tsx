@@ -252,6 +252,19 @@ export function ActivityDetailScreen({
   // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
   // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
+  // T5 round-3 fix: category + subtype (2, always-lead) + `metaText`
+  // (distance/country, 1) + Entertainment's `metaExtras` (neighborhood, 0-1)
+  // + a fold (0-1) can total 5 candidates for MetaLine's hard 4-item cap.
+  // Round 2 fixed the no-fold case (neighborhood always wins its slot) but
+  // left the fold-plus-neighborhood collision truncating the fold silently
+  // — the fold's whole purpose is to keep a lone surviving stat visible
+  // (FactStrip nulls out below 2 chips, so the meta line is that value's
+  // only home), so it and neighborhood both need their slot when both
+  // exist; `metaText` is the one that yields. This never fires outside
+  // Entertainment (`metaExtras` is `[]` for every other category) and never
+  // fires when at most one of {neighborhood, fold} is present (metaText
+  // still gets its slot then, same as today).
+  const metaLineOverflow = metaExtras.length + (foldedFactChip ? 1 : 0) >= 2;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
@@ -296,12 +309,14 @@ export function ActivityDetailScreen({
   const showMetaRow = !tripadvisor || Boolean(status && !todayRow);
   // T5 round-2 fix: whether the Places-live reviews card below renders at
   // all this pass (vs. its loading skeleton) — same condition as the JSX
-  // branch just below. Reused to gate the footer `GoogleAttributionPlate`
-  // so its "View on Google Maps" link doesn't duplicate the one the
-  // reviews card's own `detail`-variant attribution plate already renders
-  // whenever `google_maps_uri` is present (both plates read the same
-  // field). The footer plate still covers the loading-skeleton gap, where
-  // the card shows no maps link yet.
+  // branch just below. T5 round-2 also gated a footer `GoogleAttributionPlate`
+  // on this (to avoid a duplicate "View on Google Maps" link once the
+  // reviews card's own `detail`-variant plate renders it); round-3 review
+  // found that gated branch was provably unreachable (its two preconditions
+  // — pending and no `google_maps_uri` — mean the footer plate is always
+  // called with no uri, which renders null on its own) and deleted it
+  // rather than keep dead code around. This flag's sole remaining consumer
+  // is the reviews-card skeleton branch below.
   const googleReviewsCardShown =
     isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
 
@@ -510,8 +525,16 @@ export function ActivityDetailScreen({
               // ahead of distance/country — all app-computed/taxonomy data,
               // never run through `classifyField` (see MetaLine's
               // `rawItems`). Absent entirely for a Tripadvisor row (its
-              // eyebrow above the title already carries category).
-              rawItems={!tripadvisor ? [...metaLineLeadItems(activity), metaText] : undefined}
+              // eyebrow above the title already carries category). T5
+              // round-3 fix: `metaText` drops out of the lead items (rather
+              // than the fold or neighborhood silently losing theirs — see
+              // `metaLineOverflow`) on the one Entertainment collision where
+              // all 5 candidates compete for 4 slots.
+              rawItems={
+                !tripadvisor
+                  ? [...metaLineLeadItems(activity), metaLineOverflow ? undefined : metaText]
+                  : undefined
+              }
               items={[...metaExtras, foldedFactChip?.value]}
               chip={status && !todayRow ? { kind: 'status', text: status.text, isOpen: status.isOpen } : undefined}
             />
@@ -672,17 +695,6 @@ export function ActivityDetailScreen({
             </View>
           )}
 
-          {/* T6: the Places-case analogue of the footer CTA above
-              (design-spec.md: "a single link that either exists after the
-              merge or doesn't"); renders null on its own with no maps link.
-              T5 round-2 fix: shown only while the reviews card above is
-              still skeletoned — once it renders, its own `detail`-variant
-              attribution plate already carries this exact maps link (both
-              plates read the same `google_maps_uri`), so showing this
-              footer copy too duplicated it. */}
-          {isPlacesLive && !googleReviewsCardShown && (
-            <GoogleAttributionPlate variant="footer" googleMapsUri={activity.google_maps_uri} />
-          )}
         </View>
       </ScrollView>
 
