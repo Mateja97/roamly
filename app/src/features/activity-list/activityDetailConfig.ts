@@ -748,7 +748,13 @@ function dateBlockRow(show: {
   // rows — T1 only guards new writes) — run it through `classifyField` like
   // any other generated trailing value so a leaked hedge omits per the
   // spec's "List rows" trailing-omit rule instead of rendering verbatim.
-  return { day, date, title: show.title, subline: classifyField('scalar', show.time_or_price) ?? '' };
+  // T5 round-4 fix: the spec declares no kind for this field; `scalar`'s
+  // 18-char/4-word cap is stricter than the subline needs and newly dropped
+  // legitimate legacy values (e.g. "Fri 20:00, from €15" = 19 chars). The
+  // hedge this guards against is a denylist hit, which `phrase` catches
+  // identically (denylist runs before the kind check) at its more permissive
+  // 80-char cap — use `phrase`.
+  return { day, date, title: show.title, subline: classifyField('phrase', show.time_or_price) ?? '' };
 }
 
 // Whole-section omission lives here too: every branch returns `undefined`

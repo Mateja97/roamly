@@ -763,7 +763,7 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '€15' });
   });
 
-  it('omits the subline when time_or_price fails its scalar shape (the production-bug hedge)', () => {
+  it('omits the subline when time_or_price is denylisted (the production-bug hedge)', () => {
     const activity = baseActivity({
       category: 'entertainment',
       upcoming_shows: [

@@ -35,6 +35,7 @@ import {
   radius,
   space,
 } from '../../theme/tokens';
+import { classifyField } from './fieldKind';
 import {
   artAttribution,
   bodySectionOrder,
@@ -252,19 +253,22 @@ export function ActivityDetailScreen({
   // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
   // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
-  // T5 round-3 fix: category + subtype (2, always-lead) + `metaText`
-  // (distance/country, 1) + Entertainment's `metaExtras` (neighborhood, 0-1)
-  // + a fold (0-1) can total 5 candidates for MetaLine's hard 4-item cap.
-  // Round 2 fixed the no-fold case (neighborhood always wins its slot) but
-  // left the fold-plus-neighborhood collision truncating the fold silently
-  // — the fold's whole purpose is to keep a lone surviving stat visible
-  // (FactStrip nulls out below 2 chips, so the meta line is that value's
-  // only home), so it and neighborhood both need their slot when both
-  // exist; `metaText` is the one that yields. This never fires outside
-  // Entertainment (`metaExtras` is `[]` for every other category) and never
-  // fires when at most one of {neighborhood, fold} is present (metaText
-  // still gets its slot then, same as today).
-  const metaLineOverflow = metaExtras.length + (foldedFactChip ? 1 : 0) >= 2;
+  // T5 round-4 fix: round 3's guard counted *assumed* candidates (2 lead
+  // items, always) instead of what MetaLine will actually render, so it
+  // evicted `metaText` even when the real count never reached the 4-item
+  // cap — e.g. empty/off-taxonomy `subcategory` (no subtype item) or a
+  // >18-char neighborhood (`classifyField` drops it). Count the same items
+  // MetaLine's `rawItems`/`items` will render (lead items raw, `metaExtras`
+  // through the same `classifyField('scalar', …)` MetaLine's `items` prop
+  // applies — `foldedFactChip.value` is already classifyField'd output via
+  // `classifyFactChips`, so it's passed as-is) and only yield `metaText`'s
+  // slot when that real count already fills the cap.
+  const metaLineOverflow =
+    [
+      ...metaLineLeadItems(activity),
+      ...metaExtras.map((v) => classifyField('scalar', v)),
+      foldedFactChip?.value,
+    ].filter(Boolean).length >= 4;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);

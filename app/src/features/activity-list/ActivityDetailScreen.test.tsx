@@ -715,6 +715,90 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText(`${entertainment.distance_km.toFixed(1)} km away`)).toBeNull();
     });
 
+    // T5 round-4 fix: round 3's `metaLineOverflow` counted assumed slots (2
+    // lead items, always) rather than what actually renders, so it evicted
+    // distance/country even when only 4 real candidates were competing for
+    // the 4-item cap. Probe-verified regression, 3 fixtures — each should
+    // keep distance visible since nothing needs to yield.
+    it('keeps distance when subcategory is empty (documented unset value) leaves only 4 real candidates', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        subcategory: '',
+        details: {
+          category: 'entertainment',
+          neighborhood: 'Dorćol',
+          price_from: 'EUR8',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={entertainment}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Entertainment')).toBeTruthy();
+      expect(screen.getByText('Dorćol')).toBeTruthy();
+      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(
+        screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
+      ).toBeTruthy();
+    });
+
+    it('keeps distance when subcategory is an off-taxonomy slug (subtype item drops out)', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        subcategory: 'brand_new_subtype',
+        details: {
+          category: 'entertainment',
+          neighborhood: 'Dorćol',
+          price_from: 'EUR8',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={entertainment}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Entertainment')).toBeTruthy();
+      expect(screen.getByText('Dorćol')).toBeTruthy();
+      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(
+        screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
+      ).toBeTruthy();
+    });
+
+    it('keeps distance when the neighborhood is over 18 chars (classifyField drops it, one fewer real candidate)', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        subcategory: 'cinema',
+        details: {
+          category: 'entertainment',
+          neighborhood: 'Stari Grad Downtown',
+          price_from: 'EUR8',
+        },
+      };
+      render(
+        <ActivityDetailScreen
+          activity={entertainment}
+          showDistance
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Entertainment')).toBeTruthy();
+      expect(screen.getByText('Cinema')).toBeTruthy();
+      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(screen.queryByText('Stari Grad Downtown')).toBeNull();
+      expect(
+        screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
+      ).toBeTruthy();
+    });
+
     it("shows Art's artist/work/year/medium attribution line above the badge, not inside the exhibition banner", () => {
       const art: Activity = {
         ...activity,
