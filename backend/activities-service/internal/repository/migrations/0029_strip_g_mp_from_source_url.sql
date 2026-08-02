@@ -34,7 +34,7 @@
 WITH ranked AS (
     SELECT id,
            row_number() OVER (
-               PARTITION BY regexp_replace(regexp_replace(source_url, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', ''), category
+               PARTITION BY regexp_replace(regexp_replace(source_url, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', '', 'g'), category
                -- Survivor order. details before created_at: when both rows
                -- have an external_id, preferring the newer one alone would
                -- drop an older row's website-sync content (price_from,
@@ -55,7 +55,7 @@ WITH ranked AS (
 DELETE FROM activities WHERE id IN (SELECT id FROM ranked WHERE rn > 1);
 
 UPDATE activities
-SET source_url = regexp_replace(regexp_replace(source_url, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', '')
+SET source_url = regexp_replace(regexp_replace(source_url, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', '', 'g')
 WHERE source_url LIKE '%g_mp=%';
 
 -- websitesync keys the shared sync_regions freshness table by the activity's

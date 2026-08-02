@@ -2004,7 +2004,7 @@ func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
 // expression, with a %s where the column goes. It is asserted below to appear
 // verbatim in the migration file, so this literal cannot drift away from the
 // SQL that actually runs.
-const canonicalSourceURLSQLTemplate = `regexp_replace(regexp_replace(%s, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', '')`
+const canonicalSourceURLSQLTemplate = `regexp_replace(regexp_replace(%s, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', '', 'g')`
 
 // TestCanonicalSourceURLMatchesMigration pins migration 0029's SQL
 // canonicalisation against the Go canonicalSourceURL the write path uses.

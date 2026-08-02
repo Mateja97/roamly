@@ -299,6 +299,10 @@ var canonicalSourceURLCases = []struct {
 	{"no query string", "https://example.com/venue", "https://example.com/venue"},
 	{"empty stays empty", "", ""},
 	{"g_mp as a substring of another key is kept", "https://x/?not_g_mp=1", "https://x/?not_g_mp=1"},
+	// Unreachable via Google (it emits one g_mp), but the SQL side needs the
+	// 'g' flag to strip a repeat and Go strips every match for free — without
+	// the flag the two definitions diverge here and nothing would catch it.
+	{"repeated g_mp is fully stripped", "https://x/?a=1&g_mp=X&g_mp=Y", "https://x/?a=1"},
 }
 
 func TestCanonicalSourceURL(t *testing.T) {
