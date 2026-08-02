@@ -345,14 +345,15 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 // http(s) URL, Art's year must be a plausible 4-digit year, opening_hours
 // (T1, the 7 categories that already show an hours chip) must be a
 // well-formed weekly schedule, and (T1) every generated free-text field
-// named in the spec's kind-declarations table — typical_visit, price_from,
-// treatments[].price, good_to_know[], vibe, plus Entertainment's
-// typical_show_length (same website-sourced hedge risk as its sibling
-// price_from, not separately named in the table but present in the same
-// struct) — is cleared to empty when it matches contentkind's placeholder
-// denylist. A denylist match never fails the whole request: only that field
-// is blanked, per the spec's "the backend refuses to write a denylisted
-// value" rule (the field is stored empty instead).
+// present on any per-category detail struct — typical_visit, price_from,
+// treatments[].price, good_to_know[], vibe, Entertainment's
+// typical_show_length, Sport's effort_level/duration/gear/what_to_bring[],
+// and Culture/Art's now_showing/current_exhibition banner (title +
+// description, see clearBannerDenylisted) — is cleared to empty when it
+// matches contentkind's placeholder denylist. A denylist match never fails
+// the whole request: only that field is blanked, per the spec's "the
+// backend refuses to write a denylisted value" rule (the field is stored
+// empty instead).
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
@@ -377,13 +378,19 @@ func validateExtraFields(target any) error {
 		dropDenylisted(&t.GoodToKnow)
 		return nil
 	case *activitiessvc.SportDetails:
+		clearDenylisted(&t.EffortLevel)
+		clearDenylisted(&t.Duration)
+		clearDenylisted(&t.Gear)
+		dropDenylisted(&t.WhatToBring)
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.CultureDetails:
+		t.NowShowing = clearBannerDenylisted(t.NowShowing)
 		if err := validateActionURL(t.ActionURL); err != nil {
 			return err
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.ArtDetails:
+		t.CurrentExhibition = clearBannerDenylisted(t.CurrentExhibition)
 		if err := validateActionURL(t.ActionURL); err != nil {
 			return err
 		}
@@ -425,6 +432,30 @@ func clearDenylisted(s *string) {
 // clearDenylisted, applied per-item.
 func dropDenylisted(items *[]string) {
 	*items = slices.DeleteFunc(*items, contentkind.MatchesDenylist)
+}
+
+// clearBannerDenylisted guards Culture's now_showing / Art's
+// current_exhibition (T1): both title and description are LLM-generated
+// free text and carry the same hedge risk as every other guarded field. A
+// denylisted title means "found nothing" exactly like a blank one, so the
+// whole banner is dropped (nil) rather than left with an empty title —
+// matching the spec's slot-level rule that only a missing title omits the
+// whole banner, and websitesync.go's dropBlankBanner, which already drops a
+// freshly-extracted blank-titled banner before it's ever merged in. This
+// runs after that merge, as the last gate before persisting, so it also
+// catches a denylisted-but-non-blank title (e.g. "Unknown") that
+// dropBlankBanner's empty-string check lets through — otherwise the row
+// would write a locked-in placeholder banner and never retry via isComplete.
+func clearBannerDenylisted(b *activitiessvc.Banner) *activitiessvc.Banner {
+	if b == nil {
+		return nil
+	}
+	clearDenylisted(&b.Title)
+	clearDenylisted(&b.Description)
+	if b.Title == "" {
+		return nil
+	}
+	return b
 }
 
 // validateActionURL rejects a non-nil action_url that isn't an absolute

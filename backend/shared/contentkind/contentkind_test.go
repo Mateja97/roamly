@@ -61,10 +61,11 @@ func TestIsValidScalar(t *testing.T) {
 		in   string
 		want bool
 	}{
-		{"exactly at char limit", "123456789012345678", true},        // 18 chars
-		{"one char over limit", "1234567890123456789", false},        // 19 chars
-		{"exactly at word limit", "one two three four", true},        // 4 words
-		{"one word over limit", "one two three four five", false},    // 5 words, also over char limit
+		{"exactly at char limit", "123456789012345678", true},            // 18 chars
+		{"one char over limit", "1234567890123456789", false},            // 19 chars
+		{"exactly at word limit", "one two three four", true},            // 4 words
+		{"one word over limit", "one two three four five", false},        // 5 words, also over char limit
+		{"one word over limit but under char limit", "a b c d e", false}, // 5 words, 9 chars — isolates the word-count check from the char-count one
 		{"no terminal punctuation", "60-90 min", true},
 		{"terminal period rejected", "60-90 min.", false},
 		{"terminal exclamation rejected", "Wow!", false},

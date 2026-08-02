@@ -588,7 +588,7 @@ func TestValidateDetails_OpeningHours(t *testing.T) {
 // default case in validateExtraFields).
 func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 	t.Run("wellness typical_visit and price_from cleared for every denylist entry", func(t *testing.T) {
-		for _, entry := range contentkind.Denylist {
+		for _, entry := range contentkind.Denylist() {
 			raw := fmt.Sprintf(`{"typical_visit":%q,"price_from":%q}`, entry, entry)
 			cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
 			if err != nil {
@@ -748,6 +748,117 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		_, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(`{"typical_visit":"not specified","action_url":"https://example.com"}`))
 		if err != nil {
 			t.Fatalf("ValidateDetails() unexpected error: %v (a denylist match must clear the field, not fail the request)", err)
+		}
+	})
+
+	t.Run("sport effort_level, duration, gear, what_to_bring cleared, difficulty untouched", func(t *testing.T) {
+		raw := `{"effort_level":"Unknown","duration":"N/A","gear":"none","what_to_bring":["Water bottle","Not specified"],"difficulty":3}`
+		cleaned, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.SportDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.EffortLevel != "" {
+			t.Errorf("effort_level = %q, want cleared", got.EffortLevel)
+		}
+		if got.Duration != "" {
+			t.Errorf("duration = %q, want cleared", got.Duration)
+		}
+		if got.Gear != "" {
+			t.Errorf("gear = %q, want cleared", got.Gear)
+		}
+		if want := []string{"Water bottle"}; !slices.Equal(got.WhatToBring, want) {
+			t.Errorf("what_to_bring = %v, want %v", got.WhatToBring, want)
+		}
+		if got.Difficulty != 3 {
+			t.Errorf("difficulty = %d, want unchanged (not a denylist-guarded field)", got.Difficulty)
+		}
+	})
+
+	t.Run("sport legitimate values pass unchanged", func(t *testing.T) {
+		raw := `{"effort_level":"Moderate","duration":"2 hours","gear":"Helmet provided","what_to_bring":["Comfortable shoes"]}`
+		cleaned, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.SportDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.EffortLevel != "Moderate" || got.Duration != "2 hours" || got.Gear != "Helmet provided" {
+			t.Errorf("got %+v, want values unchanged", got)
+		}
+		if want := []string{"Comfortable shoes"}; !slices.Equal(got.WhatToBring, want) {
+			t.Errorf("what_to_bring = %v, want %v", got.WhatToBring, want)
+		}
+	})
+
+	t.Run("culture now_showing dropped entirely when title is denylisted, even if description is legitimate", func(t *testing.T) {
+		raw := `{"now_showing":{"title":"Unknown","description":"A real description of the current show."}}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryCulture, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.CultureDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.NowShowing != nil {
+			t.Errorf("now_showing = %+v, want nil (denylisted title drops the whole banner)", got.NowShowing)
+		}
+	})
+
+	t.Run("culture now_showing description cleared but banner kept when title is legitimate", func(t *testing.T) {
+		raw := `{"now_showing":{"title":"Impressionists Retrospective","description":"not specified"}}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryCulture, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.CultureDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.NowShowing == nil {
+			t.Fatalf("now_showing = nil, want kept (title is legitimate)")
+		}
+		if got.NowShowing.Title != "Impressionists Retrospective" {
+			t.Errorf("now_showing.title = %q, want unchanged", got.NowShowing.Title)
+		}
+		if got.NowShowing.Description != "" {
+			t.Errorf("now_showing.description = %q, want cleared", got.NowShowing.Description)
+		}
+	})
+
+	t.Run("art current_exhibition dropped entirely when title is denylisted", func(t *testing.T) {
+		raw := `{"current_exhibition":{"title":"N/A","description":"Some description."}}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryArt, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ArtDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.CurrentExhibition != nil {
+			t.Errorf("current_exhibition = %+v, want nil (denylisted title drops the whole banner)", got.CurrentExhibition)
+		}
+	})
+
+	t.Run("art current_exhibition passes unchanged when both title and description are legitimate", func(t *testing.T) {
+		raw := `{"current_exhibition":{"title":"Modern Sculpture","description":"A collection of works from local artists."}}`
+		cleaned, err := ValidateDetails(activitiessvc.CategoryArt, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var got activitiessvc.ArtDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.CurrentExhibition == nil || got.CurrentExhibition.Title != "Modern Sculpture" || got.CurrentExhibition.Description != "A collection of works from local artists." {
+			t.Errorf("current_exhibition = %+v, want unchanged", got.CurrentExhibition)
 		}
 	})
 }

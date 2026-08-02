@@ -658,6 +658,41 @@ func TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled(t *t
 	}
 }
 
+// TestSyncWebsiteContent_Culture_DenylistedBanner_NotTreatedAsFilled proves a
+// non-blank but denylisted title (e.g. "Unknown") — the case
+// dropBlankBanner's empty-string check lets through, since the title isn't
+// blank — still doesn't get persisted or count as complete. Without T1's
+// validateExtraFields guard on Culture/Art, this exact row would write
+// "Unknown" as now_showing and never retry, since isComplete would then read
+// it as filled.
+func TestSyncWebsiteContent_Culture_DenylistedBanner_NotTreatedAsFilled(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"Unknown","description":"A retrospective."}}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if repo.gotUpdatePatch.Details == nil {
+		t.Fatal("repo.Update was not called with Details")
+	}
+	var got map[string]any
+	if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+		t.Fatalf("unmarshal updated details: %v", err)
+	}
+	if _, ok := got["now_showing"]; ok {
+		t.Errorf("now_showing = %v, want dropped (denylisted title must not persist)", got["now_showing"])
+	}
+	if isComplete(activitiessvc.CategoryCulture, *repo.gotUpdatePatch.Details) {
+		t.Error("denylisted banner title must not count as complete")
+	}
+}
+
 // TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt proves a
 // non-Entertainment row that already had one automatic attempt (however
 // long ago) is skipped forever afterward, not retried on any timer — the

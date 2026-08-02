@@ -10,14 +10,16 @@
 package contentkind
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
 
-// Denylist is the canonical set of placeholder/"not specified"-style strings
+// denylist is the canonical set of placeholder/"not specified"-style strings
 // no generated field may ever be stored with, copied verbatim from the
-// spec's "Placeholder denylist" section.
-var Denylist = []string{
+// spec's "Placeholder denylist" section. Unexported so no importer can
+// mutate the canonical list in place — Denylist() below hands out a copy.
+var denylist = []string{
 	"not specified",
 	"unspecified",
 	"not available",
@@ -33,6 +35,13 @@ var Denylist = []string{
 	"nepoznato",
 }
 
+// Denylist returns a copy of the canonical placeholder denylist, e.g. for a
+// test that wants to iterate every entry — mutating the returned slice
+// never affects MatchesDenylist.
+func Denylist() []string {
+	return slices.Clone(denylist)
+}
+
 // MatchesDenylist reports whether s, once normalized (case-folded,
 // whitespace-normalized, trailing sentence punctuation stripped), equals a
 // Denylist entry. An empty s never matches — emptiness is a separate check
@@ -42,7 +51,7 @@ func MatchesDenylist(s string) bool {
 	if n == "" {
 		return false
 	}
-	for _, d := range Denylist {
+	for _, d := range denylist {
 		if n == normalize(d) {
 			return true
 		}
@@ -54,11 +63,14 @@ func MatchesDenylist(s string) bool {
 // space, trims surrounding whitespace, and strips trailing sentence
 // punctuation (. ! ? , ; :). It deliberately does not strip "-" itself —
 // two Denylist entries ("-" and "--") are pure dashes, and stripping them
-// here would normalize both to "" and make them unmatchable.
+// here would normalize both to "" and make them unmatchable. Re-trims after
+// the punctuation strip: stripping "." from "not specified ." leaves a
+// trailing space that Fields+Join already collapsed but didn't remove —
+// matches the app's fieldKind.ts normalize, which does the same re-trim.
 func normalize(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.Join(strings.Fields(s), " ")
-	return strings.TrimRight(s, ".,;:!?")
+	return strings.TrimSpace(strings.TrimRight(s, ".,;:!?"))
 }
 
 // The data contract's three kinds (spec's "The data contract" table): each
