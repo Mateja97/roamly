@@ -584,13 +584,13 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
           rating_image_url: 'https://tripadvisor.example/bubble.png',
           review_count: 1204,
           web_url: 'https://tripadvisor.example/place',
-          price_level: 'Fine Dining',
+          price_level: 'Mid Range',
         },
       }),
       subcategory: 'fine_dining',
     };
     expect(tripadvisorEyebrow(activity, '400 m away')).toBe(
-      'Restaurant · Fine Dining · Fine Dining · 400 m away',
+      'Restaurant · Fine Dining · Mid Range · 400 m away',
     );
   });
 

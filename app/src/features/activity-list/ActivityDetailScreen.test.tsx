@@ -1946,10 +1946,11 @@ describe('ActivityDetailScreen', () => {
   // exists generically in activityDetailConfig.test.ts's `bodySectionOrder`
   // describe (T5) — these are the end-to-end renders per category.
   describe('T6: Restaurants/Bars/Cafés final composition', () => {
-    it('Restaurants (Tripadvisor): meta line reads category · subtype · price level · distance', () => {
+    it('Restaurants (Tripadvisor): meta line reads category · subtype · price level · distance, no stat grid (price level already in the meta line), Popular dishes renders as nameprice, description before the unique section, CTA is Book a table', () => {
       const restaurant: Activity = {
         ...activity,
         subcategory: 'fine_dining',
+        description: 'A candle-lit dining room with an open kitchen.',
         details: {
           category: 'restaurants',
           tripadvisor: {
@@ -1958,6 +1959,7 @@ describe('ActivityDetailScreen', () => {
             web_url: 'https://tripadvisor.example/place',
             price_level: 'Mid Range',
           },
+          popular_dishes: [{ name: 'Ćevapi', price: '€8' }],
         },
       };
       render(<ActivityDetailScreen activity={restaurant} showDistance onBack={jest.fn()} />);
@@ -1966,7 +1968,25 @@ describe('ActivityDetailScreen', () => {
           `Restaurant · Fine Dining · Mid Range · ${activity.distance_km.toFixed(1)} km away`,
         ),
       ).toBeTruthy();
+
+      // Stat grid: none for a Tripadvisor-sourced row — price level already
+      // sits in the meta line, so Cuisine/Price never render as chips too.
+      expect(screen.queryByText('Cuisine')).toBeNull();
+      expect(screen.queryByText('Price')).toBeNull();
+
+      // Unique section: Popular dishes, nameprice density (name + price column).
+      expect(screen.getByText('Popular dishes')).toBeTruthy();
+      expect(screen.getByText('Ćevapi')).toBeTruthy();
+      expect(screen.getByText('€8')).toBeTruthy();
+
       expect(screen.getByRole('button', { name: 'Book a table' })).toBeTruthy();
+
+      // No promotion for Restaurants: description renders before the unique
+      // section in body order, but not above it (only Cafés promotes).
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('A candle-lit dining room with an open kitchen.')).toBeLessThan(
+        tree.indexOf('Popular dishes'),
+      );
     });
 
     it('Bars: meta line reads Bar · subtype · distance (no price level), a sentence-shaped vibe is dropped from the stat grid, Signature pours renders as pills, CTA is See menu, no promotion (stat grid before unique section)', () => {

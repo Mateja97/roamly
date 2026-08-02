@@ -329,7 +329,7 @@ function categoryNoun(category: Category): string {
 // this *is* the Meta line slot for a Tripadvisor restaurant/bar/café row
 // (§C's exact composition: `Restaurant · Fine Dining · $$$ · 400 m`,
 // `Bar · Cocktail Bar · 200 m`, `Café · Coffee Shop · 150 m` — category,
-// subtype, then category, then distance). Subtype is `subtypeLabel`, same
+// subtype, then price level, then distance). Subtype is `subtypeLabel`, same
 // taxonomy-slug source as every other category (never a generated field).
 // `price_level` is Terra's own exact string ("Cheap Eats"/"Mid
 // Range"/"Fine Dining"), rendered verbatim, never reformatted to $ symbols

@@ -517,7 +517,13 @@ export function ActivityDetailScreen({
           <View style={styles.titleGroup}>
             {eyebrow && <Text style={styles.tripadvisorEyebrow}>{eyebrow}</Text>}
             <Text style={styles.title}>{activity.title}</Text>
-            {tripadvisor?.cuisine && (
+            {/* Same shared-wire-object scoping as `tripadvisorEyebrow`'s
+                price level: only Restaurants' composition names a cuisine
+                subtitle (it's the stand-in for the Cuisine chip
+                `factStripFields` drops on Tripadvisor rows). Bars/Cafés
+                compositions don't mention it, even though the wire type
+                carries `cuisine` for every Tripadvisor-sourced category. */}
+            {activity.category === 'restaurants' && tripadvisor?.cuisine && (
               <Text style={styles.tripadvisorCuisineSubtitle}>{tripadvisor.cuisine}</Text>
             )}
           </View>
