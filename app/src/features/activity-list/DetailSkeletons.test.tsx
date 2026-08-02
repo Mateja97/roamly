@@ -28,14 +28,19 @@ describe('PLACES_LIVE_CATEGORIES', () => {
 });
 
 describe('factStripSkeletonCount', () => {
-  it('gives the count of chips the live mapper can actually fill, not the config ceiling', () => {
-    // cafes: mapper emits hours/opening_hours only (feeds the Hours chip) —
-    // known_for_brew/wifi_quality are never emitted, so 1, not the config's 3.
-    expect(factStripSkeletonCount('cafes')).toBe(1);
-    // culture/art/shopping: mapper emits venue_type + hours — 2, not 3.
-    expect(factStripSkeletonCount('culture')).toBe(2);
-    expect(factStripSkeletonCount('art')).toBe(2);
-    expect(factStripSkeletonCount('shopping')).toBe(2);
+  // T4 (activity-detail-system): `opening_hours` no longer contributes to
+  // the fact strip at all — HoursRow owns it now — so every category whose
+  // only live-fillable field was `hours`/`opening_hours` drops to 0.
+  it('gives 0 for cafes/wellness/entertainment — their only live-fillable field moved to HoursRow', () => {
+    expect(factStripSkeletonCount('cafes')).toBe(0);
+    expect(factStripSkeletonCount('wellness')).toBe(0);
+    expect(factStripSkeletonCount('entertainment')).toBe(0);
+  });
+
+  it('gives 1 for culture/art/shopping — venue_type only now (hours no longer counts)', () => {
+    expect(factStripSkeletonCount('culture')).toBe(1);
+    expect(factStripSkeletonCount('art')).toBe(1);
+    expect(factStripSkeletonCount('shopping')).toBe(1);
   });
 
   it('gives 0 for a category whose fact-strip fields are never in the mapper output', () => {
@@ -46,11 +51,6 @@ describe('factStripSkeletonCount', () => {
 
   it('gives 0 for a category whose fact strip never produces a chip regardless of merge', () => {
     expect(factStripSkeletonCount('kids')).toBe(0);
-  });
-
-  it('gives 1 for wellness/entertainment — mapper emits opening_hours, same Hours-chip case as cafes', () => {
-    expect(factStripSkeletonCount('wellness')).toBe(1);
-    expect(factStripSkeletonCount('entertainment')).toBe(1);
   });
 });
 
@@ -70,6 +70,14 @@ describe('FactStripSkeleton', () => {
 
   it('renders nothing when the count is 0 (category has no fact strip)', () => {
     const { toJSON } = render(<FactStripSkeleton count={0} />);
+    expect(toJSON()).toBeNull();
+  });
+
+  // T4 (activity-detail-system): matches FactStrip.tsx's own degradation
+  // rule — 1 valid value folds into the meta line, not a 1-cell grid, so a
+  // 1-cell skeleton would resolve into a different slot entirely.
+  it('renders nothing when the count is 1 (would fold into the meta line, not a 1-cell grid)', () => {
+    const { toJSON } = render(<FactStripSkeleton count={1} />);
     expect(toJSON()).toBeNull();
   });
 });

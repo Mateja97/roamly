@@ -34,30 +34,36 @@ export const PLACES_LIVE_CATEGORIES: ReadonlySet<Category> = new Set([
 // (BuildLiveDetails, see its engineering-notes.md breakdown) can actually
 // populate for that category, not activityDetailConfig.ts's full
 // potential chip count:
-// - cafes: mapper emits `hours`/`opening_hours` (feeds the Hours chip via
-//   `withHours`) but not `known_for_brew`/`wifi_quality` — 1.
-// - culture/art/shopping: mapper emits `venue_type` + `hours` — 2 (their
-//   other field, `ticket_price`/`best_day`, is never emitted).
+// - cafes: mapper emits `hours`/`opening_hours` but not
+//   `known_for_brew`/`wifi_quality` — 0. T4 (activity-detail-system) moved
+//   `opening_hours` out of the fact strip entirely into the standalone
+//   HoursRow (design-spec.md's "Hours row" slot); the legacy `hours`
+//   fallback `withHours` can still append is superseded whenever
+//   `opening_hours` is usable, which the live mapper's payload always is.
+// - culture/art/shopping: mapper emits `venue_type` + `hours` — 1 now
+//   (`venue_type` only; `hours` contributes 0 for the same reason as
+//   cafes above). Their other field, `ticket_price`/`best_day`, is never
+//   emitted.
 // - nightlife/nature/sport: none of their fact-strip fields (`entry_price`/
 //   `dress_code`/`opens_time`, `time_to_spend`/`best_time`/`cost`,
 //   `effort_level`/`duration`/`gear`) are in the mapper's output at all — 0.
 // - kids: `factStripFields` always returns `[]` for it regardless of merge
 //   — 0 (unchanged, was already right).
-// - wellness/entertainment: mapper emits `opening_hours`, which feeds the
-//   Hours chip via `withHours` same as cafes — 1.
+// - wellness/entertainment: mapper emits only `opening_hours` — 0, same
+//   reasoning as cafes.
 const FACT_STRIP_CHIP_COUNT: Record<Category, number> = {
   restaurants: 0,
   bars: 0,
-  cafes: 1,
+  cafes: 0,
   nightlife: 0,
   nature: 0,
   sport: 0,
   kids: 0,
-  culture: 2,
-  art: 2,
-  wellness: 1,
-  shopping: 2,
-  entertainment: 1,
+  culture: 1,
+  art: 1,
+  wellness: 0,
+  shopping: 1,
+  entertainment: 0,
   tours_experiences: 0,
 };
 
@@ -96,12 +102,13 @@ export function RatingSkeleton() {
 }
 
 // "Fact strip" row: N equal-flex 90px-tall blocks, --space-3 apart —
-// mirrors FactStrip.tsx's own `row`/`chip` layout. Renders nothing when
-// this category's fact strip can never produce a live-fillable chip
-// (nightlife/nature/sport/kids/wellness/entertainment — see
-// FACT_STRIP_CHIP_COUNT above).
+// mirrors FactStrip.tsx's own `row`/`chip` layout. Renders nothing below 2,
+// matching FactStrip.tsx's own degradation rule (1 valid value folds into
+// the meta line rather than a 1-cell grid, so reserving a 1-cell skeleton
+// for it would resolve into a different slot entirely — the exact
+// "skeleton resolves to nothing" jump rule 2 forbids).
 export function FactStripSkeleton({ count }: { count: number }) {
-  if (count <= 0) return null;
+  if (count < 2) return null;
   return (
     <View testID="fact-strip-skeleton" style={styles.factStripRow}>
       {Array.from({ length: count }, (_, i) => (

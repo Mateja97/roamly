@@ -119,6 +119,58 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Main stage')).toBeTruthy();
   });
 
+  // design-spec.md's List rows "duration" density (§B6, new).
+  it('shape F (schedule, duration density): renders name, duration, and trailing price', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Treatments',
+      density: 'duration',
+      rows: [{ name: 'Massage', duration: '60 min', price: 'from €35' }],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Treatments')).toBeTruthy();
+    expect(screen.getByText('Massage')).toBeTruthy();
+    expect(screen.getByText('60 min')).toBeTruthy();
+    expect(screen.getByText('from €35')).toBeTruthy();
+  });
+
+  it('shape F (duration density): omits the trailing price per-row when absent, row stays', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Treatments',
+      density: 'duration',
+      rows: [{ name: 'Facial', duration: '90 min' }],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Facial')).toBeTruthy();
+    expect(screen.getByText('90 min')).toBeTruthy();
+  });
+
+  it('shape F (duration density): drops a row whose name is absent entirely (distinct from the trailing rule)', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Treatments',
+      density: 'duration',
+      rows: [{ name: 'Sauna', price: 'from €12' }, { price: 'from €9' }],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Sauna')).toBeTruthy();
+    expect(screen.getByText('from €12')).toBeTruthy();
+    expect(screen.queryByText('from €9')).toBeNull();
+  });
+
+  it('shape F (duration density): omits the whole section, heading included, when every row lacks a name', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Treatments',
+      density: 'duration',
+      rows: [{ price: 'from €9' }],
+    };
+    const { toJSON } = render(<UniqueSection data={data} />);
+    expect(toJSON()).toBeNull();
+    expect(screen.queryByText('Treatments')).toBeNull();
+  });
+
   it('shape F (schedule, date-block density): renders day, date, title, and subline', () => {
     const data: UniqueSectionData = {
       shape: 'schedule',

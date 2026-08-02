@@ -39,10 +39,6 @@ export type FactChip = {
   icon: ComponentType<LucideProps>;
   label: string;
   value: string;
-  // opening-hours T3: present only on the Hours chip when structured
-  // opening_hours is usable — marks it interactive so FactStrip renders it
-  // as a Pressable (opens the T2 week modal) instead of a plain View.
-  onPress?: () => void;
 };
 
 export type CompactRow = {
@@ -57,6 +53,13 @@ export type DateBlockRow = {
   title: string;
   subline: string;
 };
+// design-spec.md's "List rows" slot (§B6): new `duration` density — name +
+// duration + `from €X` (Treatments). `name` is typed optional (not required
+// like `nameprice`'s items) because the slot-level rule is distinct from the
+// ordinary trailing-omits-per-row rule: a row whose *name* is absent is
+// dropped entirely, so the renderer (not just the caller) must defend
+// against it — see UniqueSection.tsx.
+export type DurationRow = { name?: string; duration?: string; price?: string };
 
 export type UniqueSectionData =
   | {
@@ -84,6 +87,12 @@ export type UniqueSectionData =
       heading: string;
       density: 'dateblock';
       rows: DateBlockRow[];
+    }
+  | {
+      shape: 'schedule';
+      heading: string;
+      density: 'duration';
+      rows: DurationRow[];
     };
 
 // Categories whose primary CTA *is* "Get directions" — the generic action
@@ -544,31 +553,19 @@ function buildChips(
 // Per-field omission lives here: `buildChips` drops any field with no value,
 // so the fact strip naturally re-flows to 2 chips or omits itself entirely
 // (empty array) with no placeholder — the component decides whether to
-// render based on array length. The Hours chip is appended separately (via
-// `withHours` below) since its shape isn't a plain [icon, label, value]
-// triple once it's interactive.
-export function factStripFields(
-  activity: Activity,
-  onPressHours?: () => void,
-): FactChip[] {
+// render based on array length.
+export function factStripFields(activity: Activity): FactChip[] {
   const d = activity.details;
   if (!d) return [];
-  // opening-hours T3: the one Hours chip builder shared by every category
-  // below. Structured `opening_hours` usable -> today's status is the bold
-  // value line, today's hour range is the muted label line (mirrors the
-  // sibling chip's value/label shape), and `onPressHours` makes it a real
-  // tap target reopening the T2 week modal. Otherwise falls back to the
-  // legacy free-text value under the static "Hours" label, non-interactive
-  // — exactly the chip that shipped before T1 (no chevron, no tap target).
-  // Omits the chip (returns `chips` unchanged) when there's nothing to show.
+  // T4 (activity-detail-system): structured `opening_hours`, when usable,
+  // now renders as its own standalone HoursRow (design-spec.md's "Hours
+  // row" slot leaves the stat grid entirely) — see ActivityDetailScreen's
+  // `<HoursRow>`. This helper only ever appends the legacy free-text
+  // fallback chip, and only when there's no usable structured data to
+  // supersede it (same mutual-exclusivity as before). Omits the chip
+  // (returns `chips` unchanged) when there's nothing to show.
   function withHours(chips: FactChip[], legacyHours: string | undefined): FactChip[] {
-    const today = todayHoursRow(activity);
-    if (today) {
-      return [
-        ...chips,
-        { icon: Clock, value: today.status.text, label: today.hours, onPress: onPressHours },
-      ];
-    }
+    if (todayHoursRow(activity)) return chips;
     return legacyHours ? [...chips, { icon: Clock, value: legacyHours, label: 'Hours' }] : chips;
   }
   switch (d.category) {

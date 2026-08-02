@@ -112,7 +112,11 @@ describe('classifyField — denylist, both languages, all kinds', () => {
 
   it('logs a denylist hit instead of silently dropping it', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    classifyField('scalar', 'not specified');
+    // A denylisted value + exact-casing combo untouched by every earlier
+    // assertion in this file — the dedupe Set below is module-level
+    // (persists for the whole test file), so re-using an already-warned
+    // string here would silently skip the warn and give a false pass.
+    classifyField('scalar', 'UNSPECIFIED');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[fieldKind]'));
     warnSpy.mockRestore();
   });
@@ -121,6 +125,20 @@ describe('classifyField — denylist, both languages, all kinds', () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     classifyField('scalar', '60–90 min');
     expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  // T4 resolve-round note: classifyField now runs per field per render (every
+  // slot wires it in) — dedupe the warn per distinct value so a leaked field
+  // logs once per session, not once per re-render.
+  it('logs a denylisted value only once, even when classified repeatedly', () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // Another casing combo untouched by every earlier assertion — see the
+    // module-persistence note above.
+    classifyField('scalar', 'Nema Podataka');
+    classifyField('scalar', 'Nema Podataka');
+    classifyField('scalar', 'Nema Podataka');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
   });
 });
