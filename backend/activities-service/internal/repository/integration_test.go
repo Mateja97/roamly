@@ -1999,3 +1999,48 @@ func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
 		t.Errorf("admin (empty-source) row details = %s, want untouched", got.Details)
 	}
 }
+
+// canonicalSourceURLSQLTemplate is migration 0029's canonicalisation
+// expression, with a %s where the column goes. It is asserted below to appear
+// verbatim in the migration file, so this literal cannot drift away from the
+// SQL that actually runs.
+const canonicalSourceURLSQLTemplate = `regexp_replace(regexp_replace(%s, '\?g_mp=[^&]*&', '?'), '[?&]g_mp=[^&]*', '')`
+
+// TestCanonicalSourceURLMatchesMigration pins migration 0029's SQL
+// canonicalisation against the Go canonicalSourceURL the write path uses.
+// These are two independent implementations of one definition, and they must
+// agree on every input: the migration collapses duplicates under its
+// definition while Upsert keys new rows under Go's, so any disagreement means
+// a row deduped by the migration is silently re-split by the next sync (and,
+// for the '?'-eating case this test was added for, stored malformed).
+func TestCanonicalSourceURLMatchesMigration(t *testing.T) {
+	migration, err := fs.ReadFile(Migrations(), "0029_strip_g_mp_from_source_url.sql")
+	if err != nil {
+		t.Fatalf("reading migration 0029: %v", err)
+	}
+	wantInFile := fmt.Sprintf(canonicalSourceURLSQLTemplate, "source_url")
+	if !strings.Contains(string(migration), wantInFile) {
+		t.Fatalf("migration 0029 no longer contains the expression this test pins:\n%s\n"+
+			"Update canonicalSourceURLSQLTemplate to match, and re-check it still agrees with canonicalSourceURL.", wantInFile)
+	}
+
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	query := "SELECT " + fmt.Sprintf(canonicalSourceURLSQLTemplate, "$1")
+
+	for _, tt := range canonicalSourceURLCases {
+		t.Run(tt.name, func(t *testing.T) {
+			var fromSQL string
+			if err := db.QueryRow(ctx, query, tt.in).Scan(&fromSQL); err != nil {
+				t.Fatalf("running migration expression on %q: %v", tt.in, err)
+			}
+			if got := canonicalSourceURL(tt.in); fromSQL != got {
+				t.Errorf("canonical form disagrees for %q:\n  migration SQL = %q\n  Go write path = %q",
+					tt.in, fromSQL, got)
+			}
+			if fromSQL != tt.want {
+				t.Errorf("migration SQL on %q = %q, want %q", tt.in, fromSQL, tt.want)
+			}
+		})
+	}
+}
