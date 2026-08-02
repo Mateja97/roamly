@@ -274,3 +274,49 @@ func TestBuildListQuery(t *testing.T) {
 		})
 	}
 }
+
+const (
+	nearbyMapsURL = "https://maps.google.com/?cid=695253290703487434&g_mp=Cilnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLlNlYXJjaE5lYXJieRACGAQgAA"
+	textMapsURL   = "https://maps.google.com/?cid=695253290703487434&g_mp=Cidnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLlNlYXJjaFRleHQQAhgEIAA"
+)
+
+// canonicalSourceURLCases is shared with the integration-tagged
+// TestCanonicalSourceURLMatchesMigration, which runs the same inputs through
+// migration 0029's SQL expression in a real Postgres. The write path and the
+// migration must agree on what "canonical" means for every one of these: a
+// row the migration dedupes under one definition and the write path re-keys
+// under another gets silently re-split by the next sync.
+var canonicalSourceURLCases = []struct {
+	name string
+	in   string
+	want string
+}{
+	{"g_mp stripped, cid preserved", nearbyMapsURL, "https://maps.google.com/?cid=695253290703487434"},
+	{"g_mp first keeps the question mark", "https://maps.google.com/?g_mp=X&cid=7", "https://maps.google.com/?cid=7"},
+	{"g_mp mid-query keeps sibling order", "https://x/?a=1&g_mp=X&b=2", "https://x/?a=1&b=2"},
+	{"sole parameter drops the question mark", "https://x/?g_mp=X", "https://x/"},
+	{"tripadvisor URL untouched", "https://www.tripadvisor.com/Restaurant_Review-g294472-d1.html", "https://www.tripadvisor.com/Restaurant_Review-g294472-d1.html"},
+	{"no query string", "https://example.com/venue", "https://example.com/venue"},
+	{"empty stays empty", "", ""},
+	{"g_mp as a substring of another key is kept", "https://x/?not_g_mp=1", "https://x/?not_g_mp=1"},
+	// Unreachable via Google (it emits one g_mp), but the SQL side needs the
+	// 'g' flag to strip a repeat and Go strips every match for free — without
+	// the flag the two definitions diverge here and nothing would catch it.
+	{"repeated g_mp is fully stripped", "https://x/?a=1&g_mp=X&g_mp=Y", "https://x/?a=1"},
+}
+
+func TestCanonicalSourceURL(t *testing.T) {
+	// The bug: one venue, two Places discovery calls, two source_urls -> two rows.
+	if canonicalSourceURL(nearbyMapsURL) != canonicalSourceURL(textMapsURL) {
+		t.Errorf("searchNearby and searchText URLs for the same venue must canonicalise equal:\n nearby=%q\n text=%q",
+			canonicalSourceURL(nearbyMapsURL), canonicalSourceURL(textMapsURL))
+	}
+
+	for _, tt := range canonicalSourceURLCases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canonicalSourceURL(tt.in); got != tt.want {
+				t.Errorf("canonicalSourceURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

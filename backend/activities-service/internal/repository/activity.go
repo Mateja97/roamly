@@ -461,6 +461,39 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 	return a, nil
 }
 
+// canonicalSourceURL strips Google's "g_mp" query parameter, which names the
+// Places API method that returned the place (base64 of
+// "…Places.SearchNearby" vs "…Places.SearchText") rather than anything about
+// the place itself. source_url is the identity half of the
+// (source_url, category) unique index, so leaving that parameter in makes one
+// venue two rows whenever both discovery calls reach it — googlesync runs a
+// searchNearby per discovery row AND a searchText fallback for subtypes Table
+// A cannot express, so any venue matching both gets inserted twice with the
+// same title, category, external_id and coordinates. That produced 102
+// duplicate rows before migration 0029 cleaned them up.
+//
+// Parameters are filtered in place rather than round-tripped through
+// net/url.Values: Encode() re-sorts alphabetically, which would rewrite
+// already-stored URLs into a different byte string and miss the conflict
+// target it is meant to hit. Non-Google source_urls (Tripadvisor's WebURL)
+// carry no g_mp and pass through untouched.
+func canonicalSourceURL(raw string) string {
+	base, query, ok := strings.Cut(raw, "?")
+	if !ok {
+		return raw
+	}
+	kept := make([]string, 0, strings.Count(query, "&")+1)
+	for _, param := range strings.Split(query, "&") {
+		if !strings.HasPrefix(param, "g_mp=") {
+			kept = append(kept, param)
+		}
+	}
+	if len(kept) == 0 {
+		return base
+	}
+	return base + "?" + strings.Join(kept, "&")
+}
+
 // Upsert inserts an ingested activity or, when a row with the same
 // (source_url, category) already exists, updates it in place (idempotent
 // re-runs). The same source_url may legitimately exist under two different
@@ -487,6 +520,7 @@ func (r *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 // admin-curated content and the weekly website-sync job's scraped content
 // on every ~14-day re-sweep.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
+	sourceURL := canonicalSourceURL(in.SourceURL)
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
 			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw, subcategory)
@@ -510,11 +544,11 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
 		in.Country, in.Rating, in.City, in.Address, string(in.Status),
 		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
-		in.Source, in.SourceURL, in.ExternalID, nonEmptyDetailsBytes(in.Raw),
+		in.Source, sourceURL, in.ExternalID, nonEmptyDetailsBytes(in.Raw),
 		in.Subcategory,
 	))
 	if err != nil {
-		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", in.SourceURL, err)
+		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", sourceURL, err)
 	}
 	return a, nil
 }
