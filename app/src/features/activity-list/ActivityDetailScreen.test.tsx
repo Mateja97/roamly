@@ -673,7 +673,7 @@ describe('ActivityDetailScreen', () => {
       ).toBeTruthy();
     });
 
-    it('shows the bottom-bar price-context line for wellness when price_from is present', () => {
+    it('omits the bottom-bar price-context line for wellness even when price_from is present', () => {
       const wellness: Activity = {
         ...activity,
         category: 'wellness',
@@ -682,7 +682,7 @@ describe('ActivityDetailScreen', () => {
       render(
         <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
       );
-      expect(screen.getByText('From €25')).toBeTruthy();
+      expect(screen.queryByText(/^From /)).toBeNull();
     });
 
     it('shows the bottom-bar price-context line for entertainment when price_from is present', () => {

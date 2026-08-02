@@ -639,29 +639,30 @@ describe('goodToKnowSection', () => {
 });
 
 // design-spec.md's "Bottom bar" slot (§B12): optional price-context line —
-// wired for the two categories with `price_from` today (Wellness,
-// Entertainment).
+// wired for Entertainment today. Wellness explicitly does NOT get this line
+// (T9: "external-booking note + Visit website"; `price_from` surfaces only
+// in the stat grid) — a price line there would double the same figure.
 describe('priceContextLine', () => {
-  it('renders "From <price>" for wellness when price_from is present', () => {
-    const activity = baseActivity({ category: 'wellness', price_from: '€25' });
-    expect(priceContextLine(activity)).toBe('From €25');
-  });
-
   it('renders "From <price>" for entertainment when price_from is present', () => {
     const activity = baseActivity({ category: 'entertainment', price_from: '€8' });
     expect(priceContextLine(activity)).toBe('From €8');
   });
 
   it('omits the line when price_from is absent', () => {
-    const activity = baseActivity({ category: 'wellness' });
+    const activity = baseActivity({ category: 'entertainment' });
     expect(priceContextLine(activity)).toBeUndefined();
   });
 
   it('omits the line when price_from fails its scalar shape (the production-bug shape)', () => {
     const activity = baseActivity({
-      category: 'wellness',
+      category: 'entertainment',
       price_from: 'The starting price is not explicitly stated.',
     });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('is undefined for wellness even when price_from is present (stat grid owns it there)', () => {
+    const activity = baseActivity({ category: 'wellness', price_from: '€25' });
     expect(priceContextLine(activity)).toBeUndefined();
   });
 

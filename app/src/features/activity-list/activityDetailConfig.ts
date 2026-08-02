@@ -259,13 +259,15 @@ export function wellnessBookingNote(activity: Activity): string | undefined {
 // (`From €12`) above the button row, omitting only that line when absent —
 // `price_from` is `scalar` per "Kind declarations on existing fields", so it
 // goes through the same classifyField guard as any other generated field.
-// Wired for the two categories carrying `price_from` today (Wellness,
-// Entertainment); T7/T9/T10 add the remaining categories' own starting-price
-// field (Nightlife's `entry_price`, Tours' future field) as their screens
-// land — this task only builds the slot mechanics.
+// Wellness does NOT get this line (T9: "external-booking note + Visit
+// website", `price_from` surfaces only in the stat grid) — showing it there
+// would double the same figure on the exact production-bug screen. Wired for
+// Entertainment (`price_from`) today; T7/T10 add Nightlife's `entry_price`
+// and Tours' starting-price field as their screens land — this task only
+// builds the slot mechanics.
 export function priceContextLine(activity: Activity): string | undefined {
   const d = activity.details;
-  if (!d || (d.category !== 'wellness' && d.category !== 'entertainment')) return undefined;
+  if (!d || d.category !== 'entertainment') return undefined;
   const price = classifyField('scalar', d.price_from);
   return price ? `From ${price}` : undefined;
 }
