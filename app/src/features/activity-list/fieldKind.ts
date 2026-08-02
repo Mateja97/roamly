@@ -97,8 +97,17 @@ export function classifyField(
       return value;
     }
     case 'phrase': {
-      if ([...value].length > PHRASE_MAX_CHARS) return undefined;
-      if (TERMINAL_PUNCTUATION.test(value)) return undefined;
+      // T9 review: a real checklist item ("Gift vouchers ... never expire.")
+      // legitimately ends with a period — outright rejecting any terminal
+      // punctuation destroyed the whole Good-to-know section on real venues.
+      // Strip one trailing terminal-punctuation char before measuring length
+      // only; the original value (punctuation intact) is still what renders.
+      // A genuinely long, sentence-shaped value still exceeds PHRASE_MAX_CHARS
+      // after the strip, so the rule's real target — multi-clause sentences —
+      // is unaffected. Scalar deliberately keeps the stricter outright-reject
+      // rule above (not in scope of this fix).
+      const measured = value.replace(TERMINAL_PUNCTUATION, '');
+      if ([...measured].length > PHRASE_MAX_CHARS) return undefined;
       return value;
     }
     case 'prose':

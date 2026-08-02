@@ -303,6 +303,16 @@ export function tripadvisorAddressLine(activity: Activity): string | undefined {
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
+// T9 review: T2's own worked example for a scraped price scalar already
+// includes a "from " prefix (websitesync.go wellnessPrompt/
+// entertainmentPrompt: "from €25"/"from €8"), so a compliant scrape can hand
+// us a value that's already prefixed — prepending our own "from "/"From "
+// on top would double it. Strip any existing leading "from" (case-
+// insensitive) before either call site adds its own prefix.
+function stripLeadingFrom(value: string): string {
+  return value.replace(/^from\s+/i, '');
+}
+
 // design-spec.md T8 addendum #6: Wellness' external-booking note, lifted
 // out of the Treatments rows into the bottom action bar (above the button
 // row) — always present for Wellness once this data exists.
@@ -335,7 +345,7 @@ export function priceContextLine(activity: Activity): string | undefined {
         ? d.entry_price
         : undefined;
   const price = classifyField('scalar', raw);
-  return price ? `From ${price}` : undefined;
+  return price ? `From ${stripLeadingFrom(price)}` : undefined;
 }
 
 // design-spec.md T8 addendum #2: the noun before the "·" is the *singular*
@@ -956,7 +966,7 @@ export function uniqueSection(
               return {
                 name: t.item,
                 duration: classifyField('scalar', t.duration),
-                price: price ? `from ${price}` : undefined,
+                price: price ? `from ${stripLeadingFrom(price)}` : undefined,
               };
             }),
           }

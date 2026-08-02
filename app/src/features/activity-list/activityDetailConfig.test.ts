@@ -1282,6 +1282,18 @@ describe('priceContextLine', () => {
     const activity = baseActivity({ category: 'sport' });
     expect(priceContextLine(activity)).toBeUndefined();
   });
+
+  // T9 review: T2's own wellnessPrompt/entertainmentPrompt worked example
+  // for price_from is "from €25"/"from €8" — the backend can legitimately
+  // hand us a value that already carries the prefix. Don't double it.
+  it('does not double the prefix when price_from already starts with "from" (case-insensitive)', () => {
+    expect(priceContextLine(baseActivity({ category: 'entertainment', price_from: 'from €8' }))).toBe(
+      'From €8',
+    );
+    expect(priceContextLine(baseActivity({ category: 'entertainment', price_from: 'From €8' }))).toBe(
+      'From €8',
+    );
+  });
 });
 
 // T5 round-3 fix: `time_or_price` is LLM-generated (same denylist/prompt
@@ -1500,5 +1512,18 @@ describe('uniqueSection — wellness treatments (duration density, T9)', () => {
   it('is undefined when there are no treatments', () => {
     const activity = baseActivity({ category: 'wellness' });
     expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  // T9 review: same doubled-prefix bug as priceContextLine — a treatment's
+  // price is the exact field T2's wellnessPrompt worked example prefixes
+  // itself ("from €25").
+  it('does not double the "from " prefix when the scraped price already carries one', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      treatments: [{ item: 'Swedish massage', price: 'from €35' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
+    expect(section.rows[0]).toEqual({ name: 'Swedish massage', duration: undefined, price: 'from €35' });
   });
 });
