@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +94,11 @@ func TestSyncWebsiteContent_NoWebsite_SkipsFirecrawl(t *testing.T) {
 // TestSyncWebsiteContent_InvalidExtraction_SkipsWrite proves Firecrawl's
 // LLM extraction — not schema-guaranteed — never reaches the DB
 // unvalidated: an unknown key would otherwise brick every later admin edit
-// to the row (ValidateDetails' strict decode would reject it).
+// to the row (ValidateDetails' strict decode would reject it). It also
+// proves the attempt still gets marked despite the skipped write — a
+// durably-malformed extraction (bad LLM output every time) must not
+// re-spend a Firecrawl call on every future batch run either, the same
+// unbounded-retry gap the give-up policy exists to close.
 func TestSyncWebsiteContent_InvalidExtraction_SkipsWrite(t *testing.T) {
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
@@ -105,13 +110,42 @@ func TestSyncWebsiteContent_InvalidExtraction_SkipsWrite(t *testing.T) {
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
 	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
-		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
+		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip, not retried again)", err)
 	}
 	if repo.updateCalls != 0 {
 		t.Errorf("repo.Update calls = %d, want 0 — invalid extraction must never be persisted", repo.updateCalls)
 	}
 	if repo.gotUpdatePatch.Details != nil {
 		t.Errorf("repo.gotUpdatePatch.Details = %v, want zero-value", repo.gotUpdatePatch.Details)
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — a failed-validation attempt must still count toward the give-up policy", repo.markSynced, wantKey)
+	}
+}
+
+// TestSyncWebsiteContent_ExtractionError_StillMarksAttempted proves an
+// extraction call that errors out (Firecrawl already exhausted its own
+// internal retries by then) still counts as this row's one automatic
+// attempt — without this, a durably-unscrapable site would burn a
+// Firecrawl call on every batch run forever, the exact unbounded cost the
+// give-up policy exists to cap.
+func TestSyncWebsiteContent_ExtractionError_StillMarksAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{err: fmt.Errorf("firecrawl scrape https://example-spa.rs status 500: boom")}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the extraction error surfaced")
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — an extraction failure must still count toward the give-up policy", repo.markSynced, wantKey)
 	}
 }
 

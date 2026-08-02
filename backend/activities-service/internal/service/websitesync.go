@@ -216,6 +216,14 @@ func isFieldEmpty(v any) bool {
 // never accounted for in the cost estimate). force skips that
 // already-attempted gate (and Entertainment's freshness window) for a
 // single explicitly-requested row — see cmd/websitesync's -retry-id flag.
+//
+// "Attempt" is recorded the moment Firecrawl is actually called, not only
+// on a successful write — an extraction that errors out (Firecrawl already
+// exhausted its own internal retries by then, see internal/firecrawl) or
+// that produces invalid JSON (ValidateDetails rejects it) still spent the
+// one Firecrawl call this policy exists to cap. Recording the attempt only
+// after a successful Update would leave exactly this case retrying forever,
+// same unbounded cost as the bug this whole mechanism fixes.
 func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bool) error {
 	if a.places == nil || a.firecrawl == nil {
 		return fmt.Errorf("places and firecrawl clients must both be configured")
@@ -290,10 +298,16 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	}
 
 	extractCtx, cancel := context.WithTimeout(ctx, firecrawlTimeout)
-	extracted, err := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, extract.prompt, extract.schema)
+	extracted, extractErr := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, extract.prompt, extract.schema)
 	cancel()
-	if err != nil {
-		return fmt.Errorf("extracting website content for %s: %w", id, err)
+
+	// Mark the attempt right here, regardless of what extractErr or the
+	// validation below turns out to be — see the doc comment above for why.
+	if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), ""); err != nil {
+		return fmt.Errorf("marking website sync for %s: %w", id, err)
+	}
+	if extractErr != nil {
+		return fmt.Errorf("extracting website content for %s: %w", id, extractErr)
 	}
 	extracted = dropBlankBanner(activity.Category, extracted)
 
@@ -311,8 +325,9 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	// Firecrawl's LLM extraction is not schema-guaranteed: an unexpected key
 	// or a type mismatch must never reach the DB unvalidated, or a
 	// subsequent admin edit to this row would fail ValidateDetails' strict
-	// decode. Skip and retry next cycle instead — same "nothing to do this
-	// cycle" contract as the freshness/no-website checks above.
+	// decode. Skip the write — the attempt is already marked above, so this
+	// doesn't retry next cycle either; recovering needs an explicit
+	// -retry-id run (or, for Entertainment, the next 30-day window).
 	if err := ValidateDetails(activity.Category, merged); err != nil {
 		slog.Warn("website sync produced invalid details, skipping write", "activity_id", id, "error", err)
 		return nil
@@ -320,9 +335,6 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 
 	if _, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Details: &merged}); err != nil {
 		return fmt.Errorf("saving website content for %s: %w", id, err)
-	}
-	if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), ""); err != nil {
-		return fmt.Errorf("marking website sync for %s: %w", id, err)
 	}
 	return nil
 }
