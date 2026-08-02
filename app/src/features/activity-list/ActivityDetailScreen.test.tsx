@@ -1007,6 +1007,95 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
+  // T7: design-spec.md's Nightlife/Nature/Sport screen compositions —
+  // render-level checks alongside activityDetailConfig.test.ts's
+  // function-level coverage of the same fields. Each Nightlife/Nature test
+  // below also asserts no difficulty meter renders (acceptance criteria:
+  // "confirm, via a test, that Sport is the only category rendering the
+  // difficulty meter" — the Sport test asserts the positive case).
+  describe('Nightlife, Nature, Sport screen compositions (T7)', () => {
+    it('renders the Nightlife stat grid (Entry/Dress code/Opens), the promoted Tonight lineup, and the bottom price line', () => {
+      const nightlife: Activity = {
+        ...activity,
+        category: 'nightlife',
+        details: {
+          category: 'nightlife',
+          entry_price: '€10',
+          dress_code: 'Smart casual',
+          opens_time: '23:00',
+          lineup: [{ time: '22:00', act: 'DJ Set', stage: 'Main' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={nightlife} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Entry')).toBeTruthy();
+      expect(screen.getByText('Dress code')).toBeTruthy();
+      expect(screen.getByText('Opens')).toBeTruthy();
+      expect(screen.getByText('Tonight')).toBeTruthy();
+      expect(screen.getByText('DJ Set')).toBeTruthy();
+      expect(screen.getByText('From €10')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Guest list' })).toBeTruthy();
+      // Promoted above the stat grid: Tonight precedes the Entry chip.
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('Tonight')).toBeLessThan(tree.indexOf('Entry'));
+      // T7 cross-check: "no category shows both" the difficulty meter and a
+      // status/level chip — Nightlife never renders it (Sport-only slot).
+      expect(screen.queryByText('Difficulty')).toBeNull();
+    });
+
+    it('renders the Nature stat grid (Time to spend/Best time/Cost), the Good to know checklist, and Get directions/Share', () => {
+      const nature: Activity = {
+        ...activity,
+        category: 'nature',
+        details: {
+          category: 'nature',
+          time_to_spend: '2 h',
+          best_time: 'Morning',
+          cost: 'Free',
+          good_to_know: ['Bring water'],
+        },
+      };
+      render(<ActivityDetailScreen activity={nature} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Time to spend')).toBeTruthy();
+      expect(screen.getByText('Best time')).toBeTruthy();
+      expect(screen.getByText('Cost')).toBeTruthy();
+      expect(screen.getByText('Good to know')).toBeTruthy();
+      expect(screen.getByText('Bring water')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Get directions' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
+      // No status chip for Nature (venue type has no open/closed state).
+      expect(screen.queryByText('Open')).toBeNull();
+      expect(screen.queryByText('Closed')).toBeNull();
+      // T7 cross-check: Nature never renders the Sport-only difficulty meter.
+      expect(screen.queryByText('Difficulty')).toBeNull();
+    });
+
+    it('renders the Sport stat grid (Effort/Duration/Gear) and the What to bring checklist, below the promoted difficulty meter', () => {
+      const sport: Activity = {
+        ...activity,
+        category: 'sport',
+        details: {
+          category: 'sport',
+          difficulty: 4,
+          effort_level: 'High',
+          duration: '2 h',
+          gear: 'Boots',
+          what_to_bring: ['Water bottle'],
+        },
+      };
+      render(<ActivityDetailScreen activity={sport} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('Advanced')).toBeTruthy(); // DifficultyMeter's level readout
+      expect(screen.getByText('Effort')).toBeTruthy();
+      expect(screen.getByText('Duration')).toBeTruthy();
+      expect(screen.getByText('Gear')).toBeTruthy();
+      expect(screen.getByText('What to bring')).toBeTruthy();
+      expect(screen.getByText('Water bottle')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Book session' })).toBeTruthy();
+      // Promoted above the stat grid: the meter's overline precedes Effort.
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('Difficulty')).toBeLessThan(tree.indexOf('Effort'));
+    });
+  });
+
   describe('photo-set upgrade fetch (T4)', () => {
     it('fetches the T3 endpoint for this activity on open', () => {
       render(

@@ -963,10 +963,149 @@ describe('goodToKnowSection', () => {
   });
 });
 
+// T7: design-spec.md's Nightlife/Nature/Sport stat-grid compositions.
+// Per-value scalar classification is FactStrip's own job (see
+// FactStrip.test.tsx's classifyFactChips coverage) — this only pins which
+// fields each category surfaces, matching "The 13 screens".
+describe('factStripFields — nightlife/nature/sport (T7)', () => {
+  it('surfaces Entry, Dress code, Opens for nightlife', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      entry_price: '€10',
+      dress_code: 'Smart casual',
+      opens_time: '23:00',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Entry', 'Dress code', 'Opens']);
+  });
+
+  it('omits nightlife chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  it('surfaces Time to spend, Best time, Cost for nature', () => {
+    const activity = baseActivity({
+      category: 'nature',
+      time_to_spend: '2 h',
+      best_time: 'Morning',
+      cost: 'Free',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Time to spend', 'Best time', 'Cost']);
+  });
+
+  it('omits nature chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'nature' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+
+  it('surfaces Effort, Duration, Gear for sport', () => {
+    const activity = baseActivity({
+      category: 'sport',
+      effort_level: 'Moderate',
+      duration: '2 h',
+      gear: 'Boots',
+    });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toEqual(['Effort', 'Duration', 'Gear']);
+  });
+
+  it('omits sport chips entirely when no data is present', () => {
+    const activity = baseActivity({ category: 'sport' });
+    expect(factStripFields(activity)).toEqual([]);
+  });
+});
+
+// T7: design-spec.md's Nightlife "Tonight" (compact), Nature/Sport "Good to
+// know"/"What to bring" (checklist) unique sections.
+describe('uniqueSection — nightlife/nature/sport (T7)', () => {
+  it('builds the Tonight compact-density schedule from nightlife lineup', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      lineup: [{ time: '22:00', act: 'DJ Set', stage: 'Main' }],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'schedule',
+      heading: 'Tonight',
+      density: 'compact',
+      rows: [{ leading: '22:00', main: 'DJ Set', trailing: 'Main', trailingStyle: 'muted' }],
+    });
+  });
+
+  it('is undefined when nightlife has no lineup', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  it('builds the "Good to know" checklist from nature good_to_know', () => {
+    const activity = baseActivity({
+      category: 'nature',
+      good_to_know: ['Bring water', 'Trail closes at dusk'],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Bring water', 'Trail closes at dusk'],
+    });
+  });
+
+  it('is undefined when nature has no good_to_know', () => {
+    const activity = baseActivity({ category: 'nature' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  it('builds the "What to bring" checklist from sport what_to_bring', () => {
+    const activity = baseActivity({
+      category: 'sport',
+      what_to_bring: ['Climbing shoes', 'Chalk bag'],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'checklist',
+      heading: 'What to bring',
+      items: ['Climbing shoes', 'Chalk bag'],
+    });
+  });
+
+  it('is undefined when sport has no what_to_bring', () => {
+    const activity = baseActivity({ category: 'sport' });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+});
+
+// T7 cross-check: the spec is explicit that the difficulty meter is Sport's
+// alone ("no category shows both" it and Tours' level chip) — pins that at
+// the promote-mechanism level, alongside ActivityDetailScreen.test.tsx's
+// render-level check.
+describe('difficulty meter exclusivity — Sport only (T7 cross-check)', () => {
+  it('is the promoted slot for sport and never appears in any other category\'s body order', () => {
+    const allCategories: Activity['category'][] = [
+      'restaurants',
+      'bars',
+      'cafes',
+      'nightlife',
+      'nature',
+      'sport',
+      'kids',
+      'culture',
+      'art',
+      'wellness',
+      'entertainment',
+      'shopping',
+      'tours_experiences',
+    ];
+    for (const category of allCategories) {
+      expect(bodySectionOrder(category).includes('difficulty')).toBe(category === 'sport');
+    }
+  });
+});
+
 // design-spec.md's "Bottom bar" slot (§B12): optional price-context line —
-// wired for Entertainment today. Wellness explicitly does NOT get this line
-// (T9: "external-booking note + Visit website"; `price_from` surfaces only
-// in the stat grid) — a price line there would double the same figure.
+// wired for Entertainment (`price_from`) and, per T7, Nightlife
+// (`entry_price`, spec's "Bottom: `From €10` + `Guest list`"). Wellness
+// explicitly does NOT get this line (T9: "external-booking note + Visit
+// website"; `price_from` surfaces only in the stat grid) — a price line
+// there would double the same figure.
 describe('priceContextLine', () => {
   it('renders "From <price>" for entertainment when price_from is present', () => {
     const activity = baseActivity({ category: 'entertainment', price_from: '€8' });
@@ -991,8 +1130,28 @@ describe('priceContextLine', () => {
     expect(priceContextLine(activity)).toBeUndefined();
   });
 
-  it('is undefined for a category with no price_from field at all (e.g. nightlife)', () => {
+  // T7: same "same field feeds both the stat-grid chip and the bottom-bar
+  // line" pattern Entertainment already established, using `entry_price`.
+  it('renders "From <price>" for nightlife when entry_price is present', () => {
+    const activity = baseActivity({ category: 'nightlife', entry_price: '€10' });
+    expect(priceContextLine(activity)).toBe('From €10');
+  });
+
+  it('omits the line when nightlife entry_price is absent', () => {
     const activity = baseActivity({ category: 'nightlife' });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('omits the line when nightlife entry_price fails its scalar shape', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      entry_price: 'The entry fee is not explicitly stated.',
+    });
+    expect(priceContextLine(activity)).toBeUndefined();
+  });
+
+  it('is undefined for a category with no price field at all (e.g. sport)', () => {
+    const activity = baseActivity({ category: 'sport' });
     expect(priceContextLine(activity)).toBeUndefined();
   });
 });

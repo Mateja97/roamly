@@ -296,18 +296,20 @@ export function wellnessBookingNote(activity: Activity): string | undefined {
 
 // design-spec.md's "Bottom bar" slot (§B12): optional price-context line
 // (`From €12`) above the button row, omitting only that line when absent —
-// `price_from` is `scalar` per "Kind declarations on existing fields", so it
-// goes through the same classifyField guard as any other generated field.
-// Wellness does NOT get this line (T9: "external-booking note + Visit
+// the backing field is `scalar` per "Kind declarations on existing fields",
+// so it goes through the same classifyField guard as any other generated
+// field. Wellness does NOT get this line (T9: "external-booking note + Visit
 // website", `price_from` surfaces only in the stat grid) — showing it there
-// would double the same figure on the exact production-bug screen. Wired for
-// Entertainment (`price_from`) today; T7/T10 add Nightlife's `entry_price`
-// and Tours' starting-price field as their screens land — this task only
-// builds the slot mechanics.
+// would double the same figure on the exact production-bug screen. T7:
+// Nightlife's spec bottom bar is `From €10` + `Guest list` — same field
+// (`entry_price`) already feeds the Entry stat-grid chip, same doubling
+// pattern Entertainment already established for `price_from`. T10 adds
+// Tours' starting-price field when that screen lands.
 export function priceContextLine(activity: Activity): string | undefined {
   const d = activity.details;
-  if (!d || d.category !== 'entertainment') return undefined;
-  const price = classifyField('scalar', d.price_from);
+  if (!d) return undefined;
+  const raw = d.category === 'entertainment' ? d.price_from : d.category === 'nightlife' ? d.entry_price : undefined;
+  const price = classifyField('scalar', raw);
   return price ? `From ${price}` : undefined;
 }
 
