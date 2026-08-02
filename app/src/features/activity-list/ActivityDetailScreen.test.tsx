@@ -1940,6 +1940,137 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
+  // T6 (design-spec.md §C, Restaurants/Bars/Cafés entries): the three
+  // screens' final compositions, using T5's canonical-order/promote
+  // mechanism and T4's slots. Order/promote-mechanism unit coverage already
+  // exists generically in activityDetailConfig.test.ts's `bodySectionOrder`
+  // describe (T5) — these are the end-to-end renders per category.
+  describe('T6: Restaurants/Bars/Cafés final composition', () => {
+    it('Restaurants (Tripadvisor): meta line reads category · subtype · price level · distance, no stat grid (price level already in the meta line), Popular dishes renders as nameprice, description before the unique section, CTA is Book a table', () => {
+      const restaurant: Activity = {
+        ...activity,
+        subcategory: 'fine_dining',
+        description: 'A candle-lit dining room with an open kitchen.',
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 1204,
+            web_url: 'https://tripadvisor.example/place',
+            price_level: 'Mid Range',
+          },
+          popular_dishes: [{ name: 'Ćevapi', price: '€8' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={restaurant} showDistance onBack={jest.fn()} />);
+      expect(
+        screen.getByText(
+          `Restaurant · Fine Dining · Mid Range · ${activity.distance_km.toFixed(1)} km away`,
+        ),
+      ).toBeTruthy();
+
+      // Stat grid: none for a Tripadvisor-sourced row — price level already
+      // sits in the meta line, so Cuisine/Price never render as chips too.
+      expect(screen.queryByText('Cuisine')).toBeNull();
+      expect(screen.queryByText('Price')).toBeNull();
+
+      // Unique section: Popular dishes, nameprice density (name + price column).
+      expect(screen.getByText('Popular dishes')).toBeTruthy();
+      expect(screen.getByText('Ćevapi')).toBeTruthy();
+      expect(screen.getByText('€8')).toBeTruthy();
+
+      expect(screen.getByRole('button', { name: 'Book a table' })).toBeTruthy();
+
+      // No promotion for Restaurants: description renders before the unique
+      // section in body order, but not above it (only Cafés promotes).
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('A candle-lit dining room with an open kitchen.')).toBeLessThan(
+        tree.indexOf('Popular dishes'),
+      );
+    });
+
+    it('Bars: meta line reads Bar · subtype · distance (no price level), a sentence-shaped vibe is dropped from the stat grid, Signature pours renders as pills, CTA is See menu, no promotion (stat grid before unique section)', () => {
+      const bar: Activity = {
+        ...activity,
+        category: 'bars',
+        subcategory: 'cocktail_bar',
+        details: {
+          category: 'bars',
+          vibe: 'The atmosphere here is genuinely impossible to describe in one word.',
+          happy_hour_window: '17:00–19:00',
+          opens_time: '17:00',
+          signature_pours: ['Rakija sour', 'Amaro spritz'],
+        },
+      };
+      render(<ActivityDetailScreen activity={bar} showDistance onBack={jest.fn()} />);
+
+      // Meta line: category · subtype · distance, no price level (Bars'
+      // composition never names one, unlike Restaurants). MetaLine renders
+      // each item as its own <Text> node (unlike the Tripadvisor eyebrow's
+      // single joined string), so these are asserted individually.
+      expect(screen.getByText('Bar')).toBeTruthy();
+      expect(screen.getByText('Cocktail Bar')).toBeTruthy();
+      expect(screen.getByText(`${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+
+      // Stat grid: the spec's own flagged at-risk field — a sentence-shaped
+      // vibe never reaches the tile.
+      expect(
+        screen.queryByText('The atmosphere here is genuinely impossible to describe in one word.'),
+      ).toBeNull();
+      expect(screen.queryByText('Vibe')).toBeNull();
+      expect(screen.getByText('17:00–19:00')).toBeTruthy();
+      expect(screen.getByText('17:00')).toBeTruthy();
+
+      // Unique section: Signature pours, pills density (bare item text, no
+      // price column).
+      expect(screen.getByText('Signature pours')).toBeTruthy();
+      expect(screen.getByText('Rakija sour')).toBeTruthy();
+      expect(screen.getByText('Amaro spritz')).toBeTruthy();
+
+      expect(screen.getByRole('button', { name: 'See menu' })).toBeTruthy();
+
+      // No promotion: the stat grid (Happy hour chip) renders before the
+      // unique section (Signature pours heading) in the DOM.
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('17:00–19:00')).toBeLessThan(tree.indexOf('Signature pours'));
+    });
+
+    it('Cafés: meta line reads Café · subtype · distance, stat grid is Known for/Wifi, On the bar renders as nameprice, CTA is Get directions/Share, description promotes above the stat grid', () => {
+      const cafe: Activity = {
+        ...activity,
+        category: 'cafes',
+        subcategory: 'coffee_shop',
+        description: 'A roastery-first café with a short food menu.',
+        details: {
+          category: 'cafes',
+          known_for_brew: 'Pour-over',
+          wifi_quality: 'Fast',
+          on_the_bar: [{ name: 'Flat white', price: '€2.80' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={cafe} showDistance onBack={jest.fn()} />);
+
+      // MetaLine renders each item as its own <Text> node (see the Bars
+      // test above for why these are asserted individually).
+      expect(screen.getByText('Café')).toBeTruthy();
+      expect(screen.getByText('Coffee Shop')).toBeTruthy();
+      expect(screen.getByText(`${activity.distance_km.toFixed(1)} km away`)).toBeTruthy();
+      expect(screen.getByText('Pour-over')).toBeTruthy();
+      expect(screen.getByText('Fast')).toBeTruthy();
+      expect(screen.getByText('On the bar')).toBeTruthy();
+      expect(screen.getByText('Flat white')).toBeTruthy();
+      expect(screen.getByText('€2.80')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Get directions' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
+
+      // Promoted slot: description renders above the stat grid.
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('A roastery-first café with a short food menu.')).toBeLessThan(
+        tree.indexOf('Pour-over'),
+      );
+    });
+  });
+
   // T5: the canonical-order + promote-one-slot mechanism (activityDetailConfig.ts's
   // `bodySectionOrder`) replaces the 13 hand-maintained BODY_SECTION_ORDER
   // arrays — this smoke test proves every category still renders with its

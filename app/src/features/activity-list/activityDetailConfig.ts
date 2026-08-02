@@ -325,15 +325,25 @@ function categoryNoun(category: Category): string {
   return SINGULAR_NOUN[category] ?? CATEGORY_LABELS[category];
 }
 
-// §5b: the eyebrow line above a Tripadvisor row's title — category · price
-// level · distance. `price_level` is Terra's own exact string ("Cheap
-// Eats"/"Mid Range"/"Fine Dining"), rendered verbatim, never reformatted to
-// $ symbols; omitted from the line (not blanked) when Tripadvisor didn't
-// return one. `undefined` for a non-Tripadvisor row (no eyebrow at all).
+// §5b, extended by T6: the eyebrow line above a Tripadvisor row's title —
+// this *is* the Meta line slot for a Tripadvisor restaurant/bar/café row
+// (§C's exact composition: `Restaurant · Fine Dining · $$$ · 400 m`,
+// `Bar · Cocktail Bar · 200 m`, `Café · Coffee Shop · 150 m` — category,
+// subtype, then price level, then distance). Subtype is `subtypeLabel`, same
+// taxonomy-slug source as every other category (never a generated field).
+// `price_level` is Terra's own exact string ("Cheap Eats"/"Mid
+// Range"/"Fine Dining"), rendered verbatim, never reformatted to $ symbols
+// — and only Restaurants' composition names it ("price level already sits
+// in the meta line"); Bars/Cafés' compositions don't, so it's scoped to
+// `restaurants` here even though the wire type carries the field for every
+// Tripadvisor-sourced category. Every item omits individually (never
+// blanked) when its source data is absent. `undefined` for a
+// non-Tripadvisor row (no eyebrow at all).
 export function tripadvisorEyebrow(activity: Activity, distanceText: string): string | undefined {
   const tripadvisor = tripadvisorAttribution(activity);
   if (!tripadvisor) return undefined;
-  return [categoryNoun(activity.category), tripadvisor.price_level, distanceText]
+  const priceLevel = activity.category === 'restaurants' ? tripadvisor.price_level : undefined;
+  return [categoryNoun(activity.category), subtypeLabel(activity), priceLevel, distanceText]
     .filter((v): v is string => Boolean(v))
     .join(' · ');
 }

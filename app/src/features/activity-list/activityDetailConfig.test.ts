@@ -18,6 +18,7 @@ import {
   venueDiffersFromSubtype,
   weekView,
 } from './activityDetailConfig';
+import { classifyFactChips } from './FactStrip';
 
 // 2024-01-01 is a Monday. Fixing the clock lets every case below assert an
 // exact venue-local weekday/time without depending on the host machine's
@@ -484,8 +485,82 @@ describe('factStripFields — Tripadvisor rows drop Cuisine/Price (§5b eyebrow 
   });
 });
 
-describe('tripadvisorEyebrow (§5b)', () => {
-  it('joins category · price level · distance when price_level is present', () => {
+// T6 (design-spec.md §C, Bars entry): "Contract change: `vibe` must be
+// `scalar` (`Intimate`) or absent" — the spec's own explicitly flagged
+// at-risk field. `factStripFields` itself only builds the raw chip (the
+// classification happens at render time, same as every other stat-grid
+// field, per FactStrip's own `classifyFactChips`) — this test proves the
+// two compose correctly for Bars specifically, not just generically.
+describe('factStripFields — Bars vibe (T6, spec-flagged at-risk field)', () => {
+  it('omits a sentence-shaped vibe value once classified, keeping the other valid chips', () => {
+    const activity = baseActivity({
+      category: 'bars',
+      vibe: 'The atmosphere here is genuinely impossible to describe in one word.',
+      happy_hour_window: '17:00–19:00',
+      opens_time: '17:00',
+    });
+    const labels = classifyFactChips(factStripFields(activity)).map((f) => f.label);
+    expect(labels).not.toContain('Vibe');
+    expect(labels).toContain('Happy hour');
+    expect(labels).toContain('Opens');
+  });
+
+  it('keeps a legitimate scalar vibe value (the spec\'s own example)', () => {
+    const activity = baseActivity({
+      category: 'bars',
+      vibe: 'Intimate',
+      happy_hour_window: '17:00–19:00',
+      opens_time: '17:00',
+    });
+    const chips = classifyFactChips(factStripFields(activity));
+    expect(chips.find((f) => f.label === 'Vibe')?.value).toBe('Intimate');
+  });
+});
+
+// T6 (design-spec.md §C): Restaurants/Bars/Cafés' unique-section shape +
+// heading mapping — the shape-level rendering itself (nameprice/pills) is
+// already covered generically in UniqueSection.test.tsx; this pins each of
+// the three categories to its specified density.
+describe('uniqueSection — Restaurants/Bars/Cafés (T6)', () => {
+  it('Restaurants: "Popular dishes" using the nameprice density', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      popular_dishes: [{ name: 'Truffle pasta', price: '€14' }],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'nameprice',
+      heading: 'Popular dishes',
+      items: [{ name: 'Truffle pasta', price: '€14' }],
+    });
+  });
+
+  it('Bars: "Signature pours" using the pills density', () => {
+    const activity = baseActivity({
+      category: 'bars',
+      signature_pours: ['Rakija sour', 'Amaro spritz'],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'pills',
+      heading: 'Signature pours',
+      items: ['Rakija sour', 'Amaro spritz'],
+    });
+  });
+
+  it('Cafés: "On the bar" using the nameprice density', () => {
+    const activity = baseActivity({
+      category: 'cafes',
+      on_the_bar: [{ name: 'Flat white', price: '€2.80' }],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'nameprice',
+      heading: 'On the bar',
+      items: [{ name: 'Flat white', price: '€2.80' }],
+    });
+  });
+});
+
+describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line slot for a Tripadvisor row)', () => {
+  it('joins category · price level · distance when price_level is present and no subtype (subcategory absent)', () => {
     const activity = baseActivity({
       category: 'restaurants',
       tripadvisor: {
@@ -498,6 +573,66 @@ describe('tripadvisorEyebrow (§5b)', () => {
     expect(tripadvisorEyebrow(activity, '1.2 km away')).toBe('Restaurant · Mid Range · 1.2 km away');
   });
 
+  // design-spec.md's exact Restaurants composition: `Restaurant · Fine
+  // Dining · $$$ · 400 m` — category, subtype (from `subcategory`), price
+  // level, distance, all four in order.
+  it('T6: joins category · subtype · price level · distance for a Restaurants row with all four present', () => {
+    const activity = {
+      ...baseActivity({
+        category: 'restaurants',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          web_url: 'https://tripadvisor.example/place',
+          price_level: 'Mid Range',
+        },
+      }),
+      subcategory: 'fine_dining',
+    };
+    expect(tripadvisorEyebrow(activity, '400 m away')).toBe(
+      'Restaurant · Fine Dining · Mid Range · 400 m away',
+    );
+  });
+
+  // design-spec.md's exact Bars composition (`Bar · Cocktail Bar · 200 m`)
+  // has no price-level segment at all — unlike Restaurants, whose stat grid
+  // omission is explicitly justified by "price level already sits in the
+  // meta line". A Bar's tripadvisor object can still carry `price_level` on
+  // the wire (same shared type), so this must scope it out, not just rely
+  // on the field being absent in practice.
+  it('T6: omits price level for a Bars row even when tripadvisor.price_level is present', () => {
+    const activity = {
+      ...baseActivity({
+        category: 'bars',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 88,
+          web_url: 'https://tripadvisor.example/place',
+          price_level: 'Mid Range',
+        },
+      }),
+      subcategory: 'cocktail_bar',
+    };
+    expect(tripadvisorEyebrow(activity, '200 m away')).toBe('Bar · Cocktail Bar · 200 m away');
+  });
+
+  // Same rule for Cafés (`Café · Coffee Shop · 150 m`, per design-spec.md).
+  it('T6: omits price level for a Cafés row even when tripadvisor.price_level is present', () => {
+    const activity = {
+      ...baseActivity({
+        category: 'cafes',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 45,
+          web_url: 'https://tripadvisor.example/place',
+          price_level: 'Cheap Eats',
+        },
+      }),
+      subcategory: 'coffee_shop',
+    };
+    expect(tripadvisorEyebrow(activity, '150 m away')).toBe('Café · Coffee Shop · 150 m away');
+  });
+
   it('omits price level from the line when absent (no dangling separator, never fabricated)', () => {
     const activity = baseActivity({
       category: 'bars',
@@ -508,6 +643,18 @@ describe('tripadvisorEyebrow (§5b)', () => {
       },
     });
     expect(tripadvisorEyebrow(activity, '2.4 km away')).toBe('Bar · 2.4 km away');
+  });
+
+  it('omits subtype from the line when subcategory is empty (documented as common on Tripadvisor rows)', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 1204,
+        web_url: 'https://tripadvisor.example/place',
+      },
+    });
+    expect(tripadvisorEyebrow(activity, '1.2 km away')).toBe('Restaurant · 1.2 km away');
   });
 
   it('is undefined for a non-Tripadvisor row (no eyebrow renders)', () => {
