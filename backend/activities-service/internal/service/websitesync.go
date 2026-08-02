@@ -19,19 +19,14 @@ import (
 // later... no schema change."
 const websiteSyncProvider = "website"
 
-// retryFreshness bounds how soon a row that hasn't yet succeeded (no
-// website on file, extraction failed, validation failed, not yet
-// attempted) gets tried again — short, since these are transient failure
-// states worth retrying often. Applies to every category alike.
-const retryFreshness = 7 * 24 * time.Hour
-
-// entertainmentRefreshFreshness bounds how often an already-complete
-// Entertainment row gets re-scraped anyway. Entertainment is the one
-// category whose scraper-owned content (upcoming_shows) genuinely goes
-// stale over time — every other category is skipped permanently once
-// complete (see isComplete/SyncWebsiteContent), because static content
-// like a spa's treatment menu or a museum's current exhibit description
-// doesn't need repeat scraping once it's been captured.
+// entertainmentRefreshFreshness bounds how often an Entertainment row gets
+// re-scraped — complete or not. Entertainment is the one category whose
+// scraper-owned content (upcoming_shows) genuinely goes stale over time, so
+// unlike every other category it keeps a periodic re-scan indefinitely
+// rather than giving up after one incomplete attempt (see SyncWebsiteContent).
+// Every other category is skipped permanently once complete (isComplete),
+// because static content like a spa's treatment menu or a museum's current
+// exhibit description doesn't need repeat scraping once it's been captured.
 const entertainmentRefreshFreshness = 30 * 24 * time.Hour
 
 // websiteResolveTimeout bounds the one live Places call this job makes per
@@ -212,7 +207,26 @@ func isFieldEmpty(v any) bool {
 // all already filled is skipped permanently, except Entertainment, which
 // still re-checks every entertainmentRefreshFreshness because
 // upcoming_shows genuinely goes stale over time.
-func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
+//
+// A non-Entertainment row that stays incomplete gets exactly one automatic
+// attempt from the batch job, ever — a second failure means the venue's
+// site is missing that field for good (or is unscrapable), so retrying it
+// every cycle would burn Firecrawl credits with no ceiling (the design
+// spec's credit-cost review flagged this: an indefinitely-retried row was
+// never accounted for in the cost estimate). force skips that
+// already-attempted gate (and Entertainment's freshness window) for a
+// single explicitly-requested row — see cmd/websitesync's -retry-id flag.
+//
+// "Attempt" is recorded (markAttempt below) once Firecrawl has actually been
+// called and the outcome is a content problem — an extraction error
+// (Firecrawl already exhausted its own internal retries by then, see
+// internal/firecrawl), malformed JSON, or a validation rejection all
+// reproduce identically on a retry, so recording those as the one spent
+// attempt is what keeps the credit ceiling real. A repo.Update failure is
+// deliberately NOT recorded: that's an infra blip on content that already
+// passed validation, not a reason to give up on the row, so it still
+// retries next cycle exactly as it did before this policy existed.
+func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bool) error {
 	if a.places == nil || a.firecrawl == nil {
 		return fmt.Errorf("places and firecrawl clients must both be configured")
 	}
@@ -252,21 +266,26 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return nil
 	}
 
-	freshness := retryFreshness
-	if complete {
-		// Only reachable for Entertainment here — the permanent-skip branch
-		// above already returned for every other complete category. A
-		// complete show list still needs periodic refreshing, just far less
-		// often than a row that hasn't succeeded at all yet.
-		freshness = entertainmentRefreshFreshness
-	}
-	syncedAt, ok, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
+	syncedAt, attemptedBefore, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
 	if err != nil {
 		return fmt.Errorf("checking website sync freshness for %s: %w", id, err)
 	}
-	if ok && time.Since(syncedAt) < freshness {
-		slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
-		return nil
+	if !force {
+		switch {
+		case activity.Category == activitiessvc.CategoryEntertainment:
+			// Reachable here whether complete or not — Entertainment's show
+			// listings go stale regardless of completeness, so unlike every
+			// other category it keeps a periodic re-scan instead of giving up.
+			if attemptedBefore && time.Since(syncedAt) < entertainmentRefreshFreshness {
+				slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
+				return nil
+			}
+		case attemptedBefore:
+			// Every other category: one automatic attempt, ever. See the
+			// SyncWebsiteContent doc comment for why.
+			slog.Info("website sync skipped, already attempted and still incomplete", "activity_id", id)
+			return nil
+		}
 	}
 
 	resolveCtx, cancel := context.WithTimeout(ctx, websiteResolveTimeout)
@@ -280,16 +299,38 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 		return nil
 	}
 
+	// markAttempt records the attempt the moment Firecrawl was actually
+	// called, for every outcome that means "this row's content is the
+	// problem" — an extraction error, malformed JSON, or a validation
+	// failure will produce the exact same result next cycle, so retrying
+	// spends another Firecrawl call for nothing (see the doc comment
+	// above). Deliberately NOT called on a repo.Update failure below: that's
+	// an infra blip on already-good, already-validated content, unrelated
+	// to the venue's site — the row should still retry next cycle, same as
+	// before this attempt-tracking existed.
+	markAttempt := func() error {
+		if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), ""); err != nil {
+			return fmt.Errorf("marking website sync for %s: %w", id, err)
+		}
+		return nil
+	}
+
 	extractCtx, cancel := context.WithTimeout(ctx, firecrawlTimeout)
 	extracted, err := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, extract.prompt, extract.schema)
 	cancel()
 	if err != nil {
+		if markErr := markAttempt(); markErr != nil {
+			return markErr
+		}
 		return fmt.Errorf("extracting website content for %s: %w", id, err)
 	}
 	extracted = dropBlankBanner(activity.Category, extracted)
 
 	merged, err := fillGaps(activity.Details, extracted)
 	if err != nil {
+		if markErr := markAttempt(); markErr != nil {
+			return markErr
+		}
 		return fmt.Errorf("merging website content for %s: %w", id, err)
 	}
 	if activity.Category == activitiessvc.CategoryEntertainment {
@@ -302,20 +343,19 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string) error {
 	// Firecrawl's LLM extraction is not schema-guaranteed: an unexpected key
 	// or a type mismatch must never reach the DB unvalidated, or a
 	// subsequent admin edit to this row would fail ValidateDetails' strict
-	// decode. Skip and retry next cycle instead — same "nothing to do this
-	// cycle" contract as the freshness/no-website checks above.
+	// decode. Skip the write, but still mark the attempt — recovering needs
+	// an explicit -retry-id run (or, for Entertainment, the next 30-day
+	// window), not another automatic try that would reproduce the same
+	// invalid output.
 	if err := ValidateDetails(activity.Category, merged); err != nil {
 		slog.Warn("website sync produced invalid details, skipping write", "activity_id", id, "error", err)
-		return nil
+		return markAttempt()
 	}
 
 	if _, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Details: &merged}); err != nil {
 		return fmt.Errorf("saving website content for %s: %w", id, err)
 	}
-	if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), ""); err != nil {
-		return fmt.Errorf("marking website sync for %s: %w", id, err)
-	}
-	return nil
+	return markAttempt()
 }
 
 // overwriteField replaces key on merged with its value from extracted, when

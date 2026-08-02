@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func TestSyncWebsiteContent_FillsGapsOnly(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 
@@ -82,7 +83,7 @@ func TestSyncWebsiteContent_NoWebsite_SkipsFirecrawl(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if firecrawl.calls != 0 {
@@ -93,7 +94,11 @@ func TestSyncWebsiteContent_NoWebsite_SkipsFirecrawl(t *testing.T) {
 // TestSyncWebsiteContent_InvalidExtraction_SkipsWrite proves Firecrawl's
 // LLM extraction — not schema-guaranteed — never reaches the DB
 // unvalidated: an unknown key would otherwise brick every later admin edit
-// to the row (ValidateDetails' strict decode would reject it).
+// to the row (ValidateDetails' strict decode would reject it). It also
+// proves the attempt still gets marked despite the skipped write — a
+// durably-malformed extraction (bad LLM output every time) must not
+// re-spend a Firecrawl call on every future batch run either, the same
+// unbounded-retry gap the give-up policy exists to close.
 func TestSyncWebsiteContent_InvalidExtraction_SkipsWrite(t *testing.T) {
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
@@ -104,14 +109,93 @@ func TestSyncWebsiteContent_InvalidExtraction_SkipsWrite(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
-		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip, not retried again)", err)
 	}
 	if repo.updateCalls != 0 {
 		t.Errorf("repo.Update calls = %d, want 0 — invalid extraction must never be persisted", repo.updateCalls)
 	}
 	if repo.gotUpdatePatch.Details != nil {
 		t.Errorf("repo.gotUpdatePatch.Details = %v, want zero-value", repo.gotUpdatePatch.Details)
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — a failed-validation attempt must still count toward the give-up policy", repo.markSynced, wantKey)
+	}
+}
+
+// TestSyncWebsiteContent_ExtractionError_StillMarksAttempted proves an
+// extraction call that errors out (Firecrawl already exhausted its own
+// internal retries by then) still counts as this row's one automatic
+// attempt — without this, a durably-unscrapable site would burn a
+// Firecrawl call on every batch run forever, the exact unbounded cost the
+// give-up policy exists to cap.
+func TestSyncWebsiteContent_ExtractionError_StillMarksAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{err: fmt.Errorf("firecrawl scrape https://example-spa.rs status 500: boom")}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the extraction error surfaced")
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — an extraction failure must still count toward the give-up policy", repo.markSynced, wantKey)
+	}
+}
+
+// TestSyncWebsiteContent_UpdateError_DoesNotMarkAttempted proves a DB write
+// failure is treated differently from an extraction/validation failure: the
+// extracted content already passed ValidateDetails, so repo.Update failing
+// is an infra blip, not a reason to give up on the row — it must stay
+// eligible for a normal retry next cycle, not get permanently stranded by
+// the give-up policy meant to cap Firecrawl credit spend, not paper over
+// transient DB errors.
+func TestSyncWebsiteContent_UpdateError_DoesNotMarkAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Massage"}]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}, updateErr: fmt.Errorf("connection reset")}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the DB write error surfaced")
+	}
+	if len(repo.markSynced) != 0 {
+		t.Errorf("repo.markSynced = %v, want empty — a DB write failure on already-valid content must not give up the row", repo.markSynced)
+	}
+}
+
+// TestSyncWebsiteContent_MalformedExtractionJSON_StillMarksAttempted proves
+// the fillGaps decode error path — Firecrawl returning success:true with a
+// body that isn't valid JSON at all, not just the wrong shape — is treated
+// as a content problem, same as an extraction error or a ValidateDetails
+// rejection: it still marks the attempt, since a retry would reproduce the
+// same malformed body.
+func TestSyncWebsiteContent_MalformedExtractionJSON_StillMarksAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`not valid json`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the decode error surfaced")
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — malformed extraction JSON must still count toward the give-up policy", repo.markSynced, wantKey)
 	}
 }
 
@@ -132,14 +216,18 @@ func TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
-		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip, not retried again)", err)
 	}
 	if repo.updateCalls != 0 {
 		t.Errorf("repo.Update calls = %d, want 0 — fractional difficulty must never be persisted, along with the rest of the payload (effort_level, duration, gear, what_to_bring)", repo.updateCalls)
 	}
 	if repo.gotUpdatePatch.Details != nil {
 		t.Errorf("repo.gotUpdatePatch.Details = %v, want zero-value", repo.gotUpdatePatch.Details)
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategorySport), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — a failed-validation attempt must still count toward the give-up policy", repo.markSynced, wantKey)
 	}
 }
 
@@ -157,7 +245,7 @@ func TestSyncWebsiteContent_AdminCreatedRow_SkipsPlacesCall(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -181,7 +269,7 @@ func TestSyncWebsiteContent_TripadvisorRow_SkipsPlacesCall(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -205,7 +293,7 @@ func TestSyncWebsiteContent_UnsupportedCategory_Skips(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -271,7 +359,7 @@ func TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}} // never synced — would be eligible under the old flat cadence
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if places.detailCalls != 0 {
@@ -303,7 +391,7 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 		}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		if firecrawl.calls != 0 {
@@ -323,7 +411,7 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 		}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		if firecrawl.calls != 1 {
@@ -354,9 +442,11 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 // that re-scrapes most often) would never get its stale show list
 // refreshed.
 func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *testing.T) {
-	// price_from deliberately left empty — the row is not complete, so it
-	// uses retryFreshness (7 days); seed synced_at older than that so the
-	// sync actually proceeds to the merge step instead of being skipped as
+	// price_from deliberately left empty — the row is not complete, so an
+	// Entertainment row keeps entertainmentRefreshFreshness's periodic
+	// re-scan (30 days) rather than the one-attempt-and-give-up rule every
+	// other category gets; seed synced_at older than that so the sync
+	// actually proceeds to the merge step instead of being skipped as
 	// still-fresh.
 	incompleteDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Old Show"}],"good_to_know":["Note"],"typical_show_length":"2 hrs"}`
 	stored := activitiessvc.Activity{
@@ -366,11 +456,11 @@ func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *te
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-theatre.rs"}}
 	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"upcoming_shows":[{"date":"2026-10-01","title":"New Show"}]}`)}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
-		syncKey("website", "1", "entertainment", ""): time.Now().Add(-8 * 24 * time.Hour),
+		syncKey("website", "1", "entertainment", ""): time.Now().Add(-31 * 24 * time.Hour),
 	}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if repo.gotUpdatePatch.Details == nil {
@@ -404,7 +494,7 @@ func TestSyncWebsiteContent_SportDifficulty_SetsInferredFlag(t *testing.T) {
 		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		if repo.gotUpdatePatch.Details == nil {
@@ -433,7 +523,7 @@ func TestSyncWebsiteContent_SportDifficulty_SetsInferredFlag(t *testing.T) {
 		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-		if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 			t.Fatalf("SyncWebsiteContent() error: %v", err)
 		}
 		var got map[string]any
@@ -463,7 +553,7 @@ func TestSyncWebsiteContent_CultureArt_FillNestedBanner(t *testing.T) {
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	var got map[string]any
@@ -491,7 +581,7 @@ func TestSyncWebsiteContent_Culture_BlankBanner_NotTreatedAsFilled(t *testing.T)
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if repo.gotUpdatePatch.Details == nil {
@@ -519,7 +609,7 @@ func TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled(t *t
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if repo.gotUpdatePatch.Details == nil {
@@ -530,7 +620,13 @@ func TestSyncWebsiteContent_Culture_WhitespaceOnlyBanner_NotTreatedAsFilled(t *t
 	}
 }
 
-func TestSyncWebsiteContent_RecentlySynced_Skips(t *testing.T) {
+// TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt proves a
+// non-Entertainment row that already had one automatic attempt (however
+// long ago) is skipped forever afterward, not retried on any timer — the
+// credit-cost fix: an unbounded 7-day retry loop on a row that will never
+// complete (a missing field on the venue's site, permanently) was never
+// accounted for in the design spec's cost estimate.
+func TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt(t *testing.T) {
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
 		Source: "google_places", ExternalID: "place-1",
@@ -538,14 +634,38 @@ func TestSyncWebsiteContent_RecentlySynced_Skips(t *testing.T) {
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
 	firecrawl := &fakeFirecrawl{}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
-		syncKey("website", "1", "wellness", ""): time.Now(),
+		// 400 days ago — far past the old 7-day retry window — proves the
+		// skip is permanent, not just a longer timer.
+		syncKey("website", "1", "wellness", ""): time.Now().Add(-400 * 24 * time.Hour),
 	}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
-	if err := svc.SyncWebsiteContent(context.Background(), "1"); err != nil {
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
 		t.Fatalf("SyncWebsiteContent() error: %v", err)
 	}
 	if firecrawl.calls != 0 {
-		t.Errorf("firecrawl.calls = %d, want 0 — synced less than 7 days ago", firecrawl.calls)
+		t.Errorf("firecrawl.calls = %d, want 0 — already attempted once, must not auto-retry", firecrawl.calls)
+	}
+}
+
+// TestSyncWebsiteContent_Force_RetriesGivenUpRow proves force bypasses the
+// already-attempted skip above — cmd/websitesync's -retry-id path.
+func TestSyncWebsiteContent_Force_RetriesGivenUpRow(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Massage"}]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+		syncKey("website", "1", "wellness", ""): time.Now().Add(-400 * 24 * time.Hour),
+	}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", true); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if firecrawl.calls != 1 {
+		t.Errorf("firecrawl.calls = %d, want 1 — force must bypass the already-attempted skip", firecrawl.calls)
 	}
 }

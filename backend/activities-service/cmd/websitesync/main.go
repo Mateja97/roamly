@@ -12,6 +12,11 @@
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //
 // Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync [-dry-run]
+//
+// A non-Entertainment row that stays incomplete only ever gets one
+// automatic attempt (see internal/service/websitesync.go's
+// SyncWebsiteContent) — to force a specific row to be re-attempted anyway:
+// DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync -retry-id=<activity-id>
 package main
 
 import (
@@ -51,6 +56,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	dryRun := flag.Bool("dry-run", false, "list what would be synced without calling Places, Firecrawl, or writing")
+	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except Entertainment")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -66,6 +72,26 @@ func main() {
 	}
 	defer pool.Close()
 	repo := repository.New(pool)
+
+	if *retryID != "" {
+		placesClient, err := places.NewFromEnv()
+		if err != nil {
+			logger.Error("startup failed", "error", err)
+			os.Exit(1)
+		}
+		fc, err := firecrawl.NewFromEnv()
+		if err != nil {
+			logger.Error("startup failed", "error", err)
+			os.Exit(1)
+		}
+		svc := service.New(repo).WithPlaces(placesClient).WithFirecrawl(fc)
+		if err := svc.SyncWebsiteContent(ctx, *retryID, true); err != nil {
+			logger.Error("retry failed", "id", *retryID, "error", err)
+			os.Exit(1)
+		}
+		logger.Info("retry complete", "id", *retryID)
+		return
+	}
 
 	rows, err := publishedRows(ctx, repo, syncCategories, listPageSize)
 	if err != nil {
@@ -95,7 +121,7 @@ func main() {
 
 	var synced, skippedOrFailed int
 	for _, r := range rows {
-		if err := svc.SyncWebsiteContent(ctx, r.ID); err != nil {
+		if err := svc.SyncWebsiteContent(ctx, r.ID, false); err != nil {
 			logger.Warn("sync failed", "title", r.Title, "id", r.ID, "error", err)
 			skippedOrFailed++
 			continue
