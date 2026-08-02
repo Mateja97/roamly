@@ -98,6 +98,16 @@ describe('classifyField — phrase kind', () => {
     const words = new Array(10).fill('go').join(' '); // 29 chars, well within 80
     expect(classifyField('phrase', words)).toBe(words);
   });
+
+  // T9 round-3 fix: the trailing-strip above leaves a punctuation-only value
+  // measuring as empty; the denylist can't catch it (nothing normalizes to
+  // "") and the length check alone doesn't reject an empty string, so
+  // without this it would survive as a checklist bullet with no content.
+  it('omits a punctuation-only value once stripped to nothing', () => {
+    expect(classifyField('phrase', '.')).toBeUndefined();
+    expect(classifyField('phrase', '...')).toBeUndefined();
+    expect(classifyField('phrase', '!')).toBeUndefined();
+  });
 });
 
 describe('classifyField — prose kind', () => {

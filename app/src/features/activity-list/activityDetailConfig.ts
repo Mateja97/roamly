@@ -825,9 +825,15 @@ export function factStripFields(activity: Activity): FactChip[] {
 }
 
 // Backend's `upcoming_shows[].date` has no fixed documented format; parse it
-// as a real date for the day/numeral split when possible, and fall back to
-// showing the raw string as the numeral (no day label) when it isn't a
-// parseable date — never throws on unexpected input.
+// as a real date for the day/numeral split when possible. When it isn't a
+// parseable date (or `Intl` throws), it's still an LLM-generated value —
+// T9 round-3 fix: route it through `classifyField('scalar', …)` like every
+// other generated field, instead of rendering the raw string, so a
+// denylisted/oversized placeholder (`"Not specified"`, `"N/A"` — 41 of 231
+// live Entertainment rows carry one) omits instead of walking onto the
+// screen at numeral size. `scalar` because the field is meant to be a short
+// date; the spec declares no kind for it explicitly. Never throws on
+// unexpected input.
 function dateBlockRow(show: {
   date: string;
   title: string;
@@ -836,7 +842,7 @@ function dateBlockRow(show: {
   const parsed = new Date(show.date);
   const valid = !Number.isNaN(parsed.getTime());
   let day = '';
-  let date = show.date;
+  let date = '';
   if (valid) {
     try {
       day = parsed
@@ -844,8 +850,12 @@ function dateBlockRow(show: {
         .toUpperCase();
       date = String(parsed.getDate());
     } catch {
-      // ponytail: Intl unavailable — falls back to the raw date string above.
+      // ponytail: Intl unavailable — falls through to the classifyField
+      // fallback below, same as an unparseable date.
     }
+  }
+  if (!date) {
+    date = classifyField('scalar', show.date) ?? '';
   }
   // T5 round-3 fix: `time_or_price` is LLM-generated (same field the
   // production-bug report's "Not specified" hedges leaked from on legacy
@@ -858,7 +868,12 @@ function dateBlockRow(show: {
   // hedge this guards against is a denylist hit, which `phrase` catches
   // identically (denylist runs before the kind check) at its more permissive
   // 80-char cap — use `phrase`.
-  return { day, date, title: show.title, subline: classifyField('phrase', show.time_or_price) ?? '' };
+  return {
+    day,
+    date,
+    title: show.title,
+    subline: classifyField('phrase', show.time_or_price) ?? '',
+  };
 }
 
 // Whole-section omission lives here too: every branch returns `undefined`
@@ -1009,7 +1024,10 @@ export function uniqueSection(
 export function goodToKnowSection(activity: Activity): UniqueSectionData | undefined {
   const d = activity.details;
   if (!d) return undefined;
-  const raw = d.category === 'wellness' || d.category === 'entertainment' ? d.good_to_know : undefined;
+  const raw =
+    d.category === 'wellness' || d.category === 'entertainment'
+      ? d.good_to_know
+      : undefined;
   const items = (raw ?? [])
     .map((item) => classifyField('phrase', item))
     .filter((item): item is string => item !== undefined);

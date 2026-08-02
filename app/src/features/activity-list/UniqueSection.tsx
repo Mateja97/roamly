@@ -235,12 +235,16 @@ export function UniqueSection({ data }: UniqueSectionProps) {
                 style={StyleSheet.absoluteFill}
                 pointerEvents="none"
               />
-              <View style={styles.dateBlockDate}>
-                {row.day ? (
-                  <Text style={styles.dateBlockDay}>{row.day}</Text>
-                ) : null}
-                <Text style={styles.dateBlockNum}>{row.date}</Text>
-              </View>
+              {row.date ? (
+                <View style={styles.dateBlockDate}>
+                  {row.day ? (
+                    <Text style={styles.dateBlockDay}>{row.day}</Text>
+                  ) : null}
+                  <Text style={styles.dateBlockNum} numberOfLines={1}>
+                    {row.date}
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.dateBlockBody}>
                 <Text style={styles.dateBlockTitle}>{row.title}</Text>
                 {row.subline ? (

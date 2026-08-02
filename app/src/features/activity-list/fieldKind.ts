@@ -6,6 +6,17 @@
 // independently — T11 adds a parity test asserting the two lists stay
 // textually identical). If you touch the denylist or the kind limits here,
 // update that package too.
+//
+// KNOWN DIVERGENCE (T9 round 3, flagged for T11 to reconcile — not fixed
+// here, out of this file's scope): the `phrase` kind below strips one
+// trailing terminal-punctuation char before the length check (rejects only
+// on measured length, keeps the punctuation in the returned value). Go's
+// `contentkind.IsValidPhrase` (backend/shared/contentkind/contentkind.go)
+// still rejects outright on any terminal punctuation — same content can now
+// survive here but still get destructively cleared server-side on Tours'
+// write path (`dropInvalidPhrases` in activities-service). The spec's data
+// contract table (L146, L421) still documents the old reject-on-punctuation
+// rule too. See engineering-notes.md's T9 section for the full writeup.
 
 export type FieldKind = 'scalar' | 'phrase' | 'prose';
 
@@ -106,6 +117,12 @@ export function classifyField(
       // after the strip, so the rule's real target — multi-clause sentences —
       // is unaffected. Scalar deliberately keeps the stricter outright-reject
       // rule above (not in scope of this fix).
+      // T9 round-3 fix: a punctuation-only value (".", "...", "!") has no
+      // content at all — the denylist can't catch it (nothing normalizes to
+      // "") and TERMINAL_PUNCTUATION only strips one trailing char (so
+      // "..." alone wouldn't measure as empty), so check the whole value
+      // directly rather than relying on the single-char strip below.
+      if (/^[.!?]+$/.test(value)) return undefined;
       const measured = value.replace(TERMINAL_PUNCTUATION, '');
       if ([...measured].length > PHRASE_MAX_CHARS) return undefined;
       return value;

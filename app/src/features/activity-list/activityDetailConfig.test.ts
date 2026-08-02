@@ -1287,12 +1287,16 @@ describe('priceContextLine', () => {
   // for price_from is "from €25"/"from €8" — the backend can legitimately
   // hand us a value that already carries the prefix. Don't double it.
   it('does not double the prefix when price_from already starts with "from" (case-insensitive)', () => {
-    expect(priceContextLine(baseActivity({ category: 'entertainment', price_from: 'from €8' }))).toBe(
-      'From €8',
-    );
-    expect(priceContextLine(baseActivity({ category: 'entertainment', price_from: 'From €8' }))).toBe(
-      'From €8',
-    );
+    expect(
+      priceContextLine(
+        baseActivity({ category: 'entertainment', price_from: 'from €8' }),
+      ),
+    ).toBe('From €8');
+    expect(
+      priceContextLine(
+        baseActivity({ category: 'entertainment', price_from: 'From €8' }),
+      ),
+    ).toBe('From €8');
   });
 });
 
@@ -1332,6 +1336,60 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
     expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
+  });
+
+  // T9 round-3 fix: an unparseable `date` is still an LLM-generated value
+  // (same surface `time_or_price` already guards) — a denylisted or
+  // over-length raw string must omit, not render verbatim at numeral size.
+  // The row itself survives (title + subline unaffected), per the same
+  // trailing-omit rule the subline already follows.
+  it('omits the date block when the raw date is denylisted (production bug: 41/231 live rows)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [
+        {
+          date: 'Not specified',
+          title: 'Live jazz night',
+          time_or_price: '€15',
+        },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({
+      day: '',
+      date: '',
+      title: 'Live jazz night',
+      subline: '€15',
+    });
+  });
+
+  it('omits the date block when the raw date fails the scalar shape (too long)', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [
+        {
+          date: 'Details not provided for this listing',
+          title: 'Live jazz night',
+        },
+      ],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ day: '', date: '' });
+  });
+
+  it('keeps a short unparseable raw date that survives the scalar shape (e.g. "TBA")', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ day: '', date: 'TBA' });
   });
 });
 
@@ -1524,6 +1582,10 @@ describe('uniqueSection — wellness treatments (duration density, T9)', () => {
     });
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toEqual({ name: 'Swedish massage', duration: undefined, price: 'from €35' });
+    expect(section.rows[0]).toEqual({
+      name: 'Swedish massage',
+      duration: undefined,
+      price: 'from €35',
+    });
   });
 });
