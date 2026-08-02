@@ -742,3 +742,39 @@ func TestSyncWebsiteContent_Force_RetriesGivenUpRow(t *testing.T) {
 		t.Errorf("firecrawl.calls = %d, want 1 — force must bypass the already-attempted skip", firecrawl.calls)
 	}
 }
+
+// TestWellnessAndEntertainmentPrompts_ScalarAndPhraseWording proves the T2
+// prompt rewrite: the new wording is not satisfiable by the exact
+// production-bug shape (a full-sentence hedge like "Vreme posete nije
+// eksplicitno navedeno.") and explicitly requests venue-specific
+// good_to_know items — both prompts got the identical rewrite, so one
+// table covers both. String-contains checks only — this isn't testing
+// actual LLM output, just that the instruction text made it into the
+// prompt sent to Firecrawl.
+func TestWellnessAndEntertainmentPrompts_ScalarAndPhraseWording(t *testing.T) {
+	wantSubstrings := []string{
+		"short scalar",
+		"never a full sentence",
+		"omit that field entirely",
+		"never write a hedge",
+		"venue",
+		"never generic",
+		"80 characters or fewer",
+		"no trailing period",
+	}
+	for _, tt := range []struct {
+		name   string
+		prompt string
+	}{
+		{"wellness", wellnessPrompt},
+		{"entertainment", entertainmentPrompt},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, want := range wantSubstrings {
+				if !strings.Contains(tt.prompt, want) {
+					t.Errorf("%s prompt missing expected instruction %q:\n%s", tt.name, want, tt.prompt)
+				}
+			}
+		})
+	}
+}

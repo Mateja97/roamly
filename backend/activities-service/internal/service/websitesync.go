@@ -45,7 +45,37 @@ type extraction struct {
 	schema map[string]any
 }
 
-var wellnessPrompt = "Extract this wellness/spa venue's treatments menu (name, duration, price), a short list of practical good-to-know notes for visitors, the typical length of a visit, and the starting price of its cheapest offering."
+// ponytail: the spec's language rule ("generated values render in the app's
+// language... enforcement is at generation time, the prompt receives the
+// target language") is NOT implemented on any of the 5 prompts below (T2,
+// activity-detail-system) — this job (SyncWebsiteContent, cmd/websitesync's
+// batch caller) carries no per-venue target-locale value anywhere today.
+// The one `locale` in this service (internal/tripadvisor's `const locale =
+// "en-US"`) is a fixed outbound API-request parameter for Tripadvisor calls,
+// not a per-venue value this job could reuse — SyncWebsiteContent doesn't
+// even call that package. Activity.Country is a country, not a language;
+// inferring one from the other is a lookup table this task would be
+// inventing, not reusing. Building that inference or plumbing a locale
+// through this batch job is new infrastructure, out of scope for a
+// prompt-wording task per the task's own instruction not to invent one.
+// Recorded as a follow-up in engineering-notes.md; add real enforcement here
+// (thread the locale into extraction.prompt, extend contentkind with a
+// wrong-language check) once this pipeline actually carries a target-locale
+// value to thread through.
+
+// wellnessPrompt (T2, activity-detail-system): rewritten from its original
+// open-ended wording, which was satisfiable by a full-sentence hedge like
+// "Vreme posete nije eksplicitno navedeno." (the production bug this spec
+// fixes) — typical_visit/price_from/treatments[].price are now explicitly
+// scalar (a short duration or price, never a sentence) and good_to_know is
+// explicitly venue-specific (never generic category boilerplate, the spec's
+// other reported failure: sport-equipment text on a spa page). T1's
+// contentkind.MatchesDenylist guard on the write path still catches whatever
+// slips past this wording — this is the generation-time half of the
+// defense-in-depth, not a replacement for it.
+var wellnessPrompt = "Extract this wellness/spa venue's treatments menu (name, duration, price). " +
+	"For typical_visit, price_from, and each treatment's price: answer with a short scalar only — a duration or starting price in 4 words or fewer (e.g. \"60-90 min\", \"from €25\"), never a full sentence. If the venue's page doesn't state a value, omit that field entirely — never write a hedge like \"not specified\", \"not available\", or an equivalent phrase in any language. " +
+	"For good_to_know, list only practical facts specific to this venue, drawn from its own page — never generic advice about this category of venue in general (for example, do not mention typical spa/wellness equipment unless this page specifically describes it). Each item must be a short phrase of 80 characters or fewer with no trailing period."
 
 var wellnessSchema = map[string]any{
 	"type": "object",
@@ -67,7 +97,12 @@ var wellnessSchema = map[string]any{
 	},
 }
 
-var entertainmentPrompt = "Extract this venue's upcoming shows/events (date, title, time or price), a short list of practical good-to-know notes for visitors, the typical length of a show, and the starting ticket price."
+// entertainmentPrompt (T2, activity-detail-system): same rewrite as
+// wellnessPrompt above, for the same reason — typical_show_length/price_from
+// are now explicitly scalar, good_to_know is now explicitly venue-specific.
+var entertainmentPrompt = "Extract this venue's upcoming shows/events (date, title, time or price). " +
+	"For typical_show_length and price_from: answer with a short scalar only — a duration or starting price in 4 words or fewer (e.g. \"2 h 30 min\", \"from €8\"), never a full sentence. If the venue's page doesn't state a value, omit that field entirely — never write a hedge like \"not specified\", \"not available\", or an equivalent phrase in any language. " +
+	"For good_to_know, list only practical facts specific to this venue, drawn from its own page — never generic advice about this category of venue in general. Each item must be a short phrase of 80 characters or fewer with no trailing period."
 
 var entertainmentSchema = map[string]any{
 	"type": "object",
