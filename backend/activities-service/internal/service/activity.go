@@ -24,6 +24,7 @@ import (
 	"activities-service/internal/tripadvisor"
 	"activities-service/internal/tripadvisormap"
 
+	"backend/shared/contentkind"
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
 )
@@ -307,30 +308,51 @@ func validatePoint(p *activitiessvc.Point) error {
 // ValidateDetails rejects a details payload whose fields don't match its
 // category's shape (T2), e.g. `cuisine` set on a CategorySport row. An
 // empty payload ("" or "{}") is always valid regardless of category — a
-// category with no detail data yet is the common case, not an error.
-// Called from Create and Update (below) — the write path this validator
-// was written ahead of in T1.
-func ValidateDetails(category activitiessvc.Category, details json.RawMessage) error {
+// category with no detail data yet is the common case, not an error, and is
+// returned unchanged. Called from Create and Update (below) — the write path
+// this validator was written ahead of in T1.
+//
+// Returns the payload to actually persist: validateExtraFields (T1) clears
+// any field matching the placeholder denylist on the decoded struct rather
+// than rejecting the whole write, so the cleared struct is re-marshaled here
+// and handed back — callers must persist this return value, not their
+// original details, or a cleared field would silently not take effect.
+func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (json.RawMessage, error) {
 	if len(bytes.TrimSpace(details)) == 0 {
-		return nil
+		return details, nil
 	}
 	target, err := detailsTarget(category)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(details))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(target); err != nil {
-		return fmt.Errorf("%w: details do not match category %q: %s", sharederrors.ErrInvalidInput, category, err)
+		return nil, fmt.Errorf("%w: details do not match category %q: %s", sharederrors.ErrInvalidInput, category, err)
 	}
-	return validateExtraFields(target)
+	if err := validateExtraFields(target); err != nil {
+		return nil, err
+	}
+	cleaned, err := json.Marshal(target)
+	if err != nil {
+		return nil, fmt.Errorf("re-encoding validated details: %w", err)
+	}
+	return cleaned, nil
 }
 
 // validateExtraFields runs semantic checks the strict decode above can't
 // express structurally: action_url (T7, 8 categories) must be an absolute
-// http(s) URL, Art's year must be a plausible 4-digit year, and opening_hours
+// http(s) URL, Art's year must be a plausible 4-digit year, opening_hours
 // (T1, the 7 categories that already show an hours chip) must be a
-// well-formed weekly schedule.
+// well-formed weekly schedule, and (T1) every generated free-text field
+// named in the spec's kind-declarations table — typical_visit, price_from,
+// treatments[].price, good_to_know[], vibe, plus Entertainment's
+// typical_show_length (same website-sourced hedge risk as its sibling
+// price_from, not separately named in the table but present in the same
+// struct) — is cleared to empty when it matches contentkind's placeholder
+// denylist. A denylist match never fails the whole request: only that field
+// is blanked, per the spec's "the backend refuses to write a denylisted
+// value" rule (the field is stored empty instead).
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
@@ -339,6 +361,7 @@ func validateExtraFields(target any) error {
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.BarDetails:
+		clearDenylisted(&t.Vibe)
 		if err := validateActionURL(t.ActionURL); err != nil {
 			return err
 		}
@@ -350,6 +373,9 @@ func validateExtraFields(target any) error {
 			return err
 		}
 		return validateOpeningHours(t.OpeningHours)
+	case *activitiessvc.NatureDetails:
+		dropDenylisted(&t.GoodToKnow)
+		return nil
 	case *activitiessvc.SportDetails:
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.CultureDetails:
@@ -366,14 +392,39 @@ func validateExtraFields(target any) error {
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.WellnessDetails:
+		clearDenylisted(&t.TypicalVisit)
+		clearDenylisted(&t.PriceFrom)
+		dropDenylisted(&t.GoodToKnow)
+		for i := range t.Treatments {
+			clearDenylisted(&t.Treatments[i].Price)
+		}
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.EntertainmentDetails:
+		clearDenylisted(&t.PriceFrom)
+		clearDenylisted(&t.TypicalShowLength)
+		dropDenylisted(&t.GoodToKnow)
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.ShoppingDetails:
 		return validateOpeningHours(t.OpeningHours)
 	default:
 		return nil
 	}
+}
+
+// clearDenylisted blanks *s in place when it matches contentkind's
+// placeholder denylist (T1) — the field is stored empty, never the
+// denylisted text, and the rest of the payload still writes.
+func clearDenylisted(s *string) {
+	if contentkind.MatchesDenylist(*s) {
+		*s = ""
+	}
+}
+
+// dropDenylisted removes denylisted entries from a generated string slice in
+// place (T1), leaving legitimate entries untouched — the []string sibling of
+// clearDenylisted, applied per-item.
+func dropDenylisted(items *[]string) {
+	*items = slices.DeleteFunc(*items, contentkind.MatchesDenylist)
 }
 
 // validateActionURL rejects a non-nil action_url that isn't an absolute
@@ -801,8 +852,8 @@ func (a *Activities) Create(ctx context.Context, in activitiessvc.NewActivity) (
 		return activitiessvc.Activity{}, fmt.Errorf("%w: unknown status %q", sharederrors.ErrInvalidInput, newStatus)
 	}
 
-	details := normalizeDetails(in.Details)
-	if err := ValidateDetails(in.Category, details); err != nil {
+	details, err := ValidateDetails(in.Category, normalizeDetails(in.Details))
+	if err != nil {
 		return activitiessvc.Activity{}, err
 	}
 
@@ -847,12 +898,11 @@ func (a *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 	}
 
 	if patch.Details != nil {
-		normalized := normalizeDetails(*patch.Details)
-		patch.Details = &normalized
-
-		if err := ValidateDetails(category, normalized); err != nil {
+		cleaned, err := ValidateDetails(category, normalizeDetails(*patch.Details))
+		if err != nil {
 			return activitiessvc.Activity{}, err
 		}
+		patch.Details = &cleaned
 	}
 
 	if patch.Subcategory != nil && !activitiessvc.ValidSubcategory(category, *patch.Subcategory) {

@@ -528,7 +528,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 			if len(bytes.TrimSpace(a.Details)) == 0 || string(a.Details) == "{}" {
 				continue
 			}
-			if err := service.ValidateDetails(a.Category, a.Details); err != nil {
+			if _, err := service.ValidateDetails(a.Category, a.Details); err != nil {
 				t.Errorf("activity %q (category %s) has details that fail ValidateDetails: %v", a.Title, a.Category, err)
 				continue
 			}
@@ -577,7 +577,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 			if a.Category == activitiessvc.CategoryArt && (payload.Year == nil || *payload.Year == 0) {
 				t.Errorf("activity %q (Art) missing year after migration 0009", a.Title)
 			}
-			if err := service.ValidateDetails(a.Category, a.Details); err != nil {
+			if _, err := service.ValidateDetails(a.Category, a.Details); err != nil {
 				t.Errorf("activity %q (category %s): ValidateDetails failed after 0009 backfill: %v", a.Title, a.Category, err)
 			}
 		}

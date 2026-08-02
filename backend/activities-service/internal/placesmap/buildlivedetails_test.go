@@ -104,7 +104,7 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 			if tt.cat == activitiessvc.CategoryToursExperiences {
 				return
 			}
-			if err := service.ValidateDetails(tt.cat, raw); err != nil {
+			if _, err := service.ValidateDetails(tt.cat, raw); err != nil {
 				t.Errorf("%s: ValidateDetails(%s) = %v", tt.cat, raw, err)
 			}
 		})

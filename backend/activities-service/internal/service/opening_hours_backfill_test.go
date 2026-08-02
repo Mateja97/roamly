@@ -88,7 +88,7 @@ func TestBackfillMigration_OpeningHoursValid(t *testing.T) {
 			t.Errorf("title %q from migration has no entry in backfillTitleCategory", title)
 			continue
 		}
-		if err := ValidateDetails(cat, json.RawMessage(jsonPayload)); err != nil {
+		if _, err := ValidateDetails(cat, json.RawMessage(jsonPayload)); err != nil {
 			t.Errorf("title %q: opening_hours failed ValidateDetails: %v", title, err)
 		}
 	}
