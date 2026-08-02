@@ -92,9 +92,22 @@ func TestIsValidPhrase(t *testing.T) {
 	}{
 		{"exactly at char limit", eightyChars, true},
 		{"one char over limit", eightyChars + "1", false},
-		{"terminal period rejected", "Free parking on site.", false},
+		// T11: brought in line with fieldKind.ts's T9-round-3 fix — a real
+		// short phrase ending in a period is valid; one trailing terminal
+		// punctuation char is stripped for the length check only.
+		{"terminal period valid, punctuation kept in measurement only", "Free parking on site.", true},
+		{"terminal exclamation valid", "Wow!", true},
 		{"no terminal punctuation", "Free parking on site", true},
 		{"long word count is fine for phrase", "one two three four five six seven eight", true},
+		// The strip only ever removes one char — a genuinely long,
+		// multi-clause sentence still exceeds the cap after stripping.
+		{"long sentence still rejected after the strip", eightyChars + "1.", false},
+		{"exactly at char limit plus stripped punctuation", eightyChars + ".", true},
+		// A value that's nothing but terminal punctuation once trimmed has
+		// no content — the single-char strip alone wouldn't catch "...".
+		{"punctuation-only rejected", "...", false},
+		{"single period rejected", ".", false},
+		{"whitespace-padded punctuation-only rejected", "  !  ", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

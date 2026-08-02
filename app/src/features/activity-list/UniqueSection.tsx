@@ -49,14 +49,20 @@ type UniqueSectionProps = { data: UniqueSectionData | undefined };
 // data for it (the `undefined` case, decided upstream in activityDetailConfig).
 export function UniqueSection({ data }: UniqueSectionProps) {
   if (!data) return null;
-  // "duration" density filters name-absent rows at render time (see below),
-  // which the other shapes' upstream callers already do before ever
-  // constructing `data` — so this is the one shape that can still reach here
-  // with zero rows to show. 0 survivors omits the section and its heading,
-  // same as every other shape's "0 items" case.
+  // design-spec.md's degradation table: "List row, name absent → drop the
+  // whole row — a price with nothing to price is not a row." Filtered at
+  // render time (see below) for every list shape, since the upstream
+  // callers that build `data` don't all defend against it — T11 round 2:
+  // `nameprice` (Popular dishes/On the bar) and `dateblock` (title) had the
+  // same gap the `duration` density (Treatments) was already closed for. 0
+  // survivors omits the section and its heading entirely, same as every
+  // other shape's "0 items" case.
+  const isEmptyNamePriceList = data.shape === 'nameprice' && data.items.every((item) => !item.name?.trim());
+  const isEmptyDateBlockList =
+    data.shape === 'schedule' && data.density === 'dateblock' && data.rows.every((row) => !row.title?.trim());
   const isEmptyDurationList =
     data.shape === 'schedule' && data.density === 'duration' && data.rows.every((row) => !row.name);
-  if (isEmptyDurationList) return null;
+  if (isEmptyNamePriceList || isEmptyDateBlockList || isEmptyDurationList) return null;
 
   return (
     <View style={styles.section}>
@@ -66,15 +72,20 @@ export function UniqueSection({ data }: UniqueSectionProps) {
 
       {data.shape === 'nameprice' && (
         <View>
-          {data.items.map((item, i) => (
-            <View
-              key={item.name}
-              style={[styles.nameRow, i > 0 && styles.hairlineTop]}
-            >
-              <Text style={styles.rowName}>{item.name}</Text>
-              <Text style={styles.rowPrice}>{item.price}</Text>
-            </View>
-          ))}
+          {/* design-spec.md's List rows "name absent drops the row" rule —
+              a `{name: '', price: '€12'}` row (a leaked scrape gap) must not
+              render headless. */}
+          {data.items
+            .filter((item) => Boolean(item.name?.trim()))
+            .map((item, i) => (
+              <View
+                key={item.name}
+                style={[styles.nameRow, i > 0 && styles.hairlineTop]}
+              >
+                <Text style={styles.rowName}>{item.name}</Text>
+                <Text style={styles.rowPrice}>{item.price}</Text>
+              </View>
+            ))}
         </View>
       )}
 
@@ -228,36 +239,47 @@ export function UniqueSection({ data }: UniqueSectionProps) {
 
       {data.shape === 'schedule' && data.density === 'dateblock' && (
         <View style={styles.dateBlockList}>
-          {data.rows.map((row, i) => (
-            <View key={i} style={styles.dateBlockCard}>
-              <LinearGradient
-                colors={colors.surfaceGradient}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              />
-              {row.date ? (
-                <View style={styles.dateBlockDate}>
-                  {row.day ? (
-                    <Text style={styles.dateBlockDay}>{row.day}</Text>
-                  ) : null}
-                  <Text style={styles.dateBlockNum} numberOfLines={1}>
-                    {row.date}
-                  </Text>
-                </View>
-              ) : null}
-              <View style={styles.dateBlockBody}>
-                <Text style={styles.dateBlockTitle}>{row.title}</Text>
-                {row.subline ? (
-                  <Text style={styles.dateBlockSubline}>{row.subline}</Text>
+          {/* design-spec.md's List rows "name absent drops the row" rule,
+              applied to this density's name-equivalent field (`title`) — an
+              upcoming show with no title is a headless card, not a row. */}
+          {data.rows
+            .filter((row) => Boolean(row.title?.trim()))
+            .map((row, i) => (
+              <View key={i} style={styles.dateBlockCard}>
+                <LinearGradient
+                  colors={colors.surfaceGradient}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+                />
+                {row.date ? (
+                  <View style={styles.dateBlockDate}>
+                    {row.day ? (
+                      <Text style={styles.dateBlockDay}>{row.day}</Text>
+                    ) : null}
+                    <Text style={styles.dateBlockNum} numberOfLines={1}>
+                      {row.date}
+                    </Text>
+                  </View>
                 ) : null}
+                <View style={styles.dateBlockBody}>
+                  {/* T11: a scalar-valid but unparseable date (e.g. "TBA")
+                      renders here instead of being crushed into the numeral
+                      column above, which stays empty for this row. */}
+                  {row.dateLabel ? (
+                    <Text style={styles.dateBlockLabel}>{row.dateLabel}</Text>
+                  ) : null}
+                  <Text style={styles.dateBlockTitle}>{row.title}</Text>
+                  {row.subline ? (
+                    <Text style={styles.dateBlockSubline}>{row.subline}</Text>
+                  ) : null}
+                </View>
+                <ChevronRight
+                  size={18}
+                  color={colors.primary}
+                  strokeWidth={1.75}
+                />
               </View>
-              <ChevronRight
-                size={18}
-                color={colors.primary}
-                strokeWidth={1.75}
-              />
-            </View>
-          ))}
+            ))}
         </View>
       )}
     </View>
@@ -486,6 +508,14 @@ const styles = StyleSheet.create({
   dateBlockBody: {
     flex: 1,
     gap: space[1],
+  },
+  // T11: same muted-overline treatment as the structured `dateBlockDay` —
+  // an unstructured fallback label reads the same, just in the row body
+  // instead of the tight numeral column.
+  dateBlockLabel: {
+    fontSize: fontSize.xs,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
   },
   dateBlockTitle: {
     fontSize: fontSize.sm,

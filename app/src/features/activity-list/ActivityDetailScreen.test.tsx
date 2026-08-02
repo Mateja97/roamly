@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react-native';
 import { AccessibilityInfo, Linking, Modal, Share, StyleSheet } from 'react-native';
 import type { Activity } from '../../api/activities';
@@ -426,8 +427,9 @@ describe('ActivityDetailScreen', () => {
         />,
       );
 
-      expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
-      fireEvent.press(screen.getByRole('button', { name: 'Get directions' }));
+      const footer = within(screen.getByTestId('activity-detail-footer'));
+      expect(footer.getByRole('button', { name: 'Share' })).toBeTruthy();
+      fireEvent.press(footer.getByRole('button', { name: 'Get directions' }));
 
       await waitFor(() =>
         expect(openURLSpy).toHaveBeenCalledWith(
@@ -481,7 +483,9 @@ describe('ActivityDetailScreen', () => {
         />,
       );
 
-      fireEvent.press(screen.getByRole('button', { name: 'Share' }));
+      fireEvent.press(
+        within(screen.getByTestId('activity-detail-footer')).getByRole('button', { name: 'Share' }),
+      );
       await waitFor(() => expect(shareSpy).toHaveBeenCalled());
       shareSpy.mockRestore();
     });
@@ -738,7 +742,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Entertainment')).toBeTruthy();
       expect(screen.getByText('Cinema')).toBeTruthy();
       expect(screen.getByText('Dorćol')).toBeTruthy();
-      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(screen.getByText('from EUR8')).toBeTruthy();
       expect(screen.queryByText(`${entertainment.distance_km.toFixed(1)} km away`)).toBeNull();
     });
 
@@ -767,7 +771,7 @@ describe('ActivityDetailScreen', () => {
       );
       expect(screen.getByText('Entertainment')).toBeTruthy();
       expect(screen.getByText('Dorćol')).toBeTruthy();
-      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(screen.getByText('from EUR8')).toBeTruthy();
       expect(
         screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
       ).toBeTruthy();
@@ -793,7 +797,7 @@ describe('ActivityDetailScreen', () => {
       );
       expect(screen.getByText('Entertainment')).toBeTruthy();
       expect(screen.getByText('Dorćol')).toBeTruthy();
-      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(screen.getByText('from EUR8')).toBeTruthy();
       expect(
         screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
       ).toBeTruthy();
@@ -819,7 +823,7 @@ describe('ActivityDetailScreen', () => {
       );
       expect(screen.getByText('Entertainment')).toBeTruthy();
       expect(screen.getByText('Cinema')).toBeTruthy();
-      expect(screen.getByText('EUR8')).toBeTruthy();
+      expect(screen.getByText('from EUR8')).toBeTruthy();
       expect(screen.queryByText('Stari Grad Downtown')).toBeNull();
       expect(
         screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
@@ -1087,8 +1091,9 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Cost')).toBeTruthy();
       expect(screen.getByText('Good to know')).toBeTruthy();
       expect(screen.getByText('Bring water')).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Get directions' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
+      const footer = within(screen.getByTestId('activity-detail-footer'));
+      expect(footer.getByRole('button', { name: 'Get directions' })).toBeTruthy();
+      expect(footer.getByRole('button', { name: 'Share' })).toBeTruthy();
       // No status chip for Nature (venue type has no open/closed state).
       expect(screen.queryByText('Open')).toBeNull();
       expect(screen.queryByText('Closed')).toBeNull();
@@ -1371,6 +1376,11 @@ describe('ActivityDetailScreen', () => {
           ...placesActivity,
           rating: 4.1,
           review_count: 4,
+          // T11: the reviews section (and its score header) only renders
+          // once settled when a maps link is present (compliance) — see
+          // "omits the reviews section entirely..." below for the case
+          // where it's genuinely absent.
+          google_maps_uri: 'https://maps.google.com/x',
           google_reviews: Array.from({ length: 4 }, (_, i) => ({
             authorAttribution: { displayName: `Reviewer ${i}`, uri: `https://maps.google.com/contrib/${i}` },
             rating: 5,
@@ -2249,8 +2259,9 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('On the bar')).toBeTruthy();
       expect(screen.getByText('Flat white')).toBeTruthy();
       expect(screen.getByText('€2.80')).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Get directions' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Share' })).toBeTruthy();
+      const footer = within(screen.getByTestId('activity-detail-footer'));
+      expect(footer.getByRole('button', { name: 'Get directions' })).toBeTruthy();
+      expect(footer.getByRole('button', { name: 'Share' })).toBeTruthy();
 
       // Promoted slot: description renders above the stat grid.
       const tree = JSON.stringify(screen.toJSON());
@@ -2295,6 +2306,174 @@ describe('ActivityDetailScreen', () => {
         render(<ActivityDetailScreen activity={a} showDistance onBack={jest.fn()} />),
       ).not.toThrow();
     });
+  });
+
+  // T11's cross-cutting composition smoke test: all 13 categories render
+  // without crashing given three payload shapes. The "fully-empty" shape is
+  // already proven above (T5's own smoke test, `minimalDetailsByCategory`) —
+  // this adds the other two the task names: fully-populated (every field
+  // filled with a shape-valid value) and every generated field replaced with
+  // a denylist string (proving the absence rule degrades every category to
+  // "no crash, content omitted" rather than throwing).
+  describe('every category renders without crashing given full data or an all-denylisted payload (T11)', () => {
+    const fullDetailsByCategory: Record<Category, Activity['details']> = {
+      restaurants: {
+        category: 'restaurants',
+        cuisine: 'Italian',
+        price_tier: '€€',
+        hours: '9am–10pm',
+        open_status: 'Open',
+        popular_dishes: [{ name: 'Pasta', price: '€12' }],
+        action_url: 'https://example.com/book',
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '09:00', close: '22:00' }] },
+      },
+      bars: {
+        category: 'bars',
+        vibe: 'Cozy',
+        happy_hour_window: '5–7pm',
+        opens_time: '18:00',
+        signature_pours: ['Old Fashioned'],
+        action_url: 'https://example.com/menu',
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '18:00', close: '02:00' }] },
+      },
+      cafes: {
+        category: 'cafes',
+        known_for_brew: 'Espresso',
+        wifi_quality: 'Fast',
+        hours: '8am–6pm',
+        on_the_bar: [{ name: 'Latte', price: '€3' }],
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '08:00', close: '18:00' }] },
+      },
+      nightlife: {
+        category: 'nightlife',
+        entry_price: '€10',
+        dress_code: 'Smart casual',
+        opens_time: '22:00',
+        open_tonight: true,
+        lineup: [{ time: '23:00', act: 'DJ Ana', stage: 'Main' }],
+        action_url: 'https://example.com/guestlist',
+        venue_type: 'Club',
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'friday', open: '22:00', close: '06:00' }] },
+      },
+      nature: {
+        category: 'nature',
+        time_to_spend: '2 h',
+        best_time: 'Morning',
+        cost: 'Free',
+        good_to_know: ['Bring water'],
+      },
+      sport: {
+        category: 'sport',
+        difficulty: 3,
+        difficulty_inferred: false,
+        effort_level: 'Moderate',
+        duration: '1 h',
+        gear: 'Helmet',
+        what_to_bring: ['Water bottle'],
+        action_url: 'https://example.com/book',
+        discipline: 'Climbing',
+      },
+      kids: { category: 'kids', age_range: '3–10', facilities: ['Restrooms'] },
+      culture: {
+        category: 'culture',
+        venue_type: 'Museum',
+        ticket_price: '€8',
+        hours: '10am–6pm',
+        now_showing: { title: 'New exhibit', description: 'A great show' },
+        action_url: 'https://example.com/tickets',
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '10:00', close: '18:00' }] },
+      },
+      art: {
+        category: 'art',
+        venue_type: 'Gallery',
+        ticket_price: '€5',
+        hours: '10am–5pm',
+        artwork: { artist: 'Ana', work: 'Untitled', medium: 'Oil' },
+        current_exhibition: { title: 'Spring show', description: 'A colorful exhibit' },
+        action_url: 'https://example.com/tickets',
+        year: 2023,
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '10:00', close: '17:00' }] },
+      },
+      wellness: {
+        category: 'wellness',
+        treatments: [{ item: 'Massage', duration: '60 min', price: '€40' }],
+        external_booking_note: 'Book online',
+        action_url: 'https://example.com/wellness',
+        venue_type: 'Spa',
+        typical_visit: '1 h',
+        price_from: '€40',
+        good_to_know: ['Bring a towel'],
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '09:00', close: '20:00' }] },
+      },
+      entertainment: {
+        category: 'entertainment',
+        genre: 'Comedy',
+        neighborhood: 'Dorćol',
+        upcoming_shows: [{ date: '2026-09-01', title: 'Live show', time_or_price: '€15' }],
+        action_url: 'https://example.com/tickets',
+        typical_show_length: '2 h',
+        price_from: '€8',
+        good_to_know: ['Arrive early'],
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '19:00', close: '23:00' }] },
+      },
+      shopping: {
+        category: 'shopping',
+        venue_type: 'Mall',
+        best_day: 'Saturday',
+        hours: '10am–9pm',
+        what_youll_find: ['Clothing'],
+        opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '10:00', close: '21:00' }] },
+      },
+      tours_experiences: {
+        category: 'tours_experiences',
+        duration: '3 h',
+        group_size: 'Up to 10',
+        languages: 'EN, DE',
+        difficulty_level: 'Easy',
+        included: ['Licensed guide'],
+        not_included: ['Lunch'],
+        meeting_point: 'Meet at the fountain in the main square.',
+        itinerary: ['Old town square'],
+      },
+    };
+
+    // Deep-maps every string leaf (except the `category` discriminant, which
+    // would break the union tag) to a denylist string — one generic helper
+    // instead of 13 hand-written poisoned fixtures, reused across every
+    // category's nested arrays/objects (treatments, now_showing, artwork…).
+    function poisonStrings<T>(value: T): T {
+      if (typeof value === 'string') return 'not specified' as unknown as T;
+      if (Array.isArray(value)) return value.map((v) => poisonStrings(v)) as unknown as T;
+      if (value && typeof value === 'object') {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value)) {
+          out[k] = k === 'category' ? v : poisonStrings(v);
+        }
+        return out as T;
+      }
+      return value;
+    }
+
+    it.each(CATEGORY_OPTIONS.map((option) => option.value))('renders %s without crashing (fully-populated)', (category) => {
+      const a: Activity = { ...activity, category, details: fullDetailsByCategory[category] };
+      expect(() =>
+        render(<ActivityDetailScreen activity={a} showDistance onBack={jest.fn()} />),
+      ).not.toThrow();
+    });
+
+    it.each(CATEGORY_OPTIONS.map((option) => option.value))(
+      'renders %s without crashing (every generated field denylisted)',
+      (category) => {
+        const a: Activity = {
+          ...activity,
+          category,
+          details: poisonStrings(fullDetailsByCategory[category]),
+        };
+        expect(() =>
+          render(<ActivityDetailScreen activity={a} showDistance onBack={jest.fn()} />),
+        ).not.toThrow();
+      },
+    );
   });
 
   // T5: "Every category is wired to render a reviews section via T4's
@@ -2432,9 +2611,10 @@ describe('ActivityDetailScreen', () => {
 
     it('renders the bottom bar as a disabled "Check availability" CTA (no backing action_url field on this category)', () => {
       render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
-      const cta = screen.getByRole('button', { name: 'Check availability' });
+      const footer = within(screen.getByTestId('activity-detail-footer'));
+      const cta = footer.getByRole('button', { name: 'Check availability' });
       expect(cta.props.accessibilityState.disabled).toBe(true);
-      expect(screen.getByRole('button', { name: 'Directions' })).toBeTruthy();
+      expect(footer.getByRole('button', { name: 'Directions' })).toBeTruthy();
     });
 
     it('renders no reviews section and no attribution plate for the full-data composition either (still no provider)', () => {
@@ -2466,7 +2646,9 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Meets 0.4 km away')).toBeTruthy();
       expect(screen.getByText(noDetails.description)).toBeTruthy();
       expect(screen.getByTestId('activity-detail-map-image')).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Directions' })).toBeTruthy();
+      expect(
+        within(screen.getByTestId('activity-detail-footer')).getByRole('button', { name: 'Directions' }),
+      ).toBeTruthy();
 
       // No level chip, no stat grid, no unique-section content.
       expect(screen.queryByText('Duration')).toBeNull();
@@ -2487,5 +2669,293 @@ describe('ActivityDetailScreen', () => {
       ).not.toThrow();
       expect(screen.getByText(bare.title)).toBeTruthy();
     });
+  });
+
+  // T11: design-spec.md's "Action chips" slot (§B2) — wired into the
+  // canonical order for the first time this task (previously built, T4, but
+  // never called from any screen composition). Sourced from the same fields
+  // the bottom bar/generic actions already use.
+  describe('Action chips wired into the composition (T11)', () => {
+    it('sources Directions (valid coordinates) + Website (action_url) + Share; omits Call (no Tripadvisor phone)', () => {
+      const restaurant: Activity = {
+        ...activity,
+        details: { category: 'restaurants', action_url: 'https://example.com/book' },
+      };
+      render(<ActivityDetailScreen activity={restaurant} showDistance onBack={jest.fn()} />);
+      const chips = within(screen.getByTestId('activity-detail-action-chips'));
+      expect(chips.getByRole('button', { name: 'Directions' })).toBeTruthy();
+      expect(chips.getByRole('button', { name: 'Website' })).toBeTruthy();
+      expect(chips.getByRole('button', { name: 'Share' })).toBeTruthy();
+      expect(chips.queryByRole('button', { name: 'Call' })).toBeNull();
+    });
+
+    it('sources Call from a Tripadvisor row\'s phone, never a Website chip pointing at tripadvisor.web_url', () => {
+      const tripadvisorRow: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 10,
+            web_url: 'https://tripadvisor.example/place',
+            phone: '+381 11 234 5678',
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={tripadvisorRow} showDistance onBack={jest.fn()} />);
+      const chips = within(screen.getByTestId('activity-detail-action-chips'));
+      expect(chips.getByRole('button', { name: 'Directions' })).toBeTruthy();
+      expect(chips.getByRole('button', { name: 'Call' })).toBeTruthy();
+      expect(chips.getByRole('button', { name: 'Share' })).toBeTruthy();
+      expect(chips.queryByRole('button', { name: 'Website' })).toBeNull();
+    });
+
+    it('omits the Directions chip when the activity has no valid coordinates (Share still renders)', () => {
+      const noLocation: Activity = { ...activity, location: { lat: 0, lng: 0 } };
+      render(<ActivityDetailScreen activity={noLocation} showDistance onBack={jest.fn()} />);
+      const chips = within(screen.getByTestId('activity-detail-action-chips'));
+      expect(chips.queryByRole('button', { name: 'Directions' })).toBeNull();
+      expect(chips.getByRole('button', { name: 'Share' })).toBeTruthy();
+    });
+  });
+
+  // T11 (T9 round-3 follow-up): a price-shaped stat chip's raw value can be
+  // a bare, unit-less number ("500") — fine in the grid (its own "Price
+  // from" label sits right above it), context-free once it's the lone
+  // survivor folded into the meta line with no label at all.
+  describe('Wellness bare-number meta-line fold carries a unit prefix (T11)', () => {
+    it('folds a bare price_from value into the meta line as "from 500", not the bare number', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '500' },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      // MetaLine renders each item as its own <Text> node (separator is a
+      // sibling node, not part of the same string) — assert the folded
+      // item's own text directly, same pattern the Bars/Cafés composition
+      // tests above use.
+      expect(screen.getByText('from 500')).toBeTruthy();
+      expect(screen.queryByText('500')).toBeNull();
+    });
+
+    it('does not double the prefix when the raw value already arrives pre-prefixed', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: 'from 500' },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('from 500')).toBeTruthy();
+      expect(screen.queryByText('from from 500')).toBeNull();
+    });
+
+    // T11 round 2: prefixing before MetaLine's own `classifyField` re-check
+    // pushed an already-valid scalar past the 18-char/4-word cap on its
+    // *prefixed* length, dropping legitimate longer prices outright instead
+    // of gaining context. Both exact strings the review probe found broken.
+    it('keeps a longer valid price scalar after the fold prefix ("€1200 per person")', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '€1200 per person' },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('from €1200 per person')).toBeTruthy();
+    });
+
+    it('keeps a longer valid price scalar after the fold prefix ("500 RSD per visit")', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '500 RSD per visit' },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('from 500 RSD per visit')).toBeTruthy();
+    });
+  });
+
+  // T11: design-spec.md's Screen-level/Reviews-slot state rules, exercised
+  // end to end (component-level coverage already exists in
+  // ReviewsSection.test.tsx/DetailSkeletons.test.tsx — these confirm the
+  // real screen wires each state the way the spec describes).
+  describe('Reviews states, end to end (T11)', () => {
+    const placesRow: Activity = {
+      id: 'places-row',
+      title: 'Museum of Contemporary Art',
+      description: '',
+      category: 'culture',
+      location: { lat: 44.8, lng: 20.46 },
+      country: 'Serbia',
+      rating: 0,
+      image_refs: [{ uri: 'https://example.com/culture.jpg' }],
+      tags: [],
+      distance_km: 0.2,
+      details: { category: 'culture' },
+    };
+
+    it('loading: three-review-card skeleton, no premature content', () => {
+      // beforeEach's default mock never resolves getActivity — pending forever.
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+    });
+
+    // T11 round 2: the real compliance gap — the old `detailsPending ||`
+    // escape hatch assumed pending meant "nothing to show yet", which
+    // doesn't hold when the seed/cached payload passed straight into
+    // `activity` already carries reviews before the live merge even starts.
+    // Probe-verified broken before this fix: score+cards+attribution mark
+    // all rendered with no "View on Google Maps" link.
+    it('loading: a pending seed that already carries reviews but no maps link renders neither the skeleton nor the section', () => {
+      const pendingRowWithReviews: Activity = {
+        ...placesRow,
+        rating: 4.3,
+        review_count: 9,
+        google_reviews: [
+          {
+            authorAttribution: { displayName: 'Nina', uri: 'https://maps.google.com/contrib/1' },
+            rating: 5,
+            text: 'Wonderful collection.',
+            date: '2026-06-01T00:00:00Z',
+          },
+        ],
+        google_maps_uri: undefined,
+      };
+      // beforeEach's default mock never resolves getActivity — this is the
+      // seed render, before any live merge.
+      render(<ActivityDetailScreen activity={pendingRowWithReviews} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByText('Wonderful collection.')).toBeNull();
+      expect(screen.queryByText('9 reviews')).toBeNull();
+      // The rating isn't lost outright — the title-block star carries it,
+      // since the Reviews slot that would otherwise own it is suppressed.
+      expect(screen.getByText('4.3')).toBeTruthy();
+    });
+
+    it('present: score, cards, and attribution all render once settled with a maps link', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesRow,
+          rating: 4.5,
+          review_count: 12,
+          google_reviews: [
+            {
+              authorAttribution: { displayName: 'Nina', uri: 'https://maps.google.com/contrib/1' },
+              rating: 5,
+              text: 'Wonderful collection.',
+              date: '2026-06-01T00:00:00Z',
+            },
+          ],
+          google_maps_uri: 'https://maps.google.com/place/moca',
+        },
+      });
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('12 reviews')).toBeTruthy());
+      expect(screen.getByText('4.5')).toBeTruthy();
+      expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy();
+    });
+
+    it('reviews present, aggregate score absent: cards + attribution render alone — no "0.0", no score header', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesRow,
+          rating: 0,
+          review_count: undefined,
+          google_reviews: [
+            {
+              authorAttribution: { displayName: 'Nina', uri: 'https://maps.google.com/contrib/1' },
+              rating: 5,
+              text: 'Wonderful collection.',
+              date: '2026-06-01T00:00:00Z',
+            },
+          ],
+          google_maps_uri: 'https://maps.google.com/place/moca',
+        },
+      });
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      expect(screen.getByText('Wonderful collection.')).toBeTruthy();
+      expect(screen.queryByText('0.0')).toBeNull();
+      expect(screen.queryByText(/reviews$/)).toBeNull();
+    });
+
+    it('zero reviews: omits the section entirely, no "be the first to review" copy', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: { ...placesRow, rating: 0, review_count: undefined, google_reviews: [], google_maps_uri: undefined },
+      });
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
+      expect(screen.queryByText(/be the first/i)).toBeNull();
+    });
+
+    // T11: real compliance gap found while writing this test — a settled
+    // merge carrying rating/review_count/google_reviews but genuinely no
+    // google_maps_uri used to still render the score header + review cards
+    // with no way to ever link back to Google Maps. Fixed in
+    // `googleReviewsAllowed` (ActivityDetailScreen.tsx) — the whole section
+    // now omits in this exact shape, same silent-degrade rule as the
+    // fetch-failed case, and the title-block star keeps carrying the rating
+    // instead (never losing the number outright).
+    it('compliance: never renders the reviews section when a Google Maps link would be missing, even with rating/reviews present', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesRow,
+          rating: 4.2,
+          review_count: 8,
+          google_reviews: [
+            {
+              authorAttribution: { displayName: 'Nina', uri: 'https://maps.google.com/contrib/1' },
+              rating: 5,
+              text: 'Wonderful collection.',
+              date: '2026-06-01T00:00:00Z',
+            },
+          ],
+          google_maps_uri: undefined,
+        },
+      });
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByText('Wonderful collection.')).toBeNull();
+      expect(screen.queryByText('8 reviews')).toBeNull();
+      // The rating isn't lost outright — the title-block star still carries
+      // it, since the Reviews slot that would otherwise own it is suppressed.
+      expect(screen.getByText('4.2')).toBeTruthy();
+    });
+  });
+
+  // T11: design-spec.md's Field-level absence rule, "Distance is absent" —
+  // never a fake placeholder. The country-substitution behavior itself
+  // (Anywhere scope) predates this pipeline and is already covered above
+  // ("shows the country instead of distance when showDistance is false");
+  // this closes the loop on the spec's own forbidden-placeholder wording.
+  describe('Field-specific absences, end to end (T11)', () => {
+    it('never renders a dash, "? km", or a bare "0" placeholder when distance is unavailable', () => {
+      render(
+        <ActivityDetailScreen
+          activity={{ ...activity, country: 'Serbia' }}
+          showDistance={false}
+          onBack={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('Serbia')).toBeTruthy();
+      expect(screen.queryByText('—')).toBeNull();
+      expect(screen.queryByText('? km')).toBeNull();
+      expect(screen.queryByText('0 km away')).toBeNull();
+      expect(screen.queryByText('0')).toBeNull();
+    });
+
+    // T6's "omits price level from the eyebrow when absent" test (above)
+    // already covers this exact case for a Tripadvisor row with no
+    // `subcategory` — confirmed here as the integration counterpart to
+    // T5's `subtypeLabel`/`metaLineLeadItems` unit tests, not duplicated.
   });
 });

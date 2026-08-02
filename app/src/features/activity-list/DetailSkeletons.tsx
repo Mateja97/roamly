@@ -9,6 +9,25 @@ import type { Category } from './types';
 // Skeleton pulse primitive only (no new pulse/loading mechanism) — this
 // file just fixes where placeholders go and how big they are, per the
 // design spec's geometry table.
+//
+// T11 investigation, no code change: the spec's Screen-level Loading state
+// reads "hero, title, and stat-grid skeletons only." No stat-grid skeleton
+// exists here (an earlier `FactStripSkeleton` + `FACT_STRIP_CHIP_COUNT`
+// table were deleted in T4's own resolve pass, confirmed dead at the time —
+// their render guard could never evaluate true). Re-checked against
+// `backend/activities-service/internal/placesmap/placesmap.go`'s
+// `BuildLiveDetails` (the one function that can ever populate a Places-live
+// category's `details` before this screen's stat grid reads it): for every
+// one of the 10 Places-sourced categories, it fills at most one field this
+// screen's `factStripFields` (activityDetailConfig.ts) treats as a stat-grid
+// chip (culture/art/shopping's `venue_type` → the Venue chip; every other
+// category gets none at all). `FactStrip` needs ≥2 valid chips to render a
+// grid at all (1 folds into the meta line, 0 omits) — so a stat-grid
+// skeleton would always resolve to nothing, the exact case this same
+// design rule forbids ("a skeleton that resolves to nothing is worse than a
+// shorter page"). Not reviving `FACT_STRIP_CHIP_COUNT`/`FactStripSkeleton`
+// stays correct, not a gap — recorded here so a future editor doesn't
+// re-litigate T4's deletion from the spec's literal wording alone.
 
 // The 10 Google-Places-sourced categories T1's live mapper covers, mirrored
 // 1:1 (backend/activities-service/internal/placesmap's BuildLiveDetails).
@@ -102,13 +121,16 @@ export function UniqueSectionSkeleton({ category }: { category: Category }) {
 // "Reviews / attribution block" pending state: the Google attribution
 // plate's own card chrome renders for real (so the arriving plate doesn't
 // re-frame itself), with placeholders standing in for its contents — brand
-// mark bar, two review groups (author row + 3-line body), maps-link bar.
-// Two groups, not five: the card promises "reviews are coming", not a count.
+// mark bar, three review groups (author row + 3-line body), maps-link bar.
+// Three groups per the AC's "3 skeleton review cards" — matches
+// `MAX_REVIEW_CARDS` (ActivityDetailScreen.tsx), the cap the real cards land
+// on once settled.
 export function ReviewsSkeleton() {
   return (
     <View testID="reviews-skeleton" style={styles.reviewsCard}>
       <Skeleton width={96} height={18} />
       <ReviewGroupSkeleton />
+      <ReviewGroupSkeleton hairline />
       <ReviewGroupSkeleton hairline />
       <View style={styles.hairlineTop}>
         <Skeleton width={160} height={16} />

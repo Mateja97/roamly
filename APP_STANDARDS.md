@@ -86,6 +86,20 @@ section); these are the implementation-level counterparts:
   Error banner/toast recipe) covers any status the task's `design-spec.md`
   doesn't call out explicitly. It's always available — "no explicit design"
   is never an excuse to swallow an error.
+- **Named exception — reviews:** the activity detail screen's Reviews
+  section is the one deliberate, spec-recorded departure from the baseline
+  above (`docs/superpowers/specs/2026-08-02-activity-detail-system-design.md`'s
+  "Reviews" state table). Google reviews are fetched live on detail open,
+  independently of the rest of the page, and can fail or come back empty on
+  their own — a fetch failure, an unavailable result, or a genuinely
+  missing Google Maps attribution link all omit the section (and the review
+  count, and the maps link) silently, with **no error banner**. A
+  supplementary section failing shouldn't alarm someone reading a venue
+  page, and the reviews section's own compliance rule (never render without
+  being able to link back to Google Maps) already forces the same silent
+  omission in that case anyway. This carve-out is scoped to that one
+  section — every other API failure on this screen (and everywhere else in
+  the app) still follows the baseline above.
 - **Escalate, don't improvise:** if a status code needs something
   structurally different from "show the generic banner" (e.g. `403` should
   block access or redirect, not just toast) and `design-spec.md` is silent
@@ -117,33 +131,51 @@ future initiative, not this doc's job.
 
 ## Activity detail pages — per-category standard
 
-Each of the 12 categories in `BUSINESS_STANDARDS.md` owns its own extra
+Each of the 13 categories in `BUSINESS_STANDARDS.md` owns its own extra
 properties and one unique detail-page section, on top of a shared base
-layout. This is a target standard for when each category's detail page is
-actually built — it does not describe anything implemented today (the
-current `ActivityDetailScreen` is one generic layout for every category).
+layout — implemented, not aspirational: `ActivityDetailScreen.tsx` composes
+every category from one canonical section order plus a single optional
+"promote one slot above the stat grid" per category
+(`activityDetailConfig.ts`'s `bodySectionOrder`), driven by one typed-slot
+library (`FactStrip`/`UniqueSection`/`MetaLine`/`ReviewsSection`/etc., all
+in `src/features/activity-list/`) rather than 13 independently-drifting
+per-category layouts.
 
-Reference design: `Roamly Activity Types.dc.html`, in the claude.ai/design
-project `e93d4e9b-8c28-4bef-971e-aaa37462d1ec` ("Designer Standards
-Request") — mocks up all 12 category detail screens. Pull exact visual
-treatment (colors, spacing, copy) from that file when implementing a
-category, not from the table below.
+Reference design:
+`docs/superpowers/specs/2026-08-02-activity-detail-system-design.md` (the
+data contract — every generated field's `scalar`/`phrase`/`prose` kind and
+its absence rule — the canonical section order, and each category's exact
+composition) plus
+`pipeline/activity-detail-system/design-import/Roamly Activity Detail System.dc.html`
+(the paired visual mockup: exact tokens/spacing for every slot, rendered
+against 13 example venues). Pull exact visual treatment from the `.dc.html`
+file when touching a category's detail screen, composition/kind rules from
+the spec doc — not from the table below, which is a summary.
 
-Shared base layout (every category): hero image, back button, category
-badge, title, rating row, description, bottom action bar (a generic
-Directions/Share action plus one category-specific primary CTA).
+Shared base layout (every category): hero image, back button, action chips
+(Directions/Website/Call/Share/Menu, each present only when its data is),
+title block, meta line (category · subtype · … · distance, one optional
+status/level chip), hours row (when structured hours are usable), stat
+grid, description, unique section, good-to-know, reviews, map, bottom
+action bar (a generic Directions/Share action plus one category-specific
+primary CTA). Every generated field is declared as `scalar`, `phrase`, or
+`prose` and is **omitted, never relocated or placeheld**, when it fails its
+kind's shape or matches the placeholder denylist — see the spec doc's "The
+data contract" section, implemented in `fieldKind.ts`
+(`backend/shared/contentkind` is the same contract's backend half).
 
 | Category | Extra properties | Unique section | Primary CTA |
 |---|---|---|---|
-| Restaurants | cuisine, price tier, hours, open status | Popular dishes (name + price) | Book a table |
+| Restaurants | cuisine, price tier, hours, open status (Tripadvisor-sourced rows carry price level/cuisine in the meta line instead) | Popular dishes (name + price) | Book a table |
 | Bars | vibe, happy-hour window, opens time | Signature pours (pill list) | See menu |
-| Cafés | known-for brew, wifi quality, hours | On the bar (item + price) | Get directions |
-| Nightlife | entry price, dress code, opens time, live "open tonight" status | Tonight lineup (time + act + stage) | Guest list |
+| Cafés | known-for brew, wifi quality, hours | On the bar (item + price); description promoted above the stat grid | Get directions |
+| Nightlife | entry price, dress code, opens time, live "open tonight" status | Tonight lineup (time + act + stage), promoted above the stat grid | Guest list |
 | Nature | time to spend, best time, cost | Good to know (checklist) | Get directions |
-| Sport | difficulty (segmented meter), effort level, duration, gear | What to bring (checklist) | Book session |
-| Kids | age range, facilities | Facilities (icon grid) | Get directions |
-| Culture | venue type, ticket price, hours | Now showing (banner) | Get tickets |
-| Art | venue type, ticket price, hours, artwork attribution (artist/work/medium) | Current exhibition (banner) | Get tickets |
-| Wellness | — | Treatments (item + duration + price), external-booking note | Visit website |
-| Entertainment | genre, neighborhood | Upcoming shows (date + title + time/price) | Get tickets |
-| Shopping | venue type, best day, hours | What you'll find (tag pills) | Get directions |
+| Sport | difficulty (segmented meter, promoted above the stat grid), effort level, duration, gear | What to bring (checklist) | Book session |
+| Kids | age range, facilities | Facilities (icon grid); description promoted above the stat grid | Get directions |
+| Culture | venue type (only when it differs from the subtype), ticket price, hours | Now showing (banner), promoted above the stat grid | Get tickets |
+| Art | ticket price, hours, artwork attribution (artist/work/medium, shown under the title) | Current exhibition (banner), promoted above the stat grid | Get tickets |
+| Wellness | typical visit, price from, hours | Treatments (item + duration + price), good-to-know checklist, external-booking note | Visit website |
+| Entertainment | genre, neighborhood, typical show length, price from, hours | Upcoming shows (date + title + time/price), good-to-know checklist | Get tickets |
+| Shopping | venue type (only when it differs from the subtype), best day, hours | What you'll find (tag pills); description promoted above the stat grid | Get directions |
+| Tours & Experiences | duration, group size, languages, difficulty level (level chip in the meta line, never the difficulty meter) | What's included (✓/✗ checklist), meeting point (address + map), itinerary (numbered stops) — no reviews section (no data source yet) | Check availability |

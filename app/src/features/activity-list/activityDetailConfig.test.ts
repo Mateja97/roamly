@@ -1381,7 +1381,13 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     expect(section.rows[0]).toMatchObject({ day: '', date: '' });
   });
 
-  it('keeps a short unparseable raw date that survives the scalar shape (e.g. "TBA")', () => {
+  // T11 fix: a short unparseable-but-scalar-valid raw date ("TBA") used to
+  // be forced into `date` (the 44px numeral column), which crushed longer
+  // examples of this same shape ("Q4 2026") into a couple of glyphs. It now
+  // goes to `dateLabel` instead — `date`/`day` stay empty, so the row's
+  // structured date-block box omits, and the caller renders `dateLabel` as
+  // an unstructured label in the row body.
+  it('routes a short unparseable raw date to dateLabel, not the numeral column (e.g. "TBA")', () => {
     const activity = baseActivity({
       category: 'entertainment',
       upcoming_shows: [{ date: 'TBA', title: 'Live jazz night' }],
@@ -1389,7 +1395,43 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule')
       throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ day: '', date: 'TBA' });
+    expect(section.rows[0]).toMatchObject({ day: '', date: '', dateLabel: 'TBA' });
+  });
+
+  it('routes a longer unparseable-but-scalar-valid raw date to dateLabel the same way (e.g. "Q4 2026")', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'Q4 2026', title: 'Live jazz night' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ day: '', date: '', dateLabel: 'Q4 2026' });
+  });
+
+  // T11 round 2: a venue that only says "TBA" once tends to say it for both
+  // the date and the showtime/price fields — without the dedup, the row
+  // printed "TBA" twice (dateLabel above the title, subline below it).
+  it('does not repeat the raw date fallback as the subline when both fields carry the same value ("TBA")', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night', time_or_price: 'TBA' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ dateLabel: 'TBA', subline: '' });
+  });
+
+  it('keeps a distinct subline alongside the raw date fallback', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night', time_or_price: 'from €15' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ dateLabel: 'TBA', subline: 'from €15' });
   });
 });
 

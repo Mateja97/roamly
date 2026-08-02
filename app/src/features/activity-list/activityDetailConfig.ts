@@ -41,6 +41,15 @@ export type FactChip = {
   icon: ComponentType<LucideProps>;
   label: string;
   value: string;
+  // design-spec.md's Stat grid degradation rule folds a single surviving
+  // chip's *value* alone into the meta line, dropping `.label` — deliberate
+  // (T4), and most chips read fine bare there ("Fast" for Wifi). A
+  // price-shaped chip's raw value doesn't: T9 round-3 found a real venue
+  // whose folded Wellness "Price from" value rendered as a bare, unlabeled
+  // "500" with no currency/unit. This optional prefix is applied only at
+  // fold time (see ActivityDetailScreen.tsx) — never in the grid, where the
+  // chip's own label already carries the context.
+  foldPrefix?: string;
 };
 
 export type CompactRow = {
@@ -57,6 +66,14 @@ export type CompactRow = {
 export type DateBlockRow = {
   day: string;
   date: string;
+  // T11: a raw `date` that's scalar-valid (passes classifyField, so it's
+  // not denylisted/over-length) but doesn't parse into the structured
+  // day+numeral split — set instead of `date`/`day`, rendered as an
+  // unstructured muted label in the row body rather than crushed into the
+  // 44px-wide numeral column sized for a 1-2 digit day (design.dc.html's
+  // date-block geometry — ~99 of 761 live `upcoming_shows[].date` values
+  // hit exactly this case: e.g. "TBA", "Q4 2026").
+  dateLabel?: string;
   title: string;
   subline: string;
 };
@@ -309,7 +326,7 @@ export function tripadvisorAddressLine(activity: Activity): string | undefined {
 // us a value that's already prefixed — prepending our own "from "/"From "
 // on top would double it. Strip any existing leading "from" (case-
 // insensitive) before either call site adds its own prefix.
-function stripLeadingFrom(value: string): string {
+export function stripLeadingFrom(value: string): string {
   return value.replace(/^from\s+/i, '');
 }
 
@@ -690,13 +707,19 @@ export function weekHoursModalData(activity: Activity): WeekHoursModalData | und
 }
 
 function buildChips(
-  entries: [ComponentType<LucideProps>, string, string | undefined][],
+  entries: [ComponentType<LucideProps>, string, string | undefined, string?][],
 ): FactChip[] {
   return entries
-    .filter((entry): entry is [ComponentType<LucideProps>, string, string] =>
-      Boolean(entry[2]),
+    .filter(
+      (entry): entry is [ComponentType<LucideProps>, string, string, string?] =>
+        Boolean(entry[2]),
     )
-    .map(([icon, label, value]) => ({ icon, label, value }));
+    .map(([icon, label, value, foldPrefix]) => ({
+      icon,
+      label,
+      value,
+      ...(foldPrefix ? { foldPrefix } : {}),
+    }));
 }
 
 // Per-field omission lives here: `buildChips` drops any field with no value,
@@ -794,10 +817,15 @@ export function factStripFields(activity: Activity): FactChip[] {
     case 'kids':
       return [];
     case 'wellness':
+      // T11 (T9 round-3 follow-up): "Price from" gets a `from ` foldPrefix
+      // — a real venue's raw value can be a bare number ("500", no
+      // currency/unit), which reads fine in the grid (the "Price from"
+      // label sits right above it) but not once it's the lone survivor
+      // folded into the meta line with no label at all.
       return withHours(
         buildChips([
           [Clock, 'Typical visit', d.typical_visit],
-          [Euro, 'Price from', d.price_from],
+          [Euro, 'Price from', d.price_from, 'from '],
         ]),
         undefined,
       );
@@ -805,7 +833,7 @@ export function factStripFields(activity: Activity): FactChip[] {
       return withHours(
         buildChips([
           [Clock, 'Typical show', d.typical_show_length],
-          [Euro, 'Price from', d.price_from],
+          [Euro, 'Price from', d.price_from, 'from '],
         ]),
         undefined,
       );
@@ -834,6 +862,15 @@ export function factStripFields(activity: Activity): FactChip[] {
 // screen at numeral size. `scalar` because the field is meant to be a short
 // date; the spec declares no kind for it explicitly. Never throws on
 // unexpected input.
+//
+// T11 fix: a value that passes the scalar check but still doesn't parse
+// (~99 of 761 live rows — e.g. "TBA", "Q4 2026") used to land in this same
+// `date` field, forcing it into the 44px-wide numeral column sized for a
+// 1-2 digit day and getting visually crushed/ellipsized. That fallback now
+// goes to `dateLabel` instead (an unstructured label the caller renders in
+// the row body, not the numeral box) — `date`/`day` stay empty, so the
+// date-block box itself omits entirely for this row, per the spec's own
+// "no fallback forced into a scalar's format" absence reasoning.
 function dateBlockRow(show: {
   date: string;
   title: string;
@@ -850,13 +887,11 @@ function dateBlockRow(show: {
         .toUpperCase();
       date = String(parsed.getDate());
     } catch {
-      // ponytail: Intl unavailable — falls through to the classifyField
+      // ponytail: Intl unavailable — falls through to the dateLabel
       // fallback below, same as an unparseable date.
     }
   }
-  if (!date) {
-    date = classifyField('scalar', show.date) ?? '';
-  }
+  const dateLabel = date ? undefined : classifyField('scalar', show.date);
   // T5 round-3 fix: `time_or_price` is LLM-generated (same field the
   // production-bug report's "Not specified" hedges leaked from on legacy
   // rows — T1 only guards new writes) — run it through `classifyField` like
@@ -868,11 +903,19 @@ function dateBlockRow(show: {
   // hedge this guards against is a denylist hit, which `phrase` catches
   // identically (denylist runs before the kind check) at its more permissive
   // 80-char cap — use `phrase`.
+  const subline = classifyField('phrase', show.time_or_price) ?? '';
   return {
     day,
     date,
+    dateLabel,
     title: show.title,
-    subline: classifyField('phrase', show.time_or_price) ?? '',
+    // T11 round 2: a venue that only says "TBA" once tends to say it for
+    // both the date and the showtime/price — a raw payload with
+    // `time_or_price: "TBA"` alongside an unparseable `date: "TBA"` would
+    // otherwise print the same word twice on one row (the new `dateLabel`
+    // fallback above it, this `subline` below the title). Same word, same
+    // fact — the subline adds nothing once the label already said it.
+    subline: dateLabel && subline === dateLabel ? '' : subline,
   };
 }
 

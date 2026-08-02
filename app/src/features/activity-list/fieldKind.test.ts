@@ -178,3 +178,34 @@ describe('classifyField — denylist, both languages, all kinds', () => {
   });
 });
 
+
+// T11: denylist parity between this file and the backend's
+// `backend/shared/contentkind/contentkind.go` (`denylist` var) — the two are
+// hand-copied independently (different language/repo) from the same spec
+// text, per this file's own header comment. This test owns the parity
+// check (engineer's choice, per product-tasks.md's T11 — could equally live
+// Go-side): it hardcodes the Go list inline and asserts set equality against
+// `PLACEHOLDER_DENYLIST`, so an edit to either list without updating the
+// other fails here rather than silently drifting.
+describe('denylist parity with backend/shared/contentkind', () => {
+  it('matches contentkind.go\'s denylist var exactly (same set, either order)', () => {
+    // keep in sync with backend/shared/contentkind/contentkind.go's `denylist` var
+    const goDenylist = [
+      'not specified',
+      'unspecified',
+      'not available',
+      'n/a',
+      'na',
+      'unknown',
+      'none',
+      '--',
+      '-',
+      'nije navedeno',
+      'nije poznato',
+      'nema podataka',
+      'nepoznato',
+    ];
+    expect(new Set(PLACEHOLDER_DENYLIST)).toEqual(new Set(goDenylist));
+    expect(PLACEHOLDER_DENYLIST).toHaveLength(goDenylist.length);
+  });
+});

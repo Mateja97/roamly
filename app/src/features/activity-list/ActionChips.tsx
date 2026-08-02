@@ -41,6 +41,7 @@ export function ActionChips({ items }: ActionChipsProps) {
 
   return (
     <ScrollView
+      testID="activity-detail-action-chips"
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}

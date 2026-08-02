@@ -104,9 +104,33 @@ func IsValidScalar(s string) bool {
 }
 
 // IsValidPhrase reports whether s satisfies the `phrase` kind's shape rules:
-// at most PhraseMaxChars characters and no terminal ".", "!", or "?".
+// at most PhraseMaxChars characters, once one trailing terminal-punctuation
+// char is stripped for the *measurement only* — the phrase itself is not
+// rejected for carrying that punctuation.
+//
+// T11: brought in line with the app's `fieldKind.ts` (T9 round 3) — a real
+// short phrase legitimately ending in a period ("Reservations required.")
+// was being destructively rejected outright by this package's old rule,
+// which this package's own doc comment names as the app's canonical source
+// of truth; that fix landed client-side only (T9), silently diverging from
+// here and from the Tours & Experiences write path (`dropInvalidPhrases` in
+// activities-service, the only live caller of this function), which kept
+// clearing the identical content the client would now render. One trailing
+// ".", "!", or "?" is stripped before the length check only; a genuinely
+// sentence-shaped value still exceeds PhraseMaxChars after the strip, so the
+// rule's real target (multi-clause sentences) is unaffected. A value that's
+// nothing but terminal punctuation once trimmed (".", "...") has no content
+// at all and is rejected outright — mirrors `fieldKind.ts`'s T9-round-3
+// punctuation-only guard.
 func IsValidPhrase(s string) bool {
-	return utf8.RuneCountInString(s) <= PhraseMaxChars && !hasTerminalPunctuation(s)
+	s = strings.TrimSpace(s)
+	if isAllTerminalPunctuation(s) {
+		return false
+	}
+	if hasTerminalPunctuation(s) {
+		s = s[:len(s)-1] // terminal punctuation is always a single ASCII byte
+	}
+	return utf8.RuneCountInString(s) <= PhraseMaxChars
 }
 
 func hasTerminalPunctuation(s string) bool {
@@ -120,4 +144,19 @@ func hasTerminalPunctuation(s string) bool {
 	default:
 		return false
 	}
+}
+
+// isAllTerminalPunctuation reports whether s (once trimmed) is non-empty and
+// made up entirely of ".", "!", "?" — content-free even though it has no
+// terminal-punctuation *char count* long enough to fail the length check.
+func isAllTerminalPunctuation(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r != '.' && r != '!' && r != '?' {
+			return false
+		}
+	}
+	return true
 }

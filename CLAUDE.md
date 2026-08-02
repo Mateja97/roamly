@@ -11,7 +11,7 @@ web client), and `app/` (React Native + Expo, iOS/Android).
 - `GO_STANDARDS.md` — mandatory Go conventions for `backend/` (layout, errors, logging, config, testing). Read before writing any Go code.
 - `FRONTEND_STANDARDS.md` — React/TypeScript conventions for `frontend/`. Read before writing any frontend code.
 - `APP_STANDARDS.md` — React Native/Expo conventions for `app/`. Read before writing any mobile code.
-- `DESIGN_STANDARDS.md` — the visual design system shared by `frontend/` and `app/` (dark, minimalist, olive-green, premium tokens). Read before writing any frontend or mobile UI.
+- `DESIGN_STANDARDS.md` — the visual design system shared by `frontend/` and `app/` (deep-wine background, gold accents, cream text — a premium palette). Read before writing any frontend or mobile UI.
 - `BUSINESS_STANDARDS.md` — domain rules: the activity category taxonomy and Nearby/Anywhere search-scope behavior. Read before touching activity categories, search-scope logic, or filters in any of `backend/`, `frontend/`, or `app/`.
 
 ## Claude Design project

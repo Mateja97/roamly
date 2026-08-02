@@ -55,23 +55,37 @@ describe('UniqueSectionSkeleton', () => {
   // Every other category's unique-section field is never in T1's live
   // mapper output (design-spec.md rule 2: don't skeleton a guaranteed
   // flash-then-collapse) — cafes/shopping/culture/art/nightlife/wellness/
-  // entertainment/restaurants all render nothing here, not their config
-  // shape.
-  it.each(['cafes', 'shopping', 'culture', 'art', 'nightlife', 'wellness', 'entertainment', 'restaurants'] as const)(
-    'renders nothing for %s (live mapper never fills its unique section)',
-    (category) => {
-      const { toJSON } = render(<UniqueSectionSkeleton category={category} />);
-      expect(toJSON()).toBeNull();
-    },
-  );
+  // entertainment/restaurants/bars/sport/tours_experiences all render
+  // nothing here, not their config shape. T11: this list was missing
+  // `sport`/`bars`/`tours_experiences` — already correctly returning null
+  // (no `UNIQUE_SHAPE_BY_CATEGORY` entry for any of the three), a coverage
+  // gap only, not a behavior gap.
+  it.each([
+    'cafes',
+    'shopping',
+    'culture',
+    'art',
+    'nightlife',
+    'wellness',
+    'entertainment',
+    'restaurants',
+    'bars',
+    'sport',
+    'tours_experiences',
+  ] as const)('renders nothing for %s (live mapper never fills its unique section)', (category) => {
+    const { toJSON } = render(<UniqueSectionSkeleton category={category} />);
+    expect(toJSON()).toBeNull();
+  });
 });
 
 describe('ReviewsSkeleton', () => {
-  it('renders the card chrome with a brand-mark bar and two review groups', () => {
+  // T11 round 2: AC says "3 skeleton review cards" — was 2, unpinned by any
+  // count assertion.
+  it('renders the card chrome with a brand-mark bar and three review groups', () => {
     render(<ReviewsSkeleton />);
     const card = screen.getByTestId('reviews-skeleton');
     expect(card).toBeTruthy();
-    // brand-mark bar + 2 review groups + maps-link wrap = 4 direct children.
-    expect(card.props.children).toHaveLength(4);
+    // brand-mark bar + 3 review groups + maps-link wrap = 5 direct children.
+    expect(card.props.children).toHaveLength(5);
   });
 });
