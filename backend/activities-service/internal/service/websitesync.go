@@ -347,12 +347,13 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	// an explicit -retry-id run (or, for Entertainment, the next 30-day
 	// window), not another automatic try that would reproduce the same
 	// invalid output.
-	if err := ValidateDetails(activity.Category, merged); err != nil {
+	cleaned, err := ValidateDetails(activity.Category, merged)
+	if err != nil {
 		slog.Warn("website sync produced invalid details, skipping write", "activity_id", id, "error", err)
 		return markAttempt()
 	}
 
-	if _, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Details: &merged}); err != nil {
+	if _, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Details: &cleaned}); err != nil {
 		return fmt.Errorf("saving website content for %s: %w", id, err)
 	}
 	return markAttempt()
