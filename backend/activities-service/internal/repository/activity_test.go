@@ -274,3 +274,36 @@ func TestBuildListQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestCanonicalSourceURL(t *testing.T) {
+	const nearby = "https://maps.google.com/?cid=695253290703487434&g_mp=Cilnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLlNlYXJjaE5lYXJieRACGAQgAA"
+	const text = "https://maps.google.com/?cid=695253290703487434&g_mp=Cidnb29nbGUubWFwcy5wbGFjZXMudjEuUGxhY2VzLlNlYXJjaFRleHQQAhgEIAA"
+
+	// The bug: one venue, two Places discovery calls, two source_urls -> two rows.
+	if canonicalSourceURL(nearby) != canonicalSourceURL(text) {
+		t.Errorf("searchNearby and searchText URLs for the same venue must canonicalise equal:\n nearby=%q\n text=%q",
+			canonicalSourceURL(nearby), canonicalSourceURL(text))
+	}
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"g_mp stripped, cid preserved", nearby, "https://maps.google.com/?cid=695253290703487434"},
+		{"g_mp first is still stripped", "https://maps.google.com/?g_mp=X&cid=7", "https://maps.google.com/?cid=7"},
+		{"g_mp mid-query keeps sibling order", "https://x/?a=1&g_mp=X&b=2", "https://x/?a=1&b=2"},
+		{"sole parameter drops the question mark", "https://x/?g_mp=X", "https://x/"},
+		{"tripadvisor URL untouched", "https://www.tripadvisor.com/Restaurant_Review-g294472-d1.html", "https://www.tripadvisor.com/Restaurant_Review-g294472-d1.html"},
+		{"no query string", "https://example.com/venue", "https://example.com/venue"},
+		{"empty stays empty", "", ""},
+		{"g_mp as a substring of another key is kept", "https://x/?not_g_mp=1", "https://x/?not_g_mp=1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := canonicalSourceURL(tt.in); got != tt.want {
+				t.Errorf("canonicalSourceURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
