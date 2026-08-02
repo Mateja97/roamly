@@ -149,6 +149,31 @@ func TestSyncWebsiteContent_ExtractionError_StillMarksAttempted(t *testing.T) {
 	}
 }
 
+// TestSyncWebsiteContent_UpdateError_DoesNotMarkAttempted proves a DB write
+// failure is treated differently from an extraction/validation failure: the
+// extracted content already passed ValidateDetails, so repo.Update failing
+// is an infra blip, not a reason to give up on the row — it must stay
+// eligible for a normal retry next cycle, not get permanently stranded by
+// the give-up policy meant to cap Firecrawl credit spend, not paper over
+// transient DB errors.
+func TestSyncWebsiteContent_UpdateError_DoesNotMarkAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Massage"}]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}, updateErr: fmt.Errorf("connection reset")}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the DB write error surfaced")
+	}
+	if len(repo.markSynced) != 0 {
+		t.Errorf("repo.markSynced = %v, want empty — a DB write failure on already-valid content must not give up the row", repo.markSynced)
+	}
+}
+
 // TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite proves the
 // existing fail-safe (ValidateDetails' strict decode into SportDetails'
 // int Difficulty field) still rejects a whole merged payload when
