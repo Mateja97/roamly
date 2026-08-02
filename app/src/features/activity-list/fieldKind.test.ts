@@ -1,4 +1,4 @@
-import { classifyField, matchesDenylist, PLACEHOLDER_DENYLIST } from './fieldKind';
+import { classifyField, PLACEHOLDER_DENYLIST } from './fieldKind';
 
 describe('classifyField — absence rule', () => {
   it('omits undefined, null, and empty/whitespace-only values for every kind', () => {
@@ -34,6 +34,13 @@ describe('classifyField — scalar kind', () => {
   it('accepts at the 4-word boundary, rejects a 5th word', () => {
     expect(classifyField('scalar', 'one two three four')).toBe('one two three four');
     expect(classifyField('scalar', 'one two three four five')).toBeUndefined();
+  });
+
+  it('rejects on word count alone, independent of the char-count check', () => {
+    // 9 chars — well under the 18-char cap — but 5 words. Only reachable via
+    // SCALAR_MAX_WORDS: a removed word-count branch would let this through.
+    expect(classifyField('scalar', 'a b c d e')).toBeUndefined();
+    expect(classifyField('scalar', 'a b c d')).toBe('a b c d');
   });
 
   it('rejects a terminal period, exclamation, or question mark', () => {
@@ -118,9 +125,3 @@ describe('classifyField — denylist, both languages, all kinds', () => {
   });
 });
 
-describe('matchesDenylist', () => {
-  it('is exported and used consistently with classifyField', () => {
-    expect(matchesDenylist('not specified')).toBe(true);
-    expect(matchesDenylist('60–90 min')).toBe(false);
-  });
-});

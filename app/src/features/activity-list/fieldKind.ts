@@ -40,7 +40,9 @@ function normalize(value: string): string {
     .trim();
 }
 
-export function matchesDenylist(value: string): boolean {
+// ponytail: not exported — only classifyField calls it today. Export it when
+// T4/T11 needs PLACEHOLDER_DENYLIST parity checks against this fn directly.
+function matchesDenylist(value: string): boolean {
   const normalized = normalize(value);
   return PLACEHOLDER_DENYLIST.some((entry) => normalize(entry) === normalized);
 }
@@ -66,20 +68,25 @@ export function classifyField(
     // ponytail: plain console.warn — no logging convention exists in
     // app/src today (grepped first). Greppable prefix per spec: "a denylist
     // hit is logged, not silently dropped, so a backend regression stays
-    // visible."
+    // visible." Not deduped: classifyField isn't wired to any render yet
+    // (T4 scope) so there's no per-render repeat to dedupe against — add a
+    // warn-once Set here if T4 wiring makes this noisy.
     console.warn(`[fieldKind] denylisted value omitted: "${value}"`);
     return undefined;
   }
 
   switch (kind) {
     case 'scalar': {
-      if (value.length > SCALAR_MAX_CHARS) return undefined;
+      // ponytail: [...value].length counts Unicode code points (matches Go's
+      // rune count in T1), not UTF-16 code units — keeps the two char-limit
+      // guards agreeing on the same string, including astral chars/emoji.
+      if ([...value].length > SCALAR_MAX_CHARS) return undefined;
       if (value.split(/\s+/).length > SCALAR_MAX_WORDS) return undefined;
       if (TERMINAL_PUNCTUATION.test(value)) return undefined;
       return value;
     }
     case 'phrase': {
-      if (value.length > PHRASE_MAX_CHARS) return undefined;
+      if ([...value].length > PHRASE_MAX_CHARS) return undefined;
       if (TERMINAL_PUNCTUATION.test(value)) return undefined;
       return value;
     }
