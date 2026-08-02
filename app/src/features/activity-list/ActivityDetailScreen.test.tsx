@@ -1123,6 +1123,79 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
+  // T9: the exact reported production payload — see design-spec.md's "The
+  // problem" section. This is the single most important test in the whole
+  // pipeline run: it proves the client-side typed-slot contract alone
+  // (T3/T4/T5/T9, with no backend change in this fixture) already fixes the
+  // reported symptom.
+  describe('production-bug regression fixture (T9)', () => {
+    const wellnessBug: Activity = {
+      ...activity,
+      category: 'wellness',
+      details: {
+        category: 'wellness',
+        // Full-sentence hedges in fields sized for a scalar — the exact
+        // reported strings.
+        typical_visit: 'Vreme posete nije eksplicitno navedeno.',
+        price_from: 'Početna cena nije navedena za najjeftiniju uslugu.',
+        // Three "not specified" price placeholders, same denylisted string
+        // the backend guard (T1) now refuses to write for new/re-synced
+        // rows — this fixture represents an already-stored legacy row.
+        treatments: [
+          { item: 'Swedish massage', price: 'Nije navedeno' },
+          { item: 'Deep tissue massage', price: 'Nije navedeno' },
+          { item: 'Hot stone massage', price: 'Nije navedeno' },
+        ],
+        // Sport-equipment boilerplate on a spa page — included for fidelity
+        // to the real payload, but NOT asserted absent below. See the
+        // comment further down for why.
+        good_to_know: ['Koristimo najnoviju sportsku opremu'],
+      },
+    };
+
+    it('closes all 4 scalar-shape defects: both stat tiles absent, all 3 treatment prices omitted (rows kept)', () => {
+      render(
+        <ActivityDetailScreen activity={wellnessBug} showDistance onBack={jest.fn()} />,
+      );
+
+      // Stat grid: both tiles fail `classifyField('scalar', …)` (over the
+      // 4-word cap, terminal punctuation) — 0 survivors, so the grid itself
+      // doesn't render at all (not a dash, not the raw sentence).
+      expect(screen.queryByText('Typical visit')).toBeNull();
+      expect(screen.queryByText('Price from')).toBeNull();
+      expect(screen.queryByText(/Vreme posete/)).toBeNull();
+      expect(screen.queryByText(/Početna cena/)).toBeNull();
+
+      // Treatments: all 3 rows render by name — the row survives (`name` is
+      // present), only the trailing price is dropped, per-row.
+      expect(screen.getByText('Swedish massage')).toBeTruthy();
+      expect(screen.getByText('Deep tissue massage')).toBeTruthy();
+      expect(screen.getByText('Hot stone massage')).toBeTruthy();
+      expect(screen.queryByText('Nije navedeno')).toBeNull();
+      expect(screen.queryByText(/from Nije/)).toBeNull();
+    });
+
+    // The bug report's good_to_know string is well-formed by the phrase
+    // contract: 35 chars, 4 words, no terminal punctuation — it passes
+    // `classifyField('phrase', …)` cleanly and always will, by design (the
+    // client-side contract is scoped to *shape*, not semantic relevance —
+    // see design-spec.md's Decision section). It still renders here, and
+    // that's expected: the fix for this specific string is T2's already-
+    // merged venue-specific good_to_know prompt rewrite (PR #128), which
+    // stops it being generated for new/re-synced rows. This fixture
+    // represents an already-stored legacy row, which T9's client-side guard
+    // was never going to (and isn't meant to) scrub retroactively.
+    // `goodToKnowSection`'s own phrase-kind guard (real T9 scope) is
+    // covered separately in activityDetailConfig.test.ts with a genuinely
+    // shape-violating example.
+    it('still renders the sport-equipment boilerplate — a content-relevance defect T2 fixes at generation time, not a shape defect this contract catches', () => {
+      render(
+        <ActivityDetailScreen activity={wellnessBug} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('Koristimo najnoviju sportsku opremu')).toBeTruthy();
+    });
+  });
+
   describe('photo-set upgrade fetch (T4)', () => {
     it('fetches the T3 endpoint for this activity on open', () => {
       render(
