@@ -1328,9 +1328,9 @@ describe('toursItinerary — numbered compact rows (T10)', () => {
       heading: 'Itinerary',
       density: 'compact',
       rows: [
-        { leading: '1', main: 'Fortress' },
-        { leading: '2', main: 'Bazaar quarter' },
-        { leading: '3', main: 'Riverfront market' },
+        { leading: '1', main: 'Fortress', leadingStyle: 'number' },
+        { leading: '2', main: 'Bazaar quarter', leadingStyle: 'number' },
+        { leading: '3', main: 'Riverfront market', leadingStyle: 'number' },
       ],
     });
   });
@@ -1343,8 +1343,8 @@ describe('toursItinerary — numbered compact rows (T10)', () => {
     const section = toursItinerary(activity);
     if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
     expect(section.rows).toEqual([
-      { leading: '1', main: 'Fortress' },
-      { leading: '2', main: 'Riverfront market' },
+      { leading: '1', main: 'Fortress', leadingStyle: 'number' },
+      { leading: '2', main: 'Riverfront market', leadingStyle: 'number' },
     ]);
   });
 

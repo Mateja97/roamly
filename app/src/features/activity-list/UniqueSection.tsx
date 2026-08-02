@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Baby,
@@ -29,6 +29,18 @@ const FACILITY_ICONS: [RegExp, ComponentType<LucideProps>][] = [
 function facilityIcon(label: string): ComponentType<LucideProps> {
   return FACILITY_ICONS.find(([re]) => re.test(label))?.[1] ?? CircleCheck;
 }
+
+// The 12px uppercase muted overline used for every UniqueSection heading —
+// matches ProseBlock's "About" heading (fontSize.xs, uppercase, textMuted,
+// 600). Exported so other screens compose a section using this same
+// treatment (e.g. Tours' "Meeting point") without hand-copying the tokens.
+export const sectionHeadingStyle: TextStyle = {
+  fontSize: fontSize.xs,
+  textTransform: 'uppercase',
+  letterSpacing: fontSize.xs * 0.05,
+  color: colors.textMuted,
+  fontWeight: '600',
+};
 
 type UniqueSectionProps = { data: UniqueSectionData | undefined };
 
@@ -79,7 +91,18 @@ export function UniqueSection({ data }: UniqueSectionProps) {
       {data.shape === 'checklist' && (
         <View style={styles.checklist}>
           {data.items.map((item) => (
-            <View key={item} style={styles.checkRow}>
+            <View
+              key={item}
+              style={styles.checkRow}
+              // Polarity lives only in the icon glyph+color otherwise, which
+              // assistive tech can't read — the two-polarity checklist
+              // (Tours' `crossItems` present) needs an explicit accessible
+              // name per row; the plain single-polarity checklist every
+              // other category uses keeps its heading-carries-polarity
+              // behavior unchanged (props below are no-ops there).
+              accessible={data.crossItems !== undefined ? true : undefined}
+              accessibilityLabel={data.crossItems !== undefined ? `Included: ${item}` : undefined}
+            >
               <Check
                 size={18}
                 // design-import mockup's slot #8 "extended" note: the ✓/✗
@@ -100,7 +123,12 @@ export function UniqueSection({ data }: UniqueSectionProps) {
               checklist consumer never sets `crossItems`, so this simply
               never renders for them. */}
           {data.crossItems?.map((item) => (
-            <View key={item} style={styles.checkRow}>
+            <View
+              key={`x-${item}`}
+              style={styles.checkRow}
+              accessible
+              accessibilityLabel={`Not included: ${item}`}
+            >
               <X size={18} color={colors.error} strokeWidth={2.2} style={styles.checkIcon} />
               <Text style={styles.checkText}>{item}</Text>
             </View>
@@ -153,7 +181,13 @@ export function UniqueSection({ data }: UniqueSectionProps) {
               key={i}
               style={[styles.compactRow, i > 0 && styles.hairlineTop]}
             >
-              <Text style={styles.compactLeading}>{row.leading}</Text>
+              {row.leadingStyle === 'number' ? (
+                <View style={styles.compactLeadingBadge}>
+                  <Text style={styles.compactLeadingBadgeText}>{row.leading}</Text>
+                </View>
+              ) : (
+                <Text style={styles.compactLeading}>{row.leading}</Text>
+              )}
               <Text style={styles.compactMain}>{row.main}</Text>
               {row.trailing ? (
                 <Text
@@ -230,17 +264,7 @@ const styles = StyleSheet.create({
   section: {
     gap: space[3],
   },
-  // T7 round-2 fix: matches ProseBlock's heading tokens exactly — every
-  // unique-section heading in the mockup is a 12px uppercase muted overline
-  // (same treatment as the "ABOUT" description heading on the same screen),
-  // not a loud cream sentence-case heading.
-  heading: {
-    fontSize: fontSize.xs,
-    textTransform: 'uppercase',
-    letterSpacing: fontSize.xs * 0.05,
-    color: colors.textMuted,
-    fontWeight: '600',
-  },
+  heading: sectionHeadingStyle,
   // Shape A — name+price list
   nameRow: {
     flexDirection: 'row',
@@ -375,6 +399,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     fontVariant: ['tabular-nums'],
+  },
+  // Itinerary's numbered-stop leading treatment (mockup: 22px gold-bordered
+  // circle) — replaces the wide time-sized text column above for rows
+  // opted into it via `leadingStyle: 'number'`.
+  compactLeadingBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  compactLeadingBadgeText: {
+    fontSize: fontSize.xs,
+    fontWeight: '600',
+    color: colors.primary,
   },
   compactMain: {
     flex: 1,

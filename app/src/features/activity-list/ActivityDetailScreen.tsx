@@ -81,7 +81,7 @@ import { PhotoViewerModal } from './PhotoViewerModal';
 import { ProseBlock } from './ProseBlock';
 import { ReviewsSection } from './ReviewsSection';
 import { TripadvisorBlock } from './TripadvisorBlock';
-import { UniqueSection } from './UniqueSection';
+import { UniqueSection, sectionHeadingStyle } from './UniqueSection';
 import { WeekHoursModal } from './WeekHoursModal';
 
 // design-spec.md's T4 "Shared base layout" section: hero photo carousel
@@ -505,7 +505,7 @@ export function ActivityDetailScreen({
               {toursChecklist && <UniqueSection data={toursChecklist} />}
               {meetingPointText && (
                 <View style={styles.toursMeetingPoint}>
-                  <Text style={styles.uniqueSectionHeading}>Meeting point</Text>
+                  <Text style={sectionHeadingStyle}>Meeting point</Text>
                   {renderMapBox()}
                   <View style={styles.toursMeetingPointAddressRow}>
                     <MapPin size={15} color={colors.textMuted} strokeWidth={1.75} />
@@ -982,14 +982,6 @@ const styles = StyleSheet.create({
   },
   toursMeetingPoint: {
     gap: space[3],
-  },
-  // Matches UniqueSection.tsx's own (unexported) `heading` style exactly —
-  // duplicated rather than imported since that style object isn't exported
-  // and this is the section's only consumer outside that file.
-  uniqueSectionHeading: {
-    fontSize: fontSize.lg,
-    fontWeight: '600',
-    color: colors.text,
   },
   toursMeetingPointAddressRow: {
     flexDirection: 'row',

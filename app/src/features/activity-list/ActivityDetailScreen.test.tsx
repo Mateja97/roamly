@@ -2257,6 +2257,8 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeNull();
       expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
       expect(screen.queryByText('Reviews')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
     });
   });
 
@@ -2362,9 +2364,11 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByRole('button', { name: 'Directions' })).toBeTruthy();
     });
 
-    it('renders no reviews section for the full-data composition either (still no provider)', () => {
+    it('renders no reviews section and no attribution plate for the full-data composition either (still no provider)', () => {
       render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
       expect(screen.queryByText('Reviews')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-footer')).toBeNull();
     });
   });
 

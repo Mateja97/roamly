@@ -48,6 +48,11 @@ export type CompactRow = {
   main: string;
   trailing?: string;
   trailingStyle?: 'muted' | 'price';
+  // Mockup's Itinerary rows render `leading` as a 22px gold-bordered numbered
+  // circle instead of the plain wide text column sized for a time (e.g.
+  // Nightlife's `21:00`) — every other `compact` consumer omits this and
+  // keeps the existing text treatment.
+  leadingStyle?: 'number';
 };
 export type DateBlockRow = {
   day: string;
@@ -315,8 +320,11 @@ export function wellnessBookingNote(activity: Activity): string | undefined {
 // would double the same figure on the exact production-bug screen. T7:
 // Nightlife's spec bottom bar is `From €10` + `Guest list` — same field
 // (`entry_price`) already feeds the Entry stat-grid chip, same doubling
-// pattern Entertainment already established for `price_from`. T10 adds
-// Tours' starting-price field when that screen lands.
+// pattern Entertainment already established for `price_from`. T10 checked:
+// `ToursExperiencesDetails` (backend/shared/models/activitiessvc/activity.go)
+// has no price field of any kind, so Tours structurally can't populate this
+// slot — needs a product decision (new backend field), not an app-side fix;
+// see engineering-notes.md T10.
 export function priceContextLine(activity: Activity): string | undefined {
   const d = activity.details;
   if (!d) return undefined;
@@ -1007,7 +1015,11 @@ export function toursItinerary(activity: Activity): UniqueSectionData | undefine
     shape: 'schedule',
     heading: 'Itinerary',
     density: 'compact',
-    rows: stops.map((stop, i) => ({ leading: String(i + 1), main: stop })),
+    rows: stops.map((stop, i) => ({
+      leading: String(i + 1),
+      main: stop,
+      leadingStyle: 'number' as const,
+    })),
   };
 }
 

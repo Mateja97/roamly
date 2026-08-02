@@ -57,6 +57,33 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Museum tickets')).toBeTruthy();
   });
 
+  // Polarity lives only in icon glyph+color otherwise — assistive tech would
+  // read a ✗ row as if it were included. Only the two-polarity checklist
+  // (crossItems present) needs this; the plain single-polarity checklist's
+  // heading already carries the polarity.
+  it('shape C (checklist, ✗ variant): each row carries an accessible name that states its included/not-included state', () => {
+    const data: UniqueSectionData = {
+      shape: 'checklist',
+      heading: "What's included",
+      items: ['Licensed local guide'],
+      crossItems: ['Museum tickets'],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByLabelText('Included: Licensed local guide')).toBeTruthy();
+    expect(screen.getByLabelText('Not included: Museum tickets')).toBeTruthy();
+  });
+
+  it('shape C (plain checklist, no crossItems): rows carry no accessible-name override', () => {
+    const data: UniqueSectionData = {
+      shape: 'checklist',
+      heading: 'Good to know',
+      items: ['Bring water'],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.queryByLabelText('Included: Bring water')).toBeNull();
+    expect(screen.getByText('Bring water')).toBeTruthy();
+  });
+
   it('shape C (checklist, ✗ variant): renders the ✓ list alone when crossItems is empty', () => {
     const data: UniqueSectionData = {
       shape: 'checklist',
@@ -177,6 +204,31 @@ describe('UniqueSection', () => {
     expect(screen.getByText('23:00')).toBeTruthy();
     expect(screen.getByText('DJ Nina')).toBeTruthy();
     expect(screen.getByText('Main stage')).toBeTruthy();
+  });
+
+  // Tours & Experiences' Itinerary (T10) — numbered-stop leading badge
+  // instead of the plain time-sized text column every other compact
+  // consumer (Nightlife/Wellness) uses.
+  it('shape F (schedule, compact density, leadingStyle: number): renders the leading value inside a circular badge, not the plain text column', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Itinerary',
+      density: 'compact',
+      rows: [{ leading: '1', main: 'Fortress', leadingStyle: 'number' }],
+    };
+    render(<UniqueSection data={data} />);
+    const leadingText = screen.getByText('1');
+    expect(screen.getByText('Fortress')).toBeTruthy();
+    // Plain leading text is a width: 52 tabular-nums column (compactLeading);
+    // a numbered row uses the badge's text style (compactLeadingBadgeText)
+    // instead, and its immediate parent is the 22x22 circular badge.
+    expect(leadingText.props.style).not.toMatchObject({ width: 52 });
+    expect(leadingText.props.style).toMatchObject({ fontSize: 12, color: '#CE9042' });
+    expect(leadingText.parent?.parent?.props.style).toMatchObject({
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+    });
   });
 
   // design-spec.md's List rows "duration" density (§B6, new).
