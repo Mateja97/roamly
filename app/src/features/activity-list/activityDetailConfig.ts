@@ -308,7 +308,12 @@ export function wellnessBookingNote(activity: Activity): string | undefined {
 export function priceContextLine(activity: Activity): string | undefined {
   const d = activity.details;
   if (!d) return undefined;
-  const raw = d.category === 'entertainment' ? d.price_from : d.category === 'nightlife' ? d.entry_price : undefined;
+  const raw =
+    d.category === 'entertainment'
+      ? d.price_from
+      : d.category === 'nightlife'
+        ? d.entry_price
+        : undefined;
   const price = classifyField('scalar', raw);
   return price ? `From ${price}` : undefined;
 }
@@ -543,6 +548,24 @@ export function openStatus(
     };
   }
   return undefined;
+}
+
+// T7 round-2 fix: the mockup's Nightlife screen renders the `Open tonight`
+// meta chip *and* the HoursRow underneath at once (`Open 23:00 – 06:00`) —
+// two different questions, not one superseded by the other. `openStatus`
+// above deliberately can't answer both: its hours-first branch order is
+// correct for HoursRow's own present-tense label (tested — hours supersede
+// the "tonight" wording there), which is exactly wrong for this chip, and
+// its `!todayRow` single-home suppression (ActivityDetailScreen) hides the
+// chip whenever hours are usable. This reads `open_tonight` directly,
+// independent of hours usability, so the caller can render it unconditionally
+// alongside HoursRow instead of choosing one or the other.
+export function nightlifeTonightChip(
+  activity: Activity,
+): { text: string; isOpen: boolean } | undefined {
+  const d = activity.details;
+  if (!d || d.category !== 'nightlife' || d.open_tonight === undefined) return undefined;
+  return { text: d.open_tonight ? 'Open tonight' : 'Closed tonight', isOpen: d.open_tonight };
 }
 
 // opening-hours T1: Monday-first display order for the week view.

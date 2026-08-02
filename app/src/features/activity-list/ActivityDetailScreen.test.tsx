@@ -631,6 +631,33 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Open tonight')).toBeTruthy();
     });
 
+    // T7 round-2 fix: `open_tonight` and `opening_hours` used to both feed
+    // `openStatus`, so a row with usable structured hours lost the "Open
+    // tonight" chip entirely (superseded by the generic hours-derived
+    // status, then suppressed a second time by the `!todayRow` gate) — the
+    // mockup renders the chip *and* the HoursRow together.
+    it('renders the Open tonight chip alongside the HoursRow when opening_hours is also usable', () => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T12:00:00Z')); // Monday, noon UTC
+      const nightlife: Activity = {
+        ...activity,
+        category: 'nightlife',
+        details: {
+          category: 'nightlife',
+          open_tonight: true,
+          opening_hours: {
+            timezone: 'UTC',
+            periods: [{ day: 'monday', open: '22:00', close: '06:00' }],
+          },
+        },
+      };
+      render(
+        <ActivityDetailScreen activity={nightlife} showDistance onBack={jest.fn()} />,
+      );
+      expect(screen.getByText('Open tonight')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'See full opening hours' })).toBeTruthy();
+      jest.useRealTimers();
+    });
+
     it("shows Entertainment's neighborhood inline in the meta row instead of a fact strip", () => {
       const entertainment: Activity = {
         ...activity,

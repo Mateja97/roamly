@@ -45,6 +45,7 @@ import {
   kidsAgeLabel,
   metaLineLeadItems,
   metaRowExtras,
+  nightlifeTonightChip,
   openStatus,
   priceContextLine,
   PRIMARY_CTA_LABEL,
@@ -238,6 +239,10 @@ export function ActivityDetailScreen({
   // into the standalone HoursRow (see below), this flag now only gates the
   // meta-row suppression.
   const todayRow = todayHoursRow(activity);
+  // T7 round-2 fix: Nightlife's `Open tonight` meta chip is a different slot
+  // from the generic status chip below — the mockup renders it *alongside*
+  // HoursRow, never suppressed by `todayRow` the way the generic chip is.
+  const metaChipStatus = nightlifeTonightChip(activity) ?? (status && !todayRow ? status : undefined);
   // opening-hours T2: same usability gate as `todayRow` — defined exactly
   // when the Hours row's tap affordance below should be interactive.
   const weekData = weekHoursModalData(activity);
@@ -552,7 +557,16 @@ export function ActivityDetailScreen({
                   : undefined
               }
               items={[...metaExtras, foldedFactChip?.value]}
-              chip={status && !todayRow ? { kind: 'status', text: status.text, isOpen: status.isOpen } : undefined}
+              // T7 round-2 fix: Nightlife's `Open tonight` chip (folded into
+              // `metaChipStatus` above) takes priority over, and unlike, the
+              // generic status chip is never suppressed by `todayRow` — the
+              // mockup shows the chip and HoursRow together, not one
+              // replacing the other.
+              chip={
+                metaChipStatus
+                  ? { kind: 'status', text: metaChipStatus.text, isOpen: metaChipStatus.isOpen }
+                  : undefined
+              }
             />
           )}
 

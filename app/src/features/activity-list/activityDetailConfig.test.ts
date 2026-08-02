@@ -1,11 +1,14 @@
 import { Clock } from 'lucide-react-native';
 import type { Activity, OpeningHours } from '../../api/activities';
+import { CATEGORY_LABELS } from './filters';
+import type { Category } from './types';
 import {
   bodySectionOrder,
   factStripFields,
   goodToKnowSection,
   kidsAgeLabel,
   metaLineLeadItems,
+  nightlifeTonightChip,
   openStatus,
   priceContextLine,
   subtypeLabel,
@@ -178,6 +181,47 @@ describe('openStatus — structured opening_hours', () => {
   it('returns undefined for an activity with no details at all', () => {
     const activity = baseActivity(undefined);
     expect(openStatus(activity)).toBeUndefined();
+  });
+});
+
+// T7 round-2 fix: distinct from `openStatus` — reads `open_tonight` directly
+// so it renders alongside HoursRow instead of losing to (or superseding) the
+// generic hours-derived status.
+describe('nightlifeTonightChip', () => {
+  it('reads "Open tonight" from the static flag even when opening_hours is also usable', () => {
+    const activity = baseActivity({
+      category: 'nightlife',
+      open_tonight: true,
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'monday', open: '22:00', close: '06:00' }],
+      },
+    });
+    expect(nightlifeTonightChip(activity)).toEqual({ text: 'Open tonight', isOpen: true });
+  });
+
+  it('reads "Closed tonight" from the static flag even when opening_hours computes Open', () => {
+    jest.useFakeTimers().setSystemTime(MONDAY_NOON_UTC);
+    const activity = baseActivity({
+      category: 'nightlife',
+      open_tonight: false,
+      opening_hours: {
+        timezone: 'UTC',
+        periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
+      },
+    });
+    expect(nightlifeTonightChip(activity)).toEqual({ text: 'Closed tonight', isOpen: false });
+    jest.useRealTimers();
+  });
+
+  it('is undefined for a non-nightlife category regardless of open_tonight', () => {
+    const activity = baseActivity({ category: 'restaurants', open_status: 'Open now' });
+    expect(nightlifeTonightChip(activity)).toBeUndefined();
+  });
+
+  it('is undefined when nightlife has no open_tonight flag', () => {
+    const activity = baseActivity({ category: 'nightlife' });
+    expect(nightlifeTonightChip(activity)).toBeUndefined();
   });
 });
 
@@ -1076,24 +1120,19 @@ describe('uniqueSection — nightlife/nature/sport (T7)', () => {
 // T7 cross-check: the spec is explicit that the difficulty meter is Sport's
 // alone ("no category shows both" it and Tours' level chip) — pins that at
 // the promote-mechanism level, alongside ActivityDetailScreen.test.tsx's
-// render-level check.
+// render-level check. The AC's other half ("Tours & Experiences uses the
+// level chip instead") isn't asserted here or anywhere in T7: Tours has no
+// `ActivityDetails` variant / screen composition yet (T10's job, a separate
+// concurrent task). T10 (PR #134) owns that assertion directly — its Tours
+// composition test asserts `queryByLabelText(/^Difficulty:/)` is null on a
+// Tours row rendering the level chip — so it isn't duplicated here.
 describe('difficulty meter exclusivity — Sport only (T7 cross-check)', () => {
   it('is the promoted slot for sport and never appears in any other category\'s body order', () => {
-    const allCategories: Activity['category'][] = [
-      'restaurants',
-      'bars',
-      'cafes',
-      'nightlife',
-      'nature',
-      'sport',
-      'kids',
-      'culture',
-      'art',
-      'wellness',
-      'entertainment',
-      'shopping',
-      'tours_experiences',
-    ];
+    // Derived from the actual category list (not hand-written) so a 14th
+    // category added to `Category` can't silently skip this assertion —
+    // `CATEGORY_LABELS` is `Record<Category, string>`, exhaustive by
+    // construction (filters.ts).
+    const allCategories = Object.keys(CATEGORY_LABELS) as Category[];
     for (const category of allCategories) {
       expect(bodySectionOrder(category).includes('difficulty')).toBe(category === 'sport');
     }
