@@ -56,7 +56,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	dryRun := flag.Bool("dry-run", false, "list what would be synced without calling Places, Firecrawl, or writing")
-	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run")
+	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except Entertainment")
 	flag.Parse()
 
 	ctx := context.Background()
