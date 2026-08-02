@@ -27,7 +27,7 @@ import type {
 } from '../../api/activities';
 import type { Category } from './types';
 import { classifyField } from './fieldKind';
-import { CATEGORY_LABELS } from './filters';
+import { CATEGORY_LABELS, SUBCATEGORIES } from './filters';
 
 // design-spec.md's T4 "Config table" section: one lookup, built from
 // APP_STANDARDS.md's per-category table, driving the fact strip + unique
@@ -149,31 +149,42 @@ export function primaryActionURL(activity: Activity): string | undefined {
   }
 }
 
-// design-spec.md T8 addendum #3: per-category body-section top→bottom
-// order, replacing the previous single hardcoded order. Sections whose data
-// is absent are simply skipped by the renderer — this table only fixes
-// order, not the existing per-section omission rules.
+// design-spec.md's "Screen composition" section (T5): one fixed canonical
+// order replaces the 13 hand-maintained per-category arrays this retires
+// (`BODY_SECTION_ORDER`, deleted). Hero/title-block/action-chips/hours-row
+// live directly in ActivityDetailScreen.tsx (not category-dependent);
+// 'factstrip' below is the stat grid. Sections whose data is absent are
+// still skipped by the renderer — this only fixes order.
 export type BodySection = 'description' | 'difficulty' | 'factstrip' | 'unique' | 'goodtoknow';
 
-export const BODY_SECTION_ORDER: Record<Category, BodySection[]> = {
-  restaurants: ['factstrip', 'description', 'unique'],
-  bars: ['factstrip', 'description', 'unique'],
-  cafes: ['description', 'factstrip', 'unique'],
-  nightlife: ['unique', 'factstrip'],
-  nature: ['factstrip', 'description', 'unique'],
-  sport: ['difficulty', 'factstrip', 'unique'],
-  kids: ['description', 'unique'],
-  culture: ['unique', 'factstrip', 'description'],
-  art: ['unique', 'factstrip', 'description'],
-  wellness: ['factstrip', 'description', 'unique', 'goodtoknow'],
-  entertainment: ['factstrip', 'description', 'unique', 'goodtoknow'],
-  shopping: ['description', 'unique', 'factstrip'],
-  // T3 (roa-5-category-subtypes): no bespoke detail UI in scope — `details`
-  // has no `tours_experiences` variant (ActivityDetails), so factstrip/unique
-  // simply omit themselves (no data); this is the same generic order as
-  // kids above.
-  tours_experiences: ['description', 'unique'],
+const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique', 'goodtoknow'];
+
+// "A category may promote exactly one slot above the stat grid. That is the
+// entire per-category layout freedom [...]" — 'difficulty' (Sport's
+// DifficultyMeter) has no canonical resting position of its own, since it
+// only ever appears promoted. T5 carries over each category's *current*
+// promoted section unchanged, proving the mechanism without deciding any
+// category's final composition (T6-T10's job) — cafes/nightlife/sport/
+// culture/art/shopping already promoted the same section under the old
+// per-category arrays, so this table reproduces exactly what was already
+// on screen, nothing new. Not exported — `bodySectionOrder` below is the
+// only thing any other module needs; T6-T10 edit this table in place.
+type PromotableSection = 'description' | 'difficulty' | 'unique';
+
+const PROMOTE_ABOVE_STAT_GRID: Partial<Record<Category, PromotableSection>> = {
+  cafes: 'description',
+  nightlife: 'unique',
+  sport: 'difficulty',
+  culture: 'unique',
+  art: 'unique',
+  shopping: 'description',
 };
+
+export function bodySectionOrder(category: Category): BodySection[] {
+  const promoted = PROMOTE_ABOVE_STAT_GRID[category];
+  if (!promoted) return CANONICAL_BODY_ORDER;
+  return [promoted, ...CANONICAL_BODY_ORDER.filter((section) => section !== promoted)];
+}
 
 // design-spec.md T8 addendum #8: Entertainment's genre + neighborhood move
 // into the rating/meta row (muted, "·"-separated) instead of the removed
@@ -299,45 +310,38 @@ export function tripadvisorEyebrow(activity: Activity, distanceText: string): st
     .join(' · ');
 }
 
-// Per-category subtype qualifier, pulled from an existing `details` field —
-// omitted (no dangling "·") when that field is absent, per the
-// omit-rather-than-blank rule.
-export function badgeQualifier(activity: Activity): string | undefined {
-  const d = activity.details;
-  if (!d) return undefined;
-  switch (d.category) {
-    case 'restaurants':
-      return d.cuisine;
-    case 'cafes':
-      return d.known_for_brew;
-    case 'nightlife':
-      return d.venue_type;
-    case 'sport':
-      return d.discipline;
-    case 'kids':
-      return d.age_range ? `Ages ${d.age_range}` : undefined;
-    case 'culture':
-    case 'art':
-    case 'shopping':
-      return d.venue_type;
-    case 'wellness':
-      return d.venue_type;
-    case 'entertainment':
-      return d.genre;
-    default:
-      return undefined;
-  }
+// design-spec.md's "Two rules applied to all 13" (T5): subtype comes from
+// the activity's own `subcategory` slug — already taxonomy-validated
+// (BUSINESS_STANDARDS.md), translatable, always scalar by construction —
+// never from a generated field. Retires `badgeQualifier`'s 9-branch switch
+// over per-category generated fields (cuisine/venue_type/discipline/etc.).
+// `""`/absent (documented as common for the three Tripadvisor categories,
+// whose subtype is only set when the per-venue Google name lookup
+// succeeds) reads as "no subtype" — no fallback is invented, and the
+// retired generated qualifier is not resurrected as a stand-in.
+export function subtypeLabel(activity: Activity): string | undefined {
+  if (!activity.subcategory) return undefined;
+  return SUBCATEGORIES[activity.category].find((option) => option.value === activity.subcategory)
+    ?.label;
 }
 
-export function badgeLabel(activity: Activity): string {
-  const qualifier = badgeQualifier(activity);
-  const noun = categoryNoun(activity.category);
-  return qualifier ? `${noun} · ${qualifier}` : noun;
+// design-spec.md's "Meta line" slot composition (§B1): "category noun,
+// subtype, price level, distance" — category noun leads, subtype follows
+// when present. Both are app-computed/taxonomy data, not LLM-generated, so
+// — like distance/country — they bypass `classifyField` entirely (see
+// MetaLine's `rawItems`) rather than being subject to the scalar kind's
+// length/word-count checks meant for generated content. Price level
+// (Tripadvisor-only today, via `tripadvisorEyebrow`) and any other
+// category-specific meta-line content is T6-T10's composition work, not
+// this mechanism.
+export function metaLineLeadItems(activity: Activity): (string | undefined)[] {
+  return [categoryNoun(activity.category), subtypeLabel(activity)];
 }
 
 // opening-hours T3: the seven in-scope categories may carry a structured
 // `opening_hours` object — this is the one place that reads it off the
-// discriminated `ActivityDetails` union (mirrors `badgeQualifier`'s switch).
+// discriminated `ActivityDetails` union (mirrors `factStripFields`'s own
+// per-category switch below).
 function openingHoursOf(d: ActivityDetails): OpeningHours | undefined {
   switch (d.category) {
     case 'restaurants':

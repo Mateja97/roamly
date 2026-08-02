@@ -54,23 +54,33 @@ describe('MetaLine', () => {
     expect(screen.getByText('Moderate')).toBeTruthy();
   });
 
-  // T4 round-2 review finding: `rawItem` is app-computed structured data
-  // (distance/country), not LLM-generated content — it must never be
+  // T4 round-2 review finding: a rawItems entry is app-computed structured
+  // data (distance/country), not LLM-generated content — it must never be
   // dropped by the scalar kind check, unlike a classified `items` entry.
-  it('renders rawItem verbatim even when it fails the scalar contract (a long country name)', () => {
-    render(<MetaLine rawItem="Bosnia and Herzegovina" items={[]} />);
+  it('renders a rawItems entry verbatim even when it fails the scalar contract (a long country name)', () => {
+    render(<MetaLine rawItems={['Bosnia and Herzegovina']} items={[]} />);
     expect(screen.getByText('Bosnia and Herzegovina')).toBeTruthy();
   });
 
-  it('joins rawItem with classified items in order, rawItem first', () => {
-    render(<MetaLine rawItem="400 m" items={['Restaurant']} />);
+  it('joins rawItems with classified items in order, rawItems first', () => {
+    render(<MetaLine rawItems={['400 m']} items={['Restaurant']} />);
     expect(screen.getByText('400 m')).toBeTruthy();
     expect(screen.getByText('Restaurant')).toBeTruthy();
     expect(screen.getAllByText('·')).toHaveLength(1);
   });
 
-  it('omits rawItem cleanly (no dangling separator) when undefined', () => {
-    render(<MetaLine rawItem={undefined} items={['Restaurant']} />);
+  // T5: multiple rawItems (e.g. category noun + subtype-from-slug), joined
+  // in order, with a single dropped entry (empty subcategory) closing the
+  // gap cleanly — no dangling separator, no invented fallback.
+  it('joins multiple rawItems entries in order, dropping an absent one with no dangling separator', () => {
+    render(<MetaLine rawItems={['Restaurant', undefined, '400 m']} items={[]} />);
+    expect(screen.getByText('Restaurant')).toBeTruthy();
+    expect(screen.getByText('400 m')).toBeTruthy();
+    expect(screen.getAllByText('·')).toHaveLength(1);
+  });
+
+  it('omits rawItems cleanly (no dangling separator) when absent', () => {
+    render(<MetaLine items={['Restaurant']} />);
     expect(screen.getByText('Restaurant')).toBeTruthy();
     expect(screen.queryByText('·')).toBeNull();
   });

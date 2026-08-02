@@ -1,11 +1,13 @@
 import { Clock } from 'lucide-react-native';
 import type { Activity, OpeningHours } from '../../api/activities';
 import {
-  BODY_SECTION_ORDER,
+  bodySectionOrder,
   factStripFields,
   goodToKnowSection,
+  metaLineLeadItems,
   openStatus,
   priceContextLine,
+  subtypeLabel,
   todayHoursRow,
   tripadvisorAddressLine,
   tripadvisorAttribution,
@@ -529,13 +531,65 @@ describe('tripadvisorAddressLine (T4)', () => {
   });
 });
 
-describe('BODY_SECTION_ORDER — wellness/entertainment render fact strip + description', () => {
-  it('wellness includes factstrip, description, unique, goodtoknow in that order', () => {
-    expect(BODY_SECTION_ORDER.wellness).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+// T5: replaces the retired BODY_SECTION_ORDER's 13 hand-maintained arrays —
+// design-spec.md's "Screen composition" canonical order plus the single
+// promote-above-stat-grid rule ("that is the entire per-category layout
+// freedom"). Every value here reproduces exactly what each category's old
+// per-category array already rendered (T5 carries current values over
+// unchanged; T6-T10 decide final composition).
+describe('bodySectionOrder — canonical order + single promote-above-stat-grid (T5)', () => {
+  it('returns the canonical [factstrip, description, unique, goodtoknow] order for a category with no configured promotion', () => {
+    for (const category of [
+      'restaurants',
+      'bars',
+      'nature',
+      'kids',
+      'wellness',
+      'entertainment',
+      'tours_experiences',
+    ] as const) {
+      expect(bodySectionOrder(category)).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+    }
   });
 
-  it('entertainment includes factstrip, description, unique, goodtoknow in that order', () => {
-    expect(BODY_SECTION_ORDER.entertainment).toEqual(['factstrip', 'description', 'unique', 'goodtoknow']);
+  it('promotes the configured slot above the stat grid, keeping the rest of the canonical order after it', () => {
+    expect(bodySectionOrder('cafes')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
+    expect(bodySectionOrder('nightlife')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
+    expect(bodySectionOrder('sport')).toEqual(['difficulty', 'factstrip', 'description', 'unique', 'goodtoknow']);
+    expect(bodySectionOrder('culture')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
+    expect(bodySectionOrder('art')).toEqual(['unique', 'factstrip', 'description', 'goodtoknow']);
+    expect(bodySectionOrder('shopping')).toEqual(['description', 'factstrip', 'unique', 'goodtoknow']);
+  });
+});
+
+// T5: badgeQualifier's 9-branch switch is retired — subtype now comes from
+// the taxonomy-validated `subcategory` slug alone, never a generated field.
+describe('subtypeLabel / metaLineLeadItems — subcategory-from-slug (T5)', () => {
+  it('translates a valid subcategory slug to its taxonomy label', () => {
+    const restaurant = { ...baseActivity({ category: 'restaurants' }), subcategory: 'fine_dining' };
+    expect(subtypeLabel(restaurant)).toBe('Fine Dining');
+    expect(metaLineLeadItems(restaurant)).toEqual(['Restaurant', 'Fine Dining']);
+  });
+
+  // This exact case — empty subcategory, no crash, no double-dot — is
+  // documented as common on the three Tripadvisor categories (whose
+  // subtype is only set when the per-venue Google name lookup succeeds).
+  // No fallback subtype is invented; the retired generated qualifier isn't
+  // resurrected as a stand-in.
+  it('reads as category noun + remaining items with no invented fallback when subcategory is empty', () => {
+    const noSubtype = baseActivity({ category: 'restaurants' });
+    expect(subtypeLabel(noSubtype)).toBeUndefined();
+    expect(metaLineLeadItems(noSubtype)).toEqual(['Restaurant', undefined]);
+  });
+
+  it('also reads as absent for an explicit empty-string subcategory (the wire\'s "unset" value)', () => {
+    const emptySubtype = { ...baseActivity({ category: 'restaurants' }), subcategory: '' };
+    expect(subtypeLabel(emptySubtype)).toBeUndefined();
+  });
+
+  it('is undefined (not a crash) for a slug that does not belong to the taxonomy', () => {
+    const badSlug = { ...baseActivity({ category: 'restaurants' }), subcategory: 'not-a-real-slug' };
+    expect(subtypeLabel(badSlug)).toBeUndefined();
   });
 });
 

@@ -9,6 +9,8 @@ import { AccessibilityInfo, Linking, Modal, Share, StyleSheet } from 'react-nati
 import type { Activity } from '../../api/activities';
 import { getActivity, getActivityPhotos } from '../../api/activities';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
+import { CATEGORY_OPTIONS } from './filters';
+import type { Category } from './types';
 
 // T4/T6: real network calls aren't available in the Jest environment (a
 // bare `fetch` throws, caught by getActivityPhotos'/getActivity's own
@@ -321,10 +323,14 @@ describe('ActivityDetailScreen', () => {
     expect(screen.queryByRole('link', { name: 'Photo by First Author' })).toBeNull();
   });
 
-  describe('category-specific fact strip, unique section, badge, CTA (T4)', () => {
-    it('renders fact strip, badge qualifier, open status, and the Shape A unique section for a fully-detailed Restaurants activity', () => {
+  describe('category-specific fact strip, unique section, meta line, CTA (T4/T5)', () => {
+    it('renders fact strip, subcategory-derived meta subtype, open status, and the Shape A unique section for a fully-detailed Restaurants activity', () => {
       const withDetails: Activity = {
         ...activity,
+        // T5: subtype comes from the `subcategory` slug, not `cuisine`
+        // (badgeQualifier is retired) — `cuisine` still feeds the Cuisine
+        // fact-strip chip below, unrelated to the meta line now.
+        subcategory: 'fine_dining',
         details: {
           category: 'restaurants',
           cuisine: 'Italian',
@@ -342,7 +348,8 @@ describe('ActivityDetailScreen', () => {
         />,
       );
 
-      expect(screen.getByText('Restaurant · Italian')).toBeTruthy();
+      expect(screen.getByText('Restaurant')).toBeTruthy();
+      expect(screen.getByText('Fine Dining')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
       expect(screen.getByText('€€')).toBeTruthy();
       expect(screen.getByText('9am–11pm')).toBeTruthy();
@@ -566,15 +573,26 @@ describe('ActivityDetailScreen', () => {
       openURLSpy.mockRestore();
     });
 
-    it('shows the singular badge noun + venue_type subtype for Nightlife, in fact-strip-first order with no description', () => {
+    // T5: subtype now comes from `subcategory` (badgeQualifier/`venue_type`
+    // qualifier retired). The canonical order's single per-category freedom
+    // is "promote one slot above the stat grid" — Nightlife already
+    // promotes its unique section ('Tonight') per its carried-over config,
+    // same as before; there's no longer a way for a category to structurally
+    // exclude the description slot the way the old BODY_SECTION_ORDER array
+    // could, so a Nightlife activity with real description data now renders
+    // it like any other category (only its *position* — promoted-unique
+    // first — is preserved from the old array).
+    it('shows the singular category noun + subcategory-derived subtype for Nightlife, with its unique section promoted above the stat grid', () => {
       const nightlife: Activity = {
         ...activity,
         category: 'nightlife',
-        description: 'Should not render for Nightlife',
+        subcategory: 'nightclub',
+        description: 'Renders for Nightlife too, per the canonical order',
         details: {
           category: 'nightlife',
           venue_type: 'Club',
           entry_price: '€10',
+          lineup: [{ time: '22:00', act: 'DJ Set', stage: 'Main' }],
         },
       };
       render(
@@ -584,10 +602,17 @@ describe('ActivityDetailScreen', () => {
           onBack={jest.fn()}
         />,
       );
-      expect(screen.getByText('Nightlife · Club')).toBeTruthy();
+      expect(screen.getByText('Nightlife')).toBeTruthy();
+      expect(screen.getByText('Nightclub')).toBeTruthy();
       expect(
-        screen.queryByText('Should not render for Nightlife'),
-      ).toBeNull();
+        screen.getByText('Renders for Nightlife too, per the canonical order'),
+      ).toBeTruthy();
+      // Promoted-above-stat-grid ordering preserved: "Tonight" (unique
+      // section) still renders before the description block.
+      const tree = JSON.stringify(screen.toJSON());
+      expect(tree.indexOf('Tonight')).toBeLessThan(
+        tree.indexOf('Renders for Nightlife too, per the canonical order'),
+      );
     });
 
     it('shows the Nightlife open-tonight status dot + success-colored text, leading the meta row', () => {
@@ -1651,6 +1676,79 @@ describe('ActivityDetailScreen', () => {
       expect(mapIndex).toBeGreaterThan(tagIndex);
       expect(buttonIndex).toBeGreaterThan(mapIndex);
       expect(disclaimerIndex).toBeGreaterThan(buttonIndex);
+    });
+  });
+
+  // T5: the canonical-order + promote-one-slot mechanism (activityDetailConfig.ts's
+  // `bodySectionOrder`) replaces the 13 hand-maintained BODY_SECTION_ORDER
+  // arrays — this smoke test proves every category still renders with its
+  // carried-over config, nothing crashes now that they all share one order
+  // function instead of a bespoke array each.
+  describe('every category renders without crashing using its carried-over config (T5 smoke test)', () => {
+    const minimalDetailsByCategory: Partial<Record<Category, Activity['details']>> = {
+      restaurants: { category: 'restaurants' },
+      bars: { category: 'bars' },
+      cafes: { category: 'cafes' },
+      nightlife: { category: 'nightlife' },
+      nature: { category: 'nature' },
+      sport: { category: 'sport' },
+      kids: { category: 'kids' },
+      culture: { category: 'culture' },
+      art: { category: 'art' },
+      wellness: { category: 'wellness' },
+      entertainment: { category: 'entertainment' },
+      shopping: { category: 'shopping' },
+      // tours_experiences intentionally omitted — no `ActivityDetails`
+      // variant exists yet (T2/T10); `details` stays undefined below, the
+      // same "no details" fallback state the spec pins for this category
+      // until a provider lands.
+    };
+
+    it.each(CATEGORY_OPTIONS.map((option) => option.value))('renders %s without crashing', (category) => {
+      const a: Activity = {
+        ...activity,
+        category,
+        details: minimalDetailsByCategory[category],
+      };
+      expect(() =>
+        render(<ActivityDetailScreen activity={a} showDistance onBack={jest.fn()} />),
+      ).not.toThrow();
+    });
+  });
+
+  // T5: "Every category is wired to render a reviews section via T4's
+  // shared wrapper: Tripadvisor attribution for restaurants/bars/cafes,
+  // Google attribution for the other 9, absent for tours_experiences."
+  describe('reviews section wired per category (T5)', () => {
+    it('uses the Tripadvisor attribution plate for a Tripadvisor-sourced restaurant/bar/café row', () => {
+      const withTripadvisor: Activity = {
+        ...activity,
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 10,
+            web_url: 'https://tripadvisor.example/place',
+          },
+        },
+      };
+      render(<ActivityDetailScreen activity={withTripadvisor} showDistance onBack={jest.fn()} />);
+      expect(screen.getByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeTruthy();
+    });
+
+    it('uses the Google attribution plate for one of the other 9 categories (Culture)', () => {
+      const culture: Activity = { ...activity, category: 'culture', google_maps_uri: 'https://maps.google.com/x' };
+      render(<ActivityDetailScreen activity={culture} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeNull();
+    });
+
+    it('renders no reviews section and no attribution plate for Tours & Experiences (no data source yet)', () => {
+      const tours: Activity = { ...activity, category: 'tours_experiences', details: undefined };
+      render(<ActivityDetailScreen activity={tours} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByRole('button', { name: 'Read all reviews on Tripadvisor' })).toBeNull();
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+      expect(screen.queryByText('Reviews')).toBeNull();
     });
   });
 });

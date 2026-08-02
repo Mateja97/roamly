@@ -1,7 +1,7 @@
 import { getActivity, queryActivities } from './activities';
 import {
-  badgeQualifier,
   factStripFields,
+  subtypeLabel,
   uniqueSection,
 } from '../features/activity-list/activityDetailConfig';
 
@@ -193,12 +193,16 @@ describe('queryActivities', () => {
     });
   });
 
-  it('renders Kids badge qualifier + icon-grid unique section from a wire-shaped payload', async () => {
+  // T5: `badgeQualifier` (age_range-driven) is retired — the meta line's
+  // subtype now reads from the wire's `subcategory` slug instead (see
+  // `subtypeLabel`/`metaLineLeadItems` in activityDetailConfig.ts).
+  it('renders Kids subcategory-derived subtype + icon-grid unique section from a wire-shaped payload', async () => {
     mockFetchOnce(200, {
       activities: [
         {
           id: '1',
           category: 'kids',
+          subcategory: 'playground',
           details: { age_range: '3-10', facilities: ['Parking', 'Restrooms'] },
         },
       ],
@@ -207,7 +211,7 @@ describe('queryActivities', () => {
     expect(result.status).toBe('success');
     if (result.status !== 'success') return;
     const activity = result.activities[0];
-    expect(badgeQualifier(activity)).toBe('Ages 3-10');
+    expect(subtypeLabel(activity)).toBe('Playground');
     expect(uniqueSection(activity)).toEqual({
       shape: 'icongrid',
       heading: 'Facilities',
