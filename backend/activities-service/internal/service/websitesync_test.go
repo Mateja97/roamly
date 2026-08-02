@@ -217,13 +217,17 @@ func TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite(t *testing.T) {
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
 	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
-		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip-and-retry-next-week)", err)
+		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip, not retried again)", err)
 	}
 	if repo.updateCalls != 0 {
 		t.Errorf("repo.Update calls = %d, want 0 — fractional difficulty must never be persisted, along with the rest of the payload (effort_level, duration, gear, what_to_bring)", repo.updateCalls)
 	}
 	if repo.gotUpdatePatch.Details != nil {
 		t.Errorf("repo.gotUpdatePatch.Details = %v, want zero-value", repo.gotUpdatePatch.Details)
+	}
+	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategorySport), "")
+	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
+		t.Errorf("repo.markSynced = %v, want exactly [%q] — a failed-validation attempt must still count toward the give-up policy", repo.markSynced, wantKey)
 	}
 }
 
