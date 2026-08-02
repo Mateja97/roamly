@@ -322,24 +322,28 @@ export function ActivityDetailScreen({
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
   const priceContext = priceContextLine(activity);
-  // T11: compliance — a Google-sourced reviews section (score, cards,
-  // attribution) must always be able to link back to Google Maps, so it's
-  // never rendered once the live merge has settled with no `google_maps_uri`
-  // — even if `rating`/`review_count`/`google_reviews` are independently
-  // present (a payload shape the existing `googleReviewsCardShown` gate
-  // below didn't defend against, since it only ever checked review-array
-  // length). Still shown while pending — the skeleton reveals nothing yet.
-  // Same silent-omission shape as the existing fetch-failed/unavailable
-  // rule (APP_STANDARDS.md's Error handling carve-out), applied to this one
-  // extra precondition.
-  const googleReviewsAllowed = detailsPending || Boolean(activity.google_maps_uri);
+  // T11 round 2: compliance — a Google-sourced reviews section (score,
+  // cards, attribution) must always be able to link back to Google Maps, so
+  // it never renders without `google_maps_uri` present, full stop — no
+  // pending-state exception, since a seed/cached payload can already carry
+  // `google_reviews`/`rating` before the live merge completes (the
+  // `detailsPending ||` escape hatch round 1 shipped assumed pending meant
+  // "nothing to show yet", which doesn't hold in that shape — probe-
+  // verified: plate+cards+score all rendered with no link). Only the
+  // skeleton (gated separately by `googleReviewsCardShown` below, on
+  // whether anything is genuinely populated yet — not on this flag) gets a
+  // pending-state pass. Same silent-omission shape as the existing
+  // fetch-failed/unavailable rule (APP_STANDARDS.md's Error handling
+  // carve-out), applied to this one extra precondition.
+  const googleReviewsAllowed = Boolean(activity.google_maps_uri);
   // T4 round-2 review finding: a Places-live row's aggregate score has
   // exactly one home — the Reviews slot below — once it actually renders a
   // score header there (both `rating` and `review_count` present); the
   // title-block gold star is this flag's sole consumer, suppressed only in
   // that exact case so it still carries the rating alone whenever the
   // Reviews slot doesn't (pending, a settled merge with no review count, or
-  // — T11 — a settled merge the maps-link compliance gate above suppresses).
+  // — T11 — no `google_maps_uri` yet, pending or settled, per the maps-link
+  // compliance gate above).
   const reviewsScoreShown =
     isPlacesLive && googleReviewsAllowed && activity.rating > 0 && activity.review_count !== undefined;
   // T5: the title-block rating cluster (star + number, or its loading
@@ -377,7 +381,14 @@ export function ActivityDetailScreen({
   // — pending and no `google_maps_uri` — mean the footer plate is always
   // called with no uri, which renders null on its own) and deleted it
   // rather than keep dead code around. This flag's sole remaining consumer
-  // is the reviews-card skeleton branch below.
+  // is the reviews-card skeleton branch below — it decides skeleton-vs-
+  // attempt-content only ("is there genuinely nothing populated yet"); T11
+  // round 2: it must NOT also gate whether content is allowed to render —
+  // that's `googleReviewsAllowed`'s job alone, checked separately in the
+  // JSX below, so a seed that already carries reviews (this flag true)
+  // but no maps link (that flag false) renders neither the skeleton (would
+  // be lying — content already exists) nor the section (no link) — silence,
+  // not a premature plate.
   const googleReviewsCardShown =
     isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
 
@@ -690,13 +701,23 @@ export function ActivityDetailScreen({
               // round-3 fix: `metaText` drops out of the lead items (rather
               // than the fold or neighborhood silently losing theirs — see
               // `metaLineOverflow`) on the one Entertainment collision where
-              // all 5 candidates compete for 4 slots.
-              rawItems={
-                !tripadvisor
+              // all 5 candidates compete for 4 slots. T11 round 2:
+              // `foldedValue` also belongs here, not in `items` below — it's
+              // already been through `classifyField` once (via
+              // `classifyFactChips`, on its unprefixed value) before the
+              // `foldPrefix` was added, so running it through `items`'s
+              // second `classifyField` call would measure the *prefixed*
+              // string against the scalar cap and drop legitimate longer
+              // prices outright (e.g. "€1200 per person" fine unprefixed,
+              // "from €1200 per person" over the char cap) — `rawItems` is
+              // exactly the already-final bypass this needs.
+              rawItems={[
+                ...(!tripadvisor
                   ? [...metaLineLeadItems(activity), kidsAge, metaLineOverflow ? undefined : metaText]
-                  : undefined
-              }
-              items={[...metaExtras, foldedValue]}
+                  : []),
+                foldedValue,
+              ]}
+              items={metaExtras}
               // T7 round-2 fix: Nightlife's `Open tonight` chip (folded into
               // `metaChipStatus` above) takes priority over, and unlike, the
               // generic status chip is never suppressed by `todayRow` — the
@@ -771,23 +792,28 @@ export function ActivityDetailScreen({
               degrade, no error UI). No generic score/distribution header for
               the Tripadvisor case above — compliance rule 03 forbids a
               second, Roamly-drawn aggregate rating beside Tripadvisor's own
-              attribution plate. */}
+              attribution plate. T11 round 2: `googleReviewsAllowed` gates
+              only the content branch, not the skeleton — a pending row that
+              already has reviews (content genuinely exists) but no maps
+              link falls through to neither branch, per the compliance
+              comment on that flag above. */}
           {isPlacesLive &&
-            googleReviewsAllowed &&
             (!googleReviewsCardShown ? (
               <ReviewsSkeleton />
             ) : (
-              <ReviewsSection
-                score={activity.rating > 0 ? activity.rating : undefined}
-                reviewCount={activity.review_count}
-                attribution={
-                  <GoogleAttributionPlate
-                    variant="detail"
-                    reviews={activity.google_reviews?.slice(0, MAX_REVIEW_CARDS)}
-                    googleMapsUri={activity.google_maps_uri}
-                  />
-                }
-              />
+              googleReviewsAllowed && (
+                <ReviewsSection
+                  score={activity.rating > 0 ? activity.rating : undefined}
+                  reviewCount={activity.review_count}
+                  attribution={
+                    <GoogleAttributionPlate
+                      variant="detail"
+                      reviews={activity.google_reviews?.slice(0, MAX_REVIEW_CARDS)}
+                      googleMapsUri={activity.google_maps_uri}
+                    />
+                  }
+                />
+              )
             ))}
 
           {/* design-spec.md's "Map + address" slot (§B11): skipped here only

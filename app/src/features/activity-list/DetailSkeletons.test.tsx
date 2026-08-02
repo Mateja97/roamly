@@ -79,11 +79,13 @@ describe('UniqueSectionSkeleton', () => {
 });
 
 describe('ReviewsSkeleton', () => {
-  it('renders the card chrome with a brand-mark bar and two review groups', () => {
+  // T11 round 2: AC says "3 skeleton review cards" — was 2, unpinned by any
+  // count assertion.
+  it('renders the card chrome with a brand-mark bar and three review groups', () => {
     render(<ReviewsSkeleton />);
     const card = screen.getByTestId('reviews-skeleton');
     expect(card).toBeTruthy();
-    // brand-mark bar + 2 review groups + maps-link wrap = 4 direct children.
-    expect(card.props.children).toHaveLength(4);
+    // brand-mark bar + 3 review groups + maps-link wrap = 5 direct children.
+    expect(card.props.children).toHaveLength(5);
   });
 });

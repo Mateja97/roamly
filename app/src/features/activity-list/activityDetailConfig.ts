@@ -903,12 +903,19 @@ function dateBlockRow(show: {
   // hedge this guards against is a denylist hit, which `phrase` catches
   // identically (denylist runs before the kind check) at its more permissive
   // 80-char cap — use `phrase`.
+  const subline = classifyField('phrase', show.time_or_price) ?? '';
   return {
     day,
     date,
     dateLabel,
     title: show.title,
-    subline: classifyField('phrase', show.time_or_price) ?? '',
+    // T11 round 2: a venue that only says "TBA" once tends to say it for
+    // both the date and the showtime/price — a raw payload with
+    // `time_or_price: "TBA"` alongside an unparseable `date: "TBA"` would
+    // otherwise print the same word twice on one row (the new `dateLabel`
+    // fallback above it, this `subline` below the title). Same word, same
+    // fact — the subline adds nothing once the label already said it.
+    subline: dateLabel && subline === dateLabel ? '' : subline,
   };
 }
 

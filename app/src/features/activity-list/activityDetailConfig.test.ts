@@ -1409,6 +1409,30 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     expect(section.rows[0]).toMatchObject({ day: '', date: '', dateLabel: 'Q4 2026' });
   });
 
+  // T11 round 2: a venue that only says "TBA" once tends to say it for both
+  // the date and the showtime/price fields — without the dedup, the row
+  // printed "TBA" twice (dateLabel above the title, subline below it).
+  it('does not repeat the raw date fallback as the subline when both fields carry the same value ("TBA")', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night', time_or_price: 'TBA' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ dateLabel: 'TBA', subline: '' });
+  });
+
+  it('keeps a distinct subline alongside the raw date fallback', () => {
+    const activity = baseActivity({
+      category: 'entertainment',
+      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night', time_or_price: 'from €15' }],
+    });
+    const section = uniqueSection(activity);
+    if (section?.shape !== 'schedule')
+      throw new Error('expected schedule shape');
+    expect(section.rows[0]).toMatchObject({ dateLabel: 'TBA', subline: 'from €15' });
+  });
 });
 
 // design-spec.md's Tours & Experiences composition (T10).

@@ -168,14 +168,14 @@ data contract" section, implemented in `fieldKind.ts`
 |---|---|---|---|
 | Restaurants | cuisine, price tier, hours, open status (Tripadvisor-sourced rows carry price level/cuisine in the meta line instead) | Popular dishes (name + price) | Book a table |
 | Bars | vibe, happy-hour window, opens time | Signature pours (pill list) | See menu |
-| Cafés | known-for brew, wifi quality, hours | On the bar (item + price) | Get directions |
+| Cafés | known-for brew, wifi quality, hours | On the bar (item + price); description promoted above the stat grid | Get directions |
 | Nightlife | entry price, dress code, opens time, live "open tonight" status | Tonight lineup (time + act + stage), promoted above the stat grid | Guest list |
 | Nature | time to spend, best time, cost | Good to know (checklist) | Get directions |
 | Sport | difficulty (segmented meter, promoted above the stat grid), effort level, duration, gear | What to bring (checklist) | Book session |
-| Kids | age range, facilities | Facilities (icon grid) | Get directions |
+| Kids | age range, facilities | Facilities (icon grid); description promoted above the stat grid | Get directions |
 | Culture | venue type (only when it differs from the subtype), ticket price, hours | Now showing (banner), promoted above the stat grid | Get tickets |
 | Art | ticket price, hours, artwork attribution (artist/work/medium, shown under the title) | Current exhibition (banner), promoted above the stat grid | Get tickets |
 | Wellness | typical visit, price from, hours | Treatments (item + duration + price), good-to-know checklist, external-booking note | Visit website |
 | Entertainment | genre, neighborhood, typical show length, price from, hours | Upcoming shows (date + title + time/price), good-to-know checklist | Get tickets |
-| Shopping | venue type (only when it differs from the subtype), best day, hours | What you'll find (tag pills), promoted above the stat grid | Get directions |
+| Shopping | venue type (only when it differs from the subtype), best day, hours | What you'll find (tag pills); description promoted above the stat grid | Get directions |
 | Tours & Experiences | duration, group size, languages, difficulty level (level chip in the meta line, never the difficulty meter) | What's included (✓/✗ checklist), meeting point (address + map), itinerary (numbered stops) — no reviews section (no data source yet) | Check availability |

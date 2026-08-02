@@ -20,6 +20,37 @@ describe('UniqueSection', () => {
     expect(screen.getByText('€8')).toBeTruthy();
   });
 
+  // T11 round 2: the "duration" density (Treatments) already dropped a
+  // name-absent row; `nameprice` (Popular dishes/On the bar) had the same
+  // gap — a `{name: '', price: '€12'}` row rendered headless.
+  it('shape A (name+price list): drops a row whose name is absent entirely, keeps the rest', () => {
+    const data: UniqueSectionData = {
+      shape: 'nameprice',
+      heading: 'Popular dishes',
+      items: [
+        { name: 'Ćevapi', price: '€8' },
+        { name: '', price: '€12' },
+        { name: '   ', price: '€3' },
+      ],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Ćevapi')).toBeTruthy();
+    expect(screen.getByText('€8')).toBeTruthy();
+    expect(screen.queryByText('€12')).toBeNull();
+    expect(screen.queryByText('€3')).toBeNull();
+  });
+
+  it('shape A (name+price list): omits the whole section, heading included, when every row lacks a name', () => {
+    const data: UniqueSectionData = {
+      shape: 'nameprice',
+      heading: 'On the bar',
+      items: [{ name: '', price: '€3' }],
+    };
+    const { toJSON } = render(<UniqueSection data={data} />);
+    expect(toJSON()).toBeNull();
+    expect(screen.queryByText('On the bar')).toBeNull();
+  });
+
   it('shape B (pill list): renders each pill', () => {
     const data: UniqueSectionData = {
       shape: 'pills',
@@ -350,5 +381,37 @@ describe('UniqueSection', () => {
     render(<UniqueSection data={data} />);
     expect(screen.getByText('TBA')).toBeTruthy();
     expect(screen.getByText('Live at the Fort')).toBeTruthy();
+  });
+
+  // T11 round 2: dateblock never checked `title` for absence — a show with
+  // no title rendered a headless card (date/price with nothing to name).
+  it('shape F (date-block density): drops a row whose title is absent entirely, keeps the rest', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Upcoming shows',
+      density: 'dateblock',
+      rows: [
+        { day: 'FRI', date: '20', title: 'Live at the Fort', subline: '20:00' },
+        { day: 'SAT', date: '21', title: '', subline: '21:00' },
+        { day: 'SUN', date: '22', title: '   ', subline: '22:00' },
+      ],
+    };
+    render(<UniqueSection data={data} />);
+    expect(screen.getByText('Live at the Fort')).toBeTruthy();
+    expect(screen.getByText('20:00')).toBeTruthy();
+    expect(screen.queryByText('21:00')).toBeNull();
+    expect(screen.queryByText('22:00')).toBeNull();
+  });
+
+  it('shape F (date-block density): omits the whole section, heading included, when every row lacks a title', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Upcoming shows',
+      density: 'dateblock',
+      rows: [{ day: 'FRI', date: '20', title: '', subline: '20:00' }],
+    };
+    const { toJSON } = render(<UniqueSection data={data} />);
+    expect(toJSON()).toBeNull();
+    expect(screen.queryByText('Upcoming shows')).toBeNull();
   });
 });

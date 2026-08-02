@@ -2749,6 +2749,30 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('from 500')).toBeTruthy();
       expect(screen.queryByText('from from 500')).toBeNull();
     });
+
+    // T11 round 2: prefixing before MetaLine's own `classifyField` re-check
+    // pushed an already-valid scalar past the 18-char/4-word cap on its
+    // *prefixed* length, dropping legitimate longer prices outright instead
+    // of gaining context. Both exact strings the review probe found broken.
+    it('keeps a longer valid price scalar after the fold prefix ("€1200 per person")', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '€1200 per person' },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('from €1200 per person')).toBeTruthy();
+    });
+
+    it('keeps a longer valid price scalar after the fold prefix ("500 RSD per visit")', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: { category: 'wellness', price_from: '500 RSD per visit' },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('from 500 RSD per visit')).toBeTruthy();
+    });
   });
 
   // T11: design-spec.md's Screen-level/Reviews-slot state rules, exercised
@@ -2775,6 +2799,39 @@ describe('ActivityDetailScreen', () => {
       render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
       expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
       expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+    });
+
+    // T11 round 2: the real compliance gap — the old `detailsPending ||`
+    // escape hatch assumed pending meant "nothing to show yet", which
+    // doesn't hold when the seed/cached payload passed straight into
+    // `activity` already carries reviews before the live merge even starts.
+    // Probe-verified broken before this fix: score+cards+attribution mark
+    // all rendered with no "View on Google Maps" link.
+    it('loading: a pending seed that already carries reviews but no maps link renders neither the skeleton nor the section', () => {
+      const pendingRowWithReviews: Activity = {
+        ...placesRow,
+        rating: 4.3,
+        review_count: 9,
+        google_reviews: [
+          {
+            authorAttribution: { displayName: 'Nina', uri: 'https://maps.google.com/contrib/1' },
+            rating: 5,
+            text: 'Wonderful collection.',
+            date: '2026-06-01T00:00:00Z',
+          },
+        ],
+        google_maps_uri: undefined,
+      };
+      // beforeEach's default mock never resolves getActivity — this is the
+      // seed render, before any live merge.
+      render(<ActivityDetailScreen activity={pendingRowWithReviews} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByText('Wonderful collection.')).toBeNull();
+      expect(screen.queryByText('9 reviews')).toBeNull();
+      // The rating isn't lost outright — the title-block star carries it,
+      // since the Reviews slot that would otherwise own it is suppressed.
+      expect(screen.getByText('4.3')).toBeTruthy();
     });
 
     it('present: score, cards, and attribution all render once settled with a maps link', async () => {

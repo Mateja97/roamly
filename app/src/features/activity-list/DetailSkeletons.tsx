@@ -121,13 +121,16 @@ export function UniqueSectionSkeleton({ category }: { category: Category }) {
 // "Reviews / attribution block" pending state: the Google attribution
 // plate's own card chrome renders for real (so the arriving plate doesn't
 // re-frame itself), with placeholders standing in for its contents — brand
-// mark bar, two review groups (author row + 3-line body), maps-link bar.
-// Two groups, not five: the card promises "reviews are coming", not a count.
+// mark bar, three review groups (author row + 3-line body), maps-link bar.
+// Three groups per the AC's "3 skeleton review cards" — matches
+// `MAX_REVIEW_CARDS` (ActivityDetailScreen.tsx), the cap the real cards land
+// on once settled.
 export function ReviewsSkeleton() {
   return (
     <View testID="reviews-skeleton" style={styles.reviewsCard}>
       <Skeleton width={96} height={18} />
       <ReviewGroupSkeleton />
+      <ReviewGroupSkeleton hairline />
       <ReviewGroupSkeleton hairline />
       <View style={styles.hairlineTop}>
         <Skeleton width={160} height={16} />
