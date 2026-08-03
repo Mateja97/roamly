@@ -309,13 +309,29 @@ func TestHasTripadvisorReviews(t *testing.T) {
 // row (quotable review present, or no stored place id) keeps the pre-T3
 // early return; a resolve error falls back to the bare stored row.
 func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) {
+	// Deliberately non-zero and different from baseRow's own Rating/
+	// ReviewCount/Description/Details below (round-2 review finding: an
+	// all-zero fixture can't tell a correct "hands off" implementation
+	// apart from a broken one that clobbers those fields, since zero
+	// overwritten with zero still reads as "unchanged"). Category is Cafes
+	// (not Restaurants) so BuildLiveDetails actually emits content
+	// (hours/known_for) for this detail — Restaurants/Bars have no
+	// BuildLiveDetails case and always map to "{}", which would make the
+	// Details-clobber mutation below invisible regardless of fixture values.
 	googleDetail := placesmap.PlaceDetail{
-		Reviews:       []placesmap.Review{{Rating: 5}},
-		GoogleMapsURI: "https://maps.google.com/?cid=123",
+		Reviews:         []placesmap.Review{{Rating: 5}},
+		GoogleMapsURI:   "https://maps.google.com/?cid=123",
+		Rating:          4.9,
+		UserRatingCount: 9001,
+		ServesCoffee:    true,
+		RegularOpeningHours: placesmap.RegularOpeningHours{
+			WeekdayDescriptions: []string{"Monday: 9AM-5PM"},
+		},
 	}
+	googleDetail.EditorialSummary.Text = "Google's blurb."
 
 	baseRow := activitiessvc.Activity{
-		ID: "1", Category: activitiessvc.CategoryRestaurants, Status: activitiessvc.StatusPublished,
+		ID: "1", Category: activitiessvc.CategoryCafes, Status: activitiessvc.StatusPublished,
 		Source: "tripadvisor", ExternalID: "loc-1", GooglePlaceID: "place-9",
 		Rating: 4.6, ReviewCount: 512, Description: "",
 		Details: json.RawMessage(`{"tripadvisor":{"review_count":512}}`),
@@ -325,6 +341,7 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 		name           string
 		activity       activitiessvc.Activity
 		places         *fakePlaces
+		noPlaces       bool
 		wantPlaceCalls int
 		wantReviews    int
 		wantMapsURI    string
@@ -361,18 +378,26 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 			places:         &fakePlaces{detailErr: errors.New("places is down")},
 			wantPlaceCalls: 1,
 		},
+		{
+			name:     "unconfigured places client: falls back to bare row, no call",
+			activity: baseRow,
+			noPlaces: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := &fakeRepo{getOut: tt.activity}
-			svc := New(repo).WithPlaces(tt.places)
+			svc := New(repo)
+			if !tt.noPlaces {
+				svc = svc.WithPlaces(tt.places)
+			}
 
 			got, err := svc.GetByIDWithLiveDetails(context.Background(), tt.activity.ID)
 			if err != nil {
 				t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
 			}
-			if tt.places.detailCalls != tt.wantPlaceCalls {
+			if !tt.noPlaces && tt.places.detailCalls != tt.wantPlaceCalls {
 				t.Errorf("places.PlaceDetails calls = %d, want %d", tt.places.detailCalls, tt.wantPlaceCalls)
 			}
 			if len(got.GoogleReviews) != tt.wantReviews {
