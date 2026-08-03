@@ -13,6 +13,13 @@ export const colors = {
   textMuted: '#E0C9AE',
   textDisabled: '#B0857A',
 
+  // T1: DESIGN_STANDARDS.md's new --text-overline Standard addition — warm
+  // gold overline color for the Splash screen's two overline eyebrows
+  // (tagline + "Destination"), 6.18:1 on --bg. Reconciles the shipped
+  // ScopePickerScreen's divergent #E0C9AE/#E6C79A use for an identical role
+  // onto one value; scoped to those two overlines, not a --text-muted swap.
+  textOverline: '#E6C79A',
+
   success: '#A3D18E',
   warning: '#E8C572',
   error: '#F5B79B',
@@ -79,11 +86,11 @@ export const radius = {
 } as const;
 
 // --font-display (Marcellus) — the one display accent, used for screen-
-// identity headers only: the Welcome "Where to?" headline (see
-// ScopePickerScreen.tsx's font-load gate, which every screen after it in the
-// nav stack rides on — Marcellus loads once, globally) and the
-// activities-list/search-setup H1s, and the Activity detail screen's title
-// (T4). Every other surface stays on RN's system
+// identity headers only: the Welcome/Splash "Where to?" headline (see
+// App.tsx's font-load gate — moved there from ScopePickerScreen in T1 so
+// every screen in the app rides on one gate, Marcellus loads once,
+// globally) and the activities-list/search-setup H1s, and the Activity
+// detail screen's title (T4). Every other surface stays on RN's system
 // font stack (the default when no fontFamily is set).
 export const fontFamily = {
   display: 'Marcellus_400Regular',
