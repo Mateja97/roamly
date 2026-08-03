@@ -41,22 +41,13 @@ export type FactChip = {
   icon: ComponentType<LucideProps>;
   label: string;
   value: string;
-  // design-spec.md's Stat grid degradation rule folds a single surviving
-  // chip's *value* alone into the meta line, dropping `.label` — deliberate
-  // (T4), and most chips read fine bare there ("Fast" for Wifi). A
-  // price-shaped chip's raw value doesn't: T9 round-3 found a real venue
-  // whose folded Wellness "Price from" value rendered as a bare, unlabeled
-  // "500" with no currency/unit. This optional prefix is applied only at
-  // fold time (see ActivityDetailScreen.tsx) — never in the grid, where the
-  // chip's own label already carries the context.
-  foldPrefix?: string;
 };
 
 export type CompactRow = {
   leading: string;
   main: string;
   trailing?: string;
-  trailingStyle?: 'muted' | 'price';
+  trailingStyle?: 'muted';
   // Mockup's Itinerary rows render `leading` as a 22px gold-bordered numbered
   // circle instead of the plain wide text column sized for a time (e.g.
   // Nightlife's `21:00`) — every other `compact` consumer omits this and
@@ -75,22 +66,9 @@ export type DateBlockRow = {
   // hit exactly this case: e.g. "TBA", "Q4 2026").
   dateLabel?: string;
   title: string;
-  subline: string;
 };
-// design-spec.md's "List rows" slot (§B6): new `duration` density — name +
-// duration + `from €X` (Treatments). `name` is typed optional (not required
-// like `nameprice`'s items) because the slot-level rule is distinct from the
-// ordinary trailing-omits-per-row rule: a row whose *name* is absent is
-// dropped entirely, so the renderer (not just the caller) must defend
-// against it — see UniqueSection.tsx.
-export type DurationRow = { name?: string; duration?: string; price?: string };
 
 export type UniqueSectionData =
-  | {
-      shape: 'nameprice';
-      heading: string;
-      items: { name: string; price: string }[];
-    }
   | { shape: 'pills'; heading: string; items: string[] }
   | {
       shape: 'checklist';
@@ -119,12 +97,6 @@ export type UniqueSectionData =
       heading: string;
       density: 'dateblock';
       rows: DateBlockRow[];
-    }
-  | {
-      shape: 'schedule';
-      heading: string;
-      density: 'duration';
-      rows: DurationRow[];
     };
 
 // Categories whose primary CTA *is* "Get directions" — the generic action
@@ -320,49 +292,12 @@ export function tripadvisorAddressLine(activity: Activity): string | undefined {
   return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
-// T9 review: T2's own worked example for a scraped price scalar already
-// includes a "from " prefix (websitesync.go wellnessPrompt/
-// entertainmentPrompt: "from €25"/"from €8"), so a compliant scrape can hand
-// us a value that's already prefixed — prepending our own "from "/"From "
-// on top would double it. Strip any existing leading "from" (case-
-// insensitive) before either call site adds its own prefix.
-export function stripLeadingFrom(value: string): string {
-  return value.replace(/^from\s+/i, '');
-}
-
 // design-spec.md T8 addendum #6: Wellness' external-booking note, lifted
 // out of the Treatments rows into the bottom action bar (above the button
 // row) — always present for Wellness once this data exists.
 export function wellnessBookingNote(activity: Activity): string | undefined {
   const d = activity.details;
   return d?.category === 'wellness' ? d.external_booking_note : undefined;
-}
-
-// design-spec.md's "Bottom bar" slot (§B12): optional price-context line
-// (`From €12`) above the button row, omitting only that line when absent —
-// the backing field is `scalar` per "Kind declarations on existing fields",
-// so it goes through the same classifyField guard as any other generated
-// field. Wellness does NOT get this line (T9: "external-booking note + Visit
-// website", `price_from` surfaces only in the stat grid) — showing it there
-// would double the same figure on the exact production-bug screen. T7:
-// Nightlife's spec bottom bar is `From €10` + `Guest list` — same field
-// (`entry_price`) already feeds the Entry stat-grid chip, same doubling
-// pattern Entertainment already established for `price_from`. T10 checked:
-// `ToursExperiencesDetails` (backend/shared/models/activitiessvc/activity.go)
-// has no price field of any kind, so Tours structurally can't populate this
-// slot — needs a product decision (new backend field), not an app-side fix;
-// see engineering-notes.md T10.
-export function priceContextLine(activity: Activity): string | undefined {
-  const d = activity.details;
-  if (!d) return undefined;
-  const raw =
-    d.category === 'entertainment'
-      ? d.price_from
-      : d.category === 'nightlife'
-        ? d.entry_price
-        : undefined;
-  const price = classifyField('scalar', raw);
-  return price ? `From ${stripLeadingFrom(price)}` : undefined;
 }
 
 // design-spec.md T8 addendum #2: the noun before the "·" is the *singular*
@@ -707,19 +642,14 @@ export function weekHoursModalData(activity: Activity): WeekHoursModalData | und
 }
 
 function buildChips(
-  entries: [ComponentType<LucideProps>, string, string | undefined, string?][],
+  entries: [ComponentType<LucideProps>, string, string | undefined][],
 ): FactChip[] {
   return entries
     .filter(
-      (entry): entry is [ComponentType<LucideProps>, string, string, string?] =>
+      (entry): entry is [ComponentType<LucideProps>, string, string] =>
         Boolean(entry[2]),
     )
-    .map(([icon, label, value, foldPrefix]) => ({
-      icon,
-      label,
-      value,
-      ...(foldPrefix ? { foldPrefix } : {}),
-    }));
+    .map(([icon, label, value]) => ({ icon, label, value }));
 }
 
 // Per-field omission lives here: `buildChips` drops any field with no value,
@@ -743,17 +673,13 @@ export function factStripFields(activity: Activity): FactChip[] {
   switch (d.category) {
     case 'restaurants':
       // §5b: a Tripadvisor-sourced row now carries its own cuisine (eyebrow
-      // subtitle) and price level (eyebrow line) via `tripadvisorEyebrow`
-      // above — the generic Cuisine/Price chips would just repeat that, so
-      // they're dropped for Tripadvisor rows only; every other restaurant
-      // row keeps them exactly as before.
+      // subtitle) via `tripadvisorEyebrow` above — the generic Cuisine chip
+      // would just repeat that, so it's dropped for Tripadvisor rows only;
+      // every other restaurant row keeps it exactly as before. T2: the
+      // `Price` chip (`price_tier`) is removed for every restaurant row —
+      // an LLM-scraped figure, not verifiable against the venue's own site.
       return withHours(
-        d.tripadvisor
-          ? []
-          : buildChips([
-              [Utensils, 'Cuisine', d.cuisine],
-              [Euro, 'Price', d.price_tier],
-            ]),
+        d.tripadvisor ? [] : buildChips([[Utensils, 'Cuisine', d.cuisine]]),
         d.hours,
       );
     case 'bars':
@@ -771,8 +697,9 @@ export function factStripFields(activity: Activity): FactChip[] {
         d.hours,
       );
     case 'nightlife':
+      // T2: the `Entry` chip (`entry_price`) is removed — LLM-scraped, not
+      // verifiable against the venue's own site.
       return buildChips([
-        [Euro, 'Entry', d.entry_price],
         [Shirt, 'Dress code', d.dress_code],
         [Clock, 'Opens', d.opens_time],
       ]);
@@ -783,26 +710,28 @@ export function factStripFields(activity: Activity): FactChip[] {
         [Euro, 'Cost', d.cost],
       ]);
     case 'sport':
+      // T2: the `Duration` chip (`d.duration`) is removed — this is the
+      // LLM-scraped session duration, not the seeded Tours duration.
       return buildChips([
         [BarChart3, 'Effort', d.effort_level],
-        [Clock, 'Duration', d.duration],
         [Wrench, 'Gear', d.gear],
       ]);
     case 'culture':
-      // design-spec.md's Culture composition: `Tickets`, plus `Venue` only
-      // when it differs from the subtype (see `venueDiffersFromSubtype`).
+      // design-spec.md's Culture composition: `Venue`, shown only when it
+      // differs from the subtype (see `venueDiffersFromSubtype`). T2: the
+      // `Tickets` chip (`ticket_price`) is removed — LLM-scraped, not
+      // verifiable. With only Venue left, a row where it matches the
+      // subtype now has 0 stat-grid chips (grid omits) instead of 1.
       return withHours(
-        buildChips([
-          [Euro, 'Tickets', d.ticket_price],
-          [Landmark, 'Venue', venueDiffersFromSubtype(activity, d.venue_type)],
-        ]),
+        buildChips([[Landmark, 'Venue', venueDiffersFromSubtype(activity, d.venue_type)]]),
         d.hours,
       );
     case 'art':
-      // design-spec.md's Art composition: `Tickets` only — unlike Culture/
-      // Shopping, Art has no Venue stat at all (the artist/work attribution
-      // line above the title already carries that context).
-      return withHours(buildChips([[Euro, 'Tickets', d.ticket_price]]), d.hours);
+      // T2: Art's only chip (`Tickets`/`ticket_price`) is removed — LLM-
+      // scraped, not verifiable. Art now never has a stat-grid chip of its
+      // own; only the legacy-hours fallback chip can still populate the
+      // grid (or fold into the meta line as a 1-chip row).
+      return withHours([], d.hours);
     case 'shopping':
       // T9: "Best day, plus Venue when it differs from the subtype" — reuses
       // T8's `venueDiffersFromSubtype` (same conditional Culture's stat grid
@@ -817,26 +746,18 @@ export function factStripFields(activity: Activity): FactChip[] {
     case 'kids':
       return [];
     case 'wellness':
-      // T11 (T9 round-3 follow-up): "Price from" gets a `from ` foldPrefix
-      // — a real venue's raw value can be a bare number ("500", no
-      // currency/unit), which reads fine in the grid (the "Price from"
-      // label sits right above it) but not once it's the lone survivor
-      // folded into the meta line with no label at all.
-      return withHours(
-        buildChips([
-          [Clock, 'Typical visit', d.typical_visit],
-          [Euro, 'Price from', d.price_from, 'from '],
-        ]),
-        undefined,
-      );
+      // T2: both chips (`Typical visit`/`typical_visit`, `Price
+      // from`/`price_from`) are removed — both LLM-scraped, neither
+      // verifiable (a wrong scraped duration on this exact screen is the
+      // production bug this task exists to fix). Wellness never has a
+      // stat grid now — no legacy-hours fallback either (this category has
+      // no `hours` field).
+      return [];
     case 'entertainment':
-      return withHours(
-        buildChips([
-          [Clock, 'Typical show', d.typical_show_length],
-          [Euro, 'Price from', d.price_from, 'from '],
-        ]),
-        undefined,
-      );
+      // T2: both chips (`Typical show`/`typical_show_length`, `Price
+      // from`/`price_from`) are removed — both LLM-scraped. Entertainment
+      // never has a stat grid now.
+      return [];
     case 'tours_experiences':
       return buildChips([
         [Clock, 'Duration', d.duration],
@@ -871,11 +792,7 @@ export function factStripFields(activity: Activity): FactChip[] {
 // the row body, not the numeral box) — `date`/`day` stay empty, so the
 // date-block box itself omits entirely for this row, per the spec's own
 // "no fallback forced into a scalar's format" absence reasoning.
-function dateBlockRow(show: {
-  date: string;
-  title: string;
-  time_or_price?: string;
-}): DateBlockRow {
+function dateBlockRow(show: { date: string; title: string }): DateBlockRow {
   const parsed = new Date(show.date);
   const valid = !Number.isNaN(parsed.getTime());
   let day = '';
@@ -892,31 +809,7 @@ function dateBlockRow(show: {
     }
   }
   const dateLabel = date ? undefined : classifyField('scalar', show.date);
-  // T5 round-3 fix: `time_or_price` is LLM-generated (same field the
-  // production-bug report's "Not specified" hedges leaked from on legacy
-  // rows — T1 only guards new writes) — run it through `classifyField` like
-  // any other generated trailing value so a leaked hedge omits per the
-  // spec's "List rows" trailing-omit rule instead of rendering verbatim.
-  // T5 round-4 fix: the spec declares no kind for this field; `scalar`'s
-  // 18-char/4-word cap is stricter than the subline needs and newly dropped
-  // legitimate legacy values (e.g. "Fri 20:00, from €15" = 19 chars). The
-  // hedge this guards against is a denylist hit, which `phrase` catches
-  // identically (denylist runs before the kind check) at its more permissive
-  // 80-char cap — use `phrase`.
-  const subline = classifyField('phrase', show.time_or_price) ?? '';
-  return {
-    day,
-    date,
-    dateLabel,
-    title: show.title,
-    // T11 round 2: a venue that only says "TBA" once tends to say it for
-    // both the date and the showtime/price — a raw payload with
-    // `time_or_price: "TBA"` alongside an unparseable `date: "TBA"` would
-    // otherwise print the same word twice on one row (the new `dateLabel`
-    // fallback above it, this `subline` below the title). Same word, same
-    // fact — the subline adds nothing once the label already said it.
-    subline: dateLabel && subline === dateLabel ? '' : subline,
-  };
+  return { day, date, dateLabel, title: show.title };
 }
 
 // Whole-section omission lives here too: every branch returns `undefined`
@@ -928,16 +821,23 @@ export function uniqueSection(
   if (!d) return undefined;
   switch (d.category) {
     case 'restaurants':
+      // T2: was the 'nameprice' shape (name + price column) — now pills,
+      // name only. `.price` (`ItemPrice.price`) is dropped at render time;
+      // the backend model keeps the field (not this task's scope).
       return d.popular_dishes?.length
         ? {
-            shape: 'nameprice',
+            shape: 'pills',
             heading: 'Popular dishes',
-            items: d.popular_dishes,
+            items: d.popular_dishes.map((item) => item.name),
           }
         : undefined;
     case 'cafes':
       return d.on_the_bar?.length
-        ? { shape: 'nameprice', heading: 'On the bar', items: d.on_the_bar }
+        ? {
+            shape: 'pills',
+            heading: 'On the bar',
+            items: d.on_the_bar.map((item) => item.name),
+          }
         : undefined;
     case 'bars':
       return d.signature_pours?.length
@@ -1003,32 +903,16 @@ export function uniqueSection(
             })),
           }
         : undefined;
-    case 'wellness':
-      // T9: switches from the generic "compact" density to the "duration"
-      // density the spec names for Treatments (name / duration / `from €X`).
-      // `price`/`duration` are both LLM-generated (same website-scrape
-      // surface the bug report's "Nije navedeno" placeholders leaked from)
-      // — each runs through `classifyField('scalar', …)` so a leaked
-      // placeholder/sentence omits that one value (row stays, per the "List
-      // rows" trailing-omit rule) instead of rendering verbatim. `item`
-      // (the row's name) isn't classified, matching every other name/price
-      // list's item field (popular_dishes, on_the_bar, signature_pours) —
-      // none of those are declared a kind in the spec either.
-      return d.treatments?.length
-        ? {
-            shape: 'schedule',
-            heading: 'Treatments',
-            density: 'duration',
-            rows: d.treatments.map((t) => {
-              const price = classifyField('scalar', t.price);
-              return {
-                name: t.item,
-                duration: classifyField('scalar', t.duration),
-                price: price ? `from ${stripLeadingFrom(price)}` : undefined,
-              };
-            }),
-          }
-        : undefined;
+    case 'wellness': {
+      // T2: was the "duration" density (name + duration + `from €X`) —
+      // `duration`/`price` are both retired (LLM-scraped, unverifiable; a
+      // wrong scraped duration here is the production bug this task exists
+      // to fix). Now pills, one per surviving `item` name — same per-item
+      // `classifyField('phrase', …)` survival rule as Tours' checklists
+      // (`classifyPhrases` below).
+      const items = classifyPhrases(d.treatments?.map((t) => t.item));
+      return items.length ? { shape: 'pills', heading: 'Treatments', items } : undefined;
+    }
     case 'entertainment':
       return d.upcoming_shows?.length
         ? {

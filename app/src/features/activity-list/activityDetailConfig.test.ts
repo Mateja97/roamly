@@ -11,7 +11,6 @@ import {
   metaLineLeadItems,
   nightlifeTonightChip,
   openStatus,
-  priceContextLine,
   subtypeLabel,
   todayHoursRow,
   toursIncludedChecklist,
@@ -508,12 +507,11 @@ describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
   });
 });
 
-describe('factStripFields — Tripadvisor rows drop Cuisine/Price (§5b eyebrow carries them instead)', () => {
-  it('omits the Cuisine/Price chips for a Tripadvisor-sourced restaurant row, even when the legacy fields are populated', () => {
+describe('factStripFields — Tripadvisor rows drop Cuisine (§5b eyebrow carries it instead)', () => {
+  it('omits the Cuisine chip for a Tripadvisor-sourced restaurant row, even when the legacy field is populated', () => {
     const activity = baseActivity({
       category: 'restaurants',
       cuisine: 'Italian',
-      price_tier: '€€',
       tripadvisor: {
         rating_image_url: 'https://tripadvisor.example/bubble.png',
         review_count: 1204,
@@ -522,14 +520,21 @@ describe('factStripFields — Tripadvisor rows drop Cuisine/Price (§5b eyebrow 
     });
     const labels = factStripFields(activity).map((f) => f.label);
     expect(labels).not.toContain('Cuisine');
-    expect(labels).not.toContain('Price');
   });
 
-  it('keeps the Cuisine/Price chips for a non-Tripadvisor restaurant row, unchanged', () => {
-    const activity = baseActivity({ category: 'restaurants', cuisine: 'Italian', price_tier: '€€' });
+  it('keeps the Cuisine chip for a non-Tripadvisor restaurant row, unchanged', () => {
+    const activity = baseActivity({ category: 'restaurants', cuisine: 'Italian' });
     const labels = factStripFields(activity).map((f) => f.label);
     expect(labels).toContain('Cuisine');
-    expect(labels).toContain('Price');
+  });
+
+  // T2: `price_tier` is no longer read into a chip at all, for any
+  // restaurant row (Tripadvisor or not) — the field itself stays on the
+  // backend model (T1 scope), only its rendering slot is gone.
+  it('T2: never renders a Price chip for restaurants, even when price_tier is present', () => {
+    const activity = baseActivity({ category: 'restaurants', cuisine: 'Italian', price_tier: '€€' });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).not.toContain('Price');
   });
 });
 
@@ -565,21 +570,28 @@ describe('factStripFields — Bars vibe (T6, spec-flagged at-risk field)', () =>
   });
 });
 
-// T6 (design-spec.md §C): Restaurants/Bars/Cafés' unique-section shape +
-// heading mapping — the shape-level rendering itself (nameprice/pills) is
-// already covered generically in UniqueSection.test.tsx; this pins each of
-// the three categories to its specified density.
-describe('uniqueSection — Restaurants/Bars/Cafés (T6)', () => {
-  it('Restaurants: "Popular dishes" using the nameprice density', () => {
+// T6/T2 (design-spec.md §C): Restaurants/Bars/Cafés' unique-section shape +
+// heading mapping — the shape-level rendering itself is already covered
+// generically in UniqueSection.test.tsx; this pins each of the three
+// categories to its specified density. T2: Popular dishes/On the bar moved
+// from the retired 'nameprice' shape to 'pills', name only — `.price` is
+// dropped at this mapping layer, not merely unrendered.
+describe('uniqueSection — Restaurants/Bars/Cafés (T6/T2)', () => {
+  it('Restaurants: "Popular dishes" using pills, name only (price dropped)', () => {
     const activity = baseActivity({
       category: 'restaurants',
       popular_dishes: [{ name: 'Truffle pasta', price: '€14' }],
     });
     expect(uniqueSection(activity)).toEqual({
-      shape: 'nameprice',
+      shape: 'pills',
       heading: 'Popular dishes',
-      items: [{ name: 'Truffle pasta', price: '€14' }],
+      items: ['Truffle pasta'],
     });
+  });
+
+  it('Restaurants: "Popular dishes" section omits when the list is empty', () => {
+    const activity = baseActivity({ category: 'restaurants', popular_dishes: [] });
+    expect(uniqueSection(activity)).toBeUndefined();
   });
 
   it('Bars: "Signature pours" using the pills density', () => {
@@ -594,16 +606,21 @@ describe('uniqueSection — Restaurants/Bars/Cafés (T6)', () => {
     });
   });
 
-  it('Cafés: "On the bar" using the nameprice density', () => {
+  it('Cafés: "On the bar" using pills, name only (price dropped)', () => {
     const activity = baseActivity({
       category: 'cafes',
       on_the_bar: [{ name: 'Flat white', price: '€2.80' }],
     });
     expect(uniqueSection(activity)).toEqual({
-      shape: 'nameprice',
+      shape: 'pills',
       heading: 'On the bar',
-      items: [{ name: 'Flat white', price: '€2.80' }],
+      items: ['Flat white'],
     });
+  });
+
+  it('Cafés: "On the bar" section omits when the list is empty', () => {
+    const activity = baseActivity({ category: 'cafes', on_the_bar: [] });
+    expect(uniqueSection(activity)).toBeUndefined();
   });
 });
 
@@ -884,44 +901,50 @@ describe('factStripFields — Kids/Culture/Art (T8)', () => {
     expect(factStripFields(activity)).toEqual([]);
   });
 
-  it('Culture shows Tickets and Venue (differs from subtype), Tickets leading', () => {
+  // T2: Culture's `Tickets` chip (`ticket_price`) is retired — LLM-scraped,
+  // not verifiable. Only `Venue` (differs-from-subtype) can survive now.
+  it('Culture shows only Venue when it differs from the subtype (no Tickets chip, even when ticket_price is present)', () => {
     const activity = {
       ...baseActivity({ category: 'culture', venue_type: 'Fortress', ticket_price: '€10' }),
       subcategory: 'historical_site',
     };
     const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toEqual(['Tickets', 'Venue']);
+    expect(labels).toEqual(['Venue']);
   });
 
-  it('Culture omits Venue when it matches the subtype, keeping Tickets', () => {
+  it('Culture has 0 chips (grid omits) when Venue matches the subtype', () => {
     const activity = {
       ...baseActivity({ category: 'culture', venue_type: 'Historical Site', ticket_price: '€10' }),
       subcategory: 'historical_site',
     };
-    const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toEqual(['Tickets']);
+    expect(factStripFields(activity)).toEqual([]);
   });
 
-  it('Art shows only Tickets, never a Venue chip, even when venue_type differs from the subtype', () => {
+  // T2: Art's only chip (`Tickets`/`ticket_price`) is retired. Art never
+  // has a chip of its own now (venue_type isn't a chip for Art either —
+  // unchanged from before this task).
+  it('Art has 0 chips (grid omits) even with ticket_price and a differing venue_type present', () => {
     const activity = {
       ...baseActivity({ category: 'art', venue_type: 'Museum', ticket_price: '€6' }),
       subcategory: 'art_museum',
     };
-    const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toEqual(['Tickets']);
+    expect(factStripFields(activity)).toEqual([]);
   });
 });
 
-describe('factStripFields — wellness/entertainment', () => {
-  it('includes Typical visit and Price from chips for wellness', () => {
+// T2: both chips are retired for both categories (Typical visit/Typical
+// show — LLM-scraped duration; Price from — LLM-scraped price). Wellness
+// and Entertainment now never have a stat grid, regardless of what the
+// legacy `details` payload still carries (a pre-T1 row can still have these
+// fields set — see the "legacy data" regression coverage further down).
+describe('factStripFields — wellness/entertainment (T2: no stat grid, ever)', () => {
+  it('renders no chips for wellness even when typical_visit/price_from are present', () => {
     const activity = baseActivity({
       category: 'wellness',
       typical_visit: '2–3 hrs',
       price_from: 'from €22',
     });
-    const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toContain('Typical visit');
-    expect(labels).toContain('Price from');
+    expect(factStripFields(activity)).toEqual([]);
   });
 
   it('omits wellness chips entirely when no data is present', () => {
@@ -929,15 +952,13 @@ describe('factStripFields — wellness/entertainment', () => {
     expect(factStripFields(activity)).toEqual([]);
   });
 
-  it('includes Typical show and Price from chips for entertainment', () => {
+  it('renders no chips for entertainment even when typical_show_length/price_from are present', () => {
     const activity = baseActivity({
       category: 'entertainment',
       typical_show_length: '2 hrs',
       price_from: 'from €12',
     });
-    const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toContain('Typical show');
-    expect(labels).toContain('Price from');
+    expect(factStripFields(activity)).toEqual([]);
   });
 
   // T4 (activity-detail-system): superseded by HoursRow — usable structured
@@ -1101,7 +1122,9 @@ describe('goodToKnowSection', () => {
 // FactStrip.test.tsx's classifyFactChips coverage) — this only pins which
 // fields each category surfaces, matching "The 13 screens".
 describe('factStripFields — nightlife/nature/sport (T7)', () => {
-  it('surfaces Entry, Dress code, Opens for nightlife', () => {
+  // T2: the `Entry` chip (`entry_price`) is retired — LLM-scraped, not
+  // verifiable — even when the legacy field is present.
+  it('surfaces only Dress code, Opens for nightlife (no Entry chip)', () => {
     const activity = baseActivity({
       category: 'nightlife',
       entry_price: '€10',
@@ -1109,7 +1132,7 @@ describe('factStripFields — nightlife/nature/sport (T7)', () => {
       opens_time: '23:00',
     });
     const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toEqual(['Entry', 'Dress code', 'Opens']);
+    expect(labels).toEqual(['Dress code', 'Opens']);
   });
 
   it('omits nightlife chips entirely when no data is present', () => {
@@ -1133,7 +1156,9 @@ describe('factStripFields — nightlife/nature/sport (T7)', () => {
     expect(factStripFields(activity)).toEqual([]);
   });
 
-  it('surfaces Effort, Duration, Gear for sport', () => {
+  // T2: the `Duration` chip (`d.duration`, the LLM-scraped session
+  // duration) is retired — even when the legacy field is present.
+  it('surfaces only Effort, Gear for sport (no Duration chip)', () => {
     const activity = baseActivity({
       category: 'sport',
       effort_level: 'Moderate',
@@ -1141,7 +1166,7 @@ describe('factStripFields — nightlife/nature/sport (T7)', () => {
       gear: 'Boots',
     });
     const labels = factStripFields(activity).map((f) => f.label);
-    expect(labels).toEqual(['Effort', 'Duration', 'Gear']);
+    expect(labels).toEqual(['Effort', 'Gear']);
   });
 
   it('omits sport chips entirely when no data is present', () => {
@@ -1234,78 +1259,12 @@ describe('difficulty meter exclusivity — Sport only (T7 cross-check)', () => {
 // explicitly does NOT get this line (T9: "external-booking note + Visit
 // website"; `price_from` surfaces only in the stat grid) — a price line
 // there would double the same figure.
-describe('priceContextLine', () => {
-  it('renders "From <price>" for entertainment when price_from is present', () => {
-    const activity = baseActivity({ category: 'entertainment', price_from: '€8' });
-    expect(priceContextLine(activity)).toBe('From €8');
-  });
-
-  it('omits the line when price_from is absent', () => {
-    const activity = baseActivity({ category: 'entertainment' });
-    expect(priceContextLine(activity)).toBeUndefined();
-  });
-
-  it('omits the line when price_from fails its scalar shape (the production-bug shape)', () => {
-    const activity = baseActivity({
-      category: 'entertainment',
-      price_from: 'The starting price is not explicitly stated.',
-    });
-    expect(priceContextLine(activity)).toBeUndefined();
-  });
-
-  it('is undefined for wellness even when price_from is present (stat grid owns it there)', () => {
-    const activity = baseActivity({ category: 'wellness', price_from: '€25' });
-    expect(priceContextLine(activity)).toBeUndefined();
-  });
-
-  // T7: same "same field feeds both the stat-grid chip and the bottom-bar
-  // line" pattern Entertainment already established, using `entry_price`.
-  it('renders "From <price>" for nightlife when entry_price is present', () => {
-    const activity = baseActivity({ category: 'nightlife', entry_price: '€10' });
-    expect(priceContextLine(activity)).toBe('From €10');
-  });
-
-  it('omits the line when nightlife entry_price is absent', () => {
-    const activity = baseActivity({ category: 'nightlife' });
-    expect(priceContextLine(activity)).toBeUndefined();
-  });
-
-  it('omits the line when nightlife entry_price fails its scalar shape', () => {
-    const activity = baseActivity({
-      category: 'nightlife',
-      entry_price: 'The entry fee is not explicitly stated.',
-    });
-    expect(priceContextLine(activity)).toBeUndefined();
-  });
-
-  it('is undefined for a category with no price field at all (e.g. sport)', () => {
-    const activity = baseActivity({ category: 'sport' });
-    expect(priceContextLine(activity)).toBeUndefined();
-  });
-
-  // T9 review: T2's own wellnessPrompt/entertainmentPrompt worked example
-  // for price_from is "from €25"/"from €8" — the backend can legitimately
-  // hand us a value that already carries the prefix. Don't double it.
-  it('does not double the prefix when price_from already starts with "from" (case-insensitive)', () => {
-    expect(
-      priceContextLine(
-        baseActivity({ category: 'entertainment', price_from: 'from €8' }),
-      ),
-    ).toBe('From €8');
-    expect(
-      priceContextLine(
-        baseActivity({ category: 'entertainment', price_from: 'From €8' }),
-      ),
-    ).toBe('From €8');
-  });
-});
-
-// T5 round-3 fix: `time_or_price` is LLM-generated (same denylist/prompt
-// surface as every other free-text field), so a leaked hedge on a legacy
-// row must omit per the spec's "List rows" trailing-omit rule, not render
-// verbatim.
 describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
-  it('carries a valid time_or_price through as the row subline', () => {
+  it('builds a title-only row — no subline field at all, even when a legacy time_or_price value is present', () => {
+    // T2: legacy-data regression — a pre-T1 row can still carry
+    // `time_or_price` on the wire (backend keeps old JSON as-is). The row
+    // must render title-only regardless; `subline` no longer exists on
+    // `DateBlockRow` at all, so there's no field for it to leak into.
     const activity = baseActivity({
       category: 'entertainment',
       upcoming_shows: [{ date: '2024-06-01', title: 'Live jazz night', time_or_price: '€15' }],
@@ -1313,56 +1272,22 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     const section = uniqueSection(activity);
     expect(section?.shape).toBe('schedule');
     if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '€15' });
+    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night' });
+    expect(section.rows[0]).not.toHaveProperty('subline');
   });
 
-  it('omits the subline when time_or_price is denylisted (the production-bug hedge)', () => {
-    const activity = baseActivity({
-      category: 'entertainment',
-      upcoming_shows: [
-        { date: '2024-06-01', title: 'Live jazz night', time_or_price: 'Not specified' },
-      ],
-    });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
-  });
-
-  it('omits the subline when time_or_price is absent', () => {
-    const activity = baseActivity({
-      category: 'entertainment',
-      upcoming_shows: [{ date: '2024-06-01', title: 'Live jazz night' }],
-    });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ title: 'Live jazz night', subline: '' });
-  });
-
-  // T9 round-3 fix: an unparseable `date` is still an LLM-generated value
-  // (same surface `time_or_price` already guards) — a denylisted or
-  // over-length raw string must omit, not render verbatim at numeral size.
-  // The row itself survives (title + subline unaffected), per the same
-  // trailing-omit rule the subline already follows.
+  // T9 round-3 fix: an unparseable `date` is still an LLM-generated value —
+  // a denylisted or over-length raw string must omit, not render verbatim
+  // at numeral size. The row itself survives (title unaffected).
   it('omits the date block when the raw date is denylisted (production bug: 41/231 live rows)', () => {
     const activity = baseActivity({
       category: 'entertainment',
-      upcoming_shows: [
-        {
-          date: 'Not specified',
-          title: 'Live jazz night',
-          time_or_price: '€15',
-        },
-      ],
+      upcoming_shows: [{ date: 'Not specified', title: 'Live jazz night' }],
     });
     const section = uniqueSection(activity);
     if (section?.shape !== 'schedule')
       throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({
-      day: '',
-      date: '',
-      title: 'Live jazz night',
-      subline: '€15',
-    });
+    expect(section.rows[0]).toMatchObject({ day: '', date: '', title: 'Live jazz night' });
   });
 
   it('omits the date block when the raw date fails the scalar shape (too long)', () => {
@@ -1407,31 +1332,6 @@ describe('uniqueSection — entertainment upcoming shows (dateblock)', () => {
     if (section?.shape !== 'schedule')
       throw new Error('expected schedule shape');
     expect(section.rows[0]).toMatchObject({ day: '', date: '', dateLabel: 'Q4 2026' });
-  });
-
-  // T11 round 2: a venue that only says "TBA" once tends to say it for both
-  // the date and the showtime/price fields — without the dedup, the row
-  // printed "TBA" twice (dateLabel above the title, subline below it).
-  it('does not repeat the raw date fallback as the subline when both fields carry the same value ("TBA")', () => {
-    const activity = baseActivity({
-      category: 'entertainment',
-      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night', time_or_price: 'TBA' }],
-    });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule')
-      throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ dateLabel: 'TBA', subline: '' });
-  });
-
-  it('keeps a distinct subline alongside the raw date fallback', () => {
-    const activity = baseActivity({
-      category: 'entertainment',
-      upcoming_shows: [{ date: 'TBA', title: 'Live jazz night', time_or_price: 'from €15' }],
-    });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule')
-      throw new Error('expected schedule shape');
-    expect(section.rows[0]).toMatchObject({ dateLabel: 'TBA', subline: 'from €15' });
   });
 });
 
@@ -1572,41 +1472,38 @@ describe('metaDistanceText — Tours prefixes "Meets" (T10)', () => {
 // "duration" density (name / duration / `from €X`) — the UI rendering
 // itself is covered by UniqueSection.test.tsx; this covers the mapping
 // (classifyField wiring + the "from " prefix) that feeds it.
-describe('uniqueSection — wellness treatments (duration density, T9)', () => {
-  it('maps item/duration/price into a duration-density row, prefixing a valid price with "from "', () => {
-    const activity = baseActivity({
-      category: 'wellness',
-      treatments: [{ item: 'Swedish massage', duration: '60 min', price: '€35' }],
-    });
-    const section = uniqueSection(activity);
-    expect(section).toEqual({
-      shape: 'schedule',
-      heading: 'Treatments',
-      density: 'duration',
-      rows: [{ name: 'Swedish massage', duration: '60 min', price: 'from €35' }],
-    });
-  });
-
-  it('omits the trailing price for a row whose price fails its scalar shape, keeping the row (the bug-report shape)', () => {
-    const activity = baseActivity({
-      category: 'wellness',
-      treatments: [{ item: 'Deep tissue massage', price: 'Nije navedeno' }],
-    });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toEqual({ name: 'Deep tissue massage', duration: undefined, price: undefined });
-  });
-
-  it('omits the duration value when it fails its scalar shape, independently of price', () => {
+// T2: Treatments moved from the retired "duration" density (name + duration
+// + `from €X`) to pills, name only. `duration`/`price` are both dropped at
+// this mapping layer — an LLM-scraped duration is exactly the production
+// bug this task exists to fix.
+describe('uniqueSection — wellness treatments (pills, T2)', () => {
+  it('maps each surviving item name to a pill, dropping duration/price even when present', () => {
     const activity = baseActivity({
       category: 'wellness',
       treatments: [
-        { item: 'Hot stone massage', duration: 'The session length varies by therapist availability.', price: '€40' },
+        { item: 'Swedish massage', duration: '60 min', price: '€35' },
+        { item: 'Deep tissue massage' },
       ],
     });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toEqual({ name: 'Hot stone massage', duration: undefined, price: 'from €40' });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'pills',
+      heading: 'Treatments',
+      items: ['Swedish massage', 'Deep tissue massage'],
+    });
+  });
+
+  // Partial survivor: one item's name fails the phrase contract (denylisted
+  // hedge, same surface the production bug leaked from), the rest render.
+  it('drops a treatment whose name is denylisted, keeping its siblings', () => {
+    const activity = baseActivity({
+      category: 'wellness',
+      treatments: [{ item: 'Swedish massage' }, { item: 'Nije navedeno' }],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'pills',
+      heading: 'Treatments',
+      items: ['Swedish massage'],
+    });
   });
 
   it('is undefined when there are no treatments', () => {
@@ -1614,20 +1511,11 @@ describe('uniqueSection — wellness treatments (duration density, T9)', () => {
     expect(uniqueSection(activity)).toBeUndefined();
   });
 
-  // T9 review: same doubled-prefix bug as priceContextLine — a treatment's
-  // price is the exact field T2's wellnessPrompt worked example prefixes
-  // itself ("from €25").
-  it('does not double the "from " prefix when the scraped price already carries one', () => {
+  it('is undefined (0 survivors omits the section) when every item name fails classification', () => {
     const activity = baseActivity({
       category: 'wellness',
-      treatments: [{ item: 'Swedish massage', price: 'from €35' }],
+      treatments: [{ item: 'Nije navedeno' }],
     });
-    const section = uniqueSection(activity);
-    if (section?.shape !== 'schedule') throw new Error('expected schedule shape');
-    expect(section.rows[0]).toEqual({
-      name: 'Swedish massage',
-      duration: undefined,
-      price: 'from €35',
-    });
+    expect(uniqueSection(activity)).toBeUndefined();
   });
 });

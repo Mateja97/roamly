@@ -49,11 +49,9 @@ import {
   metaRowExtras,
   nightlifeTonightChip,
   openStatus,
-  priceContextLine,
   PRIMARY_CTA_LABEL,
   primaryActionURL,
   primaryCTAIsDirections,
-  stripLeadingFrom,
   todayHoursRow,
   toursIncludedChecklist,
   toursItinerary,
@@ -272,18 +270,7 @@ export function ActivityDetailScreen({
   // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
   // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
-  // T11 (T9 round-3 follow-up): a price-shaped chip's `foldPrefix` (see
-  // activityDetailConfig.ts's `FactChip` type) only applies once it's the
-  // lone meta-line survivor — the grid render (FactStrip.tsx) never reads
-  // it, since the chip's own label already carries the context there.
-  // `stripLeadingFrom` avoids a doubled "from from €X" when the raw scraped
-  // value already arrives pre-prefixed (same guard `priceContextLine`/the
-  // Treatments density already apply to this identical field shape).
-  const foldedValue = foldedFactChip
-    ? foldedFactChip.foldPrefix
-      ? `${foldedFactChip.foldPrefix}${stripLeadingFrom(foldedFactChip.value)}`
-      : foldedFactChip.value
-    : undefined;
+  const foldedValue = foldedFactChip?.value;
   // design-spec.md T8's Kids composition: already-classified (see
   // `kidsAgeLabel`), so it's counted here as-is, same treatment as
   // `foldedFactChip.value` below.
@@ -321,7 +308,6 @@ export function ActivityDetailScreen({
   const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
-  const priceContext = priceContextLine(activity);
   // T11 round 2: compliance — a Google-sourced reviews section (score,
   // cards, attribution) must always be able to link back to Google Maps, so
   // it never renders without `google_maps_uri` present, full stop — no
@@ -704,13 +690,9 @@ export function ActivityDetailScreen({
               // all 5 candidates compete for 4 slots. T11 round 2:
               // `foldedValue` also belongs here, not in `items` below — it's
               // already been through `classifyField` once (via
-              // `classifyFactChips`, on its unprefixed value) before the
-              // `foldPrefix` was added, so running it through `items`'s
-              // second `classifyField` call would measure the *prefixed*
-              // string against the scalar cap and drop legitimate longer
-              // prices outright (e.g. "€1200 per person" fine unprefixed,
-              // "from €1200 per person" over the char cap) — `rawItems` is
-              // exactly the already-final bypass this needs.
+              // `classifyFactChips`) — `rawItems` is the already-final
+              // bypass that avoids running it through a second
+              // `classifyField` call.
               rawItems={[
                 ...(!tripadvisor
                   ? [...metaLineLeadItems(activity), kidsAge, metaLineOverflow ? undefined : metaText]
@@ -875,10 +857,6 @@ export function ActivityDetailScreen({
             <Text style={styles.bookingNoteText}>{bookingNote}</Text>
           </View>
         )}
-        {/* design-spec.md's "Bottom bar" slot (§B12): optional
-            price-context line above the button row — omits only this line
-            when the category's price_from is absent/invalid. */}
-        {priceContext && <Text style={styles.priceContextText}>{priceContext}</Text>}
         <View style={styles.footerButtons}>
         <Pressable
           onPress={handleGenericPress}
@@ -1113,15 +1091,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.sm,
     color: colors.textMuted,
-  },
-  // .dc.html's bottom-bar price line: 15px/600 cream — rounds up to the
-  // nearest token per DESIGN_STANDARDS.md's Typography rounding convention
-  // (body text floor is --font-size-sm/14px; 15px rounds up to --font-size-md/16px).
-  priceContextText: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: space[3],
   },
   footerButtons: {
     flexDirection: 'row',

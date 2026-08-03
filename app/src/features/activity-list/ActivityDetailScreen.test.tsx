@@ -352,11 +352,12 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Restaurant')).toBeTruthy();
       expect(screen.getByText('Fine Dining')).toBeTruthy();
       expect(screen.getByText('Open now')).toBeTruthy();
-      expect(screen.getByText('€€')).toBeTruthy();
       expect(screen.getByText('9am–11pm')).toBeTruthy();
+      // T2: Popular dishes is a pill row now — name only, no price chip.
       expect(screen.getByText('Popular dishes')).toBeTruthy();
       expect(screen.getByText('Truffle pasta')).toBeTruthy();
-      expect(screen.getByText('€14')).toBeTruthy();
+      expect(screen.queryByText('€14')).toBeNull();
+      expect(screen.queryByText('€€')).toBeNull();
     });
 
     it('omits the fact strip and unique section (no placeholder, no crash) for empty details {}', () => {
@@ -714,23 +715,21 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Dorćol')).toBeTruthy();
     });
 
-    // T5 round-3 fix: probe-verified regression — category + subtype (2) +
-    // distance/country (1) already fill 3 of MetaLine's 4 slots; when the
-    // row also carries a neighborhood (metaExtras) *and* a single surviving
-    // stat (the fold), that's 5 candidates for 4 slots and round 2's fix
-    // only closed the no-fold case. The fold is the value's only home
-    // (FactStrip nulls out below 2 chips) so it must survive alongside
-    // neighborhood — distance/country is what yields.
-    it('keeps both the neighborhood and a folded lone stat when they collide with category+subtype+distance', () => {
+    // T2: Entertainment's stat grid is now always empty (`factStripFields`
+    // returns `[]` unconditionally), so `foldedFactChip` can never be
+    // defined for this category any more — the old 5-candidate collision
+    // this metaLineOverflow guard was written for (category + subtype +
+    // distance + neighborhood + a folded price_from) can no longer occur,
+    // since `metaExtras` (neighborhood) is Entertainment-only and a fold is
+    // Entertainment-never now. Category + subtype + distance + neighborhood
+    // is only 4 real candidates either way (the fold never sat among them,
+    // now it can't). This test pins that all four keep showing together.
+    it('keeps category, subtype, distance, and neighborhood together (a stat can never fold in to compete for the slot any more)', () => {
       const entertainment: Activity = {
         ...activity,
         category: 'entertainment',
         subcategory: 'cinema',
-        details: {
-          category: 'entertainment',
-          neighborhood: 'Dorćol',
-          price_from: 'EUR8',
-        },
+        details: { category: 'entertainment', neighborhood: 'Dorćol' },
       };
       render(
         <ActivityDetailScreen
@@ -742,89 +741,6 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Entertainment')).toBeTruthy();
       expect(screen.getByText('Cinema')).toBeTruthy();
       expect(screen.getByText('Dorćol')).toBeTruthy();
-      expect(screen.getByText('from EUR8')).toBeTruthy();
-      expect(screen.queryByText(`${entertainment.distance_km.toFixed(1)} km away`)).toBeNull();
-    });
-
-    // T5 round-4 fix: round 3's `metaLineOverflow` counted assumed slots (2
-    // lead items, always) rather than what actually renders, so it evicted
-    // distance/country even when only 4 real candidates were competing for
-    // the 4-item cap. Probe-verified regression, 3 fixtures — each should
-    // keep distance visible since nothing needs to yield.
-    it('keeps distance when subcategory is empty (documented unset value) leaves only 4 real candidates', () => {
-      const entertainment: Activity = {
-        ...activity,
-        category: 'entertainment',
-        subcategory: '',
-        details: {
-          category: 'entertainment',
-          neighborhood: 'Dorćol',
-          price_from: 'EUR8',
-        },
-      };
-      render(
-        <ActivityDetailScreen
-          activity={entertainment}
-          showDistance
-          onBack={jest.fn()}
-        />,
-      );
-      expect(screen.getByText('Entertainment')).toBeTruthy();
-      expect(screen.getByText('Dorćol')).toBeTruthy();
-      expect(screen.getByText('from EUR8')).toBeTruthy();
-      expect(
-        screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
-      ).toBeTruthy();
-    });
-
-    it('keeps distance when subcategory is an off-taxonomy slug (subtype item drops out)', () => {
-      const entertainment: Activity = {
-        ...activity,
-        category: 'entertainment',
-        subcategory: 'brand_new_subtype',
-        details: {
-          category: 'entertainment',
-          neighborhood: 'Dorćol',
-          price_from: 'EUR8',
-        },
-      };
-      render(
-        <ActivityDetailScreen
-          activity={entertainment}
-          showDistance
-          onBack={jest.fn()}
-        />,
-      );
-      expect(screen.getByText('Entertainment')).toBeTruthy();
-      expect(screen.getByText('Dorćol')).toBeTruthy();
-      expect(screen.getByText('from EUR8')).toBeTruthy();
-      expect(
-        screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
-      ).toBeTruthy();
-    });
-
-    it('keeps distance when the neighborhood is over 18 chars (classifyField drops it, one fewer real candidate)', () => {
-      const entertainment: Activity = {
-        ...activity,
-        category: 'entertainment',
-        subcategory: 'cinema',
-        details: {
-          category: 'entertainment',
-          neighborhood: 'Stari Grad Downtown',
-          price_from: 'EUR8',
-        },
-      };
-      render(
-        <ActivityDetailScreen
-          activity={entertainment}
-          showDistance
-          onBack={jest.fn()}
-        />,
-      );
-      expect(screen.getByText('Entertainment')).toBeTruthy();
-      expect(screen.getByText('Cinema')).toBeTruthy();
-      expect(screen.getByText('from EUR8')).toBeTruthy();
-      expect(screen.queryByText('Stari Grad Downtown')).toBeNull();
       expect(
         screen.getByText(`${entertainment.distance_km.toFixed(1)} km away`),
       ).toBeTruthy();
@@ -895,11 +811,11 @@ describe('ActivityDetailScreen', () => {
         expect(screen.queryByText(/^Ages /)).toBeNull();
       });
 
-      // Venue matching the subtype leaves Tickets as the only surviving
-      // chip — the stat grid's own degradation rule (1 survivor folds into
-      // the meta line, unlabelled) applies here same as any other category,
-      // so "Tickets" the label never renders; only its value does.
-      it("folds Culture's lone Tickets value into the meta line and promotes the Now-showing banner, Venue omitted when it matches the subtype", () => {
+      // T2: Culture's `Tickets` chip (`ticket_price`) is retired. Venue
+      // matching the subtype now leaves 0 surviving chips — the grid omits
+      // entirely (not a 1-chip fold, since there's no chip left at all),
+      // even with a legacy ticket_price still present in the payload.
+      it("Culture's stat grid omits entirely when Venue matches the subtype (no Tickets chip, even with a legacy ticket_price)", () => {
         const culture: Activity = {
           ...activity,
           category: 'culture',
@@ -912,18 +828,16 @@ describe('ActivityDetailScreen', () => {
           },
         };
         render(<ActivityDetailScreen activity={culture} showDistance onBack={jest.fn()} />);
-        expect(screen.getByText('€10')).toBeTruthy();
+        expect(screen.queryByText('€10')).toBeNull();
         expect(screen.queryByText('Tickets')).toBeNull();
         expect(screen.queryByText('Venue')).toBeNull();
-        // The folded value lives in the title-block meta line, which
-        // precedes every body section (including the promoted banner) in
-        // DOM order regardless of promotion — promotion only orders the
-        // banner relative to the *other* body sections.
-        const tree = JSON.stringify(screen.toJSON());
-        expect(tree.indexOf('€10')).toBeLessThan(tree.indexOf('Now showing'));
+        expect(screen.getByText('Now showing')).toBeTruthy();
       });
 
-      it("shows Culture's Tickets and Venue stats as a 2-column grid when Venue differs from the subtype", () => {
+      // T2: with Tickets gone, Venue (when it differs from the subtype) is
+      // Culture's only possible chip — a lone survivor, so it folds into
+      // the meta line rather than rendering a 1-column grid.
+      it("folds Culture's lone Venue value into the meta line when it differs from the subtype (no Tickets chip, even with a legacy ticket_price)", () => {
         const culture: Activity = {
           ...activity,
           category: 'culture',
@@ -932,16 +846,15 @@ describe('ActivityDetailScreen', () => {
         };
         render(<ActivityDetailScreen activity={culture} showDistance onBack={jest.fn()} />);
         expect(screen.getByText('Fortress')).toBeTruthy();
-        expect(screen.getByText('Venue')).toBeTruthy();
-        expect(screen.getByText('€10')).toBeTruthy();
-        expect(screen.getByText('Tickets')).toBeTruthy();
+        expect(screen.queryByText('Venue')).toBeNull();
+        expect(screen.queryByText('€10')).toBeNull();
+        expect(screen.queryByText('Tickets')).toBeNull();
       });
 
-      // Art never has a second stat to pair with Tickets (no Venue chip at
-      // all), so the lone value always folds the same way Culture's does
-      // above — this pins "no Venue, ever" rather than "Venue happens to be
-      // absent this time".
-      it("folds Art's lone Tickets value into the meta line, never showing a Venue chip even though venue_type differs from the subtype", () => {
+      // T2: Art's only chip (`Tickets`/`ticket_price`) is retired. Art now
+      // never has a stat grid at all, and never folds anything into the
+      // meta line either (venue_type was never a chip for Art).
+      it("Art's stat grid omits entirely, never a Tickets chip or a folded value, even with a legacy ticket_price", () => {
         const art: Activity = {
           ...activity,
           category: 'art',
@@ -954,12 +867,11 @@ describe('ActivityDetailScreen', () => {
           },
         };
         render(<ActivityDetailScreen activity={art} showDistance onBack={jest.fn()} />);
-        expect(screen.getByText('€6')).toBeTruthy();
+        expect(screen.queryByText('€6')).toBeNull();
         expect(screen.queryByText('Tickets')).toBeNull();
         expect(screen.queryByText('Venue')).toBeNull();
         expect(screen.queryByText('Museum')).toBeNull();
-        const tree = JSON.stringify(screen.toJSON());
-        expect(tree.indexOf('€6')).toBeLessThan(tree.indexOf('Current exhibition'));
+        expect(screen.getByText('Current exhibition')).toBeTruthy();
       });
     });
 
@@ -985,7 +897,10 @@ describe('ActivityDetailScreen', () => {
       ).toBeTruthy();
     });
 
-    it('omits the bottom-bar price-context line for wellness even when price_from is present', () => {
+    // T2: the bottom-bar price-context line is retired entirely — for every
+    // category, regardless of what the (possibly legacy) `price_from`/
+    // `entry_price` field carries.
+    it('never renders a bottom-bar "From <price>" line for wellness even when price_from is present', () => {
       const wellness: Activity = {
         ...activity,
         category: 'wellness',
@@ -997,7 +912,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText(/^From /)).toBeNull();
     });
 
-    it('shows the bottom-bar price-context line for entertainment when price_from is present', () => {
+    it('never renders a bottom-bar "From <price>" line for entertainment even when price_from is present', () => {
       const entertainment: Activity = {
         ...activity,
         category: 'entertainment',
@@ -1006,17 +921,17 @@ describe('ActivityDetailScreen', () => {
       render(
         <ActivityDetailScreen activity={entertainment} showDistance onBack={jest.fn()} />,
       );
-      expect(screen.getByText('From €8')).toBeTruthy();
+      expect(screen.queryByText(/^From /)).toBeNull();
     });
 
-    it('omits the price-context line entirely when price_from is absent', () => {
-      const wellness: Activity = {
+    it('never renders a bottom-bar "From <price>" line for nightlife even when entry_price is present', () => {
+      const nightlife: Activity = {
         ...activity,
-        category: 'wellness',
-        details: { category: 'wellness' },
+        category: 'nightlife',
+        details: { category: 'nightlife', entry_price: '€10' },
       };
       render(
-        <ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />,
+        <ActivityDetailScreen activity={nightlife} showDistance onBack={jest.fn()} />,
       );
       expect(screen.queryByText(/^From /)).toBeNull();
     });
@@ -1045,7 +960,10 @@ describe('ActivityDetailScreen', () => {
   // "confirm, via a test, that Sport is the only category rendering the
   // difficulty meter" — the Sport test asserts the positive case).
   describe('Nightlife, Nature, Sport screen compositions (T7)', () => {
-    it('renders the Nightlife stat grid (Entry/Dress code/Opens), the promoted Tonight lineup, and the bottom price line', () => {
+    // T2: the `Entry` chip and the bottom-bar price line are both retired —
+    // Nightlife's stat grid is Dress code/Opens only now, even with a
+    // legacy entry_price present.
+    it('renders the Nightlife stat grid (Dress code/Opens, no Entry chip) and the promoted Tonight lineup, no bottom price line', () => {
       const nightlife: Activity = {
         ...activity,
         category: 'nightlife',
@@ -1058,16 +976,16 @@ describe('ActivityDetailScreen', () => {
         },
       };
       render(<ActivityDetailScreen activity={nightlife} showDistance onBack={jest.fn()} />);
-      expect(screen.getByText('Entry')).toBeTruthy();
+      expect(screen.queryByText('Entry')).toBeNull();
       expect(screen.getByText('Dress code')).toBeTruthy();
       expect(screen.getByText('Opens')).toBeTruthy();
       expect(screen.getByText('Tonight')).toBeTruthy();
       expect(screen.getByText('DJ Set')).toBeTruthy();
-      expect(screen.getByText('From €10')).toBeTruthy();
+      expect(screen.queryByText(/^From /)).toBeNull();
       expect(screen.getByRole('button', { name: 'Guest list' })).toBeTruthy();
-      // Promoted above the stat grid: Tonight precedes the Entry chip.
+      // Promoted above the stat grid: Tonight precedes the Dress code chip.
       const tree = JSON.stringify(screen.toJSON());
-      expect(tree.indexOf('Tonight')).toBeLessThan(tree.indexOf('Entry'));
+      expect(tree.indexOf('Tonight')).toBeLessThan(tree.indexOf('Dress code'));
       // T7 cross-check: "no category shows both" the difficulty meter and a
       // status/level chip — Nightlife never renders it (Sport-only slot).
       expect(screen.queryByText('Difficulty')).toBeNull();
@@ -1101,7 +1019,10 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText('Difficulty')).toBeNull();
     });
 
-    it('renders the Sport stat grid (Effort/Duration/Gear) and the What to bring checklist, below the promoted difficulty meter', () => {
+    // T2: the `Duration` chip (LLM-scraped session duration) is retired —
+    // Sport's stat grid is Effort/Gear only now, even with a legacy
+    // `duration` value present.
+    it('renders the Sport stat grid (Effort/Gear, no Duration chip) and the What to bring checklist, below the promoted difficulty meter', () => {
       const sport: Activity = {
         ...activity,
         category: 'sport',
@@ -1117,7 +1038,7 @@ describe('ActivityDetailScreen', () => {
       render(<ActivityDetailScreen activity={sport} showDistance onBack={jest.fn()} />);
       expect(screen.getByText('Advanced')).toBeTruthy(); // DifficultyMeter's level readout
       expect(screen.getByText('Effort')).toBeTruthy();
-      expect(screen.getByText('Duration')).toBeTruthy();
+      expect(screen.queryByText('Duration')).toBeNull();
       expect(screen.getByText('Gear')).toBeTruthy();
       expect(screen.getByText('What to bring')).toBeTruthy();
       expect(screen.getByText('Water bottle')).toBeTruthy();
@@ -1513,14 +1434,19 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText('9am–11pm')).toBeNull(); // legacy free-text suppressed
     });
 
+    // T2: Culture's own 2-chip case (Tickets+Venue) no longer exists — its
+    // only remaining chip (Venue) is a lone survivor that folds into the
+    // meta line rather than rendering a genuine multi-chip grid. Nightlife
+    // (Dress code + Opens) keeps this test's original intent: a real 2-chip
+    // grid alongside the standalone HoursRow, neither pushing the other out.
     it('renders the FactStrip grid and the standalone HoursRow together without either pushing the other out', () => {
-      const cultureVenue: Activity = {
+      const nightlifeVenue: Activity = {
         ...activity,
-        category: 'culture',
+        category: 'nightlife',
         details: {
-          category: 'culture',
-          venue_type: 'Fortress',
-          ticket_price: '€10',
+          category: 'nightlife',
+          dress_code: 'Smart casual',
+          opens_time: '23:00',
           opening_hours: {
             timezone: 'UTC',
             periods: [{ day: 'monday', open: '09:00', close: '17:00' }],
@@ -1529,16 +1455,16 @@ describe('ActivityDetailScreen', () => {
       };
       render(
         <ActivityDetailScreen
-          activity={cultureVenue}
+          activity={nightlifeVenue}
           showDistance
           onBack={jest.fn()}
         />,
       );
       // FactStrip's own 2-chip grid (Hours no longer among them — T4 moved
       // it to its own row) …
-      expect(screen.getByText('Fortress')).toBeTruthy();
-      expect(screen.getByText('Venue')).toBeTruthy();
-      expect(screen.getByText('€10')).toBeTruthy();
+      expect(screen.getByText('Dress code')).toBeTruthy();
+      expect(screen.getByText('Smart casual')).toBeTruthy();
+      expect(screen.getByText('Opens')).toBeTruthy();
       // … and the standalone HoursRow, both present.
       expect(screen.getByText('09:00–17:00')).toBeTruthy();
     });
@@ -2145,7 +2071,7 @@ describe('ActivityDetailScreen', () => {
   // exists generically in activityDetailConfig.test.ts's `bodySectionOrder`
   // describe (T5) — these are the end-to-end renders per category.
   describe('T6: Restaurants/Bars/Cafés final composition', () => {
-    it('Restaurants (Tripadvisor): meta line reads category · subtype · price level · distance, no stat grid (price level already in the meta line), Popular dishes renders as nameprice, description before the unique section, CTA is Book a table', () => {
+    it('Restaurants (Tripadvisor): meta line reads category · subtype · price level · distance, no stat grid (price level already in the meta line), Popular dishes renders as pills (name only), description before the unique section, CTA is Book a table', () => {
       const restaurant: Activity = {
         ...activity,
         subcategory: 'fine_dining',
@@ -2173,10 +2099,10 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText('Cuisine')).toBeNull();
       expect(screen.queryByText('Price')).toBeNull();
 
-      // Unique section: Popular dishes, nameprice density (name + price column).
+      // Unique section: Popular dishes, pills density (name only, no price).
       expect(screen.getByText('Popular dishes')).toBeTruthy();
       expect(screen.getByText('Ćevapi')).toBeTruthy();
-      expect(screen.getByText('€8')).toBeTruthy();
+      expect(screen.queryByText('€8')).toBeNull();
 
       expect(screen.getByRole('button', { name: 'Book a table' })).toBeTruthy();
 
@@ -2234,7 +2160,7 @@ describe('ActivityDetailScreen', () => {
       expect(tree.indexOf('17:00–19:00')).toBeLessThan(tree.indexOf('Signature pours'));
     });
 
-    it('Cafés: meta line reads Café · subtype · distance, stat grid is Known for/Wifi, On the bar renders as nameprice, CTA is Get directions/Share, description promotes above the stat grid', () => {
+    it('Cafés: meta line reads Café · subtype · distance, stat grid is Known for/Wifi, On the bar renders as pills (name only), CTA is Get directions/Share, description promotes above the stat grid', () => {
       const cafe: Activity = {
         ...activity,
         category: 'cafes',
@@ -2258,7 +2184,7 @@ describe('ActivityDetailScreen', () => {
       expect(screen.getByText('Fast')).toBeTruthy();
       expect(screen.getByText('On the bar')).toBeTruthy();
       expect(screen.getByText('Flat white')).toBeTruthy();
-      expect(screen.getByText('€2.80')).toBeTruthy();
+      expect(screen.queryByText('€2.80')).toBeNull();
       const footer = within(screen.getByTestId('activity-detail-footer'));
       expect(footer.getByRole('button', { name: 'Get directions' })).toBeTruthy();
       expect(footer.getByRole('button', { name: 'Share' })).toBeTruthy();
@@ -2719,59 +2645,19 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
-  // T11 (T9 round-3 follow-up): a price-shaped stat chip's raw value can be
-  // a bare, unit-less number ("500") — fine in the grid (its own "Price
-  // from" label sits right above it), context-free once it's the lone
-  // survivor folded into the meta line with no label at all.
-  describe('Wellness bare-number meta-line fold carries a unit prefix (T11)', () => {
-    it('folds a bare price_from value into the meta line as "from 500", not the bare number', () => {
+  // T2: `foldPrefix`/`stripLeadingFrom` are retired along with the price
+  // chips that were their only callers — Wellness never has a stat grid
+  // (and therefore never a fold) at all now, bare-number or not.
+  describe('Wellness never folds a value into the meta line (T2: no stat grid, ever)', () => {
+    it('renders no folded value in the meta line even for a bare-number legacy price_from', () => {
       const wellness: Activity = {
         ...activity,
         category: 'wellness',
         details: { category: 'wellness', price_from: '500' },
       };
       render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
-      // MetaLine renders each item as its own <Text> node (separator is a
-      // sibling node, not part of the same string) — assert the folded
-      // item's own text directly, same pattern the Bars/Cafés composition
-      // tests above use.
-      expect(screen.getByText('from 500')).toBeTruthy();
       expect(screen.queryByText('500')).toBeNull();
-    });
-
-    it('does not double the prefix when the raw value already arrives pre-prefixed', () => {
-      const wellness: Activity = {
-        ...activity,
-        category: 'wellness',
-        details: { category: 'wellness', price_from: 'from 500' },
-      };
-      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
-      expect(screen.getByText('from 500')).toBeTruthy();
-      expect(screen.queryByText('from from 500')).toBeNull();
-    });
-
-    // T11 round 2: prefixing before MetaLine's own `classifyField` re-check
-    // pushed an already-valid scalar past the 18-char/4-word cap on its
-    // *prefixed* length, dropping legitimate longer prices outright instead
-    // of gaining context. Both exact strings the review probe found broken.
-    it('keeps a longer valid price scalar after the fold prefix ("€1200 per person")', () => {
-      const wellness: Activity = {
-        ...activity,
-        category: 'wellness',
-        details: { category: 'wellness', price_from: '€1200 per person' },
-      };
-      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
-      expect(screen.getByText('from €1200 per person')).toBeTruthy();
-    });
-
-    it('keeps a longer valid price scalar after the fold prefix ("500 RSD per visit")', () => {
-      const wellness: Activity = {
-        ...activity,
-        category: 'wellness',
-        details: { category: 'wellness', price_from: '500 RSD per visit' },
-      };
-      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
-      expect(screen.getByText('from 500 RSD per visit')).toBeTruthy();
+      expect(screen.queryByText('from 500')).toBeNull();
     });
   });
 

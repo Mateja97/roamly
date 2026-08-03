@@ -145,9 +145,10 @@ describe('queryActivities', () => {
     const activity = result.activities[0];
     expect(activity.details).toEqual({ category: 'restaurants', cuisine: 'Serbian', price_tier: '$$' });
 
+    // T2: `price_tier` no longer feeds a chip — Cuisine only.
     const chips = factStripFields(activity);
-    expect(chips.map((c) => c.label)).toEqual(['Cuisine', 'Price']);
-    expect(chips.map((c) => c.value)).toEqual(['Serbian', '$$']);
+    expect(chips.map((c) => c.label)).toEqual(['Cuisine']);
+    expect(chips.map((c) => c.value)).toEqual(['Serbian']);
   });
 
   it('still handles an empty wire-shaped details object ({}) cleanly after stamping category', async () => {
@@ -185,7 +186,9 @@ describe('queryActivities', () => {
     expect(result.status).toBe('success');
     if (result.status !== 'success') return;
     const activity = result.activities[0];
-    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Effort', 'Duration', 'Gear']);
+    // T2: `duration` (the LLM-scraped session duration) no longer feeds a
+    // chip — Effort/Gear only.
+    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Effort', 'Gear']);
     expect(uniqueSection(activity)).toEqual({
       shape: 'checklist',
       heading: 'What to bring',
@@ -238,10 +241,11 @@ describe('queryActivities', () => {
     expect(result.status).toBe('success');
     if (result.status !== 'success') return;
     const activity = result.activities[0];
-    // T8: Culture's stat-grid order is Tickets, then Venue (only when it
-    // differs from the subtype — see `venueDiffersFromSubtype`). No
-    // `subcategory` on this wire fixture, so Venue always shows.
-    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Tickets', 'Venue', 'Hours']);
+    // T8/T2: Culture's only surviving stat-grid chip is Venue (`Tickets` is
+    // retired) — shown when it differs from the subtype (see
+    // `venueDiffersFromSubtype`). No `subcategory` on this wire fixture, so
+    // Venue always shows.
+    expect(factStripFields(activity).map((c) => c.label)).toEqual(['Venue', 'Hours']);
     expect(uniqueSection(activity)).toEqual({
       shape: 'banner',
       heading: 'Now showing',
