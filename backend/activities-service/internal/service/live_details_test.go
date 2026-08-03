@@ -276,6 +276,132 @@ func fakePlaceDetail(t *testing.T, websiteURI, primaryType string) placesmap.Pla
 	return d
 }
 
+// TestHasTripadvisorReviews covers T3's "reviews key: absent, null, or
+// empty array all count as none" rule directly against the helper, rather
+// than only indirectly through withTripadvisorGoogleReviews.
+func TestHasTripadvisorReviews(t *testing.T) {
+	tests := []struct {
+		name    string
+		details json.RawMessage
+		want    bool
+	}{
+		{name: "absent key", details: json.RawMessage(`{"tripadvisor":{}}`), want: false},
+		{name: "null reviews", details: json.RawMessage(`{"reviews":null}`), want: false},
+		{name: "empty array", details: json.RawMessage(`{"reviews":[]}`), want: false},
+		{name: "one quotable review", details: json.RawMessage(`{"reviews":[{"rating":5,"date":"July 2026","text":"Lovely."}]}`), want: true},
+		{name: "malformed JSON reads as none", details: json.RawMessage(`{not json`), want: false},
+		{name: "nil blob reads as none", details: nil, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasTripadvisorReviews(tt.details); got != tt.want {
+				t.Errorf("hasTripadvisorReviews(%s) = %v, want %v", tt.details, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback covers T3
+// (tripadvisor-google-review-fallback): a Tripadvisor row with a stored
+// google_place_id and no quotable Tripadvisor review gets a live Google
+// Place Details lookup for GoogleReviews/GoogleMapsURI only, preserving
+// Rating/ReviewCount/Description/Details verbatim; every other Tripadvisor
+// row (quotable review present, or no stored place id) keeps the pre-T3
+// early return; a resolve error falls back to the bare stored row.
+func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) {
+	googleDetail := placesmap.PlaceDetail{
+		Reviews:       []placesmap.Review{{Rating: 5}},
+		GoogleMapsURI: "https://maps.google.com/?cid=123",
+	}
+
+	baseRow := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryRestaurants, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", ExternalID: "loc-1", GooglePlaceID: "place-9",
+		Rating: 4.6, ReviewCount: 512, Description: "",
+		Details: json.RawMessage(`{"tripadvisor":{"review_count":512}}`),
+	}
+
+	tests := []struct {
+		name           string
+		activity       activitiessvc.Activity
+		places         *fakePlaces
+		wantPlaceCalls int
+		wantReviews    int
+		wantMapsURI    string
+	}{
+		{
+			name:           "no quotable reviews: fetches and sets GoogleReviews/GoogleMapsURI only",
+			activity:       baseRow,
+			places:         &fakePlaces{detailOut: googleDetail},
+			wantPlaceCalls: 1,
+			wantReviews:    1,
+			wantMapsURI:    "https://maps.google.com/?cid=123",
+		},
+		{
+			name: "quotable reviews already present: early return, no places call",
+			activity: func() activitiessvc.Activity {
+				a := baseRow
+				a.Details = json.RawMessage(`{"tripadvisor":{"review_count":512},"reviews":[{"rating":5,"date":"July 2026","text":"Great."}]}`)
+				return a
+			}(),
+			places: &fakePlaces{detailOut: googleDetail},
+		},
+		{
+			name: "no stored place id: early return, no places call",
+			activity: func() activitiessvc.Activity {
+				a := baseRow
+				a.GooglePlaceID = ""
+				return a
+			}(),
+			places: &fakePlaces{detailOut: googleDetail},
+		},
+		{
+			name:           "resolve error falls back to bare stored row",
+			activity:       baseRow,
+			places:         &fakePlaces{detailErr: errors.New("places is down")},
+			wantPlaceCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeRepo{getOut: tt.activity}
+			svc := New(repo).WithPlaces(tt.places)
+
+			got, err := svc.GetByIDWithLiveDetails(context.Background(), tt.activity.ID)
+			if err != nil {
+				t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+			}
+			if tt.places.detailCalls != tt.wantPlaceCalls {
+				t.Errorf("places.PlaceDetails calls = %d, want %d", tt.places.detailCalls, tt.wantPlaceCalls)
+			}
+			if len(got.GoogleReviews) != tt.wantReviews {
+				t.Errorf("GoogleReviews len = %d, want %d", len(got.GoogleReviews), tt.wantReviews)
+			}
+			if got.GoogleMapsURI != tt.wantMapsURI {
+				t.Errorf("GoogleMapsURI = %q, want %q", got.GoogleMapsURI, tt.wantMapsURI)
+			}
+			// Every case, success or fallback, must leave the Tripadvisor
+			// row's own fields exactly as stored — T3's central guarantee.
+			if got.Rating != tt.activity.Rating {
+				t.Errorf("Rating = %v, want stored %v unchanged", got.Rating, tt.activity.Rating)
+			}
+			if got.ReviewCount != tt.activity.ReviewCount {
+				t.Errorf("ReviewCount = %v, want stored %v unchanged", got.ReviewCount, tt.activity.ReviewCount)
+			}
+			if got.Description != tt.activity.Description {
+				t.Errorf("Description = %q, want stored %q unchanged", got.Description, tt.activity.Description)
+			}
+			if string(got.Details) != string(tt.activity.Details) {
+				t.Errorf("Details = %s, want stored %s unchanged verbatim", got.Details, tt.activity.Details)
+			}
+			if repo.updateCalls != 0 {
+				t.Errorf("repo.Update called %d times, want 0 — never persisted", repo.updateCalls)
+			}
+		})
+	}
+}
+
 // TestActivities_WithLiveDetails_MergesOntoStoredDetails is the regression
 // this task exists to prevent: once a Wellness/Entertainment row carries
 // website-scraped or admin-curated content (Treatments/GoodToKnow/
