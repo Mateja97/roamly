@@ -49,11 +49,9 @@ import {
   metaRowExtras,
   nightlifeTonightChip,
   openStatus,
-  priceContextLine,
   PRIMARY_CTA_LABEL,
   primaryActionURL,
   primaryCTAIsDirections,
-  stripLeadingFrom,
   todayHoursRow,
   toursIncludedChecklist,
   toursItinerary,
@@ -272,39 +270,11 @@ export function ActivityDetailScreen({
   // (e.g. "Fast" for Wifi in the culture/shopping screens); revisit with a
   // `label` fold for a field where the bare value reads as context-free.
   const foldedFactChip = classifiedFactChips.length === 1 ? classifiedFactChips[0] : undefined;
-  // T11 (T9 round-3 follow-up): a price-shaped chip's `foldPrefix` (see
-  // activityDetailConfig.ts's `FactChip` type) only applies once it's the
-  // lone meta-line survivor — the grid render (FactStrip.tsx) never reads
-  // it, since the chip's own label already carries the context there.
-  // `stripLeadingFrom` avoids a doubled "from from €X" when the raw scraped
-  // value already arrives pre-prefixed (same guard `priceContextLine`/the
-  // Treatments density already apply to this identical field shape).
-  const foldedValue = foldedFactChip
-    ? foldedFactChip.foldPrefix
-      ? `${foldedFactChip.foldPrefix}${stripLeadingFrom(foldedFactChip.value)}`
-      : foldedFactChip.value
-    : undefined;
+  const foldedValue = foldedFactChip?.value;
   // design-spec.md T8's Kids composition: already-classified (see
   // `kidsAgeLabel`), so it's counted here as-is, same treatment as
   // `foldedFactChip.value` below.
   const kidsAge = kidsAgeLabel(activity);
-  // T5 round-4 fix: round 3's guard counted *assumed* candidates (2 lead
-  // items, always) instead of what MetaLine will actually render, so it
-  // evicted `metaText` even when the real count never reached the 4-item
-  // cap — e.g. empty/off-taxonomy `subcategory` (no subtype item) or a
-  // >18-char neighborhood (`classifyField` drops it). Count the same items
-  // MetaLine's `rawItems`/`items` will render (lead items raw, `metaExtras`
-  // through the same `classifyField('scalar', …)` MetaLine's `items` prop
-  // applies — `foldedFactChip.value` is already classifyField'd output via
-  // `classifyFactChips`, so it's passed as-is) and only yield `metaText`'s
-  // slot when that real count already fills the cap.
-  const metaLineOverflow =
-    [
-      ...metaLineLeadItems(activity),
-      kidsAge,
-      ...metaExtras.map((v) => classifyField('scalar', v)),
-      foldedFactChip?.value,
-    ].filter(Boolean).length >= 4;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
   // design-spec.md's Tours & Experiences composition (T10): three ordered
@@ -321,7 +291,6 @@ export function ActivityDetailScreen({
   const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
-  const priceContext = priceContextLine(activity);
   // T11 round 2: compliance — a Google-sourced reviews section (score,
   // cards, attribution) must always be able to link back to Google Maps, so
   // it never renders without `google_maps_uri` present, full stop — no
@@ -697,24 +666,25 @@ export function ActivityDetailScreen({
               // ahead of distance/country — all app-computed/taxonomy data,
               // never run through `classifyField` (see MetaLine's
               // `rawItems`). Absent entirely for a Tripadvisor row (its
-              // eyebrow above the title already carries category). T5
-              // round-3 fix: `metaText` drops out of the lead items (rather
-              // than the fold or neighborhood silently losing theirs — see
-              // `metaLineOverflow`) on the one Entertainment collision where
-              // all 5 candidates compete for 4 slots. T11 round 2:
-              // `foldedValue` also belongs here, not in `items` below — it's
-              // already been through `classifyField` once (via
-              // `classifyFactChips`, on its unprefixed value) before the
-              // `foldPrefix` was added, so running it through `items`'s
-              // second `classifyField` call would measure the *prefixed*
-              // string against the scalar cap and drop legitimate longer
-              // prices outright (e.g. "€1200 per person" fine unprefixed,
-              // "from €1200 per person" over the char cap) — `rawItems` is
-              // exactly the already-final bypass this needs.
+              // eyebrow above the title already carries category). T11
+              // round 2: `foldedValue` also belongs here, not in `items`
+              // below — it's already been through `classifyField` once (via
+              // `classifyFactChips`) — `rawItems` is the already-final
+              // bypass that avoids running it through a second
+              // `classifyField` call.
+              // T2 round-2 fix: the old `metaLineOverflow` guard (which
+              // dropped `metaText` when the *other* rawItems candidates hit
+              // 4) is deleted — since T2 zeroed out Kids' and Entertainment's
+              // fact strips (`factStripFields` returns `[]` unconditionally
+              // for both), `foldedFactChip` can never be defined when
+              // `kidsAge`/`metaExtras` are, so the guard's own candidate
+              // count (category + subtype + one of {kidsAge, metaExtras,
+              // foldedValue}) now maxes out at 3 for every category — below
+              // its own >=4 threshold, permanently. `metaText` (distance/
+              // country) can never be evicted any more, so it's included
+              // unconditionally.
               rawItems={[
-                ...(!tripadvisor
-                  ? [...metaLineLeadItems(activity), kidsAge, metaLineOverflow ? undefined : metaText]
-                  : []),
+                ...(!tripadvisor ? [...metaLineLeadItems(activity), kidsAge, metaText] : []),
                 foldedValue,
               ]}
               items={metaExtras}
@@ -875,10 +845,6 @@ export function ActivityDetailScreen({
             <Text style={styles.bookingNoteText}>{bookingNote}</Text>
           </View>
         )}
-        {/* design-spec.md's "Bottom bar" slot (§B12): optional
-            price-context line above the button row — omits only this line
-            when the category's price_from is absent/invalid. */}
-        {priceContext && <Text style={styles.priceContextText}>{priceContext}</Text>}
         <View style={styles.footerButtons}>
         <Pressable
           onPress={handleGenericPress}
@@ -1113,15 +1079,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: fontSize.sm,
     color: colors.textMuted,
-  },
-  // .dc.html's bottom-bar price line: 15px/600 cream — rounds up to the
-  // nearest token per DESIGN_STANDARDS.md's Typography rounding convention
-  // (body text floor is --font-size-sm/14px; 15px rounds up to --font-size-md/16px).
-  priceContextText: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: space[3],
   },
   footerButtons: {
     flexDirection: 'row',

@@ -50,43 +50,18 @@ type UniqueSectionProps = { data: UniqueSectionData | undefined };
 export function UniqueSection({ data }: UniqueSectionProps) {
   if (!data) return null;
   // design-spec.md's degradation table: "List row, name absent → drop the
-  // whole row — a price with nothing to price is not a row." Filtered at
-  // render time (see below) for every list shape, since the upstream
-  // callers that build `data` don't all defend against it — T11 round 2:
-  // `nameprice` (Popular dishes/On the bar) and `dateblock` (title) had the
-  // same gap the `duration` density (Treatments) was already closed for. 0
-  // survivors omits the section and its heading entirely, same as every
-  // other shape's "0 items" case.
-  const isEmptyNamePriceList = data.shape === 'nameprice' && data.items.every((item) => !item.name?.trim());
+  // whole row." Filtered at render time (see below) since the upstream
+  // caller that builds `dateblock` data doesn't defend against it — T11
+  // round 2. 0 survivors omits the section and its heading entirely, same
+  // as every other shape's "0 items" case.
   const isEmptyDateBlockList =
     data.shape === 'schedule' && data.density === 'dateblock' && data.rows.every((row) => !row.title?.trim());
-  const isEmptyDurationList =
-    data.shape === 'schedule' && data.density === 'duration' && data.rows.every((row) => !row.name);
-  if (isEmptyNamePriceList || isEmptyDateBlockList || isEmptyDurationList) return null;
+  if (isEmptyDateBlockList) return null;
 
   return (
     <View style={styles.section}>
       {data.shape !== 'banner' && (
         <Text style={styles.heading}>{data.heading}</Text>
-      )}
-
-      {data.shape === 'nameprice' && (
-        <View>
-          {/* design-spec.md's List rows "name absent drops the row" rule —
-              a `{name: '', price: '€12'}` row (a leaked scrape gap) must not
-              render headless. */}
-          {data.items
-            .filter((item) => Boolean(item.name?.trim()))
-            .map((item, i) => (
-              <View
-                key={item.name}
-                style={[styles.nameRow, i > 0 && styles.hairlineTop]}
-              >
-                <Text style={styles.rowName}>{item.name}</Text>
-                <Text style={styles.rowPrice}>{item.price}</Text>
-              </View>
-            ))}
-        </View>
       )}
 
       {data.shape === 'pills' && (
@@ -201,39 +176,10 @@ export function UniqueSection({ data }: UniqueSectionProps) {
               )}
               <Text style={styles.compactMain}>{row.main}</Text>
               {row.trailing ? (
-                <Text
-                  style={
-                    row.trailingStyle === 'price'
-                      ? styles.compactTrailingPrice
-                      : styles.compactTrailingMuted
-                  }
-                >
-                  {row.trailing}
-                </Text>
+                <Text style={styles.compactTrailingMuted}>{row.trailing}</Text>
               ) : null}
             </View>
           ))}
-        </View>
-      )}
-
-      {data.shape === 'schedule' && data.density === 'duration' && (
-        <View style={styles.compactContainer}>
-          {/* design-spec.md's List rows "duration" density (§B6): name +
-              duration (muted subtitle) + trailing `from €X`. A row whose
-              *name* is absent is dropped entirely (distinct from the
-              trailing-omits-per-row rule below it) — a price with nothing
-              to price isn't a row. */}
-          {data.rows
-            .filter((row): row is typeof row & { name: string } => Boolean(row.name))
-            .map((row, i) => (
-              <View key={row.name} style={[styles.durationRow, i > 0 && styles.hairlineTop]}>
-                <View style={styles.durationNameGroup}>
-                  <Text style={styles.rowName}>{row.name}</Text>
-                  {row.duration && <Text style={styles.durationSubline}>{row.duration}</Text>}
-                </View>
-                {row.price && <Text style={styles.rowPrice}>{row.price}</Text>}
-              </View>
-            ))}
         </View>
       )}
 
@@ -269,9 +215,6 @@ export function UniqueSection({ data }: UniqueSectionProps) {
                     <Text style={styles.dateBlockLabel}>{row.dateLabel}</Text>
                   ) : null}
                   <Text style={styles.dateBlockTitle}>{row.title}</Text>
-                  {row.subline ? (
-                    <Text style={styles.dateBlockSubline}>{row.subline}</Text>
-                  ) : null}
                 </View>
                 <ChevronRight
                   size={18}
@@ -291,25 +234,9 @@ const styles = StyleSheet.create({
     gap: space[3],
   },
   heading: sectionHeadingStyle,
-  // Shape A — name+price list
-  nameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: space[3],
-  },
   hairlineTop: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
-  },
-  rowName: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-  },
-  rowPrice: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
   },
   // Shape B — pill list
   pillsRow: {
@@ -453,30 +380,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textMuted,
   },
-  compactTrailingPrice: {
-    fontSize: fontSize.sm,
-    fontWeight: '600',
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
-  },
-  // Shape F — scheduled-items list (duration density)
-  durationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space[3],
-    paddingVertical: space[3],
-    paddingHorizontal: space[4],
-  },
-  durationNameGroup: {
-    flex: 1,
-    minWidth: 0,
-  },
-  durationSubline: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
   // Shape F — scheduled-items list (date-block density)
   dateBlockList: {
     gap: space[3],
@@ -521,9 +424,5 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: '600',
     color: colors.text,
-  },
-  dateBlockSubline: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
   },
 });

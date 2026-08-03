@@ -8,49 +8,6 @@ describe('UniqueSection', () => {
     expect(toJSON()).toBeNull();
   });
 
-  it('shape A (name+price list): renders each row name and price', () => {
-    const data: UniqueSectionData = {
-      shape: 'nameprice',
-      heading: 'Popular dishes',
-      items: [{ name: 'Ćevapi', price: '€8' }],
-    };
-    render(<UniqueSection data={data} />);
-    expect(screen.getByText('Popular dishes')).toBeTruthy();
-    expect(screen.getByText('Ćevapi')).toBeTruthy();
-    expect(screen.getByText('€8')).toBeTruthy();
-  });
-
-  // T11 round 2: the "duration" density (Treatments) already dropped a
-  // name-absent row; `nameprice` (Popular dishes/On the bar) had the same
-  // gap — a `{name: '', price: '€12'}` row rendered headless.
-  it('shape A (name+price list): drops a row whose name is absent entirely, keeps the rest', () => {
-    const data: UniqueSectionData = {
-      shape: 'nameprice',
-      heading: 'Popular dishes',
-      items: [
-        { name: 'Ćevapi', price: '€8' },
-        { name: '', price: '€12' },
-        { name: '   ', price: '€3' },
-      ],
-    };
-    render(<UniqueSection data={data} />);
-    expect(screen.getByText('Ćevapi')).toBeTruthy();
-    expect(screen.getByText('€8')).toBeTruthy();
-    expect(screen.queryByText('€12')).toBeNull();
-    expect(screen.queryByText('€3')).toBeNull();
-  });
-
-  it('shape A (name+price list): omits the whole section, heading included, when every row lacks a name', () => {
-    const data: UniqueSectionData = {
-      shape: 'nameprice',
-      heading: 'On the bar',
-      items: [{ name: '', price: '€3' }],
-    };
-    const { toJSON } = render(<UniqueSection data={data} />);
-    expect(toJSON()).toBeNull();
-    expect(screen.queryByText('On the bar')).toBeNull();
-  });
-
   it('shape B (pill list): renders each pill', () => {
     const data: UniqueSectionData = {
       shape: 'pills',
@@ -227,7 +184,6 @@ describe('UniqueSection', () => {
           leading: '23:00',
           main: 'DJ Nina',
           trailing: 'Main stage',
-          trailingStyle: 'muted',
         },
       ],
     };
@@ -262,100 +218,32 @@ describe('UniqueSection', () => {
     });
   });
 
-  // design-spec.md's List rows "duration" density (§B6, new).
-  it('shape F (schedule, duration density): renders name, duration, and trailing price', () => {
-    const data: UniqueSectionData = {
-      shape: 'schedule',
-      heading: 'Treatments',
-      density: 'duration',
-      rows: [{ name: 'Massage', duration: '60 min', price: 'from €35' }],
-    };
-    render(<UniqueSection data={data} />);
-    expect(screen.getByText('Treatments')).toBeTruthy();
-    expect(screen.getByText('Massage')).toBeTruthy();
-    expect(screen.getByText('60 min')).toBeTruthy();
-    expect(screen.getByText('from €35')).toBeTruthy();
-  });
-
-  it('shape F (duration density): omits the trailing price per-row when absent, row stays', () => {
-    const data: UniqueSectionData = {
-      shape: 'schedule',
-      heading: 'Treatments',
-      density: 'duration',
-      rows: [{ name: 'Facial', duration: '90 min' }],
-    };
-    render(<UniqueSection data={data} />);
-    expect(screen.getByText('Facial')).toBeTruthy();
-    expect(screen.getByText('90 min')).toBeTruthy();
-  });
-
-  it('shape F (duration density): drops a row whose name is absent entirely (distinct from the trailing rule)', () => {
-    const data: UniqueSectionData = {
-      shape: 'schedule',
-      heading: 'Treatments',
-      density: 'duration',
-      rows: [{ name: 'Sauna', price: 'from €12' }, { price: 'from €9' }],
-    };
-    render(<UniqueSection data={data} />);
-    expect(screen.getByText('Sauna')).toBeTruthy();
-    expect(screen.getByText('from €12')).toBeTruthy();
-    expect(screen.queryByText('from €9')).toBeNull();
-  });
-
-  it('shape F (duration density): omits the whole section, heading included, when every row lacks a name', () => {
-    const data: UniqueSectionData = {
-      shape: 'schedule',
-      heading: 'Treatments',
-      density: 'duration',
-      rows: [{ price: 'from €9' }],
-    };
-    const { toJSON } = render(<UniqueSection data={data} />);
-    expect(toJSON()).toBeNull();
-    expect(screen.queryByText('Treatments')).toBeNull();
-  });
-
-  it('shape F (schedule, date-block density): renders day, date, title, and subline', () => {
+  it('shape F (schedule, date-block density): renders day, date, and title (no subline slot)', () => {
     const data: UniqueSectionData = {
       shape: 'schedule',
       heading: 'Upcoming shows',
       density: 'dateblock',
-      rows: [
-        {
-          day: 'FRI',
-          date: '20',
-          title: 'Live at the Fort',
-          subline: '20:00 · from €15',
-        },
-      ],
+      rows: [{ day: 'FRI', date: '20', title: 'Live at the Fort' }],
     };
     render(<UniqueSection data={data} />);
     expect(screen.getByText('FRI')).toBeTruthy();
     expect(screen.getByText('20')).toBeTruthy();
     expect(screen.getByText('Live at the Fort')).toBeTruthy();
-    expect(screen.getByText('20:00 · from €15')).toBeTruthy();
   });
 
   // T9 round-3 fix: `activityDetailConfig.ts`'s `dateBlockRow` now omits
   // `date`/`day` (empty strings) when the raw date fails classification —
-  // this pins the renderer's half: no date-block column, title+subline
-  // still render, matching the "row keeps title+subline" trailing-omit rule.
+  // this pins the renderer's half: no date-block column, title still
+  // renders.
   it('shape F (schedule, date-block density): omits the date block entirely when date is empty', () => {
     const data: UniqueSectionData = {
       shape: 'schedule',
       heading: 'Upcoming shows',
       density: 'dateblock',
-      rows: [
-        {
-          day: '',
-          date: '',
-          title: 'Live at the Fort',
-          subline: '20:00 · from €15',
-        },
-      ],
+      rows: [{ day: '', date: '', title: 'Live at the Fort' }],
     };
     render(<UniqueSection data={data} />);
     expect(screen.getByText('Live at the Fort')).toBeTruthy();
-    expect(screen.getByText('20:00 · from €15')).toBeTruthy();
     expect(screen.queryByText('FRI')).toBeNull();
   });
 
@@ -368,15 +256,7 @@ describe('UniqueSection', () => {
       shape: 'schedule',
       heading: 'Upcoming shows',
       density: 'dateblock',
-      rows: [
-        {
-          day: '',
-          date: '',
-          dateLabel: 'TBA',
-          title: 'Live at the Fort',
-          subline: '',
-        },
-      ],
+      rows: [{ day: '', date: '', dateLabel: 'TBA', title: 'Live at the Fort' }],
     };
     render(<UniqueSection data={data} />);
     expect(screen.getByText('TBA')).toBeTruthy();
@@ -384,23 +264,22 @@ describe('UniqueSection', () => {
   });
 
   // T11 round 2: dateblock never checked `title` for absence — a show with
-  // no title rendered a headless card (date/price with nothing to name).
+  // no title rendered a headless card.
   it('shape F (date-block density): drops a row whose title is absent entirely, keeps the rest', () => {
     const data: UniqueSectionData = {
       shape: 'schedule',
       heading: 'Upcoming shows',
       density: 'dateblock',
       rows: [
-        { day: 'FRI', date: '20', title: 'Live at the Fort', subline: '20:00' },
-        { day: 'SAT', date: '21', title: '', subline: '21:00' },
-        { day: 'SUN', date: '22', title: '   ', subline: '22:00' },
+        { day: 'FRI', date: '20', title: 'Live at the Fort' },
+        { day: 'SAT', date: '21', title: '' },
+        { day: 'SUN', date: '22', title: '   ' },
       ],
     };
     render(<UniqueSection data={data} />);
     expect(screen.getByText('Live at the Fort')).toBeTruthy();
-    expect(screen.getByText('20:00')).toBeTruthy();
-    expect(screen.queryByText('21:00')).toBeNull();
-    expect(screen.queryByText('22:00')).toBeNull();
+    expect(screen.queryByText('SAT')).toBeNull();
+    expect(screen.queryByText('SUN')).toBeNull();
   });
 
   it('shape F (date-block density): omits the whole section, heading included, when every row lacks a title', () => {
@@ -408,10 +287,27 @@ describe('UniqueSection', () => {
       shape: 'schedule',
       heading: 'Upcoming shows',
       density: 'dateblock',
-      rows: [{ day: 'FRI', date: '20', title: '', subline: '20:00' }],
+      rows: [{ day: 'FRI', date: '20', title: '' }],
     };
     const { toJSON } = render(<UniqueSection data={data} />);
     expect(toJSON()).toBeNull();
     expect(screen.queryByText('Upcoming shows')).toBeNull();
+  });
+
+  // T2: no `subline` slot exists on DateBlockRow at all any more (the
+  // retired shape conflated a scraped price with a scraped showtime) —
+  // confirm no muted second line renders under the title even if a caller
+  // somehow still had text to put there.
+  it('shape F (date-block density): renders title-only, no muted subline under it', () => {
+    const data: UniqueSectionData = {
+      shape: 'schedule',
+      heading: 'Upcoming shows',
+      density: 'dateblock',
+      rows: [{ day: 'FRI', date: '20', title: 'Live at the Fort' }],
+    };
+    const { toJSON } = render(<UniqueSection data={data} />);
+    // Exactly one Text under the body (the title) — no second line.
+    const json = JSON.stringify(toJSON());
+    expect((json.match(/Live at the Fort/g) ?? []).length).toBe(1);
   });
 });
