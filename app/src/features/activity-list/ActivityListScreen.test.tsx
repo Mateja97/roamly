@@ -419,7 +419,7 @@ describe('ActivityListScreen', () => {
       const setItemSpy = jest.spyOn(AsyncStorage, 'setItem');
       fireEvent.press(screen.getByRole('button', { name: 'Dismiss' }));
       expect(screen.queryByText("See what's near you")).toBeNull();
-      expect(setItemSpy).toHaveBeenCalledWith('roamly.nearbyNudgeDismissed', 'true');
+      expect(setItemSpy).toHaveBeenCalledWith('roamly:nearby-nudge-dismissed', 'true');
     });
 
     it('shows the quiet "choose a city" nudge instead, after an OS-level deny', async () => {

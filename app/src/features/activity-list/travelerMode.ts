@@ -5,7 +5,7 @@ import type { Coordinates } from '../scope-picker/types';
 // median of recent granted location samples, stored locally, no UI...
 // Fewer than 3 samples => no traveler mode." A rolling, capped list — no
 // need to keep every sample forever, just enough to get a stable median.
-const HOME_BASE_KEY = 'roamly.homeBaseSamples';
+const HOME_BASE_KEY = 'roamly:home-base-samples';
 const MAX_SAMPLES = 10;
 const MIN_SAMPLES_FOR_HOME_BASE = 3;
 export const TRAVELER_DISTANCE_KM = 150;
