@@ -1,7 +1,9 @@
-import type { ActivitiesQueryRequest, Location } from '../../api/activities';
+import type { Activity, ActivitiesQueryRequest, Location } from '../../api/activities';
 import type { CitySuggestion } from '../../api/cities';
+import type { ScopeDraft } from '../scope-sheet/scopeDraft';
+import { anywhereHasAnchor } from '../scope-sheet/scopeDraft';
 import type { Category, Filters, RatingOption } from './types';
-import type { Scope, ScopeSelection } from '../scope-picker/types';
+import type { Scope } from '../scope-picker/types';
 
 // T2: Nearby's server-fixed radius (activities-service's activity.go) — the
 // one copy of the number; NearbySearchSetupScreen's range card and
@@ -195,125 +197,6 @@ export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: 4.8, label: '4.8+' },
 ];
 
-// A scope's "widest" distance value — the same value defaultFilters uses —
-// is what "narrowed" is measured against, and what removing the distance
-// chip resets back to.
-function widestDistanceKm(scope: Scope): number | null {
-  return defaultFilters(scope).maxDistanceKm;
-}
-
-// Nearby has no adjustable distance control at all — never count/surface it
-// as an active filter for that scope, regardless of the stored value.
-function isDistanceActive(filters: Filters, scope: Scope): boolean {
-  return scope === 'anywhere' && filters.maxDistanceKm !== widestDistanceKm(scope);
-}
-
-export function activeFilterCount(filters: Filters, scope: Scope): number {
-  return (
-    filters.categories.length +
-    filters.subtypes.length +
-    (filters.minRating !== null ? 1 : 0) +
-    (isDistanceActive(filters, scope) ? 1 : 0)
-  );
-}
-
-export type FilterChipData = { key: string; label: string; remove: () => Filters };
-
-// T6: subtype slug -> its display label, in taxonomy order (category order,
-// then subtype order within category) — the same order SUBCATEGORIES/
-// CATEGORY_OPTIONS already define, walked once here so filterChips can sort
-// by it below instead of by selection order.
-const SUBTYPE_LABEL_IN_TAXONOMY_ORDER: { value: string; label: string }[] = CATEGORY_OPTIONS.flatMap(
-  ({ value }) => SUBCATEGORIES[value]
-);
-
-// design-spec.md T6's governing rule for this whole function: a filter value
-// gets a removable chip exactly when nothing else in the header already
-// represents it. Subtypes qualify (nothing else on the list screen shows
-// them); categories don't (the pill row above *is* the category filter,
-// T4) — so categories still get no chip here.
-export function filterChips(filters: Filters, scope: Scope): FilterChipData[] {
-  const chips: FilterChipData[] = [];
-
-  // Taxonomy order, not selection order (design-spec.md T6: "so the row
-  // does not reshuffle between renders").
-  for (const { value, label } of SUBTYPE_LABEL_IN_TAXONOMY_ORDER) {
-    if (!filters.subtypes.includes(value)) continue;
-    chips.push({
-      key: `subtype-${value}`,
-      label,
-      remove: () => ({ ...filters, subtypes: filters.subtypes.filter((s) => s !== value) }),
-    });
-  }
-
-  if (filters.minRating !== null) {
-    chips.push({
-      key: 'min-rating',
-      label: `${filters.minRating.toFixed(1)}+`,
-      remove: () => ({ ...filters, minRating: null }),
-    });
-  }
-  // Only a narrowing (away from the scope's widest/default), and only for
-  // anywhere (nearby has no adjustable distance at all), counts as an
-  // active, removable filter.
-  if (isDistanceActive(filters, scope)) {
-    chips.push({
-      key: 'max-distance',
-      label: `≤ ${filters.maxDistanceKm} km`,
-      remove: () => ({ ...filters, maxDistanceKm: widestDistanceKm(scope) }),
-    });
-  }
-
-  return chips;
-}
-
-// Builds the proxy request body from the current scope/coordinates plus the
-// applied filters. `current_location` travels for either scope whenever a
-// device-location anchor was resolved (always for nearby; only when
-// granted, for anywhere). `max_distance_km` is never sent for nearby — the
-// server always enforces its own fixed 10km radius and ignores the field
-// (see activities-service's activity.go), so sending it only implies a
-// control that doesn't exist, per NearbySearchSetupScreen's buildRequest.
-// For anywhere it's sent only when the user narrowed below the "no limit"
-// top stop AND an anchor exists — sending it without an anchor is a
-// contract violation T1 rejects.
-export function buildActivitiesRequest(selection: ScopeSelection, filters: Filters): ActivitiesQueryRequest {
-  const request: ActivitiesQueryRequest = { scope: selection.scope };
-
-  if (selection.coordinates) {
-    request.current_location = toLocation(selection.coordinates);
-  }
-
-  if (filters.categories.length > 0) request.categories = filters.categories;
-  // OR'd within each category's selection, AND-ed with the category filter
-  // overall — sent as one flat slug list, valid because subtype slugs are
-  // globally unique across categories (see SUBTYPE_CATEGORY above). Every
-  // slug here belongs to a currently-selected category — see FilterSheet's
-  // per-category orphan-clearing (toggleCategory).
-  if (filters.subtypes.length > 0) request.subcategories = filters.subtypes;
-  if (filters.minRating !== null) request.min_rating = filters.minRating;
-
-  if (selection.scope === 'anywhere' && selection.coordinates && filters.maxDistanceKm !== null) {
-    request.max_distance_km = filters.maxDistanceKm;
-  }
-
-  return request;
-}
-
-function toLocation(coordinates: { latitude: number; longitude: number }): Location {
-  return { lat: coordinates.latitude, lng: coordinates.longitude };
-}
-
-export const SCOPE_TITLES: Record<Scope, string> = {
-  nearby: 'Nearby',
-  anywhere: 'Anywhere',
-};
-
-// design-spec.md T1: copy change to match frame `5a` — "activities" → "places".
-function placeCountLabel(count: number): string {
-  return `${count} ${count === 1 ? 'place' : 'places'}`;
-}
-
 // "Lisbon" / "Lisbon & Barcelona" / "Lisbon, Barcelona & Amsterdam" — comma
 // join with "&" before the last item, no Oxford comma. Empty input returns
 // '' (callers only reach for this once they know cities.length > 0).
@@ -323,12 +206,67 @@ export function citiesJoinLabel(cities: CitySuggestion[]): string {
   return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]}`;
 }
 
-// Composite Page-header subtitle (design-spec.md T2). `null` means
-// "title-only header" — Anywhere's zero-city fallback (current_location
-// anchor, no city list to show).
-export function headerSubtitle(scope: Scope, count: number, cities: CitySuggestion[]): string | null {
-  const countLabel = placeCountLabel(count);
-  if (scope === 'nearby') return `${countLabel} · within ${NEARBY_RADIUS_KM} km`;
-  if (cities.length === 0) return null;
-  return `${countLabel} · ${citiesJoinLabel(cities)}`;
+function toLocation(coordinates: { latitude: number; longitude: number }): Location {
+  return { lat: coordinates.latitude, lng: coordinates.longitude };
+}
+
+// design-spec.md T3: the Feed's request builder, replacing the old
+// `buildActivitiesRequest` (which took the sheet's now-retired
+// categories+subtypes+minRating+maxDistanceKm `Filters` shape wholesale).
+// Scope/city/distance/rating now live in T2's `ScopeDraft`; only categories
+// stay on `Filters` (the Feed's own pill-row state) — `subtypes` are
+// deliberately **not** sent on the wire at all: see `filterBySubtypes`
+// below for why (client-side filtering off one category-scoped fetch, so
+// the subtype rail's per-chip counts don't need a second round trip).
+export function buildFeedRequest(draft: ScopeDraft, categories: Category[]): ActivitiesQueryRequest {
+  const request: ActivitiesQueryRequest = { scope: draft.scope };
+
+  if (draft.cities.length > 0) {
+    request.cities = draft.cities.map((c) => c.centroid);
+  } else if (draft.coordinates) {
+    request.current_location = toLocation(draft.coordinates);
+  }
+
+  if (categories.length > 0) request.categories = categories;
+  if (draft.minRating !== null) request.min_rating = draft.minRating;
+  // Nearby's range is server-fixed and never sent (activities-service
+  // ignores the field for that scope regardless); Anywhere only sends it
+  // once an anchor exists (city or device location) and the user narrowed
+  // below the "no limit" top stop.
+  if (draft.scope === 'anywhere' && anywhereHasAnchor(draft) && draft.maxDistanceKm !== null) {
+    request.max_distance_km = draft.maxDistanceKm;
+  }
+
+  return request;
+}
+
+// design-spec.md T3 Decision 5 / Subtype rail: "Subtypes OR within their
+// category, AND across categories." Since one activity only ever belongs to
+// one category, that resolves to: an activity passes if its own category
+// has no subtype narrowing at all, or its subcategory is one of that
+// category's selected subtypes — never affected by another category's
+// subtype selection.
+export function filterBySubtypes(activities: Activity[], filters: Filters): Activity[] {
+  if (filters.subtypes.length === 0) return activities;
+  return activities.filter((activity) => {
+    const subtypesInCategory = filters.subtypes.filter((s) => SUBTYPE_CATEGORY[s] === activity.category);
+    if (subtypesInCategory.length === 0) return true;
+    return subtypesInCategory.includes(activity.subcategory ?? '');
+  });
+}
+
+// design-spec.md T3: "Each subtype chip carries a live per-subtype result
+// count and disables at zero." Counts come from the category-scoped fetch
+// *before* subtype filtering (never from the already subtype-filtered
+// display list) — a chip's count is "how many results have this subtype",
+// independent of which other subtypes are currently checked in the same
+// category, the standard facet-count reading.
+export function subtypeCounts(activities: Activity[], category: Category): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const option of SUBCATEGORIES[category]) counts[option.value] = 0;
+  for (const activity of activities) {
+    if (activity.category !== category) continue;
+    if (activity.subcategory && activity.subcategory in counts) counts[activity.subcategory] += 1;
+  }
+  return counts;
 }

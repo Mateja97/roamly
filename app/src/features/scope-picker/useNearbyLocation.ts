@@ -19,9 +19,12 @@ type UseNearbyLocation = {
    * caller detect an already-denied permission on mount/open (e.g. the Scope
    * sheet's Nearby pane) without requestLocation's "Turn on location" tap,
    * which would OS-prompt an undetermined user just by checking. Leaves
-   * `state` alone unless already denied.
+   * `state` alone unless already denied. Resolves `true` when permission is
+   * already granted — lets a caller (e.g. the Feed's nearby-nudge) tell
+   * "already granted, just needs a fix" apart from "genuinely not asked yet"
+   * without itself duplicating the permission-status lookup.
    */
-  checkPermission: () => Promise<void>;
+  checkPermission: () => Promise<boolean>;
 };
 
 // Encapsulates a scope ticket's async location flow (permission check →
@@ -35,11 +38,12 @@ export function useNearbyLocation(): UseNearbyLocation {
 
   // Shares requestLocation's first check (below) but stops there — no
   // request prompt, no GPS fetch — so it's safe to call passively on mount.
-  const checkPermission = useCallback(async (): Promise<void> => {
+  const checkPermission = useCallback(async (): Promise<boolean> => {
     const current = await Location.getForegroundPermissionsAsync();
     if (current.status === Location.PermissionStatus.DENIED) {
       setState({ status: 'denied' });
     }
+    return current.status === Location.PermissionStatus.GRANTED;
   }, []);
 
   const requestLocation = useCallback(async (): Promise<Coordinates | null> => {

@@ -114,10 +114,10 @@ describe('App', () => {
         categories: ['sport'],
       })
     );
-    // T4: category filters no longer get their own removable chip (the list
-    // header's pill row represents that state directly instead) — the
-    // Filters button's count badge is the other visible signal.
-    expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
+    // T3: the old "Filters, 1 active" badge is gone along with the Filters
+    // button/sheet — the Feed's own relocated category pill row is now the
+    // only, direct representation of the selection.
+    expect(screen.getByRole('button', { name: 'Sport, selected' })).toBeTruthy();
   });
 
   it('Anywhere with location denied still reaches the search-setup screen with no anchor (no dead end)', async () => {
@@ -140,7 +140,10 @@ describe('App', () => {
     await act(async () => {
       fireEvent.press(screen.getByRole('button', { name: 'Show 1 activity' }));
     });
-    expect(screen.getByText('Anywhere')).toBeTruthy();
+    // T3: the Feed header's scope pill reads "Exploring everywhere" for the
+    // no-anchor, no-city Anywhere case — not the bare "Anywhere" the old
+    // Marcellus title showed.
+    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
     await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere', max_distance_km: 500 }));
   });
 

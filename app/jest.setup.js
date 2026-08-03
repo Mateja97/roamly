@@ -1,8 +1,4 @@
 /* global jest */
-jest.mock('@react-native-async-storage/async-storage', () =>
-  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
-);
-
 // react-native-safe-area-context needs a real on-screen layout pass to
 // measure insets, which the Jest environment never performs — mock it with
 // fixed zero insets so SafeAreaProvider/SafeAreaView render their children
@@ -39,3 +35,10 @@ jest.mock('react-native-safe-area-context', () => {
 const { AccessibilityInfo } = require('react-native');
 AccessibilityInfo.isReduceMotionEnabled = () => Promise.resolve(false);
 AccessibilityInfo.addEventListener = () => ({ remove: () => {} });
+
+// The package's own official in-memory mock — every local-flag module
+// (T1's firstLaunch.ts, T3's nearbyNudge.ts/travelerMode.ts) reads/writes
+// real AsyncStorage, which has no native module in the Jest environment.
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);

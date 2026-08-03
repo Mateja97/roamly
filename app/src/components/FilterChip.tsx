@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Check, X } from 'lucide-react-native';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 
@@ -31,6 +32,12 @@ type SegmentChipProps = {
   // for the header row's reset pill, whose visible "All" reads as
   // meaningless to AT out of context (design-spec.md T4).
   accessibilityLabel?: string;
+  // design-spec.md T3: the Feed's category/subtype rows layer a
+  // press-scale(.97) transform on top of this chip's own color feedback —
+  // that animation lives one level up (a wrapping Animated.View driven by
+  // `usePressScale`), this just forwards the raw press events to it.
+  onPressIn?: () => void;
+  onPressOut?: () => void;
 };
 
 type FilterChipProps = SelectChipProps | RemoveChipProps | SegmentChipProps;
@@ -55,6 +62,8 @@ export function FilterChip(props: FilterChipProps) {
   return (
     <Pressable
       onPress={props.onPress}
+      onPressIn={props.variant === 'segment' ? props.onPressIn : undefined}
+      onPressOut={props.variant === 'segment' ? props.onPressOut : undefined}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       // Segment chips render at a visible ~32px (matching frame `5a`), so the
@@ -74,29 +83,53 @@ export function FilterChip(props: FilterChipProps) {
         focused && (isSegment ? styles.segmentFocused : styles.chipFocused),
       ]}
     >
-      {props.variant === 'select' && selected && <Check size={16} color={colors.primary} strokeWidth={1.75} />}
-      {isSegment ? (
-        // DESIGN_STANDARDS.md:1214-1217 — the selected weight-600 label must
-        // not change the pill's laid-out box. A same-text, weight-600 sizer
-        // renders invisibly in normal flow to reserve the wider metrics;
-        // the real (possibly lighter) label sits on top of it via absolute
-        // position, so it never drives the layout.
-        <View style={styles.segmentLabelStack}>
-          <Text
-            style={[styles.label, styles.segmentLabelSelected, styles.segmentLabelSizer]}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
-            {props.label}
-          </Text>
-          <Text style={[styles.label, styles.segmentLabelVisible, selected ? styles.segmentLabelSelected : styles.segmentLabelUnselected]}>
-            {props.label}
-          </Text>
-        </View>
-      ) : (
-        <Text style={[styles.label, useTextLabel && styles.labelSelected]}>{props.label}</Text>
+      {({ pressed }) => (
+        <>
+          {isSegment && !selected && (
+            <>
+              {/* design-spec.md T3: unselected category pill carries a
+                  top-lit --surface-gradient fill (not flat
+                  --surface/transparent) — a plain backgroundColor can't
+                  express a gradient, so this sits absolute-fill behind the
+                  label, clipped to the pill's own radius by the chip's own
+                  overflow:hidden. */}
+              <LinearGradient colors={colors.surfaceGradient} style={StyleSheet.absoluteFill} pointerEvents="none" />
+              {pressed && (
+                <View style={[StyleSheet.absoluteFill, styles.segmentUnselectedPressedOverlay]} pointerEvents="none" />
+              )}
+            </>
+          )}
+          {props.variant === 'select' && selected && <Check size={16} color={colors.primary} strokeWidth={1.75} />}
+          {isSegment ? (
+            // DESIGN_STANDARDS.md:1214-1217 — the selected weight-700 label
+            // must not change the pill's laid-out box. A same-text,
+            // weight-700 sizer renders invisibly in normal flow to reserve
+            // the wider metrics; the real (possibly lighter) label sits on
+            // top of it via absolute position, so it never drives the layout.
+            <View style={styles.segmentLabelStack}>
+              <Text
+                style={[styles.label, styles.segmentLabelSelected, styles.segmentLabelSizer]}
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
+                {props.label}
+              </Text>
+              <Text
+                style={[
+                  styles.label,
+                  styles.segmentLabelVisible,
+                  selected ? styles.segmentLabelSelected : styles.segmentLabelUnselected,
+                ]}
+              >
+                {props.label}
+              </Text>
+            </View>
+          ) : (
+            <Text style={[styles.label, useTextLabel && styles.labelSelected]}>{props.label}</Text>
+          )}
+          {props.variant === 'remove' && <X size={16} color={colors.textMuted} strokeWidth={1.75} />}
+        </>
       )}
-      {props.variant === 'remove' && <X size={16} color={colors.textMuted} strokeWidth={1.75} />}
     </Pressable>
   );
 }
@@ -139,6 +172,12 @@ const styles = StyleSheet.create({
   },
   segmentChip: {
     minHeight: 32,
+    // design-spec.md T3: border width constant (1.5px) across rest/selected
+    // — only the color changes, never the width, so selecting never
+    // reflows the row by a pixel. `overflow:'hidden'` clips the unselected
+    // gradient fill (below) to this pill's own radius.
+    borderWidth: 1.5,
+    overflow: 'hidden',
   },
   segmentSelected: {
     backgroundColor: colors.primary,
@@ -149,19 +188,33 @@ const styles = StyleSheet.create({
     borderColor: colors.primaryActive,
   },
   segmentUnselected: {
+    // Fill itself is the LinearGradient rendered in children (children can't
+    // be expressed as a plain backgroundColor) — this stays transparent so
+    // the gradient underneath shows through the pill's own edge.
     backgroundColor: 'transparent',
     borderColor: colors.border,
+    // design-spec.md T3's exact literal — intentionally distinct from
+    // `--card-highlight`'s 0.5 alpha (a slightly softer top edge for a
+    // resting, unselected pill).
+    borderTopColor: 'rgba(206,144,66,0.45)',
   },
   segmentUnselectedPressed: {
-    backgroundColor: colors.surfaceHover,
+    borderColor: colors.border,
   },
+  segmentUnselectedPressedOverlay: {
+    backgroundColor: colors.surfaceHover,
+    opacity: 0.6,
+  },
+  // design-spec.md T3's "border width constant (1.5px) across states" is
+  // stricter than the base Filter-chip recipe's general 2px focus ring —
+  // this variant's only consumer is the category row, so focus stays a
+  // colour-only change here too (no width bump, no reflow).
   segmentFocused: {
-    borderWidth: 2,
     borderColor: colors.primary,
   },
   segmentLabelSelected: {
     color: colors.ink,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   segmentLabelUnselected: {
     color: colors.text,
