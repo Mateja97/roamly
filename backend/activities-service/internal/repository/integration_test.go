@@ -1429,6 +1429,19 @@ func TestUpsertPersistsGooglePlaceID(t *testing.T) {
 	if reUpserted.ID != a.ID || reUpserted.GooglePlaceID != "ChIJGooglePlaceIDFixture" {
 		t.Fatalf("re-upsert google_place_id = %q on id %q, want ChIJGooglePlaceIDFixture on %q", reUpserted.GooglePlaceID, reUpserted.ID, a.ID)
 	}
+
+	// A re-sync that resolves no place id this time (e.g. cmd/backfilltripadvisor
+	// with no Places client wired up, or a Places search error) must not clobber
+	// the id a previous run already stored.
+	blank := in
+	blank.GooglePlaceID = ""
+	reUpsertedBlank, err := repo.Upsert(ctx, blank)
+	if err != nil {
+		t.Fatalf("re-upsert with empty google_place_id: %v", err)
+	}
+	if reUpsertedBlank.ID != a.ID || reUpsertedBlank.GooglePlaceID != "ChIJGooglePlaceIDFixture" {
+		t.Fatalf("re-upsert with empty google_place_id = %q on id %q, want the stored ChIJGooglePlaceIDFixture to survive on %q", reUpsertedBlank.GooglePlaceID, reUpsertedBlank.ID, a.ID)
+	}
 }
 
 // TestSetGooglePlaceIDIfEmpty_WritesOnlyWhenStillEmpty is
