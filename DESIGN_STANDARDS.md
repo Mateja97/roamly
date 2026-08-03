@@ -386,6 +386,100 @@ For the number that IS the screen. Label above: `--font-size-sm`
 `tabular-nums`. Eligible for the one per-screen `--glow`. Sub-line
 (delta/status) `--font-size-sm` in the relevant semantic color.
 
+### Fact chip grid (detail facts)
+
+The row of small fact tiles under a detail screen's title block — two or three
+at-a-glance facts about the place (Cuisine, Dress code, Opens, Effort, Gear,
+Venue, Time to spend…). Distinct from Stat display above: that is the one
+number that IS the screen; this is a handful of equal-weight labelled facts,
+none of them focal. Non-interactive display.
+
+- **Grid:** a single row of equal-width tiles directly under the hours row,
+  `--space-3` between tiles, full content width. **Three tiles maximum** — the
+  row never wraps to a second line and never scrolls horizontally.
+- **Tile:** `--surface` fill on the page's `--bg`, 1px `--border`, `--radius`,
+  `--space-3` padding, contents centred and stacked: a **20px `--primary` gold
+  icon** (3.1:1 on `--surface` — UI element, clears 3:1; decorative, the label
+  carries the meaning) → **value** `--font-size-sm` weight 600 `--text` (7.1:1
+  ✓), `tabular-nums` → **label** `--font-size-xs` `--text-muted` (5.3:1 ✓).
+  Values wrap inside the tile rather than truncating (honour dynamic text
+  scaling); two tiles stay two columns at large text sizes.
+- **Chip-count degradation** — generic, never per-category branching. Build the
+  list by dropping every fact with no valid value, then:
+  - *3 chips:* three equal columns.
+  - *2 chips:* two equal columns, full content width.
+  - *1 chip:* the grid does **not** render. The chip's **bare value** — no
+    label, no prefix, no unit appended — folds into the screen's meta line as
+    one more `·`-joined item (`--font-size-sm` `--text-muted` on `--bg`, 6.2:1
+    ✓), subject to the meta line's existing item cap. A value that doesn't read
+    correctly stripped of its label doesn't belong in this grid in the first
+    place.
+  - *0 chips:* the section is **omitted entirely** — no heading, no empty tile,
+    no zero-height container, and no gap left in the vertical rhythm; the
+    sections above and below close up to the normal `--space-8` section rhythm.
+    Whole categories can sit permanently in this state; that is correct, not an
+    empty state waiting to be filled.
+- **States:** no hover/press/focus/disabled — the grid is display, not a
+  control, so the 44×44 touch floor doesn't apply to a tile. *Loading:* **no
+  skeleton** — the grid's presence is decided before paint from already-merged
+  data, and a placeholder for a grid that may never fill is exactly the
+  flash-then-collapse the Skeleton recipe's progressive-enrichment rule forbids.
+  *Error / no details:* omitted silently; a missing fact grid is never an error
+  banner.
+- **Motion:** none — nothing here appears or disappears after paint.
+
+Composes from `--surface`, `--border`, `--primary`, `--text`, `--text-muted`,
+`--bg`, `--radius`, `--space-3`/`--space-8`, `--font-size-xs`/`--font-size-sm`.
+No new token.
+
+### Pill row (wrapping tag list)
+
+A section of short, related item names shown as a wrapping row of pills — a
+place's treatments, popular dishes, what's on the bar, signature pours, what
+you'll find. The plain-content sibling of the Badge/pill recipe (which is for
+statuses: uppercase, color-coded) and of the Filter chip (which is
+interactive): these pills are **non-interactive display** of a list and carry
+no status meaning. One recipe for every such list — don't fork a variant per
+section.
+
+- **Layout:** a section overline heading — `--font-size-xs`, uppercase,
+  `letter-spacing: 0.05em`, weight 600, `--text-muted` (6.2:1 on `--bg` ✓) —
+  with `--space-3` below it, then a left-aligned row of pills that **wraps**
+  onto as many lines as it needs, `--space-2` between pills both horizontally
+  and vertically. The section sits in the body's normal `--space-8` rhythm.
+- **Pill:** hugs its own label — never stretched to a column grid, never
+  truncated or ellipsed, and the row never becomes a horizontal scroller.
+  `--surface` fill, 1px `--border`, `--radius-full`, padding `--space-2`
+  vertical / `--space-3` horizontal; label `--font-size-sm` `--text` (7.1:1 on
+  `--surface` ✓), in the case it was authored in. No gold and no semantic color
+  — a dish or a treatment is not a status.
+- **Content rule:** one pill per surviving item name, and the **name only** — a
+  pill carries no second value (no price, no duration, no subline, no trailing
+  meta). Each item is validated individually; an item that fails drops **that
+  pill only** and the rest of the row renders, with nothing marking the gap.
+- **States:**
+  - *Default:* one line for a short list, two or three wrapped lines for a
+    longer one. **No cap and no "show more"** — these lists are short, and a
+    disclosure control is new interaction to spec only if a real list outgrows
+    the row.
+  - *0 survivors (or the field absent):* the **whole section is omitted,
+    heading included** — no empty state, no "None listed" line.
+  - *Loading:* no skeleton when the section renders from data already loaded
+    with the screen; skeleton only where a later fetch can genuinely fill it
+    (Skeleton recipe's progressive-enrichment rule).
+  - *Error:* none of its own — absent data is a silent omission.
+  - No hover/press/focus/disabled: these pills are read, not operated, so the
+    44×44 touch floor does not apply. The `--space-2` neighbour gap is the
+    recipe's own spacing, not a touch-target rule.
+- **Accessibility:** each pill is plain text and the heading carries the
+  grouping; nothing is icon-only. A label wider than the content column wraps
+  inside its pill and the pill grows taller — never clipped, never ellipsed.
+- **Motion:** none.
+
+Composes from `--surface`, `--border`, `--text`, `--text-muted`, `--bg`,
+`--radius-full`, `--space-2`/`--space-3`/`--space-8`,
+`--font-size-xs`/`--font-size-sm`. No new token.
+
 ### Difficulty meter (segmented)
 
 A discrete N-segment level bar (e.g. an activity's difficulty, 3 of 5). Not a
@@ -1711,6 +1805,21 @@ Every design-spec must account for:
   no separate glow token) and must be operable via keyboard, not just click.
 - **Accessibility basics** (see above) are part of the design-spec, not an
   afterthought left to code review.
+- **Verifiability — only render a value the app can stand behind.** A kind /
+  shape check (`fieldKind` on the client, `contentkind` on the backend) proves
+  a value is *well-shaped*; it can never prove the value is *true*. Per-item
+  prices and durations are LLM extractions of a venue's scraped web page and
+  routinely disagree with the venue's own site, so the answer is not to
+  validate them harder: **no slot on any screen accepts them.** That is why the
+  Fact chip grid and the Pill row carry a name and a fact but never a price or
+  a scraped duration, and why no list row pairs a name with a money value.
+  Design a shape with nowhere to put an unverifiable number, rather than a
+  shape that displays one carefully. The exceptions are values that aren't
+  per-item scraped claims: a **partner-supplied price band** rendered verbatim
+  (Tripadvisor's price level) and **hand-authored editorial** values (Nature's
+  `Free` / `Low entry fee`, Tours' itinerary lengths). The rule is
+  **field-level, not value-level** — a scraped field stays out even where a
+  particular value would have been harmless ("Tickets: Free").
 
 ## Forms & feedback
 
