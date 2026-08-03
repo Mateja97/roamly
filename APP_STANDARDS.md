@@ -164,18 +164,25 @@ kind's shape or matches the placeholder denylist — see the spec doc's "The
 data contract" section, implemented in `fieldKind.ts`
 (`backend/shared/contentkind` is the same contract's backend half).
 
+Per-category chip/duration/price wording below reflects what T2/T3 actually
+shipped (`activityDetailConfig.ts`'s `factStripFields`/`uniqueSection`): every
+per-item scraped price and duration is gone from both the fact-chip grid and
+the list sections (Verifiability rule, `DESIGN_STANDARDS.md`) — those
+sections are now name-only pill rows. Nature's `cost` and Tours'
+seeded/editorial `duration` are the two exceptions, not oversights.
+
 | Category | Extra properties | Unique section | Primary CTA |
 |---|---|---|---|
-| Restaurants | cuisine, price tier, hours, open status (Tripadvisor-sourced rows carry price level/cuisine in the meta line instead) | Popular dishes (name + price) | Book a table |
-| Bars | vibe, happy-hour window, opens time | Signature pours (pill list) | See menu |
-| Cafés | known-for brew, wifi quality, hours | On the bar (item + price); description promoted above the stat grid | Get directions |
-| Nightlife | entry price, dress code, opens time, live "open tonight" status | Tonight lineup (time + act + stage), promoted above the stat grid | Guest list |
-| Nature | time to spend, best time, cost | Good to know (checklist) | Get directions |
-| Sport | difficulty (segmented meter, promoted above the stat grid), effort level, duration, gear | What to bring (checklist) | Book session |
-| Kids | age range, facilities | Facilities (icon grid); description promoted above the stat grid | Get directions |
-| Culture | venue type (only when it differs from the subtype), ticket price, hours | Now showing (banner), promoted above the stat grid | Get tickets |
-| Art | ticket price, hours, artwork attribution (artist/work/medium, shown under the title) | Current exhibition (banner), promoted above the stat grid | Get tickets |
-| Wellness | typical visit, price from, hours | Treatments (item + duration + price), good-to-know checklist, external-booking note | Visit website |
-| Entertainment | genre, neighborhood, typical show length, price from, hours | Upcoming shows (date + title + time/price), good-to-know checklist | Get tickets |
-| Shopping | venue type (only when it differs from the subtype), best day, hours | What you'll find (tag pills); description promoted above the stat grid | Get directions |
-| Tours & Experiences | duration, group size, languages, difficulty level (level chip in the meta line, never the difficulty meter) | What's included (✓/✗ checklist), meeting point (address + map), itinerary (numbered stops) — no reviews section (no data source yet) | Check availability |
+| Restaurants | cuisine, hours, open status; no price-tier chip (Verifiability rule) — Tripadvisor-sourced rows carry price level/cuisine in the meta line instead and drop the Cuisine chip too | Popular dishes (name-only pills) | Book a table |
+| Bars | vibe, happy-hour window, opens time | Signature pours (pill list, built from a raw `string[]` — not yet per-item validated, see Pill row recipe) | See menu |
+| Cafés | known-for brew, wifi quality, hours | On the bar (name-only pills); description promoted above the stat grid | Get directions |
+| Nightlife | dress code, opens time, live "open tonight" status; no entry-price chip (Verifiability rule) | Tonight lineup (time + act + stage), promoted above the stat grid | Guest list |
+| Nature | time to spend, best time, cost (hand-authored editorial value, not a scraped price — kept) | Good to know (checklist) | Get directions |
+| Sport | difficulty (segmented meter, promoted above the stat grid), effort level, gear; no duration chip (Verifiability rule) | What to bring (checklist) | Book session |
+| Kids | age range, facilities; no fact-chip grid (never had price/duration) | Facilities (icon grid); description promoted above the stat grid | Get directions |
+| Culture | venue type (only when it differs from the subtype), hours; no ticket-price chip (Verifiability rule) | Now showing (banner), promoted above the stat grid | Get tickets |
+| Art | hours, artwork attribution (artist/work/medium, shown under the title); no ticket-price chip (Verifiability rule) — Art now has no fact chip of its own, only the legacy-hours fallback can still populate the grid | Current exhibition (banner), promoted above the stat grid | Get tickets |
+| Wellness | no fact-chip grid at all — typical-visit and price-from chips removed (Verifiability rule), and this category has no legacy hours field to fall back to | Treatments (name-only pills), good-to-know checklist, external-booking note | Visit website |
+| Entertainment | genre, neighborhood (both surface in the meta line, not a fact chip); no fact-chip grid — typical-show-length and price-from chips removed (Verifiability rule) | Upcoming shows (date + title only, name/date-block — no time/price), good-to-know checklist | Get tickets |
+| Shopping | venue type (only when it differs from the subtype), best day, hours | What you'll find (tag pills, built from a raw `string[]` — not yet per-item validated, see Pill row recipe); description promoted above the stat grid | Get directions |
+| Tours & Experiences | duration (seeded/editorial, not scraped — kept), group size, languages, difficulty level (level chip in the meta line, never the difficulty meter) | What's included (✓/✗ checklist), meeting point (address + map), itinerary (numbered stops) — no reviews section (no data source yet) | Check availability |

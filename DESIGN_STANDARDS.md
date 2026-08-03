@@ -395,8 +395,12 @@ number that IS the screen; this is a handful of equal-weight labelled facts,
 none of them focal. Non-interactive display.
 
 - **Grid:** a single row of equal-width tiles directly under the hours row,
-  `--space-3` between tiles, full content width. **Three tiles maximum** — the
-  row never wraps to a second line and never scrolls horizontally.
+  or under whatever section a category promotes above the grid (7 of 13
+  categories do — cafés/kids/shopping promote their description, nightlife/
+  culture/art their unique section, sport its difficulty meter — see
+  `PROMOTE_ABOVE_STAT_GRID`), `--space-3` between tiles, full content width.
+  **Three tiles maximum** — the row never wraps to a second line and never
+  scrolls horizontally.
 - **Tile:** `--surface` fill on the page's `--bg`, 1px `--border`, `--radius`,
   `--space-3` padding, contents centred and stacked: a **20px `--primary` gold
   icon** (3.1:1 on `--surface` — UI element, clears 3:1; decorative, the label
@@ -416,7 +420,7 @@ none of them focal. Non-interactive display.
     place.
   - *0 chips:* the section is **omitted entirely** — no heading, no empty tile,
     no zero-height container, and no gap left in the vertical rhythm; the
-    sections above and below close up to the normal `--space-8` section rhythm.
+    sections above and below close up to the normal `--space-6` section rhythm.
     Whole categories can sit permanently in this state; that is correct, not an
     empty state waiting to be filled.
 - **States:** no hover/press/focus/disabled — the grid is display, not a
@@ -429,7 +433,7 @@ none of them focal. Non-interactive display.
 - **Motion:** none — nothing here appears or disappears after paint.
 
 Composes from `--surface`, `--border`, `--primary`, `--text`, `--text-muted`,
-`--bg`, `--radius`, `--space-3`/`--space-8`, `--font-size-xs`/`--font-size-sm`.
+`--bg`, `--radius`, `--space-3`/`--space-6`, `--font-size-xs`/`--font-size-sm`.
 No new token.
 
 ### Pill row (wrapping tag list)
@@ -446,7 +450,7 @@ section.
   `letter-spacing: 0.05em`, weight 600, `--text-muted` (6.2:1 on `--bg` ✓) —
   with `--space-3` below it, then a left-aligned row of pills that **wraps**
   onto as many lines as it needs, `--space-2` between pills both horizontally
-  and vertically. The section sits in the body's normal `--space-8` rhythm.
+  and vertically. The section sits in the body's normal `--space-6` rhythm.
 - **Pill:** hugs its own label — never stretched to a column grid, never
   truncated or ellipsed, and the row never becomes a horizontal scroller.
   `--surface` fill, 1px `--border`, `--radius-full`, padding `--space-2`
@@ -455,8 +459,15 @@ section.
   — a dish or a treatment is not a status.
 - **Content rule:** one pill per surviving item name, and the **name only** — a
   pill carries no second value (no price, no duration, no subline, no trailing
-  meta). Each item is validated individually; an item that fails drops **that
-  pill only** and the rest of the row renders, with nothing marking the gap.
+  meta). Per-item validation is not yet uniform across every pill-row
+  producer: Popular dishes, On the bar, and Treatments validate each item
+  name individually and drop **that pill only** on failure, the rest of the
+  row rendering with nothing marking the gap; Bars' Signature pours and
+  Shopping's What-you'll-find still build straight from a raw `string[]`
+  gated only on the whole list's length, with no per-item check. Every
+  producer should converge on per-item validation — fold the remaining two
+  through it next time either is touched — but until then, describe the
+  producer you're looking at rather than assuming the uniform rule.
 - **States:**
   - *Default:* one line for a short list, two or three wrapped lines for a
     longer one. **No cap and no "show more"** — these lists are short, and a
@@ -477,7 +488,7 @@ section.
 - **Motion:** none.
 
 Composes from `--surface`, `--border`, `--text`, `--text-muted`, `--bg`,
-`--radius-full`, `--space-2`/`--space-3`/`--space-8`,
+`--radius-full`, `--space-2`/`--space-3`/`--space-6`,
 `--font-size-xs`/`--font-size-sm`. No new token.
 
 ### Difficulty meter (segmented)
@@ -858,10 +869,13 @@ the detail screen's gold star + numeric rating) untouched.
     `--text-muted` (`--font-size-sm`) renders `cuisine` — Tripadvisor's own
     category label, distinct from the row's free-text `cuisine` field used by
     admin/Google rows — when present; omitted entirely otherwise. Because the
-    eyebrow and subtitle now carry Cuisine and Price, the FactStrip's
-    Cuisine/Price chips are **dropped** for a Tripadvisor row so the same two
-    facts don't appear twice on one screen; every non-Tripadvisor row keeps
-    those chips untouched.
+    eyebrow and subtitle now carry Cuisine and Price, the FactStrip's Cuisine
+    chip is **dropped** for a Tripadvisor row so the same fact doesn't appear
+    twice on one screen; every non-Tripadvisor row keeps the Cuisine chip
+    untouched. The Price chip no longer exists on any restaurant row,
+    Tripadvisor-sourced or not: `price_tier` is an LLM-scraped figure and
+    falls under the Verifiability rule below; the eyebrow's own price-level
+    segment is a distinct, partner-supplied field and is unaffected.
   - *Absent means omitted, never a placeholder* — the ranking sentence, the
     award badge, the eyebrow's price-level segment, and the cuisine subtitle
     each render **only** when the API actually supplied that field; when it
