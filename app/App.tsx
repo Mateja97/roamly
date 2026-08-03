@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts, Marcellus_400Regular } from '@expo-google-fonts/marcellus';
 import type { Activity } from './src/api/activities';
 import type { CitySuggestion } from './src/api/cities';
 import { ActivityListScreen } from './src/features/activity-list/ActivityListScreen';
@@ -8,6 +10,7 @@ import { AnywhereSearchScreen } from './src/features/search-setup/AnywhereSearch
 import { NearbySearchSetupScreen } from './src/features/search-setup/NearbySearchSetupScreen';
 import { ScopePickerScreen } from './src/features/scope-picker/ScopePickerScreen';
 import type { ScopeSelection } from './src/features/scope-picker/types';
+import { colors } from './src/theme/tokens';
 
 // ponytail: a plain useState back-stack (array), not a router — this is a
 // linear flow (scope -> types -> list) with no non-linear jumps. Each screen
@@ -80,9 +83,20 @@ function AppContent() {
 }
 
 export default function App() {
+  // Font-load gate (T1): every screen renders Marcellus headers, so this
+  // gate lives once at the app root instead of duplicated per-screen (it
+  // used to live in ScopePickerScreen alone). Hold first paint on a blank
+  // wine background until the font resolves one way or the other, then
+  // fall back to the system stack only if loading genuinely failed.
+  const [fontsLoaded, fontError] = useFonts({ Marcellus_400Regular });
+
   return (
     <SafeAreaProvider>
-      <AppContent />
+      {fontsLoaded || fontError ? (
+        <AppContent />
+      ) : (
+        <View style={{ flex: 1, backgroundColor: colors.bg }} />
+      )}
     </SafeAreaProvider>
   );
 }

@@ -1,4 +1,8 @@
 /* global jest */
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+);
+
 // react-native-safe-area-context needs a real on-screen layout pass to
 // measure insets, which the Jest environment never performs — mock it with
 // fixed zero insets so SafeAreaProvider/SafeAreaView render their children

@@ -10,14 +10,6 @@ jest.mock('expo-location', () => ({
   getCurrentPositionAsync: jest.fn(),
 }));
 
-// Marcellus's real load path goes through expo-font's native module, which
-// isn't available in the Jest environment — stub it to "already loaded" so
-// tests exercise the screen's actual content, not the font-load gate.
-jest.mock('@expo-google-fonts/marcellus', () => ({
-  useFonts: () => [true, null],
-  Marcellus_400Regular: 'Marcellus_400Regular',
-}));
-
 const mockedLocation = jest.mocked(Location);
 
 describe('ScopePickerScreen', () => {

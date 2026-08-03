@@ -5,7 +5,6 @@ import type { LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Line } from 'react-native-svg';
 import { Globe, MapPin } from 'lucide-react-native';
-import { useFonts, Marcellus_400Regular } from '@expo-google-fonts/marcellus';
 import { ScopeTicket } from '../../components/ScopeTicket';
 import { Wordmark } from '../../components/Wordmark';
 import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
@@ -18,12 +17,6 @@ type ScopePickerScreenProps = {
 };
 
 export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
-  // Font-load gate: DESIGN_STANDARDS.md's Display accent rule — hold first
-  // paint until Marcellus loads so the prompt never flashes in the system
-  // font; fall back to the system stack if loading fails rather than block
-  // the screen forever.
-  const [fontsLoaded, fontError] = useFonts({ Marcellus_400Regular });
-
   const nearby = useNearbyLocation();
   // Anywhere reuses the identical permission/GPS-fix hook (same shape,
   // separate instance so its busy/error state doesn't collide with
@@ -88,12 +81,6 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
       ? progressHint(anywhere.state.status)
       : 'Across the world';
 
-  if (!fontsLoaded && !fontError) {
-    // Hold first paint: keep the wine background stable, render nothing
-    // else, until the font resolves one way or the other.
-    return <SafeAreaView style={styles.screen} />;
-  }
-
   return (
     <SafeAreaView style={styles.screen}>
       <FlightPathBackground />
@@ -107,7 +94,7 @@ export function ScopePickerScreen({ onScopeSelected }: ScopePickerScreenProps) {
           <View style={styles.destinationField}>
             <Text style={styles.overline}>Destination</Text>
             <Text
-              style={[styles.headline, fontsLoaded && { fontFamily: fontFamily.display }]}
+              style={[styles.headline, { fontFamily: fontFamily.display }]}
               onLayout={onHeadlineLayout}
             >
               Where to?

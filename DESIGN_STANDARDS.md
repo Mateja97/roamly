@@ -41,12 +41,13 @@ puts the gold brand into the structure, not only the text.
 | `--text` | `#F5EBDD` | primary/body text — warm cream |
 | `--text-muted` | `#E0C9AE` | secondary text — warm tan |
 | `--text-disabled` | `#B0857A` | disabled text |
+| `--text-overline` | `#E6C79A` | warm-gold overline label — the Splash/welcome screen's two overline eyebrows (tagline + "Destination") only, 6.18:1 on `--bg` ✓. Reconciles the shipped `ScopePickerScreen`'s divergent `#E0C9AE`/`#E6C79A` use for an identical role onto one value — not a general `--text-muted` replacement |
 | `--success` | `#A3D18E` | light sage — reads on wine, distinct from gold |
 | `--warning` | `#E8C572` | light amber — distinct from brand gold |
 | `--error` | `#F5B79B` | light coral — true red disappears on wine |
 | `--error-hover` | `#F0A588` | destructive fill, hover (darker coral) |
 | `--card-highlight` | `rgba(206,144,66,0.5)` | gold 1px top edge on cards (decorative) |
-| `--glow` | `rgba(206,144,66,0.15)` | radial gold accent behind ONE focal element per screen |
+| `--glow` | `rgba(206,144,66,0.16)` | radial gold accent behind ONE focal element per screen |
 | `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
 | `--scrim` | `rgba(42,14,17,0.72)` | modal dim behind bottom sheets/overlays (wine-black tint) |
 | `--photo-viewer-bg` | `#0F0405` | opaque near-black backdrop for the fullscreen photo viewer — photos pop against it; the app renders no other body UI on this surface |
@@ -614,6 +615,64 @@ Composes from `--surface-gradient`, `--glow`, `--primary`, `--ink`, `--border`,
 `area: app` the gradient and glow need `expo-linear-gradient` (see
 Mobile-specific). ponytail: two tickets is the whole flow — don't build a
 generic wizard/stepper abstraction until a second step exists.
+
+### Primary ticket (welcome/splash CTA)
+
+**Standard addition:** a welcome/splash-only CTA variant taking the ticket
+card's `--radius-lg` (16px) instead of the standard 999px-pill/8px-radius
+control shape (see Buttons above). **One per screen, welcome/splash
+surfaces only** — the standard Primary button (Buttons table) applies
+everywhere else. Never place two side by side.
+
+**Container:** full width, `min-height: 52px`, `--radius-lg`, flat `--primary`
+gold fill, `--ink` label color throughout. Row layout, vertically centered:
+**pin well → dashed perforation → two-line label → go-disc**.
+
+- **Pin well (left):** a small circular **ink**-tinted well
+  (`rgba(42,14,17,0.10)`) holding a 26px **`--ink`** pin icon (`lucide`
+  `MapPin`, `aria-hidden` — decorative, the title/accessible-name carry the
+  meaning). Not the Scope ticket stub's gold tint / gold icon: that
+  combination was derived against the Scope ticket's wine surface-gradient
+  body, and gold-on-this-card's-own-gold `--primary` fill doesn't read at
+  all — confirmed by screenshot in review round 1. `--ink` on both the well
+  and the icon matches the label/go-disc contrast logic already used
+  elsewhere on this same gold card.
+- **Perforation:** a 2px dashed vertical rule, `rgba(42,14,17,0.35)` — same
+  device as the Scope ticket stub's dashed tear-line (native dashed border,
+  not SVG, since it's a short vertical rule rather than a full-width line).
+- **Label (middle, flex: 1):** title "Start exploring" `--font-size-md`
+  (16px) weight 700 `--ink`; sub-label "Real places, picked for right now"
+  13.5px weight 400, line-height 1.45, `--ink`.
+- **Go-disc (right):** 40px circle, `--ink` fill, an 18px gold `ArrowRight`
+  (`aria-hidden`) — the Scope ticket / Activity card go-button device,
+  inverted (ink disc + gold arrow, since the card itself is already gold).
+
+**States:** rest `--primary` fill; hover `--primary-hover`; **pressed
+`--primary-active`** — pressed must exist independently of hover (touch has
+no hover, so it can't be the only feedback state). No in-flight/disabled
+state: the CTA only navigates, it makes no request of its own.
+
+**Glow:** the one per-screen `--glow` sits behind this CTA (the screen's one
+focal element), not behind the brand block above it, as a true radial falloff
+— `radial-gradient(ellipse at 50% 0%, --glow, transparent 70%)`, not a flat
+rectangle. On `area: app`, `expo-linear-gradient` only draws a linear box, so
+render it with `react-native-svg`'s `RadialGradient` (`cx="50%" cy="0%"
+r="70%"`, stops `--glow` → transparent) filling a `Rect`, the same library
+already used for this screen's dashed underline. The glow's container must
+also extend past the opaque card's own bounds (e.g. extra padding above the
+card) so the fade actually bleeds into view — sizing it to exactly match the
+card leaves 100% hidden behind the card's own opaque fill (review round 1,
+Important #1; the radial-vs-rectangle shape itself was review round 2,
+Important).
+
+**Accessibility:** the whole card is one `Pressable`/button with an explicit
+accessible name (e.g. "Start exploring, real places picked for right now");
+the pin icon and go-disc are decorative and excluded from the a11y tree.
+Fully keyboard-operable — native `Pressable`, no custom gesture handling.
+
+Composes from `--primary`, `--primary-hover`, `--primary-active`, `--ink`,
+`--glow`, `--radius-lg`. New token: `--text-overline` (see Palette) for the
+splash screen's overline labels that sit above this CTA.
 
 ### Activity card
 
