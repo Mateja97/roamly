@@ -199,6 +199,16 @@ type Activity struct {
 	// Google Maps" attribution link target (Places API attribution policy);
 	// never persisted, no DB column.
 	GoogleMapsURI string
+	// GooglePlaceID (tripadvisor-google-review-fallback T1) is the Google
+	// place id service.ResolveTripadvisorSubtype already matches a
+	// Tripadvisor venue against, persisted to the `google_place_id` column
+	// so a later live Place Details lookup needs no additional Places
+	// request. "" for every row that never resolved a match (including
+	// every non-Tripadvisor row — nothing writes this for google_places
+	// rows, which already carry their own place id as ExternalID). Never
+	// exposed on any proto message or HTTP DTO — server-side only (Places
+	// ToS §14.3 permits caching the bare id, nothing else).
+	GooglePlaceID string
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar
@@ -700,6 +710,9 @@ type IngestActivity struct {
 	// mapped. Same validation contract as NewActivity.Subcategory
 	// (ValidSubcategory); never guessed beyond the curated lookup.
 	Subcategory string
+	// GooglePlaceID (tripadvisor-google-review-fallback T1) mirrors
+	// Activity.GooglePlaceID — see that field's doc.
+	GooglePlaceID string
 }
 
 // UpdatePatch is a partial update (T2): a nil field is left untouched, a

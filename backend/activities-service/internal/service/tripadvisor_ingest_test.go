@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
 
 	"backend/shared/models/activitiessvc"
@@ -64,7 +65,7 @@ func TestToAspectRating(t *testing.T) {
 func TestTripadvisorIngestActivity_AbsentOptionalFieldsStayAbsent(t *testing.T) {
 	d := tripadvisor.LocationDetails{LocationID: "1", Name: "Bare Bones", WebURL: "https://ta/1"}
 
-	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, "", d, nil, nil, cellLocation{})
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, "", "", d, nil, nil, cellLocation{})
 
 	var details activitiessvc.RestaurantDetails
 	if err := json.Unmarshal(ingest.Details, &details); err != nil {
@@ -91,6 +92,9 @@ func TestTripadvisorIngestActivity_AbsentOptionalFieldsStayAbsent(t *testing.T) 
 	if ingest.Subcategory != "" {
 		t.Errorf("Subcategory = %q, want empty (caller passed no resolved subtype)", ingest.Subcategory)
 	}
+	if ingest.GooglePlaceID != "" {
+		t.Errorf("GooglePlaceID = %q, want empty (caller passed no resolved place id)", ingest.GooglePlaceID)
+	}
 	if ingest.Description != "" {
 		t.Errorf("Description = %q, want empty (no description supplied)", ingest.Description)
 	}
@@ -116,10 +120,13 @@ func TestTripadvisorIngestActivity_DescriptionAttributesVisitLengthCarried(t *te
 		RecommendedVisitLength: 2,
 	}
 
-	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, "fine_dining", d, nil, nil, cellLocation{})
+	ingest := tripadvisorIngestActivity(activitiessvc.CategoryRestaurants, "fine_dining", "ChIJCarriedThrough", d, nil, nil, cellLocation{})
 
 	if ingest.Subcategory != "fine_dining" {
 		t.Errorf("Subcategory = %q, want the caller-resolved subtype carried straight through", ingest.Subcategory)
+	}
+	if ingest.GooglePlaceID != "ChIJCarriedThrough" {
+		t.Errorf("GooglePlaceID = %q, want the caller-resolved place id carried straight through", ingest.GooglePlaceID)
 	}
 	if ingest.Description != d.Description {
 		t.Errorf("Description = %q, want %q", ingest.Description, d.Description)
@@ -147,14 +154,15 @@ func TestActivities_RefreshTripadvisorLocation_Success(t *testing.T) {
 	repo := &fakeRepo{}
 	ta := &fakeTripadvisor{
 		detailsOut: map[string]tripadvisor.LocationDetails{
-			"7678207": {LocationID: "7678207", Name: "Mosaic Restaurant", WebURL: "https://ta/7678207", Description: "Here, at the heart of the city, food is prepared heartily."},
+			"7678207": {LocationID: "7678207", Name: "Mosaic Restaurant", Lat: 44.81, Lng: 20.46, WebURL: "https://ta/7678207", Description: "Here, at the heart of the city, food is prepared heartily."},
 		},
 		// Set to prove it's never even read (see below) — a real caller
 		// would leave this unset since RefreshTripadvisorLocation never
 		// calls LocationPhotos at all.
 		photosOut: []activitiessvc.Photo{{URL: "https://ta/photo.jpg"}},
 	}
-	svc := New(repo).WithTripadvisor(ta)
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "google-place-7678207", PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Mosaic Restaurant")}}}
+	svc := New(repo).WithTripadvisor(ta).WithPlaces(gp)
 
 	if err := svc.RefreshTripadvisorLocation(context.Background(), activitiessvc.CategoryRestaurants, "7678207"); err != nil {
 		t.Fatalf("RefreshTripadvisorLocation: %v", err)
@@ -170,6 +178,9 @@ func TestActivities_RefreshTripadvisorLocation_Success(t *testing.T) {
 	}
 	if repo.gotUpsert.ExternalID != "7678207" {
 		t.Errorf("ExternalID = %q, want %q", repo.gotUpsert.ExternalID, "7678207")
+	}
+	if repo.gotUpsert.GooglePlaceID != "google-place-7678207" {
+		t.Errorf("GooglePlaceID = %q, want google-place-7678207 (resolved via ResolveTripadvisorSubtype, this call site's place id persisted alongside the subtype)", repo.gotUpsert.GooglePlaceID)
 	}
 	if ta.photosCalls != 0 {
 		t.Errorf("photosCalls = %d, want 0 — refreshing an already-stored row must never fetch a photo Upsert would just discard", ta.photosCalls)

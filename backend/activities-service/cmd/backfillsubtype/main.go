@@ -147,8 +147,11 @@ func emptySubtypeRows(ctx context.Context, repo activityLister, pageSize int) ([
 // subtypeResolver is svc.ResolveTripadvisorSubtype's shape — narrowed so
 // runBackfill is testable against a fake, without needing a fake that
 // satisfies service.Activities' whole (unexported) repository interface.
+// The second return value (tripadvisor-google-review-fallback T1's matched
+// Google place id) isn't this tool's concern — cmd/backfillgoogleplaceid
+// (T2) is the one that persists it — so runBackfill discards it.
 type subtypeResolver interface {
-	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) string
+	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string)
 }
 
 // subcategorySetter is repository.Activities.SetSubcategoryIfEmpty's shape,
@@ -198,7 +201,7 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 		}
 		key := a.Source + "|" + string(a.Category)
 		result.byKey[key].attempted++
-		subtype := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
+		subtype, _ := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
 		pace()
 		if subtype == "" {
 			result.stayedEmpty++

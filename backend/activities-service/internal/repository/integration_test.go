@@ -1388,6 +1388,112 @@ func TestSetSubcategoryIfEmpty_WritesOnlyWhenStillEmpty(t *testing.T) {
 	}
 }
 
+// TestUpsertPersistsGooglePlaceID proves Upsert's write side of
+// tripadvisor-google-review-fallback T1: a Tripadvisor ingest carrying a
+// resolved GooglePlaceID stores it, both on first insert and through a
+// re-upsert of the same (source_url, category), same as Subcategory above.
+func TestUpsertPersistsGooglePlaceID(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	in := activitiessvc.IngestActivity{
+		Title: "Google Place ID Fixture", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://ta/google-place-id-fixture", ExternalID: "ta-1",
+		GooglePlaceID: "ChIJGooglePlaceIDFixture",
+	}
+	a, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("first upsert: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, a.ID) })
+	if a.GooglePlaceID != "ChIJGooglePlaceIDFixture" {
+		t.Fatalf("google_place_id = %q, want ChIJGooglePlaceIDFixture", a.GooglePlaceID)
+	}
+
+	got, err := repo.GetByID(ctx, a.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error: %v", err)
+	}
+	if got.GooglePlaceID != "ChIJGooglePlaceIDFixture" {
+		t.Fatalf("persisted google_place_id = %q, want ChIJGooglePlaceIDFixture", got.GooglePlaceID)
+	}
+
+	// A re-sync that re-resolves the same place id re-upserts idempotently.
+	reUpserted, err := repo.Upsert(ctx, in)
+	if err != nil {
+		t.Fatalf("re-upsert: %v", err)
+	}
+	if reUpserted.ID != a.ID || reUpserted.GooglePlaceID != "ChIJGooglePlaceIDFixture" {
+		t.Fatalf("re-upsert google_place_id = %q on id %q, want ChIJGooglePlaceIDFixture on %q", reUpserted.GooglePlaceID, reUpserted.ID, a.ID)
+	}
+}
+
+// TestSetGooglePlaceIDIfEmpty_WritesOnlyWhenStillEmpty is
+// SetGooglePlaceIDIfEmpty's correctness proof, same shape as
+// TestSetSubcategoryIfEmpty_WritesOnlyWhenStillEmpty above — covers both an
+// unmigrated row (SQL NULL, never upserted) and an already-set row.
+func TestSetGooglePlaceIDIfEmpty_WritesOnlyWhenStillEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	empty, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Empty Place ID Fixture", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://ta/empty-place-id-fixture", ExternalID: "empty-place-1",
+	})
+	if err != nil {
+		t.Fatalf("seeding empty-place-id row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, empty.ID) })
+
+	already, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Already Set Place ID Fixture", Category: activitiessvc.CategoryRestaurants,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "tripadvisor", SourceURL: "https://ta/already-set-place-id-fixture", ExternalID: "already-place-1",
+		GooglePlaceID: "ChIJAlreadySet",
+	})
+	if err != nil {
+		t.Fatalf("seeding already-set row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, already.ID) })
+
+	wrote, err := repo.SetGooglePlaceIDIfEmpty(ctx, empty.ID, "ChIJBackfilled")
+	if err != nil {
+		t.Fatalf("SetGooglePlaceIDIfEmpty(empty) error: %v", err)
+	}
+	if !wrote {
+		t.Fatalf("SetGooglePlaceIDIfEmpty(empty) = false, want true")
+	}
+	got, err := repo.GetByID(ctx, empty.ID)
+	if err != nil {
+		t.Fatalf("GetByID(empty): %v", err)
+	}
+	if got.GooglePlaceID != "ChIJBackfilled" {
+		t.Fatalf("google_place_id = %q, want ChIJBackfilled", got.GooglePlaceID)
+	}
+
+	wrote, err = repo.SetGooglePlaceIDIfEmpty(ctx, already.ID, "ChIJShouldNotWrite")
+	if err != nil {
+		t.Fatalf("SetGooglePlaceIDIfEmpty(already) error: %v", err)
+	}
+	if wrote {
+		t.Fatalf("SetGooglePlaceIDIfEmpty(already) = true, want false (must not report a write it didn't make)")
+	}
+	got, err = repo.GetByID(ctx, already.ID)
+	if err != nil {
+		t.Fatalf("GetByID(already): %v", err)
+	}
+	if got.GooglePlaceID != "ChIJAlreadySet" {
+		t.Fatalf("google_place_id = %q, want the original ChIJAlreadySet to survive untouched", got.GooglePlaceID)
+	}
+}
+
 // TestSyncRegionsPrimaryKey proves 0024's widened composite primary key
 // (provider, cell_key, category, subtype) — generalized from Tripadvisor's
 // original (cell_key, category) — still rejects an exact duplicate while

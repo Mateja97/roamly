@@ -1410,9 +1410,9 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 					photos = nil
 				}
 
-				subtype := a.ResolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID)
+				subtype, placeID := a.ResolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID)
 
-				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, subtype, details, reviews, photos, cellLoc)); err != nil {
+				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, subtype, placeID, details, reviews, photos, cellLoc)); err != nil {
 					slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
 				}
 			}
@@ -1484,7 +1484,7 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // against exactly that: the candidate's own returned name must plausibly be
 // the same venue, or it's rejected same as no match at all.
 //
-// Returns "" — never a guess — when: no Places client is configured
+// Returns "", "" — never a guess — when: no Places client is configured
 // (a.places == nil); name is empty or lat/lng is the zero value (nothing
 // to search on, and a call would waste a Places request); the search
 // errors (logged, the sync itself must not fail); the search finds no
@@ -1493,25 +1493,32 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // would be a guess; or the sole candidate's own name doesn't plausibly
 // match, meaning it's a different venue that merely happened to be the
 // only result in the box.
-func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) string {
+//
+// The second return value is the matched candidate's own Google place id
+// (tripadvisor-google-review-fallback T1) — the same SearchTextInArea hit
+// the subtype is already classified from, so returning it costs no
+// additional Places request. Callers persist it via
+// activitiessvc.IngestActivity.GooglePlaceID so a later live Place Details
+// lookup (T3) can reuse it.
+func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string) {
 	if a.places == nil {
-		return ""
+		return "", ""
 	}
 	if name == "" || (lat == 0 && lng == 0) {
-		return ""
+		return "", ""
 	}
 	found, err := a.places.SearchTextInArea(ctx, name, lat, lng, tripadvisorSubtypeRadiusKM, places.NearbyFieldMask)
 	if err != nil {
 		slog.Warn("tripadvisor subtype resolve failed", "location_id", locationID, "name", name, "error", err)
-		return ""
+		return "", ""
 	}
 	if len(found) != 1 {
-		return ""
+		return "", ""
 	}
 	if !venueNameMatches(name, found[0].DisplayName.Text) {
-		return ""
+		return "", ""
 	}
-	return placesmap.Subtype(category, found[0].PrimaryType, found[0].Types)
+	return placesmap.Subtype(category, found[0].PrimaryType, found[0].Types), found[0].ID
 }
 
 // venueNameMatches reports whether candidateName (a Places Text Search
@@ -1694,14 +1701,14 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 	// CONFLICT unconditionally overwrites subcategory (see its own doc), so
 	// skipping this here would silently wipe out a subtype a prior sync
 	// already resolved every time cmd/backfilltripadvisor's refresh runs.
-	subtype := a.ResolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID)
+	subtype, placeID := a.ResolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID)
 	// No anchor here — a direct-by-ID backfill has no sweep to resolve a
 	// city once for (see resolveTripadvisorCity) — so this always falls
 	// back to Terra's own City/Country, same as every call before this
 	// param existed. Fine for its one caller (cmd/backfilltripadvisor):
 	// every row it touches already has a stored city that COALESCE(NULLIF(
 	// ..., ''), ...) in Upsert preserves if Terra's own value is empty.
-	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, subtype, details, reviews, nil, cellLocation{})); err != nil {
+	if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(category, subtype, placeID, details, reviews, nil, cellLocation{})); err != nil {
 		return fmt.Errorf("upserting tripadvisor activity %s: %w", locationID, err)
 	}
 	return nil
@@ -1722,7 +1729,7 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 // Upsert's own ON CONFLICT also refuses to let an empty incoming city/
 // country clobber a stored one, so an empty cell resolution here degrades
 // safely either way.
-func tripadvisorIngestActivity(category activitiessvc.Category, subtype string, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
+func tripadvisorIngestActivity(category activitiessvc.Category, subtype, placeID string, d tripadvisor.LocationDetails, reviews []activitiessvc.TripadvisorReview, photos []activitiessvc.Photo, cell cellLocation) activitiessvc.IngestActivity {
 	attribution := &activitiessvc.TripadvisorAttribution{
 		RatingImageURL: d.RatingImageURL,
 		ReviewCount:    d.ReviewCount,
@@ -1782,6 +1789,10 @@ func tripadvisorIngestActivity(category activitiessvc.Category, subtype string, 
 		// (Tripadvisor's own categories[] never carries one — see that
 		// function's doc) — "" when it didn't resolve, never a guess.
 		Subcategory: subtype,
+		// placeID is ResolveTripadvisorSubtype's second return value, the
+		// same Places hit the subtype above is classified from — "" on
+		// every rejection path, never a guess (see that function's doc).
+		GooglePlaceID: placeID,
 	}
 }
 
