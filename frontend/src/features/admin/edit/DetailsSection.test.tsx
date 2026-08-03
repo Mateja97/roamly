@@ -74,6 +74,34 @@ describe('DetailsSection', () => {
     expect(screen.queryByText('Opening hours')).toBeNull();
   });
 
+  it('renders no price/duration input for any of the six purged categories (T4)', () => {
+    const removedLabels = [
+      'Price tier',
+      'Entry price',
+      'Ticket price',
+      'Duration',
+      'Price',
+      'Time / price',
+    ];
+    for (const category of [
+      'restaurants',
+      'nightlife',
+      'sport',
+      'culture',
+      'art',
+      'wellness',
+      'entertainment',
+    ]) {
+      const { unmount } = render(
+        <DetailsSection category={category} details={{}} onChange={vi.fn()} />,
+      );
+      for (const label of removedLabels) {
+        expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+      }
+      unmount();
+    }
+  });
+
   it('nature.good_to_know renders chips, not a textarea (addendum correction)', () => {
     render(
       <DetailsSection
