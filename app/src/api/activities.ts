@@ -458,8 +458,11 @@ export type ActivitiesQueryRequest = {
   current_location?: Location;
   categories?: Category[];
   // T3: subtype refinement of a single selected category (see filters.ts's
-  // buildActivitiesRequest/SUBCATEGORIES) — OR within the field, AND-ed with
-  // `categories` server-side per T1's wire contract.
+  // SUBCATEGORIES) — OR within the field, AND-ed with `categories`
+  // server-side per T1's wire contract. content-first-home's T3 (2026-08)
+  // moved this field's app-side role to client-side filtering
+  // (filterBySubtypes) instead of sending it on the wire — kept here since
+  // the wire contract/backend behavior itself is unchanged.
   subcategories?: string[];
   min_rating?: number;
   max_distance_km?: number;

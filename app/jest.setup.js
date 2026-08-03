@@ -39,3 +39,10 @@ jest.mock('react-native-safe-area-context', () => {
 const { AccessibilityInfo } = require('react-native');
 AccessibilityInfo.isReduceMotionEnabled = () => Promise.resolve(false);
 AccessibilityInfo.addEventListener = () => ({ remove: () => {} });
+
+// The package's own official in-memory mock — every local-flag module
+// (nearbyNudge.ts, travelerMode.ts) reads/writes real AsyncStorage, which
+// has no native module in the Jest environment.
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);

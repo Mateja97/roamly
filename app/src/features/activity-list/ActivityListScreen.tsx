@@ -1,49 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ElementRef } from 'react';
-import {
-  AccessibilityInfo,
-  BackHandler,
-  FlatList,
-  findNodeHandle,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { BackHandler, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Globe, MapPin, SearchX, SlidersHorizontal } from 'lucide-react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import { SearchX } from 'lucide-react-native';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { ActivityCard, ActivityCardSkeleton } from '../../components/ActivityCard';
-import { FilterChip } from '../../components/FilterChip';
-import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
-import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { tripadvisorAttribution } from './activityDetailConfig';
-import { FilterSheet } from './FilterSheet';
+import { CategoryRow } from './CategoryRow';
+import { orderCategories } from './categoryOrder';
+import { FeedHeader } from './FeedHeader';
 import {
   CATEGORY_OPTIONS,
-  SCOPE_TITLES,
-  activeFilterCount,
-  buildActivitiesRequest,
+  buildFeedRequest,
   clearCategories,
   defaultFilters,
-  filterChips,
-  headerSubtitle,
+  filterBySubtypes,
+  subtypeCounts,
   toggleCategory,
 } from './filters';
-import type { ActivityListScreenProps, Filters } from './types';
+import { NearbyNudgeCard } from './NearbyNudgeCard';
+import { dismissNearbyNudge, isNearbyNudgeDismissed } from './nearbyNudge';
+import { SubtypeRail } from './SubtypeRail';
+import { TravelerRow } from './TravelerRow';
+import type { TravelerRowState } from './TravelerRow';
+import { getHomeBaseSamples, homeBaseMedian, isTraveler, recordHomeBaseSample } from './travelerMode';
+import type { ActivityListScreenProps, Category, Filters } from './types';
+import { useNearbyLocation } from '../scope-picker/useNearbyLocation';
+import { ScopeSheet } from '../scope-sheet/ScopeSheet';
+import { defaultScopeDraft } from '../scope-sheet/scopeDraft';
+import type { ScopeDraft } from '../scope-sheet/scopeDraft';
 
 type QueryState =
   | { status: 'loading' }
   | { status: 'loaded'; activities: Activity[] }
-  | { status: 'empty' }
   | { status: 'error'; message: string };
 
 const SKELETON_CARD_COUNT = 5;
+// design-spec.md T3: Traveler mode's curated row.
+const TRAVELER_CATEGORIES: Category[] = ['tours_experiences', 'culture'];
+const TRAVELER_ROW_CAP = 8;
 
 export function ActivityListScreen({
   selection,
@@ -52,185 +50,210 @@ export function ActivityListScreen({
   initialCities = [],
   onBack,
 }: ActivityListScreenProps) {
-  // T2: the types-picker screen carries its selection in as the initial
-  // applied filter, so the first query arrives pre-filtered. Frozen via
-  // useState's lazy initializer (runs once, on mount) rather than reading
-  // the `initialCategories` prop directly in the effect below — a parent
-  // re-render passing a fresh empty-array default won't retrigger it.
-  const [initialFilters] = useState<Filters>(() => ({ ...defaultFilters(selection.scope), categories: initialCategories }));
-  const [appliedFilters, setAppliedFilters] = useState<Filters>(initialFilters);
-  // T5: `initialActivities` (frozen at mount, same lazy-initializer pattern
-  // as `initialFilters` above) means the caller already ran an equivalent
-  // query — skip the redundant initial fetch below and seed state directly.
-  const [skipInitialFetch] = useState(() => initialActivities !== undefined);
+  // T2/T3: frozen via useState's lazy initializer (runs once, on mount) —
+  // a parent re-render passing fresh prop defaults won't retrigger these.
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(() => ({
+    ...defaultFilters(selection.scope),
+    categories: initialCategories,
+  }));
+  // design-spec.md T3: scope/city/distance/rating now live here (T2's
+  // ScopeDraft), not on `Filters` — seeded from the props the caller (still
+  // the pre-T4 scope-picker flow) hands in.
+  const [appliedScopeDraft, setAppliedScopeDraft] = useState<ScopeDraft>(() => ({
+    ...defaultScopeDraft(selection.scope, selection.coordinates),
+    cities: initialCities,
+  }));
   const [queryState, setQueryState] = useState<QueryState>(() =>
-    initialActivities !== undefined
-      ? initialActivities.length === 0
-        ? { status: 'empty' }
-        : { status: 'loaded', activities: initialActivities }
-      : { status: 'loading' }
+    initialActivities !== undefined ? { status: 'loaded', activities: initialActivities } : { status: 'loading' }
   );
   const [sheetVisible, setSheetVisible] = useState(false);
-  // T1: a tapped card opens the detail screen as an overlay above this
-  // still-mounted list (not a push onto App.tsx's global stack, which
-  // unmounts the screen below it) — the "return to the list in its prior
-  // state" acceptance criterion (scroll position, applied filters, query
-  // results) only holds if the list never tears down.
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
-  const filtersButtonRef = useRef<ElementRef<typeof Pressable>>(null);
-  const countRef = useRef<View>(null);
-  // T4 round 3: EVERY query path that can paint `queryState` (initial load,
-  // pill toggle/chip removal, retry, sheet apply) shares this one counter and
-  // `isCurrent` check — whichever call started *last* wins, not whichever
-  // happens to *resolve* last. A prior fix only guarded handleFiltersChange,
-  // which left the other three call sites free to paint a stale response
-  // over a newer one (e.g. the initial load resolving after a pill tap).
-  // Routing every path through the same gate means there's exactly one place
-  // that decides "is this response still current" — a fourth call site can't
-  // reopen the race by rolling its own check.
   const filtersRequestSeq = useRef(0);
+  const [retryEpoch, setRetryEpoch] = useState(0);
+  // design-spec.md T3: "recomputed on screen focus only... selecting a
+  // category must not reorder the row." This app has no router (see
+  // App.tsx), so "focus" has no native lifecycle event here — the nearest
+  // real analogs are: mount, returning from the Detail overlay, and closing
+  // the Scope sheet (the only other "screens" this app has today). See
+  // `refreshAdaptivity` below.
+  const [hourAtLastFocus, setHourAtLastFocus] = useState(() => new Date().getHours());
+  const [travelerMode, setTravelerMode] = useState(false);
+  const [travelerRowState, setTravelerRowState] = useState<TravelerRowState>({ status: 'omit' });
+  const [nudgeDismissed, setNudgeDismissed] = useState(true); // starts hidden to avoid a flash before the stored flag resolves
+  const nearby = useNearbyLocation();
 
   function startQuery(): number {
     return ++filtersRequestSeq.current;
   }
-
   function isCurrent(seq: number): boolean {
     return seq === filtersRequestSeq.current;
   }
 
-  const runQuery = useCallback(
-    (filters: Filters): Promise<ActivitiesQueryResult> => queryActivities(buildActivitiesRequest(selection, filters)),
-    [selection]
-  );
-
   function applyResult(result: ActivitiesQueryResult) {
     if (result.status === 'success') {
-      setQueryState(
-        result.activities.length === 0 ? { status: 'empty' } : { status: 'loaded', activities: result.activities }
-      );
+      setQueryState({ status: 'loaded', activities: result.activities });
     } else {
       setQueryState({ status: 'error', message: result.message });
     }
   }
 
-  // Initial load — fires once per mount (once per scope selection). Applying
-  // filters or removing a chip re-queries explicitly below, not via effect.
-  // `queryState`'s own default is already `{status: 'loading'}`, so there's
-  // no state to set synchronously here — just kick off the fetch. No local
-  // `cancelled` flag needed — `isCurrent` already drops this response if a
-  // pill tap (or anything else) started a newer request before it lands.
+  // design-spec.md T3: one reactive query path — scope/city/distance/rating
+  // changes (ScopeSheet apply) and category changes (pill row) both funnel
+  // through here, replacing the old component's four near-duplicate
+  // handlers (handleFiltersChange/handleApply/handleRetry/mount-effect),
+  // each of which re-implemented the same isCurrent/seq guard. Subtype
+  // toggles never touch `appliedFilters.categories`'s array reference (see
+  // handleToggleSubtype below), so they never trigger a re-fetch — they're
+  // filtered client-side from the already-fetched, category-scoped result
+  // (filters.ts's filterBySubtypes/subtypeCounts).
+  const skipFirstFetch = useRef(initialActivities !== undefined);
   useEffect(() => {
-    if (skipInitialFetch) return;
+    if (skipFirstFetch.current) {
+      skipFirstFetch.current = false;
+      return;
+    }
     const seq = startQuery();
-    runQuery(initialFilters).then((result) => {
+    setQueryState({ status: 'loading' });
+    queryActivities(buildFeedRequest(appliedScopeDraft, appliedFilters.categories)).then((result) => {
       if (isCurrent(seq)) applyResult(result);
     });
-  }, [runQuery, initialFilters, skipInitialFetch]);
+  }, [appliedScopeDraft, appliedFilters.categories, retryEpoch]);
 
-  // design-spec.md requires the platform-native back control/gesture, not a
-  // custom on-screen button — but T3/T4 deliberately have no stack
-  // navigator yet (see App.tsx), so there's no navigator-provided gesture
-  // to defer to either. Android's hardware back button is itself a native
-  // platform affordance (RN's BackHandler), not a custom control, so it's
-  // wired here. T1: when the detail overlay is open, hardware back closes
-  // it first (mirrors the on-screen Back control) rather than leaving the
-  // whole list screen.
-  // ponytail: iOS has no equivalent without a navigator (BackHandler is a
-  // no-op on iOS) — no back path exists there today for leaving the list
-  // itself (the detail overlay's on-screen Back control covers iOS for
-  // itself). Accepted per DESIGN_STANDARDS.md's own "Navigation
-  // patterns... no router yet" deferral; add a router (and this becomes
-  // free on both platforms) once a third screen/back-stack need shows up.
-  // See engineering-notes.md.
+  // Traveler mode's own curated row — a second, independent query scoped to
+  // Tours & Experiences + Culture, silently omitted on error/empty (Fact
+  // chip grid's precedent: no error UI for a bonus, decorative section).
+  // `travelerRowState` only ever holds a loading/loaded snapshot from the
+  // last time traveler mode was actually on — rendering already gates on
+  // `travelerMode &&` at every call site, so a stale loaded/loading value
+  // left over from a prior traveler-mode-true period is never shown once
+  // traveler mode turns back off.
+  const travelerRequestSeq = useRef(0);
+  useEffect(() => {
+    if (!travelerMode) return;
+    const seq = ++travelerRequestSeq.current;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicking off a fetch needs its "loading" flag set before the async call starts, same shape as the query effect just above (which this same rule doesn't flag) — a real difference in the rule's own heuristics, not in the code's correctness.
+    setTravelerRowState({ status: 'loading' });
+    queryActivities(buildFeedRequest(appliedScopeDraft, TRAVELER_CATEGORIES)).then((result) => {
+      if (travelerRequestSeq.current !== seq) return; // superseded by a newer traveler-mode/scope change
+      setTravelerRowState(
+        result.status === 'success'
+          ? { status: 'loaded', activities: result.activities.slice(0, TRAVELER_ROW_CAP) }
+          : { status: 'omit' }
+      );
+    });
+  }, [travelerMode, appliedScopeDraft]);
+
+  // design-spec.md's Adaptivity rules: a fresh granted device-location fix
+  // (present at mount for Nearby, or handed back by the Scope sheet)
+  // contributes to the rolling home-base sample set.
+  useEffect(() => {
+    if (appliedScopeDraft.coordinates) recordHomeBaseSample(appliedScopeDraft.coordinates);
+  }, [appliedScopeDraft.coordinates]);
+
+  const mountedRef = useRef(true);
+  useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
+
+  // Shared by the mount check below and the closeDetail/closeSheet "focus
+  // regained" handlers — only the traveler-mode async check lives here
+  // (setTravelerMode fires from its .then callback, not synchronously).
+  // `hourAtLastFocus` itself is set separately by each interactive call
+  // site — the mount case already has the right value from its own useState
+  // lazy initializer above, so it doesn't need to be re-set here too.
+  function checkTravelerMode(currentCoordinates: ScopeDraft['coordinates']) {
+    getHomeBaseSamples().then((samples) => {
+      if (!mountedRef.current) return; // avoids a post-unmount setState (e.g. a test that unmounts before this microtask settles)
+      setTravelerMode(isTraveler(currentCoordinates, homeBaseMedian(samples)));
+    });
+  }
+
+  function refreshAdaptivity(currentCoordinates: ScopeDraft['coordinates']) {
+    setHourAtLastFocus(new Date().getHours());
+    checkTravelerMode(currentCoordinates);
+  }
+
+  useEffect(() => {
+    checkTravelerMode(appliedScopeDraft.coordinates);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only traveler check; hourAtLastFocus's own useState initializer already covers the "at mount" value
+  }, []);
+
+  // design-spec.md T3: nudge dismissal check + permission-status check both
+  // only matter once scope is unanchored Anywhere.
+  useEffect(() => {
+    isNearbyNudgeDismissed().then(setNudgeDismissed);
+  }, []);
+  useEffect(() => {
+    if (appliedScopeDraft.scope === 'anywhere' && !appliedScopeDraft.coordinates) {
+      nearby.checkPermission();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission's identity is stable (useCallback, no deps)
+  }, [appliedScopeDraft.scope, appliedScopeDraft.coordinates]);
+
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (selectedActivity) {
-        setSelectedActivity(null);
+        closeDetail();
       } else {
         onBack();
       }
       return true;
     });
     return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDetail reads current state via closure; re-subscribing on every selectedActivity change keeps the handler current
   }, [onBack, selectedActivity]);
 
-  function focusCount() {
-    const handle = countRef.current && findNodeHandle(countRef.current);
-    if (handle) AccessibilityInfo.setAccessibilityFocus(handle);
+  function closeDetail() {
+    setSelectedActivity(null);
+    refreshAdaptivity(appliedScopeDraft.coordinates);
   }
 
-  // Direct chip removal / "Clear filters" — updates the applied set
-  // immediately and re-queries; a failure here shows the generic Fetch
-  // error state (no sheet involved to scope it to).
-  async function handleFiltersChange(next: Filters) {
-    const seq = startQuery();
-    setAppliedFilters(next);
-    setQueryState({ status: 'loading' });
-    const result = await runQuery(next);
-    // A newer call already bumped the sequence — this response is stale,
-    // drop it so it can't paint over a request the user made after this one.
-    if (!isCurrent(seq)) return;
-    applyResult(result);
-    // ponytail: focus always lands on the result count rather than tracking
-    // "the next chip" precisely — chip order/refs shift on every removal,
-    // and the count line is always present and reachable.
-    focusCount();
+  function handleToggleCategory(category: Category) {
+    setAppliedFilters((prev) => toggleCategory(prev, category));
   }
 
-  async function handleRetry() {
-    const seq = startQuery();
-    setQueryState({ status: 'loading' });
-    const result = await runQuery(appliedFilters);
-    if (isCurrent(seq)) applyResult(result);
+  function handleClearCategories() {
+    setAppliedFilters((prev) => clearCategories(prev));
   }
 
-  // Sheet-scoped Apply — the list shows the re-query skeleton while it runs
-  // (per design-spec), but only commits new results/applied filters on
-  // success; on failure the list reverts to what it had and the sheet
-  // surfaces its own error, leaving the draft selection intact. The result is
-  // still returned to the sheet unconditionally (its own success/error UI is
-  // local to the sheet, not part of the screen-level race) — only the
-  // *screen's* queryState/appliedFilters paint is gated on `isCurrent`.
-  async function handleApply(draft: Filters): Promise<ActivitiesQueryResult> {
-    const seq = startQuery();
-    const previousState = queryState;
-    setQueryState({ status: 'loading' });
-    const result = await runQuery(draft);
-    if (isCurrent(seq)) {
-      if (result.status === 'success') {
-        setAppliedFilters(draft);
-        applyResult(result);
-      } else {
-        setQueryState(previousState);
-      }
-    }
-    return result;
+  // Subtypes are client-filtered (see the query effect's comment above) —
+  // toggling one never re-fetches, it only changes what's shown/counted
+  // from the activities already in hand.
+  function handleToggleSubtype(subtype: string) {
+    setAppliedFilters((prev) => ({
+      ...prev,
+      subtypes: prev.subtypes.includes(subtype) ? prev.subtypes.filter((s) => s !== subtype) : [...prev.subtypes, subtype],
+    }));
+  }
+
+  function handleRetry() {
+    setRetryEpoch((e) => e + 1);
   }
 
   function closeSheet() {
     setSheetVisible(false);
-    filtersButtonRef.current?.focus?.();
+    refreshAdaptivity(appliedScopeDraft.coordinates);
   }
 
-  const chips = filterChips(appliedFilters, selection.scope);
-  const filterCount = activeFilterCount(appliedFilters, selection.scope);
-  const resultCount = queryState.status === 'loaded' ? queryState.activities.length : queryState.status === 'empty' ? 0 : null;
-  // T2: whether the composite subtitle will render at all is knowable before
-  // the count resolves — nearby always has one, anywhere only when cities
-  // were selected upstream (both fixed at mount, unaffected by the query) —
-  // so the loading placeholder never flashes then disappears once
-  // `resultCount` resolves to the zero-city fallback.
-  const willShowSubtitle = selection.scope === 'nearby' || initialCities.length > 0;
-  const subtitle = resultCount === null ? null : headerSubtitle(selection.scope, resultCount, initialCities);
-  // Distance is only meaningful when a device-location anchor exists —
-  // always true for nearby, conditional for anywhere (see filters.ts /
-  // repository/activity.go's distance_km: 0 with no reference point).
-  const hasLocationAnchor = Boolean(selection.coordinates);
-  const filtersFocus = useFocusable();
+  function handleDismissNudge() {
+    setNudgeDismissed(true);
+    dismissNearbyNudge();
+  }
 
-  // T1: stable renderItem + keyExtractor so FlatList's cell renderer can skip
-  // re-invoking a row (and thus re-rendering its memoized ActivityCard) when
-  // unrelated screen state changes (filter sheet open, other rows selected).
+  const hasLocationAnchor = Boolean(appliedScopeDraft.coordinates);
+  const hasFilters = appliedFilters.categories.length > 0 || appliedFilters.subtypes.length > 0;
+  const order = orderCategories(hourAtLastFocus, travelerMode);
+  const selectedCategoryOptions = CATEGORY_OPTIONS.filter((o) => appliedFilters.categories.includes(o.value));
+
+  // design-spec.md T3: "unanchored Anywhere" — no device location AND no
+  // city already chosen (a city alone is a perfectly valid, anchored
+  // Anywhere state; the nudge is about *never having anchored at all*, not
+  // merely "no device coordinates").
+  const unanchoredAnywhere =
+    appliedScopeDraft.scope === 'anywhere' && !appliedScopeDraft.coordinates && appliedScopeDraft.cities.length === 0;
+  const showAskNudge = unanchoredAnywhere && nearby.state.status !== 'denied' && !nudgeDismissed;
+  const showCityNudge = unanchoredAnywhere && nearby.state.status === 'denied';
+
   const renderItem = useCallback(
     ({ item }: { item: Activity }) => (
       <ActivityCard activity={item} showDistance={hasLocationAnchor} onPress={() => setSelectedActivity(item)} />
@@ -239,6 +262,15 @@ export function ActivityListScreen({
   );
   const keyExtractor = useCallback((item: Activity) => item.id, []);
 
+  const categoryScopedActivities = queryState.status === 'loaded' ? queryState.activities : [];
+  const displayActivities = filterBySubtypes(categoryScopedActivities, appliedFilters);
+
+  const nudge = showAskNudge ? (
+    <NearbyNudgeCard variant="ask" onOpenScope={() => setSheetVisible(true)} onDismiss={handleDismissNudge} />
+  ) : showCityNudge ? (
+    <NearbyNudgeCard variant="choose-city" onOpenScope={() => setSheetVisible(true)} />
+  ) : null;
+
   return (
     <View style={styles.container}>
       <SafeAreaView
@@ -246,128 +278,63 @@ export function ActivityListScreen({
         accessibilityElementsHidden={selectedActivity !== null}
         importantForAccessibility={selectedActivity !== null ? 'no-hide-descendants' : 'auto'}
       >
+        {/* ponytail: design-spec.md's "header + context line collapse on
+            scroll; pill row + subtype rail stay sticky" describes an
+            animated collapsing-header behavior this codebase has no
+            existing precedent for (today's header/FilterSheet/ScopeSheet are
+            all static or modal, never a scroll-driven collapse) and
+            product-tasks.md's own T3 acceptance criteria never lists it as a
+            gate. Shipped as a static header instead, matching today's
+            already-shipped header pattern — the category row/subtype rail
+            read as "sticky" in the strongest sense (they never leave the
+            screen at all, stronger than a collapsing-header animation's
+            sticky-after-collapse). Upgrade path: an Animated.ScrollView +
+            interpolated header height, if this is flagged as a real gap. */}
         <View style={styles.header}>
-          <Svg
-            viewBox="0 0 402 180"
-            preserveAspectRatio="xMidYMid slice"
-            style={styles.headerFlightPath}
-            pointerEvents="none"
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
-            <Path
-              d="M-20 90 C 110 46, 260 140, 430 74"
-              stroke={colors.primary}
-              strokeWidth={2.5}
-              strokeDasharray="2 12"
-              strokeLinecap="round"
-              strokeOpacity={0.22}
-              fill="none"
+          <FeedHeader
+            scope={appliedScopeDraft.scope}
+            cities={appliedScopeDraft.cities}
+            hour={new Date().getHours()}
+            travelerMode={travelerMode}
+            onOpenScope={() => setSheetVisible(true)}
+          />
+          <CategoryRow
+            order={order}
+            selected={appliedFilters.categories}
+            onToggle={handleToggleCategory}
+            onClearAll={handleClearCategories}
+          />
+          {selectedCategoryOptions.map((option) => (
+            <SubtypeRail
+              key={option.value}
+              category={option.value}
+              counts={subtypeCounts(categoryScopedActivities, option.value)}
+              selectedSubtypes={appliedFilters.subtypes}
+              onToggle={handleToggleSubtype}
             />
-            <Circle cx={-20} cy={90} r={4.5} fill={colors.primary} stroke="none" opacity={0.22} />
-            <Circle cx={430} cy={74} r={5} fill="none" stroke={colors.primary} strokeWidth={3} strokeOpacity={0.22} />
-          </Svg>
-          <View style={styles.headerTopRow}>
-            <View style={styles.headerTitleRow}>
-              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-                {selection.scope === 'nearby' ? (
-                  <MapPin size={20} color={colors.primary} strokeWidth={1.75} />
-                ) : (
-                  <Globe size={20} color={colors.primary} strokeWidth={1.75} />
-                )}
-              </View>
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {SCOPE_TITLES[selection.scope]}
-              </Text>
-            </View>
-            <Pressable
-              ref={filtersButtonRef}
-              onPress={() => setSheetVisible(true)}
-              onFocus={filtersFocus.onFocus}
-              onBlur={filtersFocus.onBlur}
-              accessibilityRole="button"
-              accessibilityLabel={filterCount > 0 ? `Filters, ${filterCount} active` : 'Filters'}
-              style={({ pressed }) => [
-                styles.filtersButton,
-                (pressed || filtersFocus.focused) && styles.filtersButtonActive,
-              ]}
-            >
-              <SlidersHorizontal size={16} color={colors.primary} strokeWidth={1.75} />
-              <Text style={styles.filtersButtonLabel}>Filters</Text>
-              {filterCount > 0 && (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeLabel}>{filterCount}</Text>
-                </View>
-              )}
-            </Pressable>
-          </View>
-
-          {/* design-spec.md T4: the pill row *is* the full category filter —
-              it writes straight into filters.categories, the same state the
-              sheet's Category group edits, rather than summarising it. */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroll}
-            contentContainerStyle={styles.categoryRow}
-          >
-            <FilterChip
-              variant="segment"
-              label="All"
-              accessibilityLabel="All categories"
-              selected={appliedFilters.categories.length === 0}
-              onPress={() => {
-                // Re-tapping an already-active All is a no-op — no query
-                // re-fire (design-spec.md T4).
-                if (appliedFilters.categories.length === 0) return;
-                handleFiltersChange(clearCategories(appliedFilters));
-              }}
-            />
-            {CATEGORY_OPTIONS.map(({ value, label }) => (
-              <FilterChip
-                key={value}
-                variant="segment"
-                label={label}
-                selected={appliedFilters.categories.includes(value)}
-                onPress={() => handleFiltersChange(toggleCategory(appliedFilters, value))}
-              />
-            ))}
-          </ScrollView>
-
-          <View ref={countRef} accessible accessibilityLiveRegion="polite">
-            {resultCount === null
-              ? willShowSubtitle && <Skeleton width={140} height={14} style={styles.headerSubtitleSkeleton} />
-              : subtitle && (
-                  <Text style={styles.headerSubtitle} numberOfLines={1}>
-                    {subtitle}
-                  </Text>
-                )}
-          </View>
+          ))}
         </View>
 
-        {chips.length > 0 && (
-          <View style={styles.resultRegion}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {chips.map((chip) => (
-                <FilterChip key={chip.key} variant="remove" label={chip.label} onPress={() => handleFiltersChange(chip.remove())} />
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {queryState.status === 'loaded' ? (
+        {queryState.status === 'loaded' && displayActivities.length > 0 ? (
           // T1: only the loaded-results case needs virtualization — an
           // image-heavy list can grow large. Loading/empty/error render a
           // handful of fixed elements, so a plain ScrollView below is plenty.
           <FlatList
-            data={queryState.activities}
+            data={displayActivities}
             keyExtractor={keyExtractor}
             renderItem={renderItem}
             contentContainerStyle={styles.list}
             removeClippedSubviews
+            ListHeaderComponent={
+              <View style={styles.listHeader}>
+                {nudge}
+                {travelerMode && (
+                  <TravelerRow state={travelerRowState} showDistance={hasLocationAnchor} onPressActivity={setSelectedActivity} />
+                )}
+              </View>
+            }
             // design-spec.md T8 (Tripadvisor initiative): a single caption
-            // below the last card, reinforcing attribution beyond the
-            // per-card logo, present iff the visible list has >=1
+            // below the last card, present iff the visible list has >=1
             // Tripadvisor row — omitted otherwise (no reserved gap).
             ListFooterComponent={
               queryState.activities.some((activity) => Boolean(tripadvisorAttribution(activity))) ? (
@@ -379,41 +346,46 @@ export function ActivityListScreen({
           />
         ) : (
           <ScrollView contentContainerStyle={styles.list}>
+            {nudge}
+            {travelerMode && (
+              <TravelerRow state={travelerRowState} showDistance={hasLocationAnchor} onPressActivity={setSelectedActivity} />
+            )}
+
             {queryState.status === 'loading' &&
               Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
 
-            {queryState.status === 'empty' && (
-              <EmptyState
-                hasFilters={filterCount > 0}
-                onClearFilters={() => handleFiltersChange(defaultFilters(selection.scope))}
-              />
+            {queryState.status === 'loaded' && displayActivities.length === 0 && (
+              <EmptyState hasFilters={hasFilters} onClearFilters={handleClearCategories} />
             )}
 
             {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}
           </ScrollView>
         )}
 
-        {/* Keyed on open/closed so each open is a fresh mount — the sheet reads
-            `appliedFilters` as its initial draft once, rather than needing an
-            effect to resync it on every re-open (see FilterSheet). */}
-        <FilterSheet
+        {/* Keyed on open/closed so each open is a fresh mount — the sheet
+            reads `appliedScopeDraft` as its initial draft once (same
+            contract as FilterSheet/ScopeSheet's own remount-on-reopen
+            comment). ponytail: committing `draft` here re-triggers the main
+            query effect above, which re-runs the same request the sheet's
+            own successful Apply tap JUST resolved — one accepted extra round
+            trip per Apply. T2's onApply contract only hands back the draft,
+            not the already-fetched result, and T2's own internals are out of
+            this task's scope to change; upgrade path is widening that
+            contract to `onApply(draft, result)` if the extra call ever
+            matters (rate limits, latency). */}
+        <ScopeSheet
           key={sheetVisible ? 'open' : 'closed'}
           visible={sheetVisible}
-          initialFilters={appliedFilters}
-          scope={selection.scope}
-          hasLocationAnchor={hasLocationAnchor}
-          onApply={handleApply}
+          initialDraft={appliedScopeDraft}
+          onQuery={(draft) => queryActivities(buildFeedRequest(draft, appliedFilters.categories))}
+          onApply={(draft) => setAppliedScopeDraft(draft)}
           onClose={closeSheet}
         />
       </SafeAreaView>
 
       {selectedActivity && (
         <View style={styles.detailOverlay}>
-          <ActivityDetailScreen
-            activity={selectedActivity}
-            showDistance={hasLocationAnchor}
-            onBack={() => setSelectedActivity(null)}
-          />
+          <ActivityDetailScreen activity={selectedActivity} showDistance={hasLocationAnchor} onBack={closeDetail} />
         </View>
       )}
     </View>
@@ -485,93 +457,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[6],
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    position: 'relative',
-    overflow: 'hidden',
+    gap: space[3],
   },
-  headerFlightPath: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: -1,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: space[2],
-  },
-  headerTitleRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-  },
-  headerTitle: {
-    // 26px is the activities-list entry in DESIGN_STANDARDS.md's Marcellus
-    // header-size list — not one of tokens.ts's fontSize steps.
-    fontFamily: fontFamily.display,
-    fontSize: 26,
-    color: colors.text,
-    lineHeight: 26 * 1.2,
-  },
-  // design-spec.md T1: `--space-3` below the title row.
-  categoryScroll: {
-    marginTop: space[3],
-  },
-  categoryRow: {
-    gap: space[2],
-  },
-  headerSubtitle: {
-    marginTop: space[2],
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    fontVariant: ['tabular-nums'],
-  },
-  headerSubtitleSkeleton: {
-    marginTop: space[2],
-  },
-  filtersButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: radius.full,
-    paddingHorizontal: space[4],
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  filtersButtonActive: {
-    backgroundColor: colors.surfaceHover,
-  },
-  filtersButtonLabel: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  countBadge: {
-    minWidth: 18,
-    height: 18,
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: space[1],
-  },
-  countBadgeLabel: {
-    fontSize: fontSize.xs,
-    fontWeight: '700',
-    color: colors.ink,
-  },
-  resultRegion: {
-    paddingTop: space[4],
-    paddingHorizontal: space[4],
-    gap: space[2],
-  },
-  chipRow: {
-    gap: space[2],
+  listHeader: {
+    gap: space[4],
+    marginBottom: space[4],
   },
   list: {
     padding: space[4],
