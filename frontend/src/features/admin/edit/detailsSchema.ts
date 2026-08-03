@@ -48,11 +48,6 @@ export interface DetailField {
   itemLabel?: string;
 }
 
-const ITEM_PRICE: SubField[] = [
-  { key: 'name', label: 'Name', required: true },
-  { key: 'price', label: 'Price', required: true },
-];
-
 const BANNER: SubField[] = [
   { key: 'title', label: 'Title', required: true },
   { key: 'description', label: 'Description' },
@@ -114,13 +109,12 @@ const OPENING_HOURS_FIELD: DetailField = {
 export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   restaurants: [
     { key: 'cuisine', label: 'Cuisine', control: 'text' },
-    { key: 'price_tier', label: 'Price tier', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'popular_dishes',
       label: 'Popular dishes',
       control: 'line-items',
-      itemFields: ITEM_PRICE,
+      itemFields: [{ key: 'name', label: 'Name', required: true }],
       itemLabel: 'dish',
     },
     { key: 'action_url', label: 'Booking website', control: 'url' },
@@ -133,7 +127,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       key: 'on_the_bar',
       label: 'On the bar',
       control: 'line-items',
-      itemFields: ITEM_PRICE,
+      itemFields: [{ key: 'name', label: 'Name', required: true }],
       itemLabel: 'item',
     },
   ],
@@ -145,7 +139,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'action_url', label: 'Booking website', control: 'url' },
   ],
   nightlife: [
-    { key: 'entry_price', label: 'Entry price', control: 'text' },
     { key: 'dress_code', label: 'Dress code', control: 'text' },
     OPENING_HOURS_FIELD,
     {
@@ -171,7 +164,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   sport: [
     { key: 'difficulty', label: 'Difficulty', control: 'numeric' },
     { key: 'effort_level', label: 'Effort level', control: 'text' },
-    { key: 'duration', label: 'Duration', control: 'text' },
     { key: 'gear', label: 'Gear', control: 'text' },
     { key: 'what_to_bring', label: 'What to bring', control: 'chips' },
     { key: 'action_url', label: 'Booking website', control: 'url' },
@@ -183,7 +175,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   ],
   culture: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
-    { key: 'ticket_price', label: 'Ticket price', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'now_showing',
@@ -195,7 +186,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   ],
   art: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
-    { key: 'ticket_price', label: 'Ticket price', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'artwork',
@@ -221,11 +211,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       key: 'treatments',
       label: 'Treatments',
       control: 'line-items',
-      itemFields: [
-        { key: 'item', label: 'Item', required: true },
-        { key: 'duration', label: 'Duration' },
-        { key: 'price', label: 'Price' },
-      ],
+      itemFields: [{ key: 'item', label: 'Item', required: true }],
       itemLabel: 'treatment',
     },
     {
@@ -252,7 +238,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       itemFields: [
         { key: 'date', label: 'Date', required: true },
         { key: 'title', label: 'Title', required: true },
-        { key: 'time_or_price', label: 'Time / price' },
       ],
       itemLabel: 'show',
     },

@@ -65,4 +65,51 @@ describe('DETAILS_SCHEMA', () => {
     );
     expect(goodToKnow?.control).toBe('chips');
   });
+
+  it('offers no price or scraped-duration input for any category (T4 purge)', () => {
+    const removedKeys = [
+      'price_tier',
+      'entry_price',
+      'ticket_price',
+      'price',
+      'duration',
+      'time_or_price',
+      'price_from',
+      'typical_visit',
+      'typical_show_length',
+    ];
+    for (const [category, fields] of Object.entries(DETAILS_SCHEMA)) {
+      for (const field of fields) {
+        expect(removedKeys).not.toContain(field.key);
+        for (const sub of field.itemFields ?? []) {
+          expect(removedKeys, `${category}.${field.key}`).not.toContain(
+            sub.key,
+          );
+        }
+      }
+    }
+  });
+
+  it('popular_dishes/on_the_bar/treatments/upcoming_shows keep line-items (not chips) with only their surviving fields', () => {
+    const byKey = (category: string, key: string) =>
+      DETAILS_SCHEMA[category].find((f) => f.key === key);
+    const dishes = byKey('restaurants', 'popular_dishes');
+    const bar = byKey('cafes', 'on_the_bar');
+    const treatments = byKey('wellness', 'treatments');
+    const shows = byKey('entertainment', 'upcoming_shows');
+
+    expect(dishes?.control).toBe('line-items');
+    expect(dishes?.itemFields).toEqual([
+      { key: 'name', label: 'Name', required: true },
+    ]);
+    expect(bar?.control).toBe('line-items');
+    expect(bar?.itemFields).toEqual(dishes?.itemFields);
+    expect(treatments?.itemFields).toEqual([
+      { key: 'item', label: 'Item', required: true },
+    ]);
+    expect(shows?.itemFields).toEqual([
+      { key: 'date', label: 'Date', required: true },
+      { key: 'title', label: 'Title', required: true },
+    ]);
+  });
 });
