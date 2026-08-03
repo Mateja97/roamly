@@ -103,5 +103,25 @@ describe('useNearbyLocation', () => {
       expect(result.current.state).toEqual({ status: 'idle' });
       expect(mockedLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
     });
+
+    it('resolves true when permission is already granted', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+      const { result } = renderHook(() => useNearbyLocation());
+      let granted!: boolean;
+      await act(async () => {
+        granted = await result.current.checkPermission();
+      });
+      expect(granted).toBe(true);
+    });
+
+    it('resolves false when undetermined or denied', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' } as never);
+      const { result } = renderHook(() => useNearbyLocation());
+      let granted!: boolean;
+      await act(async () => {
+        granted = await result.current.checkPermission();
+      });
+      expect(granted).toBe(false);
+    });
   });
 });

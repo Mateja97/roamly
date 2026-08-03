@@ -10,10 +10,13 @@ const MAX_SAMPLES = 10;
 const MIN_SAMPLES_FOR_HOME_BASE = 3;
 export const TRAVELER_DISTANCE_KM = 150;
 
+// APP_STANDARDS.md Error handling: a rejected/garbled read resolves to "no
+// samples yet" here, once — every caller (including `recordHomeBaseSample`
+// below) gets a safe value instead of an uncaught rejection.
 export async function getHomeBaseSamples(): Promise<Coordinates[]> {
-  const raw = await AsyncStorage.getItem(HOME_BASE_KEY);
-  if (!raw) return [];
   try {
+    const raw = await AsyncStorage.getItem(HOME_BASE_KEY);
+    if (!raw) return [];
     return JSON.parse(raw) as Coordinates[];
   } catch {
     return [];
@@ -22,11 +25,17 @@ export async function getHomeBaseSamples(): Promise<Coordinates[]> {
 
 // Called whenever a fresh, granted device-location fix comes in (Nearby
 // scope always implies one). Appends and caps at MAX_SAMPLES, dropping the
-// oldest — a plain FIFO ring, no weighting/decay.
+// oldest — a plain FIFO ring, no weighting/decay. A failed write silently
+// drops this one sample (best-effort adaptivity signal, nothing user-facing
+// to retry/error into) rather than throwing.
 export async function recordHomeBaseSample(sample: Coordinates): Promise<void> {
-  const samples = await getHomeBaseSamples();
-  const next = [...samples, sample].slice(-MAX_SAMPLES);
-  await AsyncStorage.setItem(HOME_BASE_KEY, JSON.stringify(next));
+  try {
+    const samples = await getHomeBaseSamples();
+    const next = [...samples, sample].slice(-MAX_SAMPLES);
+    await AsyncStorage.setItem(HOME_BASE_KEY, JSON.stringify(next));
+  } catch {
+    // ponytail: swallowed — see comment above, same low-stakes local flag reasoning.
+  }
 }
 
 function median(values: number[]): number {

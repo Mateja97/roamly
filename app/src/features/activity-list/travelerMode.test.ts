@@ -89,4 +89,14 @@ describe('home base sample persistence', () => {
     expect(samples[0]).toEqual({ latitude: 2, longitude: 2 });
     expect(samples[9]).toEqual({ latitude: 11, longitude: 11 });
   });
+
+  it('a rejected read resolves to an empty list instead of throwing', async () => {
+    jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('boom'));
+    await expect(getHomeBaseSamples()).resolves.toEqual([]);
+  });
+
+  it('a rejected write resolves instead of throwing (sample just does not persist)', async () => {
+    jest.spyOn(AsyncStorage, 'setItem').mockRejectedValueOnce(new Error('boom'));
+    await expect(recordHomeBaseSample(BELGRADE)).resolves.toBeUndefined();
+  });
 });

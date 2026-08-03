@@ -66,6 +66,13 @@ export function ActivityListScreen({
   const [queryState, setQueryState] = useState<QueryState>(() =>
     initialActivities !== undefined ? { status: 'loaded', activities: initialActivities } : { status: 'loading' }
   );
+  // The subtype rail's counts read from this, not from `queryState`
+  // directly — `queryState` collapses to no-activities during a refetch or
+  // on error, which would otherwise zero every subtype's count and disable
+  // it (including a chip the user has *selected*, trapping them). This only
+  // ever updates on a successful fetch, so it holds the last real data
+  // across any loading/error state in between.
+  const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>(() => initialActivities ?? []);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersRequestSeq = useRef(0);
@@ -92,6 +99,7 @@ export function ActivityListScreen({
   function applyResult(result: ActivitiesQueryResult) {
     if (result.status === 'success') {
       setQueryState({ status: 'loaded', activities: result.activities });
+      setLastLoadedActivities(result.activities);
     } else {
       setQueryState({ status: 'error', message: result.message });
     }
@@ -184,10 +192,19 @@ export function ActivityListScreen({
     isNearbyNudgeDismissed().then(setNudgeDismissed);
   }, []);
   useEffect(() => {
-    if (appliedScopeDraft.scope === 'anywhere' && !appliedScopeDraft.coordinates) {
-      nearby.checkPermission();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission's identity is stable (useCallback, no deps)
+    if (appliedScopeDraft.scope !== 'anywhere' || appliedScopeDraft.coordinates) return;
+    // If permission was already granted (e.g. in an earlier session/screen),
+    // `requestLocation` never shows an OS prompt for an already-granted
+    // permission — it just resolves the fix quietly. Without this, a user
+    // who'd already granted location would still see the "Turn on location"
+    // nudge forever, since nothing here had ever actually fetched a fix.
+    nearby.checkPermission().then((granted) => {
+      if (!granted) return;
+      nearby.requestLocation().then((coordinates) => {
+        if (coordinates) setAppliedScopeDraft((prev) => ({ ...prev, coordinates }));
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission/requestLocation identities are stable (useCallback, no deps)
   }, [appliedScopeDraft.scope, appliedScopeDraft.coordinates]);
 
   useEffect(() => {
@@ -251,7 +268,15 @@ export function ActivityListScreen({
   // merely "no device coordinates").
   const unanchoredAnywhere =
     appliedScopeDraft.scope === 'anywhere' && !appliedScopeDraft.coordinates && appliedScopeDraft.cities.length === 0;
-  const showAskNudge = unanchoredAnywhere && nearby.state.status !== 'denied' && !nudgeDismissed;
+  // 'locating'/'requesting-permission' only happen transiently while the
+  // effect above is silently resolving an already-granted permission's fix
+  // — neither nudge shows during that brief window (showing "Turn on
+  // location" would be actively wrong: it's already on). 'idle' covers both
+  // "not asked yet" and "briefly, before the mount check resolves".
+  const showAskNudge =
+    unanchoredAnywhere &&
+    !nudgeDismissed &&
+    (nearby.state.status === 'idle' || nearby.state.status === 'unavailable');
   const showCityNudge = unanchoredAnywhere && nearby.state.status === 'denied';
 
   const renderItem = useCallback(
@@ -291,10 +316,14 @@ export function ActivityListScreen({
             sticky-after-collapse). Upgrade path: an Animated.ScrollView +
             interpolated header height, if this is flagged as a real gap. */}
         <View style={styles.header}>
+          {/* `hourAtLastFocus`, not a live `new Date().getHours()` — the
+              pill row's own order is frozen to this same value (see
+              `refreshAdaptivity`), so the context line and the row never
+              disagree across an hour-bucket boundary mid-session. */}
           <FeedHeader
             scope={appliedScopeDraft.scope}
             cities={appliedScopeDraft.cities}
-            hour={new Date().getHours()}
+            hour={hourAtLastFocus}
             travelerMode={travelerMode}
             onOpenScope={() => setSheetVisible(true)}
           />
@@ -308,7 +337,7 @@ export function ActivityListScreen({
             <SubtypeRail
               key={option.value}
               category={option.value}
-              counts={subtypeCounts(categoryScopedActivities, option.value)}
+              counts={subtypeCounts(lastLoadedActivities, option.value)}
               selectedSubtypes={appliedFilters.subtypes}
               onToggle={handleToggleSubtype}
             />

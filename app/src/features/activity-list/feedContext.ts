@@ -21,9 +21,17 @@ export function scopePillInfo(scope: Scope, cities: CitySuggestion[]): ScopePill
 // ponytail: design-spec.md T3's context-line examples name four cases
 // explicitly ("This morning near you" / "Tonight near you" / "Exploring
 // Barcelona & Lisbon" / traveler's "New in town? The best of {city}") but
-// don't cover every reachable state (Nearby at midday, Anywhere cold start)
-// — the unlisted branches below are this task's own filler copy, not spec
-// text. Swap for real copy if a design pass ever covers these two states.
+// don't cover every reachable state — this task's own filler copy below,
+// not spec text, for THREE unlisted cases: Nearby at midday, Anywhere cold
+// start, and — the one the spec's own traveler line can't reach at all —
+// traveler mode while scope is Nearby. Traveler detection only needs a
+// device fix (works for Nearby), but naming a city needs a *chosen* city
+// (`cities[0]`, Anywhere-only) — there's no reverse-geocode in this app to
+// turn a Nearby coordinate into a city name, so Nearby traveler mode can
+// never render the spec's literal "{city}" line. Real design gap, not
+// something to resolve by inventing a geocoding feature inline; flagged for
+// the designer/orchestrator. Filler below at least surfaces the traveler
+// signal instead of silently reusing the non-traveler Nearby copy.
 export function contextLine(
   scope: Scope,
   cities: CitySuggestion[],
@@ -31,6 +39,7 @@ export function contextLine(
   travelerMode: boolean
 ): string {
   if (scope === 'nearby') {
+    if (travelerMode) return 'New in town? Worth seeing nearby';
     const bucket = timeBucket(hour);
     if (bucket === 'morning') return 'This morning near you';
     if (bucket === 'evening' || bucket === 'late-night') return 'Tonight near you';

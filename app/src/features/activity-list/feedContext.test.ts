@@ -34,6 +34,11 @@ describe('contextLine', () => {
     expect(contextLine('nearby', [], 13, false)).toBe('Right now, near you');
   });
 
+  it('nearby + traveler mode surfaces the traveler signal instead of the plain time-of-day copy (no city name available for Nearby)', () => {
+    expect(contextLine('nearby', [], 7, true)).toBe('New in town? Worth seeing nearby');
+    expect(contextLine('nearby', [], 19, true)).toBe('New in town? Worth seeing nearby');
+  });
+
   it('anywhere with cities, no traveler signal -> "Exploring {cities}"', () => {
     expect(contextLine('anywhere', [city('Barcelona'), city('Lisbon')], 13, false)).toBe('Exploring Barcelona & Lisbon');
   });

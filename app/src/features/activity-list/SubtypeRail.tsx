@@ -101,7 +101,12 @@ function SubtypeChip({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- entrance/index are stable per chip instance
   }, []);
 
-  const disabled = count === 0;
+  // A currently-selected chip stays interactive even if its live count
+  // drops to 0 during a refetch/scope change — otherwise a user's own
+  // selection could become permanently stuck with no way to deselect it
+  // (the category pill and EmptyState's Clear filters would be the only
+  // remaining escapes).
+  const disabled = count === 0 && !selected;
 
   return (
     <Animated.View
@@ -126,7 +131,15 @@ function SubtypeChip({
         {!selected && (
           <LinearGradient colors={colors.surfaceGradient} style={StyleSheet.absoluteFill} pointerEvents="none" />
         )}
-        <Icon size={16} color={disabled ? colors.textDisabled : selected ? colors.primary : colors.textMuted} strokeWidth={1.75} />
+        {/* Wrapped in a View — react-native-web gives a bare `<svg>` (the
+            lucide icon) no `position`, so it stays in the "static" paint
+            layer, below the absolutely-positioned gradient regardless of
+            DOM order; a plain View defaults to `position:'relative'` (like
+            RNW's own Text), promoting the icon into the same positioned
+            layer so it paints above the gradient, per its later DOM order. */}
+        <View>
+          <Icon size={16} color={disabled ? colors.textDisabled : selected ? colors.primary : colors.textMuted} strokeWidth={1.75} />
+        </View>
         <Text style={[styles.label, selected && styles.labelSelected, disabled && styles.labelDisabled]} numberOfLines={1}>
           {label} ({count})
         </Text>
@@ -160,7 +173,10 @@ const styles = StyleSheet.create({
     gap: space[2],
     minHeight: 44,
     borderRadius: CHIP_RADIUS,
-    borderWidth: 1,
+    // Constant 2px across selected/unselected (colour-only change) — same
+    // "never a bare hairline, never a width change" rule the category row
+    // follows; a 1px->2px jump on select would reflow the chip by a pixel.
+    borderWidth: 2,
     borderColor: colors.border,
     paddingHorizontal: space[3],
     overflow: 'hidden',
@@ -168,7 +184,6 @@ const styles = StyleSheet.create({
     outlineWidth: 0,
   },
   chipSelected: {
-    borderWidth: 2,
     borderColor: colors.primary,
     backgroundColor: SELECTED_TINT,
   },

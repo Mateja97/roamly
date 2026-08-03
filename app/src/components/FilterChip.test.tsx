@@ -45,11 +45,11 @@ describe('FilterChip', () => {
       expect(onPress).toHaveBeenCalledTimes(1);
     });
 
-    it('focus swaps to the 2px primary focus border', () => {
+    it('focus swaps the border colour only — width stays the constant 1.5px (design-spec.md T3)', () => {
       render(<FilterChip variant="segment" label="Culture" selected={false} onPress={jest.fn()} />);
       const chip = screen.getByRole('button', { name: 'Culture' });
       fireEvent(chip, 'focus');
-      expect(StyleSheet.flatten(chip.props.style)).toMatchObject({ borderWidth: 2, borderColor: '#CE9042' });
+      expect(StyleSheet.flatten(chip.props.style)).toMatchObject({ borderWidth: 1.5, borderColor: '#CE9042' });
     });
 
     it('T4: accessibilityLabel overrides the derived name (visible label unaffected)', () => {

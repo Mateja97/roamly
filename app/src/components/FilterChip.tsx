@@ -205,8 +205,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHover,
     opacity: 0.6,
   },
+  // design-spec.md T3's "border width constant (1.5px) across states" is
+  // stricter than the base Filter-chip recipe's general 2px focus ring —
+  // this variant's only consumer is the category row, so focus stays a
+  // colour-only change here too (no width bump, no reflow).
   segmentFocused: {
-    borderWidth: 2,
     borderColor: colors.primary,
   },
   segmentLabelSelected: {

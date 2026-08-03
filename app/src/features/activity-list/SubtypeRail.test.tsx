@@ -67,6 +67,18 @@ describe('SubtypeRail', () => {
     expect(chip.props.accessibilityState).toMatchObject({ selected: true });
   });
 
+  it('a selected chip stays enabled even when its live count drops to 0 (e.g. mid-refetch) — must stay deselectable', async () => {
+    const onToggle = jest.fn();
+    render(
+      <SubtypeRail category="sport" counts={{ climbing_gym: 0 }} selectedSubtypes={['climbing_gym']} onToggle={onToggle} />
+    );
+    await flush();
+    const chip = screen.getByRole('button', { name: /climbing gym.*0 results/i });
+    expect(chip.props.accessibilityState).toMatchObject({ selected: true, disabled: false });
+    fireEvent.press(chip);
+    expect(onToggle).toHaveBeenCalledWith('climbing_gym');
+  });
+
   it('reduced motion renders chips fully visible immediately (no stagger to wait out)', async () => {
     render(<SubtypeRail category="cafes" counts={{}} selectedSubtypes={[]} onToggle={jest.fn()} />);
     await flush();

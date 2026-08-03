@@ -211,6 +211,41 @@ describe('ActivityListScreen', () => {
       expect(screen.getByRole('button', { name: 'All categories' })).toBeTruthy();
     });
 
+    it('tapping a pill never reorders the row — same pill stays in the same slot, including itself', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      const categoryLabels = [
+        'All', 'Restaurants', 'Cafés', 'Bars', 'Nightlife', 'Nature', 'Sport', 'Kids', 'Culture', 'Art', 'Wellness', 'Shopping', 'Entertainment', 'Tours & Experiences',
+      ];
+      function categoryPillOrder() {
+        return screen
+          .getAllByRole('button')
+          .map((b) => (b.props.accessibilityLabel as string).replace(/, selected$/, '').replace(/^All categories$/, 'All'))
+          .filter((name) => categoryLabels.includes(name));
+      }
+
+      // Captured, not asserted against a fixed taxonomy order — real wall-
+      // clock time at test-run may float 2-3 categories to the front
+      // (categoryOrder.ts); this test only cares that selecting never
+      // changes whatever order it started in.
+      const before = categoryPillOrder();
+      expect(before).toHaveLength(categoryLabels.length);
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      });
+      expect(categoryPillOrder()).toEqual(before);
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Sport, selected' }));
+      });
+      expect(categoryPillOrder()).toEqual(before);
+    });
+
     it('deselecting the last selected category returns All to active and drops categories from the request', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
