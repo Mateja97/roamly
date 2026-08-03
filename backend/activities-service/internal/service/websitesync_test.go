@@ -839,7 +839,10 @@ func TestWellnessSchema_TreatmentsItemOnly(t *testing.T) {
 		Source: "google_places", ExternalID: "place-1",
 	}
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
-	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Aroma massage"}],"good_to_know":["Bring a towel"]}`)}
+	// Firecrawl's schema no longer declares duration/price (see wellnessSchema),
+	// but the extraction isn't schema-guaranteed — feeding them here anyway
+	// proves they're actually stripped, not merely absent from the fixture.
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Aroma massage","duration":"60m","price":"$80"}],"good_to_know":["Bring a towel"]}`)}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
@@ -878,7 +881,11 @@ func TestEntertainmentSchema_UpcomingShowsDateTitleOnly(t *testing.T) {
 		Source: "google_places", ExternalID: "place-1",
 	}
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-theatre.rs"}}
-	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"upcoming_shows":[{"date":"2026-09-01","title":"Jazz Night"}],"good_to_know":["Doors open early"]}`)}
+	// Firecrawl's schema no longer declares time_or_price (see
+	// entertainmentSchema), but the extraction isn't schema-guaranteed —
+	// feeding it here anyway proves it's actually stripped, not merely
+	// absent from the fixture.
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"upcoming_shows":[{"date":"2026-09-01","title":"Jazz Night","time_or_price":"from $20"}],"good_to_know":["Doors open early"]}`)}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 

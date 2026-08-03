@@ -483,8 +483,8 @@ func TestValidateDetails(t *testing.T) {
 			`{"difficulty":3,"effort_level":"moderate","what_to_bring":["water","boots"]}`, false},
 		{"matching wellness shape accepted", activitiessvc.CategoryWellness,
 			`{"treatments":[{"item":"Massage"}],"external_booking_note":"book via website"}`, false},
-		{"wellness treatments row with duration/price rejected (fields no longer collected)", activitiessvc.CategoryWellness,
-			`{"treatments":[{"item":"Massage","duration":"60m","price":"$80"}]}`, true},
+		{"wellness treatments row with legacy duration/price accepted, keys silently dropped", activitiessvc.CategoryWellness,
+			`{"treatments":[{"item":"Massage","duration":"60m","price":"$80"}]}`, false},
 		{"unknown field on wellness rejected", activitiessvc.CategoryWellness,
 			`{"vibe":"chill"}`, true},
 		{"unknown category rejected even with empty-ish payload", activitiessvc.Category("bogus"),
@@ -633,16 +633,27 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 	})
 
-	t.Run("wellness rejects a legacy treatments row still carrying duration/price keys (strict decode)", func(t *testing.T) {
+	t.Run("wellness accepts a legacy treatments row still carrying duration/price keys, silently dropping them", func(t *testing.T) {
 		// Treatment (detail-price-duration-purge T1) no longer has
-		// Duration/Price fields, and ValidateDetails' decoder disallows
-		// unknown fields — a row shaped like the pre-T1 extraction is
-		// rejected on write, exactly like any other unrecognized field would
-		// be. Old rows already in the DB are untouched (no migration, see
-		// T1's acceptance criteria); this only guards the write path.
+		// Duration/Price fields. A pre-T1 row can still store them (no
+		// migration, see T1's acceptance criteria), and fillGaps/an admin's
+		// own edit round-trips the whole stored object back through this
+		// same validator — stripLegacyDetailFields drops the retired keys
+		// before the strict decode so that row isn't rejected forever.
 		raw := `{"treatments":[{"item":"Massage","duration":"60m","price":"from €40"}]}`
-		if _, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw)); err == nil {
-			t.Error("ValidateDetails() error = nil, want rejection of unknown duration/price keys")
+		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("ValidateDetails() unexpected error: %v (legacy duration/price keys must be dropped, not rejected)", err)
+		}
+		var got activitiessvc.WellnessDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.Treatments) != 1 || got.Treatments[0].Item != "Massage" {
+			t.Errorf("treatments = %+v, want 1 row with item %q kept", got.Treatments, "Massage")
+		}
+		if !strings.Contains(string(cleaned), `"item":"Massage"`) || strings.Contains(string(cleaned), "duration") || strings.Contains(string(cleaned), "price") {
+			t.Errorf("cleaned = %s, want duration/price keys gone", cleaned)
 		}
 	})
 
@@ -736,13 +747,24 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 	})
 
-	t.Run("entertainment rejects a legacy upcoming_shows row still carrying time_or_price (strict decode)", func(t *testing.T) {
+	t.Run("entertainment accepts a legacy upcoming_shows row still carrying time_or_price, silently dropping it", func(t *testing.T) {
 		// Show (detail-price-duration-purge T1) no longer has a TimeOrPrice
-		// field — same strict-decode guard as the wellness Treatment case
+		// field — same drop-not-reject guard as the wellness Treatment case
 		// above.
 		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"Comedy Hour","time_or_price":"from $20"}]}`
-		if _, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw)); err == nil {
-			t.Error("ValidateDetails() error = nil, want rejection of unknown time_or_price key")
+		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("ValidateDetails() unexpected error: %v (legacy time_or_price key must be dropped, not rejected)", err)
+		}
+		var got activitiessvc.EntertainmentDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if len(got.UpcomingShows) != 1 || got.UpcomingShows[0].Title != "Comedy Hour" {
+			t.Errorf("upcoming_shows = %+v, want 1 row with title %q kept", got.UpcomingShows, "Comedy Hour")
+		}
+		if strings.Contains(string(cleaned), "time_or_price") {
+			t.Errorf("cleaned = %s, want time_or_price key gone", cleaned)
 		}
 	})
 
@@ -835,11 +857,24 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 	})
 
-	t.Run("sport rejects a legacy payload still carrying duration (strict decode)", func(t *testing.T) {
+	t.Run("sport accepts a legacy payload still carrying duration, silently dropping it", func(t *testing.T) {
 		// SportDetails (detail-price-duration-purge T1) no longer has a
-		// Duration field.
-		if _, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(`{"duration":"2 hours"}`)); err == nil {
-			t.Error("ValidateDetails() error = nil, want rejection of unknown duration key")
+		// Duration field — same drop-not-reject guard as wellness/entertainment
+		// above.
+		raw := `{"duration":"2 hours","effort_level":"Moderate"}`
+		cleaned, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(raw))
+		if err != nil {
+			t.Fatalf("ValidateDetails() unexpected error: %v (legacy duration key must be dropped, not rejected)", err)
+		}
+		var got activitiessvc.SportDetails
+		if err := json.Unmarshal(cleaned, &got); err != nil {
+			t.Fatalf("unmarshaling: %v", err)
+		}
+		if got.EffortLevel != "Moderate" {
+			t.Errorf("effort_level = %q, want unchanged", got.EffortLevel)
+		}
+		if strings.Contains(string(cleaned), "duration") {
+			t.Errorf("cleaned = %s, want duration key gone", cleaned)
 		}
 	})
 

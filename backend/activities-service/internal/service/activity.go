@@ -305,12 +305,76 @@ func validatePoint(p *activitiessvc.Point) error {
 	return nil
 }
 
+// legacyDetails is legacyDetailFields' per-category entry: topKeys are
+// keys detail-price-duration-purge T1 retired directly on `details`
+// (price_from, typical_visit, typical_show_length, sport's duration);
+// arrayField/itemKeys are its nested counterpart — treatments[].duration|
+// price and upcoming_shows[].time_or_price, retired fields that lived one
+// level down instead of top-level. A pre-T1 row can still carry any of
+// these at rest, since T1 explicitly left stored JSON untouched.
+type legacyDetails struct {
+	topKeys    []string
+	arrayField string
+	itemKeys   []string
+}
+
+// legacyDetailFields is the one place every category's retired detail keys
+// live, consulted by stripLegacyDetailFields below.
+var legacyDetailFields = map[activitiessvc.Category]legacyDetails{
+	activitiessvc.CategoryWellness:      {topKeys: []string{"price_from", "typical_visit"}, arrayField: "treatments", itemKeys: []string{"duration", "price"}},
+	activitiessvc.CategoryEntertainment: {topKeys: []string{"typical_show_length", "price_from"}, arrayField: "upcoming_shows", itemKeys: []string{"time_or_price"}},
+	activitiessvc.CategorySport:         {topKeys: []string{"duration"}},
+}
+
+// stripLegacyDetailFields drops legacyDetailFields[category]'s retired keys
+// from details before ValidateDetails' strict decode below — without this,
+// a pre-T1 row that still stores a now-retired key (fillGaps in
+// websitesync.go carries it forward from the stored row on every sync
+// attempt; an admin edit's PATCH round-trips the whole stored object back
+// too) fails DisallowUnknownFields forever, permanently halting website
+// sync's one-attempt budget for that row and 400ing every admin edit of it.
+// Malformed details is returned unchanged — the decode below rejects it
+// with its own, more specific error, this is not the place to surface a
+// JSON error. Only the in-memory copy handed to the decoder loses these
+// keys; the DB row's stored JSON is untouched until this same validated
+// payload is next written back (Create/Update/website sync), at which
+// point the re-marshal from the (now field-less) typed struct is what
+// actually drops them for good.
+func stripLegacyDetailFields(category activitiessvc.Category, details json.RawMessage) json.RawMessage {
+	legacy, ok := legacyDetailFields[category]
+	if !ok {
+		return details
+	}
+	var m map[string]any
+	if err := json.Unmarshal(details, &m); err != nil {
+		return details
+	}
+	for _, k := range legacy.topKeys {
+		delete(m, k)
+	}
+	if items, ok := m[legacy.arrayField].([]any); ok {
+		for _, item := range items {
+			if row, ok := item.(map[string]any); ok {
+				for _, k := range legacy.itemKeys {
+					delete(row, k)
+				}
+			}
+		}
+	}
+	cleaned, err := json.Marshal(m)
+	if err != nil {
+		return details
+	}
+	return cleaned
+}
+
 // ValidateDetails rejects a details payload whose fields don't match its
 // category's shape (T2), e.g. `cuisine` set on a CategorySport row. An
 // empty payload ("" or "{}") is always valid regardless of category — a
 // category with no detail data yet is the common case, not an error, and is
-// returned unchanged. Called from Create and Update (below) — the write path
-// this validator was written ahead of in T1.
+// returned unchanged. Called from Create and Update (below), and from
+// websitesync.go's SyncWebsiteContent — the write path this validator was
+// written ahead of in T1.
 //
 // Returns the payload to actually persist: validateExtraFields (T1) clears
 // any field matching the placeholder denylist on the decoded struct rather
@@ -325,7 +389,7 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 	if err != nil {
 		return nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(details))
+	dec := json.NewDecoder(bytes.NewReader(stripLegacyDetailFields(category, details)))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(target); err != nil {
 		return nil, fmt.Errorf("%w: details do not match category %q: %s", sharederrors.ErrInvalidInput, category, err)
