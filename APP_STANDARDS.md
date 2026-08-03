@@ -99,7 +99,11 @@ section); these are the implementation-level counterparts:
   being able to link back to Google Maps) already forces the same silent
   omission in that case anyway. This carve-out is scoped to that one
   section — every other API failure on this screen (and everywhere else in
-  the app) still follows the baseline above.
+  the app) still follows the baseline above. The same silent-omission rule
+  also covers the Tripadvisor row's empty-review-slot fallback (a widened
+  fetch borrows Google reviews into that slot when the venue has none of
+  its own) — a failure or empty result there collapses the slot the same
+  way, no banner, per design-spec.md.
 - **Escalate, don't improvise:** if a status code needs something
   structurally different from "show the generic banner" (e.g. `403` should
   block access or redirect, not just toast) and `design-spec.md` is silent
