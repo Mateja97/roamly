@@ -1,9 +1,10 @@
-import { AccessibilityInfo, BackHandler } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import App from './App';
 import { queryActivities } from './src/api/activities';
 import type { Activity } from './src/api/activities';
+import { hasSeenSplash } from './src/utils/firstLaunch';
 
 const activity: Activity = {
   id: '1',
@@ -18,15 +19,12 @@ const activity: Activity = {
   distance_km: 0.4,
 };
 
-// ScopePickerScreen's mount effect checks `isReduceMotionEnabled()` on a
-// microtask — flush it inside `act` so a purely synchronous test doesn't
-// leave it dangling past the test's own act scope.
+// Flushes the microtask queue so a purely-synchronous test doesn't leave a
+// pending AsyncStorage/permission-check promise dangling past its act scope.
 async function flush() {
   await act(async () => {});
 }
 
-// T4: a pushed ActivityDetailScreen fires its own getActivityPhotos fetch on
-// mount — stub it to never resolve so it doesn't disturb assertions here.
 jest.mock('./src/api/activities', () => ({
   queryActivities: jest.fn(),
   getActivityPhotos: jest.fn(() => new Promise(() => {})),
@@ -43,154 +41,88 @@ const mockedLocation = jest.mocked(Location);
 
 // Marcellus's real load path goes through expo-font's native module, which
 // isn't available in the Jest environment — stub it to "already loaded" so
-// tests exercise the screen's actual content, not the font-load gate (see
-// ScopePickerScreen.test.tsx for the same mock).
+// tests exercise real content instead of the font-load gate.
 jest.mock('@expo-google-fonts/marcellus', () => ({
   useFonts: () => [true, null],
   Marcellus_400Regular: 'Marcellus_400Regular',
 }));
 
-function pressBackHandler(addBackListener: jest.SpyInstance) {
-  const registration = addBackListener.mock.calls.find(([eventName]) => eventName === 'hardwareBackPress');
-  const handler = registration![1] as () => boolean;
-  act(() => {
-    handler();
-  });
-}
-
 describe('App', () => {
   beforeEach(() => {
     mockedQuery.mockResolvedValue({ status: 'success', activities: [] });
-    // afterEach's resetAllMocks wipes the RN jest preset's default
-    // AccessibilityInfo mock implementations too — re-arm them each test.
-    // true (reduced motion) sidesteps the Filter sheet's slide/fade Animated
-    // calls — irrelevant to what these tests verify.
-    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
-    jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' } as never);
+  });
+  // ponytail: no jest.resetAllMocks() here — it wipes the *implementation*
+  // of every jest.fn(), including AsyncStorage's own auto-mock (jest-expo's,
+  // not one this file owns), and there's no auto-restore for a plain
+  // jest.fn() the way jest.spyOn has one. This suite genuinely needs
+  // AsyncStorage's real in-memory read/write to work across renders (to
+  // prove "splash seen" persists) — beforeEach already re-arms the two
+  // mocks this file *does* own (mockedQuery/mockedLocation) via
+  // mockResolvedValue, which fully replaces any prior implementation on its
+  // own, no reset needed.
+  afterEach(async () => {
+    await AsyncStorage.clear();
+  });
+
+  it('T4: a fresh install (first-launch-seen unset) opens on the Splash screen', async () => {
+    render(<App />);
+    await flush();
+    expect(screen.getByText('Where to?')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /start exploring/i })).toBeTruthy();
+  });
+
+  it('T4: Splash "Start exploring" advances to the Feed, cold-started as unanchored Anywhere', async () => {
+    render(<App />);
+    await flush();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: /start exploring/i }));
+    });
+    await flush();
+    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere' });
+  });
+
+  it('T4: Splash records first-launch-seen so the very next launch skips straight to the Feed', async () => {
+    const { unmount } = render(<App />);
+    await flush();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: /start exploring/i }));
+    });
+    // markSplashSeen is fire-and-forget from the CTA's own perspective (no
+    // in-flight state on Splash, per design-spec.md T1) — wait for the write
+    // to actually land before asserting the next launch sees it.
+    await waitFor(async () => expect(await hasSeenSplash()).toBe(true));
+    unmount();
+
+    render(<App />);
+    await flush();
+    expect(screen.queryByText('Where to?')).toBeNull();
+    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+  });
+
+  it('T4: a returning launch (splash already seen) goes straight to the Feed', async () => {
+    await AsyncStorage.setItem('roamly:first-launch-seen', 'true');
+    render(<App />);
+    await flush();
+    expect(screen.queryByText('Where to?')).toBeNull();
+    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+  });
+
+  it('T4: a returning launch with location already granted derives Nearby scope instead of Anywhere', async () => {
+    await AsyncStorage.setItem('roamly:first-launch-seen', 'true');
     mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
     mockedLocation.getCurrentPositionAsync.mockResolvedValue({
       coords: { latitude: 44.8125, longitude: 20.4612 },
     } as never);
-  });
-  afterEach(() => jest.resetAllMocks());
-
-  it('opens on the scope picker', async () => {
-    render(<App />);
-    await flush();
-    expect(screen.getByText('Where to?')).toBeTruthy();
-  });
-
-  it('hands off the selected scope after choosing Nearby, landing on the search-setup screen', async () => {
-    render(<App />);
-    await flush();
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
-    });
-    expect(screen.getByText('Refine your search')).toBeTruthy();
-  });
-
-  it('confirming the Nearby search-setup screen carries the location + category selection to the list, pre-filtered', async () => {
-    // The search-setup screen's own live-count/CTA queries need a non-zero
-    // result to keep the CTA enabled — unrelated to what the list screen
-    // itself renders afterwards.
     mockedQuery.mockResolvedValue({ status: 'success', activities: [activity] });
+
     render(<App />);
     await flush();
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /scope: nearby/i })).toBeTruthy());
+    expect(mockedQuery).toHaveBeenLastCalledWith({
+      scope: 'nearby',
+      current_location: { lat: 44.8125, lng: 20.4612 },
     });
-    await flush();
-    fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
-
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: /^show \d+ activities$/i }));
-    });
-
-    expect(screen.getAllByText('Nearby').length).toBeGreaterThan(0);
-    await waitFor(() =>
-      expect(mockedQuery).toHaveBeenCalledWith({
-        scope: 'nearby',
-        current_location: { lat: 44.8125, lng: 20.4612 },
-        categories: ['sport'],
-      })
-    );
-    // T3: the old "Filters, 1 active" badge is gone along with the Filters
-    // button/sheet — the Feed's own relocated category pill row is now the
-    // only, direct representation of the selection.
-    expect(screen.getByRole('button', { name: 'Sport, selected' })).toBeTruthy();
-  });
-
-  it('Anywhere with location denied still reaches the search-setup screen with no anchor (no dead end)', async () => {
-    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
-    mockedQuery.mockResolvedValue({
-      status: 'success',
-      activities: [{ id: '1', title: 'Tour', description: '', category: 'sport', location: { lat: 0, lng: 0 }, country: 'Spain', rating: 4.5, image_refs: [], tags: [], distance_km: 1 }],
-    });
-    render(<App />);
-    await flush();
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Explore activities anywhere' }));
-    });
-    expect(screen.getByText('Refine your search')).toBeTruthy();
-
-    // The live-count query (debounced) resolves before the CTA reflects a
-    // real count and stops being disabled.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Show 1 activity' })).toBeTruthy());
-
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Show 1 activity' }));
-    });
-    // T3: the Feed header's scope pill reads "Exploring everywhere" for the
-    // no-anchor, no-city Anywhere case — not the bare "Anywhere" the old
-    // Marcellus title showed.
-    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
-    await waitFor(() => expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere', max_distance_km: 500 }));
-  });
-
-  it('Android hardware back on the Nearby search-setup screen returns to the scope picker', async () => {
-    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
-    render(<App />);
-    await flush();
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
-    });
-    expect(screen.getByText('Refine your search')).toBeTruthy();
-
-    pressBackHandler(addBackListener);
-    // Popping back remounts ScopePickerScreen, which re-triggers its
-    // reduce-motion mount effect — flush it before the test ends so its
-    // setState doesn't fire outside act().
-    await flush();
-    expect(screen.getByText('Where to?')).toBeTruthy();
-    addBackListener.mockRestore();
-  });
-
-  it('Android hardware back on the activity list returns to the Nearby search-setup screen (not the scope picker)', async () => {
-    // Only the search-setup screen's own live-count + CTA queries need a
-    // non-zero result to keep the CTA enabled; the list screen's own query
-    // (the 3rd call) falls back to beforeEach's empty default, landing on
-    // the empty state this test asserts.
-    mockedQuery
-      .mockResolvedValueOnce({ status: 'success', activities: [activity] })
-      .mockResolvedValueOnce({ status: 'success', activities: [activity] });
-    const addBackListener = jest.spyOn(BackHandler, 'addEventListener');
-    render(<App />);
-    await flush();
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: 'Explore activities nearby' }));
-    });
-    await flush();
-    await act(async () => {
-      fireEvent.press(screen.getByRole('button', { name: /^show \d+ activities$/i }));
-    });
-    await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
-
-    pressBackHandler(addBackListener);
-    // Popping back remounts NearbySearchSetupScreen, which re-triggers its
-    // live-count mount effect — flush it before the test ends so its
-    // setCount/setError doesn't fire outside act().
-    await flush();
-    expect(screen.getByText('Refine your search')).toBeTruthy();
-    addBackListener.mockRestore();
   });
 });

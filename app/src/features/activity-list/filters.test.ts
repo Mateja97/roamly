@@ -1,6 +1,4 @@
 import {
-  ANYWHERE_NO_LIMIT_SLIDER_VALUE,
-  MAX_DISTANCE_KM_ANYWHERE,
   SUBCATEGORIES,
   buildFeedRequest,
   clearCategories,
@@ -218,11 +216,5 @@ describe('clearCategories (T4)', () => {
       minRating: 4.5,
       maxDistanceKm: null,
     });
-  });
-});
-
-describe('anywhere distance-slider constants', () => {
-  it('the "no limit" sentinel sits one step past the numeric ceiling', () => {
-    expect(ANYWHERE_NO_LIMIT_SLIDER_VALUE).toBeGreaterThan(MAX_DISTANCE_KM_ANYWHERE);
   });
 });

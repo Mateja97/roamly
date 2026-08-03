@@ -43,36 +43,24 @@ const SKELETON_CARD_COUNT = 5;
 const TRAVELER_CATEGORIES: Category[] = ['tours_experiences', 'culture'];
 const TRAVELER_ROW_CAP = 8;
 
-export function ActivityListScreen({
-  selection,
-  initialCategories = [],
-  initialActivities,
-  initialCities = [],
-  onBack,
-}: ActivityListScreenProps) {
+export function ActivityListScreen({ selection, onBack }: ActivityListScreenProps) {
   // T2/T3: frozen via useState's lazy initializer (runs once, on mount) —
-  // a parent re-render passing fresh prop defaults won't retrigger these.
-  const [appliedFilters, setAppliedFilters] = useState<Filters>(() => ({
-    ...defaultFilters(selection.scope),
-    categories: initialCategories,
-  }));
+  // a parent re-render passing a fresh `selection` prop won't retrigger this.
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(() => defaultFilters(selection.scope));
   // design-spec.md T3: scope/city/distance/rating now live here (T2's
-  // ScopeDraft), not on `Filters` — seeded from the props the caller (still
-  // the pre-T4 scope-picker flow) hands in.
-  const [appliedScopeDraft, setAppliedScopeDraft] = useState<ScopeDraft>(() => ({
-    ...defaultScopeDraft(selection.scope, selection.coordinates),
-    cities: initialCities,
-  }));
-  const [queryState, setQueryState] = useState<QueryState>(() =>
-    initialActivities !== undefined ? { status: 'loaded', activities: initialActivities } : { status: 'loading' }
+  // ScopeDraft), not on `Filters` — seeded from `selection` (App.tsx's
+  // launch-derived scope; T4).
+  const [appliedScopeDraft, setAppliedScopeDraft] = useState<ScopeDraft>(() =>
+    defaultScopeDraft(selection.scope, selection.coordinates)
   );
+  const [queryState, setQueryState] = useState<QueryState>({ status: 'loading' });
   // The subtype rail's counts read from this, not from `queryState`
   // directly — `queryState` collapses to no-activities during a refetch or
   // on error, which would otherwise zero every subtype's count and disable
   // it (including a chip the user has *selected*, trapping them). This only
   // ever updates on a successful fetch, so it holds the last real data
   // across any loading/error state in between.
-  const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>(() => initialActivities ?? []);
+  const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>([]);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersRequestSeq = useRef(0);
@@ -114,13 +102,9 @@ export function ActivityListScreen({
   // handleToggleSubtype below), so they never trigger a re-fetch — they're
   // filtered client-side from the already-fetched, category-scoped result
   // (filters.ts's filterBySubtypes/subtypeCounts).
-  const skipFirstFetch = useRef(initialActivities !== undefined);
   useEffect(() => {
-    if (skipFirstFetch.current) {
-      skipFirstFetch.current = false;
-      return;
-    }
     const seq = startQuery();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicking off a fetch needs its "loading" flag set before the async call starts, same shape as the traveler-row effect below (which this same rule also flags) — T4 removed this effect's own early-return guard (the now-dead initialActivities skip), which is what silenced the rule here before.
     setQueryState({ status: 'loading' });
     queryActivities(buildFeedRequest(appliedScopeDraft, appliedFilters.categories)).then((result) => {
       if (isCurrent(seq)) applyResult(result);
@@ -191,17 +175,33 @@ export function ActivityListScreen({
   useEffect(() => {
     isNearbyNudgeDismissed().then(setNudgeDismissed);
   }, []);
+  // design-spec.md T4 + T3: one check, two purposes, told apart by
+  // `isLaunchRef`. (1) T4's "scope derives from permission state at
+  // launch" — App.tsx only ever hands this screen an unanchored-Anywhere
+  // `selection` at mount, so this effect's very *first* firing is always
+  // that cold start; an already-granted permission there promotes straight
+  // to a real `nearby` scope (not just a quietly-anchored `anywhere`).
+  // (2) T3's original fix for a stale "Turn on location" nudge on any
+  // *later* occurrence of unanchored Anywhere (e.g. the user explicitly
+  // re-selects Anywhere via the Scope sheet with no city) — `requestLocation`
+  // never shows an OS prompt for an already-granted permission, it just
+  // resolves the fix quietly, but that later case only ever adds
+  // `coordinates`, never overrides the scope the user just explicitly
+  // picked.
+  const isLaunchRef = useRef(true);
   useEffect(() => {
     if (appliedScopeDraft.scope !== 'anywhere' || appliedScopeDraft.coordinates) return;
-    // If permission was already granted (e.g. in an earlier session/screen),
-    // `requestLocation` never shows an OS prompt for an already-granted
-    // permission — it just resolves the fix quietly. Without this, a user
-    // who'd already granted location would still see the "Turn on location"
-    // nudge forever, since nothing here had ever actually fetched a fix.
+    const isLaunch = isLaunchRef.current;
+    isLaunchRef.current = false;
     nearby.checkPermission().then((granted) => {
       if (!granted) return;
       nearby.requestLocation().then((coordinates) => {
-        if (coordinates) setAppliedScopeDraft((prev) => ({ ...prev, coordinates }));
+        if (!coordinates) return;
+        setAppliedScopeDraft((prev) =>
+          prev.scope === 'anywhere' && !prev.coordinates
+            ? { ...prev, coordinates, scope: isLaunch ? 'nearby' : prev.scope }
+            : prev
+        );
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission/requestLocation identities are stable (useCallback, no deps)
@@ -211,14 +211,24 @@ export function ActivityListScreen({
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (selectedActivity) {
         closeDetail();
-      } else {
-        onBack();
+        return true;
       }
-      return true;
+      if (sheetVisible) {
+        closeSheet();
+        return true;
+      }
+      if (onBack) {
+        onBack();
+        return true;
+      }
+      // T4: Feed is the app's home screen — no previous screen to pop to.
+      // Let the event fall through to the OS default (exit app) instead of
+      // trapping the user with a back button that silently does nothing.
+      return false;
     });
     return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDetail reads current state via closure; re-subscribing on every selectedActivity change keeps the handler current
-  }, [onBack, selectedActivity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDetail/closeSheet read current state via closure; re-subscribing on every selectedActivity/sheetVisible change keeps the handler current
+  }, [onBack, selectedActivity, sheetVisible]);
 
   function closeDetail() {
     setSelectedActivity(null);
