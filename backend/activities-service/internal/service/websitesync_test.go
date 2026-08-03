@@ -40,7 +40,7 @@ func TestSyncWebsiteContent_FillsGapsOnly(t *testing.T) {
 		Details: json.RawMessage(`{"good_to_know":["Existing admin note"]}`),
 	}
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
-	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Aroma massage","price":"€39"}],"good_to_know":["Scraped note that should NOT win"]}`)}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Aroma massage"}],"good_to_know":["Scraped note that should NOT win"]}`)}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
@@ -77,14 +77,17 @@ func TestSyncWebsiteContent_FillsGapsOnly(t *testing.T) {
 // this write path too (the acceptance criteria requires a test per path,
 // not just Create/Update): a scrape that comes back with a denylisted
 // placeholder still writes, with only the offending field cleared, not the
-// whole row skipped.
+// whole row skipped. good_to_know is used here — it's Wellness' surviving
+// denylist-guarded free-text field (detail-price-duration-purge T1 dropped
+// typical_visit/price_from, the fields the original production bug report
+// named, from the schema entirely).
 func TestSyncWebsiteContent_DenylistedFieldCleared(t *testing.T) {
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
 		Source: "google_places", ExternalID: "place-1",
 	}
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
-	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"typical_visit":"Vreme posete nije eksplicitno navedeno.","price_from":"Nije navedeno"}`)}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"good_to_know":["Nije navedeno","Bring your own towel"]}`)}
 	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
 	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
 
@@ -101,13 +104,10 @@ func TestSyncWebsiteContent_DenylistedFieldCleared(t *testing.T) {
 	if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
 		t.Fatalf("unmarshal updated details: %v", err)
 	}
-	// price_from is an exact denylist entry (verbatim "Nije navedeno") and
-	// must be cleared. typical_visit is a full-sentence hedge, not a
-	// verbatim denylist entry — T1 only guards the exact denylist; making
-	// the prompt itself stop producing sentence-shaped values is T2's job,
-	// out of scope here.
-	if got.PriceFrom != "" {
-		t.Errorf("price_from = %q, want cleared (exact denylist match)", got.PriceFrom)
+	// "Nije navedeno" is an exact denylist entry and must be dropped;
+	// the legitimate entry survives.
+	if want := []string{"Bring your own towel"}; len(got.GoodToKnow) != 1 || got.GoodToKnow[0] != want[0] {
+		t.Errorf("good_to_know = %v, want %v (denylisted entry dropped)", got.GoodToKnow, want)
 	}
 }
 
@@ -258,7 +258,7 @@ func TestSyncWebsiteContent_SportFractionalDifficulty_SkipsWrite(t *testing.T) {
 		t.Fatalf("SyncWebsiteContent() error: %v, want nil (skip, not retried again)", err)
 	}
 	if repo.updateCalls != 0 {
-		t.Errorf("repo.Update calls = %d, want 0 — fractional difficulty must never be persisted, along with the rest of the payload (effort_level, duration, gear, what_to_bring)", repo.updateCalls)
+		t.Errorf("repo.Update calls = %d, want 0 — fractional difficulty must never be persisted, along with the rest of the payload (effort_level, gear, what_to_bring)", repo.updateCalls)
 	}
 	if repo.gotUpdatePatch.Details != nil {
 		t.Errorf("repo.gotUpdatePatch.Details = %v, want zero-value", repo.gotUpdatePatch.Details)
@@ -353,12 +353,12 @@ func TestIsComplete_PerCategory(t *testing.T) {
 		details  string
 		want     bool
 	}{
-		{"wellness missing typical_visit", activitiessvc.CategoryWellness,
-			`{"treatments":[{"item":"Massage"}],"good_to_know":["Note"],"price_from":"€30"}`, false},
-		{"wellness all four present", activitiessvc.CategoryWellness,
-			`{"treatments":[{"item":"Massage"}],"good_to_know":["Note"],"typical_visit":"1 hr","price_from":"€30"}`, true},
-		{"entertainment all four present", activitiessvc.CategoryEntertainment,
-			`{"upcoming_shows":[{"date":"2026-09-01","title":"Show"}],"good_to_know":["Note"],"typical_show_length":"2 hrs","price_from":"€10"}`, true},
+		{"wellness missing good_to_know", activitiessvc.CategoryWellness,
+			`{"treatments":[{"item":"Massage"}]}`, false},
+		{"wellness both fields present", activitiessvc.CategoryWellness,
+			`{"treatments":[{"item":"Massage"}],"good_to_know":["Note"]}`, true},
+		{"entertainment both fields present", activitiessvc.CategoryEntertainment,
+			`{"upcoming_shows":[{"date":"2026-09-01","title":"Show"}],"good_to_know":["Note"]}`, true},
 		{"culture missing now_showing", activitiessvc.CategoryCulture, `{}`, false},
 		{"culture now_showing present", activitiessvc.CategoryCulture,
 			`{"now_showing":{"title":"Exhibit","description":"..."}}`, true},
@@ -368,9 +368,9 @@ func TestIsComplete_PerCategory(t *testing.T) {
 		{"art current_exhibition present", activitiessvc.CategoryArt,
 			`{"current_exhibition":{"title":"Show","description":"..."}}`, true},
 		{"sport missing difficulty", activitiessvc.CategorySport,
-			`{"what_to_bring":["Water"],"effort_level":"High","duration":"1 hr","gear":"None"}`, false},
-		{"sport all five present", activitiessvc.CategorySport,
-			`{"what_to_bring":["Water"],"effort_level":"High","duration":"1 hr","gear":"None","difficulty":4}`, true},
+			`{"what_to_bring":["Water"],"effort_level":"High","gear":"None"}`, false},
+		{"sport all four present", activitiessvc.CategorySport,
+			`{"what_to_bring":["Water"],"effort_level":"High","gear":"None","difficulty":4}`, true},
 		{"unsupported category never complete", activitiessvc.CategoryRestaurants, `{}`, false},
 	}
 	for _, tt := range tests {
@@ -390,7 +390,7 @@ func TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently(t *testing.T) {
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
 		Source: "google_places", ExternalID: "place-1",
-		Details: json.RawMessage(`{"treatments":[{"item":"Massage"}],"good_to_know":["Note"],"typical_visit":"1 hr","price_from":"€30"}`),
+		Details: json.RawMessage(`{"treatments":[{"item":"Massage"}],"good_to_know":["Note"]}`),
 	}
 	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
 	firecrawl := &fakeFirecrawl{}
@@ -415,7 +415,7 @@ func TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently(t *testing.T) {
 // proves Entertainment is the one category that keeps a periodic re-scan
 // even once complete, and that the window is 30 days now, not the old 7.
 func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *testing.T) {
-	completeDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Show"}],"good_to_know":["Note"],"typical_show_length":"2 hrs","price_from":"€10"}`
+	completeDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Show"}],"good_to_know":["Note"]}`
 
 	t.Run("skipped at 10 days", func(t *testing.T) {
 		stored := activitiessvc.Activity{
@@ -475,18 +475,18 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 
 // TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows
 // proves upcoming_shows gets overwritten on re-scrape even when the row is
-// NOT complete (price_from still empty) — the overwrite must fire on
+// NOT complete (good_to_know still empty) — the overwrite must fire on
 // category alone, not on isComplete, or a row that never completes (the one
 // that re-scrapes most often) would never get its stale show list
 // refreshed.
 func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *testing.T) {
-	// price_from deliberately left empty — the row is not complete, so an
+	// good_to_know deliberately left empty — the row is not complete, so an
 	// Entertainment row keeps entertainmentRefreshFreshness's periodic
 	// re-scan (30 days) rather than the one-attempt-and-give-up rule every
 	// other category gets; seed synced_at older than that so the sync
 	// actually proceeds to the merge step instead of being skipped as
 	// still-fresh.
-	incompleteDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Old Show"}],"good_to_know":["Note"],"typical_show_length":"2 hrs"}`
+	incompleteDetails := `{"upcoming_shows":[{"date":"2026-09-01","title":"Old Show"}]}`
 	stored := activitiessvc.Activity{
 		ID: "1", Category: activitiessvc.CategoryEntertainment, Status: activitiessvc.StatusPublished,
 		Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(incompleteDetails),
@@ -743,34 +743,24 @@ func TestSyncWebsiteContent_Force_RetriesGivenUpRow(t *testing.T) {
 	}
 }
 
-// TestWellnessAndEntertainmentPrompts_ScalarAndPhraseWording proves the T2
-// prompt rewrite: the new wording is not satisfiable by the exact
-// production-bug shape (a full-sentence hedge like "Vreme posete nije
-// eksplicitno navedeno.") and explicitly requests venue-specific
-// good_to_know items — both prompts got the identical rewrite, so one
-// table covers both. String-contains checks only — this isn't testing
-// actual LLM output, just that the instruction text made it into the
-// prompt sent to Firecrawl.
-func TestWellnessAndEntertainmentPrompts_ScalarAndPhraseWording(t *testing.T) {
+// TestWellnessAndEntertainmentPrompts_GoodToKnowWording proves the T2
+// good_to_know wording survives detail-price-duration-purge T1's prompt
+// prune (which removed the scalar price/duration instructions, not the
+// good_to_know ones): venue-specific, never generic, shape-bounded.
+func TestWellnessAndEntertainmentPrompts_GoodToKnowWording(t *testing.T) {
 	wantSubstrings := []string{
-		"short scalar",
-		"never a full sentence",
-		"omit that field entirely",
-		"never write a hedge",
 		"venue",
 		"never generic",
 		"80 characters or fewer",
 		"no trailing period",
-		"18 characters or fewer",
 		"Answer in English",
 	}
 	for _, tt := range []struct {
-		name        string
-		prompt      string
-		extractAsks []string // sentence-1 asks specific to this category's scalar fields
+		name   string
+		prompt string
 	}{
-		{"wellness", wellnessPrompt, []string{"the typical length of a visit", "the starting price of its cheapest offering"}},
-		{"entertainment", entertainmentPrompt, []string{"the typical length of a show", "the starting ticket price"}},
+		{"wellness", wellnessPrompt},
+		{"entertainment", entertainmentPrompt},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			for _, want := range wantSubstrings {
@@ -778,11 +768,142 @@ func TestWellnessAndEntertainmentPrompts_ScalarAndPhraseWording(t *testing.T) {
 					t.Errorf("%s prompt missing expected instruction %q:\n%s", tt.name, want, tt.prompt)
 				}
 			}
-			for _, want := range tt.extractAsks {
-				if !strings.Contains(tt.prompt, want) {
-					t.Errorf("%s prompt missing extraction ask %q:\n%s", tt.name, want, tt.prompt)
+		})
+	}
+}
+
+// TestPrompts_NoPriceOrDurationWording is T1 (detail-price-duration-purge)'s
+// core acceptance criterion: none of the three pruned prompts may mention
+// price or duration in their instruction text — these are unverifiable LLM
+// extractions of a scraped page, so the scraper stops asking for them
+// entirely rather than collecting-then-discarding.
+func TestPrompts_NoPriceOrDurationWording(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		prompt string
+	}{
+		{"wellness", wellnessPrompt},
+		{"entertainment", entertainmentPrompt},
+		{"sport", sportPrompt},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			lower := strings.ToLower(tt.prompt)
+			if strings.Contains(lower, "price") {
+				t.Errorf("%s prompt mentions price:\n%s", tt.name, tt.prompt)
+			}
+			if strings.Contains(lower, "duration") {
+				t.Errorf("%s prompt mentions duration:\n%s", tt.name, tt.prompt)
+			}
+		})
+	}
+}
+
+// TestSchemas_NoPriceOrDurationKeys is T1's other core acceptance
+// criterion: the three JSON schemas passed to Firecrawl contain no
+// price/duration property keys, at any nesting level. Marshaling the schema
+// and substring-matching the quoted key is simpler than walking the
+// map[string]any tree by hand, and just as precise here — a JSON key only
+// ever appears quoted (`"price":`), so it can't collide with prose.
+func TestSchemas_NoPriceOrDurationKeys(t *testing.T) {
+	bannedKeys := []string{"price", "duration", "price_from", "typical_visit", "typical_show_length", "time_or_price"}
+	for _, tt := range []struct {
+		name   string
+		schema map[string]any
+	}{
+		{"wellness", wellnessSchema},
+		{"entertainment", entertainmentSchema},
+		{"sport", sportSchema},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			encoded, err := json.Marshal(tt.schema)
+			if err != nil {
+				t.Fatalf("marshal schema: %v", err)
+			}
+			for _, banned := range bannedKeys {
+				if strings.Contains(string(encoded), `"`+banned+`"`) {
+					t.Errorf("%s schema still declares key %q, want removed:\n%s", tt.name, banned, encoded)
 				}
 			}
 		})
+	}
+}
+
+// TestWellnessSchema_TreatmentsItemOnly and
+// TestEntertainmentSchema_UpcomingShowsDateTitleOnly are T1's per-category
+// acceptance tests: a wellness scrape returns treatments[] with item only
+// (no duration/price keys), and an entertainment scrape returns
+// upcoming_shows[] with date+title only (no time_or_price key).
+func TestWellnessSchema_TreatmentsItemOnly(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"treatments":[{"item":"Aroma massage"}],"good_to_know":["Bring a towel"]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if repo.gotUpdatePatch.Details == nil {
+		t.Fatal("repo.Update was not called with Details")
+	}
+	var got map[string]any
+	if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+		t.Fatalf("unmarshal updated details: %v", err)
+	}
+	treatments, ok := got["treatments"].([]any)
+	if !ok || len(treatments) != 1 {
+		t.Fatalf("treatments = %v, want one row", got["treatments"])
+	}
+	row, ok := treatments[0].(map[string]any)
+	if !ok {
+		t.Fatalf("treatments[0] = %v, want an object", treatments[0])
+	}
+	if _, has := row["duration"]; has {
+		t.Errorf("treatments[0] has a duration key, want none: %v", row)
+	}
+	if _, has := row["price"]; has {
+		t.Errorf("treatments[0] has a price key, want none: %v", row)
+	}
+	if row["item"] != "Aroma massage" {
+		t.Errorf("treatments[0].item = %v, want %q", row["item"], "Aroma massage")
+	}
+}
+
+func TestEntertainmentSchema_UpcomingShowsDateTitleOnly(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryEntertainment, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-theatre.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"upcoming_shows":[{"date":"2026-09-01","title":"Jazz Night"}],"good_to_know":["Doors open early"]}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if repo.gotUpdatePatch.Details == nil {
+		t.Fatal("repo.Update was not called with Details")
+	}
+	var got map[string]any
+	if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+		t.Fatalf("unmarshal updated details: %v", err)
+	}
+	shows, ok := got["upcoming_shows"].([]any)
+	if !ok || len(shows) != 1 {
+		t.Fatalf("upcoming_shows = %v, want one row", got["upcoming_shows"])
+	}
+	row, ok := shows[0].(map[string]any)
+	if !ok {
+		t.Fatalf("upcoming_shows[0] = %v, want an object", shows[0])
+	}
+	if _, has := row["time_or_price"]; has {
+		t.Errorf("upcoming_shows[0] has a time_or_price key, want none: %v", row)
+	}
+	if row["date"] != "2026-09-01" || row["title"] != "Jazz Night" {
+		t.Errorf("upcoming_shows[0] = %v, want date+title unchanged", row)
 	}
 }

@@ -93,13 +93,11 @@ func TestWellnessDetails_RoundTripsNewFields(t *testing.T) {
 	url := "https://example-spa.rs"
 	want := WellnessDetails{
 		Treatments: []Treatment{
-			{Item: "Aroma massage", Duration: "50 min", Price: "€39"},
+			{Item: "Aroma massage"},
 		},
 		ExternalBookingNote: "Booking is handled on the venue's own site",
 		ActionURL:           &url,
 		VenueType:           "Spa",
-		TypicalVisit:        "2–3 hrs",
-		PriceFrom:           "from €22",
 		GoodToKnow:          []string{"Towel, robe and slippers included"},
 		OpeningHours: &OpeningHours{
 			Timezone: "Europe/Belgrade",
@@ -126,12 +124,10 @@ func TestEntertainmentDetails_RoundTripsNewFields(t *testing.T) {
 		Genre:        "Live music",
 		Neighborhood: "Dorćol",
 		UpcomingShows: []Show{
-			{Date: "2026-08-18", Title: "Jazz Night: Bilja Krstić", TimeOrPrice: "20:00 · from €15"},
+			{Date: "2026-08-18", Title: "Jazz Night: Bilja Krstić"},
 		},
-		ActionURL:         &url,
-		TypicalShowLength: "2 hrs",
-		PriceFrom:         "from €12",
-		GoodToKnow:        []string{"Unnumbered seating — arrive early"},
+		ActionURL:  &url,
+		GoodToKnow: []string{"Unnumbered seating — arrive early"},
 		OpeningHours: &OpeningHours{
 			Timezone: "Europe/Belgrade",
 			Periods:  []Period{{Day: Friday, Open: "19:00", Close: "23:00"}},
@@ -156,7 +152,6 @@ func TestSportDetails_RoundTripsDifficultyInferred(t *testing.T) {
 		Difficulty:         4,
 		DifficultyInferred: true,
 		EffortLevel:        "High intensity",
-		Duration:           "90 min",
 		Gear:               "Climbing shoes provided",
 		WhatToBring:        []string{"Water bottle", "Comfortable clothes"},
 		Discipline:         "Climbing",

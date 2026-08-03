@@ -482,7 +482,9 @@ func TestValidateDetails(t *testing.T) {
 		{"matching sport shape accepted", activitiessvc.CategorySport,
 			`{"difficulty":3,"effort_level":"moderate","what_to_bring":["water","boots"]}`, false},
 		{"matching wellness shape accepted", activitiessvc.CategoryWellness,
-			`{"treatments":[{"item":"Massage","duration":"60m","price":"$80"}],"external_booking_note":"book via website"}`, false},
+			`{"treatments":[{"item":"Massage"}],"external_booking_note":"book via website"}`, false},
+		{"wellness treatments row with duration/price rejected (fields no longer collected)", activitiessvc.CategoryWellness,
+			`{"treatments":[{"item":"Massage","duration":"60m","price":"$80"}]}`, true},
 		{"unknown field on wellness rejected", activitiessvc.CategoryWellness,
 			`{"vibe":"chill"}`, true},
 		{"unknown category rejected even with empty-ish payload", activitiessvc.Category("bogus"),
@@ -588,115 +590,15 @@ func TestValidateDetails_OpeningHours(t *testing.T) {
 
 // TestValidateDetails_ClearsDenylistedFields covers T1's guard: a
 // denylisted value is stored empty (never rejected), across every field the
-// spec's kind-declarations table names (typical_visit, price_from,
-// treatments[].price, good_to_know[], vibe) plus Entertainment's
-// typical_show_length, and Nature's good_to_know (previously an unhandled
-// default case in validateExtraFields).
+// spec's kind-declarations table names (good_to_know[], vibe) plus Nature's
+// good_to_know (previously an unhandled default case in
+// validateExtraFields). typical_visit, price_from, treatments[].duration/
+// price, typical_show_length, and upcoming_shows[].time_or_price no longer
+// exist (detail-price-duration-purge T1 stopped collecting them) — there is
+// nothing left to guard for those fields.
 func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
-	t.Run("wellness typical_visit and price_from cleared for every denylist entry", func(t *testing.T) {
-		for _, entry := range contentkind.Denylist() {
-			raw := fmt.Sprintf(`{"typical_visit":%q,"price_from":%q}`, entry, entry)
-			cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
-			if err != nil {
-				t.Fatalf("entry %q: ValidateDetails() unexpected error: %v", entry, err)
-			}
-			var got activitiessvc.WellnessDetails
-			if err := json.Unmarshal(cleaned, &got); err != nil {
-				t.Fatalf("entry %q: unmarshaling cleaned details: %v", entry, err)
-			}
-			if got.TypicalVisit != "" {
-				t.Errorf("entry %q: typical_visit = %q, want cleared", entry, got.TypicalVisit)
-			}
-			if got.PriceFrom != "" {
-				t.Errorf("entry %q: price_from = %q, want cleared", entry, got.PriceFrom)
-			}
-		}
-	})
-
-	t.Run("wellness legitimate spec-example values pass unchanged", func(t *testing.T) {
-		for _, v := range []string{"60–90 min", "from €25", "Smart casual", "2 h 30 min", "EN, DE"} {
-			raw := fmt.Sprintf(`{"typical_visit":%q,"price_from":%q}`, v, v)
-			cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
-			if err != nil {
-				t.Fatalf("value %q: ValidateDetails() unexpected error: %v", v, err)
-			}
-			var got activitiessvc.WellnessDetails
-			if err := json.Unmarshal(cleaned, &got); err != nil {
-				t.Fatalf("value %q: unmarshaling cleaned details: %v", v, err)
-			}
-			if got.TypicalVisit != v || got.PriceFrom != v {
-				t.Errorf("value %q: got typical_visit=%q price_from=%q, want unchanged", v, got.TypicalVisit, got.PriceFrom)
-			}
-		}
-	})
-
-	t.Run("normalization across case, whitespace, and trailing punctuation", func(t *testing.T) {
-		for _, v := range []string{
-			"NOT SPECIFIED", "Not Specified", "  not specified  ", "not   specified",
-			"Not specified.", "NOT SPECIFIED!", "not specified?",
-		} {
-			raw := fmt.Sprintf(`{"typical_visit":%q}`, v)
-			cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
-			if err != nil {
-				t.Fatalf("variant %q: unexpected error: %v", v, err)
-			}
-			var got activitiessvc.WellnessDetails
-			if err := json.Unmarshal(cleaned, &got); err != nil {
-				t.Fatalf("variant %q: unmarshaling: %v", v, err)
-			}
-			if got.TypicalVisit != "" {
-				t.Errorf("variant %q: typical_visit = %q, want cleared", v, got.TypicalVisit)
-			}
-		}
-	})
-
-	t.Run("wellness treatments[].price cleared per-entry, item/duration/other rows untouched", func(t *testing.T) {
-		raw := `{"treatments":[{"item":"Massage","duration":"60m","price":"Nije navedeno"},{"item":"Facial","duration":"45m","price":"from €40"}]}`
-		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		var got activitiessvc.WellnessDetails
-		if err := json.Unmarshal(cleaned, &got); err != nil {
-			t.Fatalf("unmarshaling: %v", err)
-		}
-		if len(got.Treatments) != 2 {
-			t.Fatalf("treatments = %+v, want 2 rows (only price denylisted, item is legitimate)", got.Treatments)
-		}
-		if got.Treatments[0].Price != "" {
-			t.Errorf("treatments[0].price = %q, want cleared", got.Treatments[0].Price)
-		}
-		if got.Treatments[0].Item != "Massage" || got.Treatments[0].Duration != "60m" {
-			t.Errorf("treatments[0] item/duration changed unexpectedly: %+v", got.Treatments[0])
-		}
-		if got.Treatments[1].Price != "from €40" {
-			t.Errorf("treatments[1].price = %q, want unchanged", got.Treatments[1].Price)
-		}
-	})
-
-	t.Run("wellness treatments[].duration cleared per-entry when denylisted", func(t *testing.T) {
-		raw := `{"treatments":[{"item":"Massage","duration":"not specified","price":"from €40"}]}`
-		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		var got activitiessvc.WellnessDetails
-		if err := json.Unmarshal(cleaned, &got); err != nil {
-			t.Fatalf("unmarshaling: %v", err)
-		}
-		if len(got.Treatments) != 1 {
-			t.Fatalf("treatments = %+v, want 1 row (item is legitimate)", got.Treatments)
-		}
-		if got.Treatments[0].Duration != "" {
-			t.Errorf("treatments[0].duration = %q, want cleared", got.Treatments[0].Duration)
-		}
-		if got.Treatments[0].Item != "Massage" || got.Treatments[0].Price != "from €40" {
-			t.Errorf("treatments[0] item/price changed unexpectedly: %+v", got.Treatments[0])
-		}
-	})
-
 	t.Run("wellness treatments row dropped entirely when item is denylisted, other rows kept", func(t *testing.T) {
-		raw := `{"treatments":[{"item":"Not specified","duration":"60m","price":"from €40"},{"item":"Facial","duration":"45m","price":"from €35"}]}`
+		raw := `{"treatments":[{"item":"Not specified"},{"item":"Facial"}]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -714,7 +616,7 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 	})
 
 	t.Run("wellness treatments row dropped entirely when item is whitespace-only, other rows kept (T2 fix)", func(t *testing.T) {
-		raw := `{"treatments":[{"item":"   ","duration":"60m","price":"from €40"},{"item":"Facial","duration":"45m","price":"from €35"}]}`
+		raw := `{"treatments":[{"item":"   "},{"item":"Facial"}]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -728,6 +630,19 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.Treatments[0].Item != "Facial" {
 			t.Errorf("treatments[0].item = %q, want %q kept", got.Treatments[0].Item, "Facial")
+		}
+	})
+
+	t.Run("wellness rejects a legacy treatments row still carrying duration/price keys (strict decode)", func(t *testing.T) {
+		// Treatment (detail-price-duration-purge T1) no longer has
+		// Duration/Price fields, and ValidateDetails' decoder disallows
+		// unknown fields — a row shaped like the pre-T1 extraction is
+		// rejected on write, exactly like any other unrecognized field would
+		// be. Old rows already in the DB are untouched (no migration, see
+		// T1's acceptance criteria); this only guards the write path.
+		raw := `{"treatments":[{"item":"Massage","duration":"60m","price":"from €40"}]}`
+		if _, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(raw)); err == nil {
+			t.Error("ValidateDetails() error = nil, want rejection of unknown duration/price keys")
 		}
 	})
 
@@ -746,8 +661,8 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 	})
 
-	t.Run("entertainment price_from, typical_show_length, good_to_know cleared", func(t *testing.T) {
-		raw := `{"price_from":"not available","typical_show_length":"N/A","good_to_know":["Doors open early","none"]}`
+	t.Run("entertainment good_to_know cleared", func(t *testing.T) {
+		raw := `{"good_to_know":["Doors open early","none"]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -756,19 +671,13 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		if err := json.Unmarshal(cleaned, &got); err != nil {
 			t.Fatalf("unmarshaling: %v", err)
 		}
-		if got.PriceFrom != "" {
-			t.Errorf("price_from = %q, want cleared", got.PriceFrom)
-		}
-		if got.TypicalShowLength != "" {
-			t.Errorf("typical_show_length = %q, want cleared", got.TypicalShowLength)
-		}
 		if want := []string{"Doors open early"}; !slices.Equal(got.GoodToKnow, want) {
 			t.Errorf("good_to_know = %v, want %v", got.GoodToKnow, want)
 		}
 	})
 
-	t.Run("entertainment upcoming_shows[].date/time_or_price cleared per-entry, title-legitimate rows kept", func(t *testing.T) {
-		raw := `{"upcoming_shows":[{"date":"not available","title":"Jazz Night","time_or_price":"unknown"},{"date":"2026-09-01","title":"Comedy Hour","time_or_price":"from $20"}]}`
+	t.Run("entertainment upcoming_shows[].date cleared per-entry, title-legitimate rows kept", func(t *testing.T) {
+		raw := `{"upcoming_shows":[{"date":"not available","title":"Jazz Night"},{"date":"2026-09-01","title":"Comedy Hour"}]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -780,19 +689,19 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		if len(got.UpcomingShows) != 2 {
 			t.Fatalf("upcoming_shows = %+v, want 2 rows (both titles legitimate)", got.UpcomingShows)
 		}
-		if got.UpcomingShows[0].Date != "" || got.UpcomingShows[0].TimeOrPrice != "" {
-			t.Errorf("upcoming_shows[0] = %+v, want date/time_or_price cleared", got.UpcomingShows[0])
+		if got.UpcomingShows[0].Date != "" {
+			t.Errorf("upcoming_shows[0].date = %q, want cleared", got.UpcomingShows[0].Date)
 		}
 		if got.UpcomingShows[0].Title != "Jazz Night" {
 			t.Errorf("upcoming_shows[0].title = %q, want unchanged", got.UpcomingShows[0].Title)
 		}
-		if got.UpcomingShows[1].Date != "2026-09-01" || got.UpcomingShows[1].TimeOrPrice != "from $20" {
+		if got.UpcomingShows[1].Date != "2026-09-01" {
 			t.Errorf("upcoming_shows[1] changed unexpectedly: %+v", got.UpcomingShows[1])
 		}
 	})
 
 	t.Run("entertainment upcoming_shows row dropped entirely when title is denylisted, other rows kept", func(t *testing.T) {
-		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"N/A","time_or_price":"from $20"},{"date":"2026-09-02","title":"Comedy Hour","time_or_price":"from $15"}]}`
+		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"N/A"},{"date":"2026-09-02","title":"Comedy Hour"}]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -810,7 +719,7 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 	})
 
 	t.Run("entertainment upcoming_shows row dropped entirely when title is whitespace-only, other rows kept (T2 fix)", func(t *testing.T) {
-		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"   ","time_or_price":"from $20"},{"date":"2026-09-02","title":"Comedy Hour","time_or_price":"from $15"}]}`
+		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"   "},{"date":"2026-09-02","title":"Comedy Hour"}]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -824,6 +733,16 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.UpcomingShows[0].Title != "Comedy Hour" {
 			t.Errorf("upcoming_shows[0].title = %q, want %q kept", got.UpcomingShows[0].Title, "Comedy Hour")
+		}
+	})
+
+	t.Run("entertainment rejects a legacy upcoming_shows row still carrying time_or_price (strict decode)", func(t *testing.T) {
+		// Show (detail-price-duration-purge T1) no longer has a TimeOrPrice
+		// field — same strict-decode guard as the wellness Treatment case
+		// above.
+		raw := `{"upcoming_shows":[{"date":"2026-09-01","title":"Comedy Hour","time_or_price":"from $20"}]}`
+		if _, err := ValidateDetails(activitiessvc.CategoryEntertainment, json.RawMessage(raw)); err == nil {
+			t.Error("ValidateDetails() error = nil, want rejection of unknown time_or_price key")
 		}
 	})
 
@@ -868,14 +787,14 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 	})
 
 	t.Run("a denylist match clears the field but never rejects the write", func(t *testing.T) {
-		_, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(`{"typical_visit":"not specified","action_url":"https://example.com"}`))
+		_, err := ValidateDetails(activitiessvc.CategoryWellness, json.RawMessage(`{"good_to_know":["not specified"],"action_url":"https://example.com"}`))
 		if err != nil {
 			t.Fatalf("ValidateDetails() unexpected error: %v (a denylist match must clear the field, not fail the request)", err)
 		}
 	})
 
-	t.Run("sport effort_level, duration, gear, what_to_bring cleared, difficulty untouched", func(t *testing.T) {
-		raw := `{"effort_level":"Unknown","duration":"N/A","gear":"none","what_to_bring":["Water bottle","Not specified"],"difficulty":3}`
+	t.Run("sport effort_level, gear, what_to_bring cleared, difficulty untouched", func(t *testing.T) {
+		raw := `{"effort_level":"Unknown","gear":"none","what_to_bring":["Water bottle","Not specified"],"difficulty":3}`
 		cleaned, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -886,9 +805,6 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		}
 		if got.EffortLevel != "" {
 			t.Errorf("effort_level = %q, want cleared", got.EffortLevel)
-		}
-		if got.Duration != "" {
-			t.Errorf("duration = %q, want cleared", got.Duration)
 		}
 		if got.Gear != "" {
 			t.Errorf("gear = %q, want cleared", got.Gear)
@@ -902,7 +818,7 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 	})
 
 	t.Run("sport legitimate values pass unchanged", func(t *testing.T) {
-		raw := `{"effort_level":"Moderate","duration":"2 hours","gear":"Helmet provided","what_to_bring":["Comfortable shoes"]}`
+		raw := `{"effort_level":"Moderate","gear":"Helmet provided","what_to_bring":["Comfortable shoes"]}`
 		cleaned, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(raw))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -911,11 +827,19 @@ func TestValidateDetails_ClearsDenylistedFields(t *testing.T) {
 		if err := json.Unmarshal(cleaned, &got); err != nil {
 			t.Fatalf("unmarshaling: %v", err)
 		}
-		if got.EffortLevel != "Moderate" || got.Duration != "2 hours" || got.Gear != "Helmet provided" {
+		if got.EffortLevel != "Moderate" || got.Gear != "Helmet provided" {
 			t.Errorf("got %+v, want values unchanged", got)
 		}
 		if want := []string{"Comfortable shoes"}; !slices.Equal(got.WhatToBring, want) {
 			t.Errorf("what_to_bring = %v, want %v", got.WhatToBring, want)
+		}
+	})
+
+	t.Run("sport rejects a legacy payload still carrying duration (strict decode)", func(t *testing.T) {
+		// SportDetails (detail-price-duration-purge T1) no longer has a
+		// Duration field.
+		if _, err := ValidateDetails(activitiessvc.CategorySport, json.RawMessage(`{"duration":"2 hours"}`)); err == nil {
+			t.Error("ValidateDetails() error = nil, want rejection of unknown duration key")
 		}
 	})
 
@@ -1424,14 +1348,16 @@ func TestActivities_Create(t *testing.T) {
 	// T1: a denylisted value in Details is never handed to the repo — the
 	// write itself must still succeed, with the offending field cleared.
 	// Bars/Restaurants/Cafes can't be admin-Created (blocked above), so
-	// Wellness is used here — its typical_visit is the exact field named in
-	// the production bug report.
-	t.Run("denylisted typical_visit is cleared before reaching the repo, write still succeeds", func(t *testing.T) {
+	// Wellness is used here — good_to_know is Wellness' surviving
+	// denylist-guarded free-text field (detail-price-duration-purge T1
+	// dropped typical_visit/price_from, the fields the original production
+	// bug report named, from the schema entirely).
+	t.Run("denylisted good_to_know entry is dropped before reaching the repo, write still succeeds", func(t *testing.T) {
 		repo := &fakeRepo{}
 		svc := New(repo)
 		_, err := svc.Create(context.Background(), activitiessvc.NewActivity{
 			Title: "New Spa", Category: activitiessvc.CategoryWellness,
-			Details: json.RawMessage(`{"typical_visit":"Nije navedeno"}`),
+			Details: json.RawMessage(`{"good_to_know":["Nije navedeno"]}`),
 		})
 		if err != nil {
 			t.Fatalf("Create() unexpected error: %v", err)
@@ -1440,8 +1366,8 @@ func TestActivities_Create(t *testing.T) {
 		if err := json.Unmarshal(repo.gotCreate.Details, &got); err != nil {
 			t.Fatalf("unmarshaling repo-received details: %v", err)
 		}
-		if got.TypicalVisit != "" {
-			t.Errorf("repo received typical_visit = %q, want cleared", got.TypicalVisit)
+		if len(got.GoodToKnow) != 0 {
+			t.Errorf("repo received good_to_know = %v, want cleared", got.GoodToKnow)
 		}
 	})
 }

@@ -449,7 +449,6 @@ type NatureDetails struct {
 type SportDetails struct {
 	Difficulty  int      `json:"difficulty,omitempty"`
 	EffortLevel string   `json:"effort_level,omitempty"`
-	Duration    string   `json:"duration,omitempty"`
 	Gear        string   `json:"gear,omitempty"`
 	WhatToBring []string `json:"what_to_bring,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Book session").
@@ -515,11 +514,13 @@ type ArtDetails struct {
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
-// Treatment is one entry in Wellness' treatments list.
+// Treatment is one entry in Wellness' treatments list. Duration/Price
+// (detail-price-duration-purge T1) were dropped: both were LLM extractions
+// of a scraped page with no way to verify them against the venue's own
+// site, so the scraper stops collecting them — see websitesync.go's
+// wellnessSchema.
 type Treatment struct {
-	Item     string `json:"item"`
-	Duration string `json:"duration,omitempty"`
-	Price    string `json:"price,omitempty"`
+	Item string `json:"item"`
 }
 
 // WellnessDetails is CategoryWellness' detail payload.
@@ -530,20 +531,21 @@ type WellnessDetails struct {
 	ActionURL *string `json:"action_url,omitempty"`
 	// VenueType (T8) is the badge subtype qualifier, e.g. "Spa".
 	VenueType string `json:"venue_type,omitempty"`
-	// TypicalVisit/PriceFrom/GoodToKnow are website-sourced (see
-	// internal/service/websitesync.go) — never Places-sourced, so they
-	// carry no §14.3 caching restriction.
-	TypicalVisit string        `json:"typical_visit,omitempty"`
-	PriceFrom    string        `json:"price_from,omitempty"`
+	// GoodToKnow is website-sourced (see internal/service/websitesync.go) —
+	// never Places-sourced, so it carries no §14.3 caching restriction.
+	// TypicalVisit/PriceFrom (detail-price-duration-purge T1) were dropped
+	// for the same unverifiable-scraped-value reason as Treatment above.
 	GoodToKnow   []string      `json:"good_to_know,omitempty"`
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
-// Show is one entry in Entertainment's upcoming shows list.
+// Show is one entry in Entertainment's upcoming shows list. TimeOrPrice
+// (detail-price-duration-purge T1) was dropped: it conflated a scraped
+// price with a scraped show time in one LLM-generated string, unverifiable
+// against the venue's own site — see websitesync.go's entertainmentSchema.
 type Show struct {
-	Date        string `json:"date"`
-	Title       string `json:"title"`
-	TimeOrPrice string `json:"time_or_price,omitempty"`
+	Date  string `json:"date"`
+	Title string `json:"title"`
 }
 
 // EntertainmentDetails is CategoryEntertainment's detail payload.
@@ -553,12 +555,12 @@ type EntertainmentDetails struct {
 	UpcomingShows []Show `json:"upcoming_shows,omitempty"`
 	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
 	ActionURL *string `json:"action_url,omitempty"`
-	// TypicalShowLength/PriceFrom/GoodToKnow are website-sourced, same
-	// provenance note as WellnessDetails above.
-	TypicalShowLength string        `json:"typical_show_length,omitempty"`
-	PriceFrom         string        `json:"price_from,omitempty"`
-	GoodToKnow        []string      `json:"good_to_know,omitempty"`
-	OpeningHours      *OpeningHours `json:"opening_hours,omitempty"`
+	// GoodToKnow is website-sourced, same provenance note as WellnessDetails
+	// above. TypicalShowLength/PriceFrom (detail-price-duration-purge T1)
+	// were dropped for the same unverifiable-scraped-value reason as Show
+	// above.
+	GoodToKnow   []string      `json:"good_to_know,omitempty"`
+	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
 }
 
 // ShoppingDetails is CategoryShopping's detail payload.

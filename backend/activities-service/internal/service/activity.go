@@ -345,12 +345,10 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 // http(s) URL, Art's year must be a plausible 4-digit year, opening_hours
 // (T1, the 7 categories that already show an hours chip) must be a
 // well-formed weekly schedule, and (T1) every generated free-text field
-// present on any per-category detail struct — typical_visit, price_from,
-// good_to_know[], vibe, Entertainment's typical_show_length, Sport's
-// effort_level/duration/gear/what_to_bring[], Wellness'
-// treatments[].item/duration/price (see clearTreatmentsDenylisted),
-// Entertainment's upcoming_shows[].date/title/time_or_price (see
-// clearShowsDenylisted), and Culture/Art's now_showing/current_exhibition
+// present on any per-category detail struct — good_to_know[], vibe, Sport's
+// effort_level/gear/what_to_bring[], Wellness' treatments[].item (see
+// clearTreatmentsDenylisted), Entertainment's upcoming_shows[].date/title
+// (see clearShowsDenylisted), and Culture/Art's now_showing/current_exhibition
 // banner (title + description, see clearBannerDenylisted) — is cleared to
 // empty when it matches contentkind's placeholder denylist. A denylist
 // match never fails the whole request: only that field is blanked (or, for
@@ -394,7 +392,6 @@ func validateExtraFields(target any) error {
 		return nil
 	case *activitiessvc.SportDetails:
 		clearDenylisted(&t.EffortLevel)
-		clearDenylisted(&t.Duration)
 		clearDenylisted(&t.Gear)
 		dropDenylisted(&t.WhatToBring)
 		return validateActionURL(t.ActionURL)
@@ -414,14 +411,10 @@ func validateExtraFields(target any) error {
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.WellnessDetails:
-		clearDenylisted(&t.TypicalVisit)
-		clearDenylisted(&t.PriceFrom)
 		dropDenylisted(&t.GoodToKnow)
 		t.Treatments = clearTreatmentsDenylisted(t.Treatments)
 		return validateActionURL(t.ActionURL)
 	case *activitiessvc.EntertainmentDetails:
-		clearDenylisted(&t.PriceFrom)
-		clearDenylisted(&t.TypicalShowLength)
 		dropDenylisted(&t.GoodToKnow)
 		t.UpcomingShows = clearShowsDenylisted(t.UpcomingShows)
 		return validateActionURL(t.ActionURL)
@@ -511,38 +504,33 @@ func clearBannerDenylisted(b *activitiessvc.Banner) *activitiessvc.Banner {
 	return b
 }
 
-// clearTreatmentsDenylisted guards Wellness' treatments[] (T1 round 3): every
-// string sub-field Firecrawl generates (item, duration, price — see
-// wellnessSchema in websitesync.go) carries the same hedge risk as any other
-// generated field, not just price (round 1/2's partial fix). Item is the
-// treatment's name, the array-of-struct equivalent of Banner.Title, so a
-// denylisted Item drops the whole row exactly like clearBannerDenylisted
-// drops a whole banner on a denylisted title. Duration/Price are secondary:
-// cleared in place like any other clearDenylisted field, never dropping the
-// row on their own. A whitespace-only Item drops the row too (T2 fix, same
-// strings.TrimSpace rule clearBannerDenylisted already applies to Title) — a
-// bare denylist check let a whitespace-only name through and would have
-// locked the row via isComplete forever, since Item is non-`omitempty`.
+// clearTreatmentsDenylisted guards Wellness' treatments[] (T1 round 3): Item
+// is the treatment's name, the array-of-struct equivalent of Banner.Title, so
+// a denylisted Item drops the whole row exactly like clearBannerDenylisted
+// drops a whole banner on a denylisted title. A whitespace-only Item drops
+// the row too (T2 fix, same strings.TrimSpace rule clearBannerDenylisted
+// already applies to Title) — a bare denylist check let a whitespace-only
+// name through and would have locked the row via isComplete forever, since
+// Item is non-`omitempty`. Duration/Price (once guarded here too) no longer
+// exist on Treatment (detail-price-duration-purge T1) — the scraper never
+// collects them, so there's nothing left to clear.
 func clearTreatmentsDenylisted(items []activitiessvc.Treatment) []activitiessvc.Treatment {
 	kept := items[:0]
 	for _, it := range items {
 		if strings.TrimSpace(it.Item) == "" || contentkind.MatchesDenylist(it.Item) {
 			continue
 		}
-		clearDenylisted(&it.Duration)
-		clearDenylisted(&it.Price)
 		kept = append(kept, it)
 	}
 	return kept
 }
 
 // clearShowsDenylisted guards Entertainment's upcoming_shows[] (T1 round 3):
-// same gap as clearTreatmentsDenylisted, for date/title/time_or_price (see
-// entertainmentSchema in websitesync.go) — previously entirely unguarded.
-// Title is the show's name, so a denylisted Title drops the whole row;
-// Date/TimeOrPrice are cleared in place, same rule as Treatment above. A
-// whitespace-only Title drops the row too (T2 fix, same reasoning as
-// clearTreatmentsDenylisted above).
+// Title is the show's name, so a denylisted Title drops the whole row; Date
+// is cleared in place, same rule as Treatment above. A whitespace-only Title
+// drops the row too (T2 fix, same reasoning as clearTreatmentsDenylisted
+// above). TimeOrPrice (once guarded here too) no longer exists on Show
+// (detail-price-duration-purge T1) — the scraper never collects it.
 func clearShowsDenylisted(items []activitiessvc.Show) []activitiessvc.Show {
 	kept := items[:0]
 	for _, it := range items {
@@ -550,7 +538,6 @@ func clearShowsDenylisted(items []activitiessvc.Show) []activitiessvc.Show {
 			continue
 		}
 		clearDenylisted(&it.Date)
-		clearDenylisted(&it.TimeOrPrice)
 		kept = append(kept, it)
 	}
 	return kept
