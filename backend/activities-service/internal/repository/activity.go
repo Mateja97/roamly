@@ -518,7 +518,13 @@ func canonicalSourceURL(raw string) string {
 // deliberately sends "{}" on every re-ingest (Places Terms §14.3 forbids
 // storing Places content), so a bare EXCLUDED.details would wipe out
 // admin-curated content and the weekly website-sync job's scraped content
-// on every ~14-day re-sweep.
+// on every ~14-day re-sweep. google_place_id uses the same guard for the
+// same reason: cmd/backfilltripadvisor wires up service.New(repo) with no
+// Places client at all, so every RefreshTripadvisorLocation call it makes
+// resolves to "", and a Places search error or a server missing
+// GOOGLE_MAPS_API_KEY hits the same empty-string path — a bare
+// EXCLUDED.google_place_id would blank an already-resolved id on every
+// such re-run.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	sourceURL := canonicalSourceURL(in.SourceURL)
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
@@ -540,7 +546,7 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			external_id = EXCLUDED.external_id,
 			raw = EXCLUDED.raw,
 			subcategory = EXCLUDED.subcategory,
-			google_place_id = EXCLUDED.google_place_id
+			google_place_id = COALESCE(NULLIF(EXCLUDED.google_place_id, ''), activities.google_place_id)
 		RETURNING `+adminColumns,
 		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
 		in.Country, in.Rating, in.City, in.Address, string(in.Status),
