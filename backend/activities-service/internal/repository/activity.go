@@ -250,7 +250,7 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 const adminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 	country, rating, photos, tags, details,
 	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id,
-	COALESCE(source, '') AS source, subcategory`
+	COALESCE(source, '') AS source, subcategory, COALESCE(google_place_id, '') AS google_place_id`
 
 func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 	var a activitiessvc.Activity
@@ -259,7 +259,7 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 		&a.Location.Lat, &a.Location.Lng,
 		&a.Country, &a.Rating,
 		&a.Photos, &a.Tags, &a.Details,
-		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory,
+		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory, &a.GooglePlaceID,
 	)
 	return a, err
 }
@@ -518,14 +518,20 @@ func canonicalSourceURL(raw string) string {
 // deliberately sends "{}" on every re-ingest (Places Terms §14.3 forbids
 // storing Places content), so a bare EXCLUDED.details would wipe out
 // admin-curated content and the weekly website-sync job's scraped content
-// on every ~14-day re-sweep.
+// on every ~14-day re-sweep. google_place_id uses the same guard for the
+// same reason: cmd/backfilltripadvisor wires up service.New(repo) with no
+// Places client at all, so every RefreshTripadvisorLocation call it makes
+// resolves to "", and a Places search error or a server missing
+// GOOGLE_MAPS_API_KEY hits the same empty-string path — a bare
+// EXCLUDED.google_place_id would blank an already-resolved id on every
+// such re-run.
 func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	sourceURL := canonicalSourceURL(in.SourceURL)
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, `
 		INSERT INTO activities
-			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw, subcategory)
+			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw, subcategory, google_place_id)
 		VALUES
-			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (source_url, category) WHERE source_url IS NOT NULL DO UPDATE SET
 			title = EXCLUDED.title,
 			description = EXCLUDED.description,
@@ -539,13 +545,14 @@ func (r *Activities) Upsert(ctx context.Context, in activitiessvc.IngestActivity
 			source = EXCLUDED.source,
 			external_id = EXCLUDED.external_id,
 			raw = EXCLUDED.raw,
-			subcategory = EXCLUDED.subcategory
+			subcategory = EXCLUDED.subcategory,
+			google_place_id = COALESCE(NULLIF(EXCLUDED.google_place_id, ''), activities.google_place_id)
 		RETURNING `+adminColumns,
 		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
 		in.Country, in.Rating, in.City, in.Address, string(in.Status),
 		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
 		in.Source, sourceURL, in.ExternalID, nonEmptyDetailsBytes(in.Raw),
-		in.Subcategory,
+		in.Subcategory, in.GooglePlaceID,
 	))
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("upserting activity %q: %w", sourceURL, err)
@@ -570,6 +577,27 @@ func (r *Activities) SetSubcategoryIfEmpty(ctx context.Context, id, subcategory 
 	)
 	if err != nil {
 		return false, fmt.Errorf("setting subcategory for activity %s: %w", id, err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// SetGooglePlaceIDIfEmpty sets id's google_place_id to placeID, but only if
+// the stored value is still empty — the write-side half of
+// cmd/backfillgoogleplaceid (T2)'s "never overwrites an id a sync already
+// resolved" guarantee, same shape as SetSubcategoryIfEmpty above. The column
+// is nullable with no default (migration 0030), so unlike subcategory's
+// NOT NULL DEFAULT ”, an unmigrated/admin-created row's value can be SQL
+// NULL rather than ” — the guard checks both so a backfill can still claim
+// that row. Returns whether it actually wrote, so the caller can count
+// "already resolved by something else" separately from "resolved by this
+// run".
+func (r *Activities) SetGooglePlaceIDIfEmpty(ctx context.Context, id, placeID string) (bool, error) {
+	tag, err := r.db.Exec(ctx,
+		`UPDATE activities SET google_place_id = $1 WHERE id = $2 AND (google_place_id IS NULL OR google_place_id = '')`,
+		placeID, id,
+	)
+	if err != nil {
+		return false, fmt.Errorf("setting google place id for activity %s: %w", id, err)
 	}
 	return tag.RowsAffected() > 0, nil
 }

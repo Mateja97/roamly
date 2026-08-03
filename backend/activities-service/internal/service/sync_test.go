@@ -656,29 +656,38 @@ func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
 
 // TestActivities_ResolveTripadvisorSubtype covers ResolveTripadvisorSubtype's
 // "never a guess" outcomes plus its one success path, per T2's acceptance
-// criteria. Every place fixture below carries a DisplayName that matches
-// "Some Venue" (case/punctuation-folded) unless the case is specifically
-// testing the name-identity guard, so the other rejections aren't
-// accidentally exercising it too.
+// criteria, and (tripadvisor-google-review-fallback T1) that its second
+// return value — the matched candidate's own Google place id — comes back
+// non-empty exactly when identity was actually confirmed (a single hit whose
+// name matches), including the one case where the subtype itself is empty
+// despite a confirmed identity match (cross-category primaryType): the venue
+// was still found and identified, so its place id is real, just unmapped to
+// a subtype for this category. Every place fixture below carries a
+// DisplayName that matches "Some Venue" (case/punctuation-folded) unless the
+// case is specifically testing the name-identity guard, so the other
+// rejections aren't accidentally exercising it too.
 func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 	tests := []struct {
-		name     string
-		category activitiessvc.Category
-		places   []placesmap.Place
-		err      error
-		want     string
+		name        string
+		category    activitiessvc.Category
+		places      []placesmap.Place
+		err         error
+		want        string
+		wantPlaceID string
 	}{
 		{
-			name:     "primaryType maps to a valid subtype for its category",
-			category: activitiessvc.CategoryBars,
-			places:   []placesmap.Place{{PrimaryType: "wine_bar", DisplayName: displayName("Some Venue")}},
-			want:     "wine_bar",
+			name:        "primaryType maps to a valid subtype for its category",
+			category:    activitiessvc.CategoryBars,
+			places:      []placesmap.Place{{ID: "place-1", PrimaryType: "wine_bar", DisplayName: displayName("Some Venue")}},
+			want:        "wine_bar",
+			wantPlaceID: "place-1",
 		},
 		{
-			name:     "primaryType maps to a subtype belonging to a different category yields empty, not a cross-category guess",
-			category: activitiessvc.CategoryBars,
-			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue")}},
-			want:     "",
+			name:        "primaryType maps to a subtype belonging to a different category yields an empty subtype, not a cross-category guess, but the confirmed match's place id still comes back",
+			category:    activitiessvc.CategoryBars,
+			places:      []placesmap.Place{{ID: "place-2", PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue")}},
+			want:        "",
+			wantPlaceID: "place-2",
 		},
 		{
 			name:     "no candidate in the tight radius resolves empty",
@@ -690,8 +699,8 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 			name:     "ambiguous match (more than one candidate) resolves empty rather than guessing",
 			category: activitiessvc.CategoryRestaurants,
 			places: []placesmap.Place{
-				{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue")},
-				{PrimaryType: "restaurant", DisplayName: displayName("Some Venue")},
+				{ID: "place-3", PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue")},
+				{ID: "place-4", PrimaryType: "restaurant", DisplayName: displayName("Some Venue")},
 			},
 			want: "",
 		},
@@ -704,29 +713,34 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 		{
 			name:     "sole candidate's name doesn't match the Tripadvisor venue's — a relevance-ranked neighbour, not the venue itself — resolves empty",
 			category: activitiessvc.CategoryRestaurants,
-			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Completely Different Place")}},
+			places:   []placesmap.Place{{ID: "place-5", PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Completely Different Place")}},
 			want:     "",
 		},
 		{
-			name:     "sole candidate's name loosely matches (a business-suffix Google appended) resolves normally",
-			category: activitiessvc.CategoryRestaurants,
-			places:   []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue Restaurant")}},
-			want:     "fine_dining",
+			name:        "sole candidate's name loosely matches (a business-suffix Google appended) resolves normally",
+			category:    activitiessvc.CategoryRestaurants,
+			places:      []placesmap.Place{{ID: "place-6", PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Some Venue Restaurant")}},
+			want:        "fine_dining",
+			wantPlaceID: "place-6",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := &fakeGooglePlaces{nearbyOut: tt.places, nearbyErr: tt.err}
 			svc := New(&fakeRepo{}).WithPlaces(gp)
-			if got := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111"); got != tt.want {
-				t.Errorf("ResolveTripadvisorSubtype(...) = %q, want %q", got, tt.want)
+			got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111")
+			if got != tt.want {
+				t.Errorf("ResolveTripadvisorSubtype(...) subtype = %q, want %q", got, tt.want)
+			}
+			if gotPlaceID != tt.wantPlaceID {
+				t.Errorf("ResolveTripadvisorSubtype(...) place id = %q, want %q", gotPlaceID, tt.wantPlaceID)
 			}
 			if len(gp.gotSearchTextInArea) == 0 {
 				return
 			}
-			got := gp.gotSearchTextInArea[0]
-			if got.lat != 44.81 || got.lng != 20.46 || got.radiusKM != tripadvisorSubtypeRadiusKM {
-				t.Errorf("SearchTextInArea args = lat=%v lng=%v radiusKM=%v, want lat=44.81 lng=20.46 radiusKM=%v (the venue's own coords, not the sync anchor's)", got.lat, got.lng, got.radiusKM, tripadvisorSubtypeRadiusKM)
+			searchCall := gp.gotSearchTextInArea[0]
+			if searchCall.lat != 44.81 || searchCall.lng != 20.46 || searchCall.radiusKM != tripadvisorSubtypeRadiusKM {
+				t.Errorf("SearchTextInArea args = lat=%v lng=%v radiusKM=%v, want lat=44.81 lng=20.46 radiusKM=%v (the venue's own coords, not the sync anchor's)", searchCall.lat, searchCall.lng, searchCall.radiusKM, tripadvisorSubtypeRadiusKM)
 			}
 		})
 	}
@@ -736,8 +750,9 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 // nil-safe degrade — no Places client attached must never panic or block.
 func TestActivities_ResolveTripadvisorSubtype_NoClientConfigured(t *testing.T) {
 	svc := New(&fakeRepo{})
-	if got := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111"); got != "" {
-		t.Errorf("ResolveTripadvisorSubtype() = %q, want empty with no places client configured", got)
+	got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111")
+	if got != "" || gotPlaceID != "" {
+		t.Errorf("ResolveTripadvisorSubtype() = (%q, %q), want empty subtype and place id with no places client configured", got, gotPlaceID)
 	}
 }
 
@@ -755,10 +770,11 @@ func TestActivities_ResolveTripadvisorSubtype_NoCoordsOrName(t *testing.T) {
 		{name: "Some Venue", lat: 0, lng: 0},
 	}
 	for _, tt := range tests {
-		gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "wine_bar", DisplayName: displayName(tt.name)}}}
+		gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "place-1", PrimaryType: "wine_bar", DisplayName: displayName(tt.name)}}}
 		svc := New(&fakeRepo{}).WithPlaces(gp)
-		if got := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111"); got != "" {
-			t.Errorf("ResolveTripadvisorSubtype(name=%q, lat=%v, lng=%v) = %q, want empty", tt.name, tt.lat, tt.lng, got)
+		got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111")
+		if got != "" || gotPlaceID != "" {
+			t.Errorf("ResolveTripadvisorSubtype(name=%q, lat=%v, lng=%v) = (%q, %q), want empty subtype and place id", tt.name, tt.lat, tt.lng, got, gotPlaceID)
 		}
 		if len(gp.gotSearchTextInArea) != 0 {
 			t.Errorf("SearchTextInArea calls = %d, want 0 — no name or no coords must skip the Places call", len(gp.gotSearchTextInArea))
@@ -809,7 +825,8 @@ func displayName(text string) struct {
 // TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType is
 // the end-to-end proof that a resolved Google primaryType reaches the
 // upserted row's Subcategory through the real sync path, not just the
-// ResolveTripadvisorSubtype unit above.
+// ResolveTripadvisorSubtype unit above — and (tripadvisor-google-review-fallback
+// T1) that the matched place id reaches GooglePlaceID alongside it.
 func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	ta := &fakeTripadvisor{
@@ -818,7 +835,7 @@ func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *
 			"111": {LocationID: "111", Name: "Ambar Beograd", Lat: 44.81, Lng: 20.46, WebURL: "https://ta/Restaurant_Review-1"},
 		},
 	}
-	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Ambar Beograd")}}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "google-place-1", PrimaryType: "fine_dining_restaurant", DisplayName: displayName("Ambar Beograd")}}}
 	svc := New(repo).WithTripadvisor(ta).WithPlaces(gp)
 
 	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
@@ -826,6 +843,9 @@ func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *
 
 	if repo.gotUpsert.Subcategory != "fine_dining" {
 		t.Errorf("gotUpsert.Subcategory = %q, want fine_dining (resolved via the Places lookup)", repo.gotUpsert.Subcategory)
+	}
+	if repo.gotUpsert.GooglePlaceID != "google-place-1" {
+		t.Errorf("gotUpsert.GooglePlaceID = %q, want google-place-1 (the same Places hit the subtype was resolved from)", repo.gotUpsert.GooglePlaceID)
 	}
 }
 
@@ -851,5 +871,8 @@ func TestActivities_Query_TripadvisorSync_PlacesErrorStillIngestsVenue(t *testin
 	}
 	if repo.gotUpsert.Subcategory != "" {
 		t.Errorf("gotUpsert.Subcategory = %q, want empty on a Places resolve error", repo.gotUpsert.Subcategory)
+	}
+	if repo.gotUpsert.GooglePlaceID != "" {
+		t.Errorf("gotUpsert.GooglePlaceID = %q, want empty on a Places resolve error", repo.gotUpsert.GooglePlaceID)
 	}
 }
