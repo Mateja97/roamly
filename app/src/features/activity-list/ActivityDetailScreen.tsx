@@ -232,15 +232,24 @@ export function ActivityDetailScreen({
         }));
         // Only announce "added" when the merge genuinely put something new
         // on screen — a merge that collapsed every block is nothing to
-        // tell an AT user arrived.
-        if (hasLiveContent(merged)) AccessibilityInfo.announceForAccessibility('Place details added');
+        // tell an AT user arrived. On the reviewless-Tripadvisor fallback
+        // path, `hasLiveContent` is useless as that gate: every Tripadvisor
+        // row already has its own permanent `rating > 0`, so it'd read
+        // "true" even when the widened fetch found no Google reviews and
+        // TripadvisorBlock's slot stays collapsed exactly as before — check
+        // the same `googleReviews.length > 0 && googleMapsUri` condition
+        // TripadvisorBlock itself renders cards on instead.
+        const addedLiveContent = isPlacesLive
+          ? hasLiveContent(merged)
+          : (merged.google_reviews?.length ?? 0) > 0 && Boolean(merged.google_maps_uri);
+        if (addedLiveContent) AccessibilityInfo.announceForAccessibility('Place details added');
       }
       setDetailsPending(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [seedActivity.id, shouldFetchDetails]);
+  }, [seedActivity.id, shouldFetchDetails, isPlacesLive]);
 
   const heroPhoto = photos[heroIndex];
   const metaText = metaDistanceText(activity, showDistance);
