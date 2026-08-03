@@ -1,10 +1,12 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MapPin, Phone } from 'lucide-react-native';
-import type { TripadvisorAttribution, TripadvisorReview } from '../../api/activities';
+import type { GoogleReview, TripadvisorAttribution, TripadvisorReview } from '../../api/activities';
+import { GoogleAttributionPlate } from '../../components/GoogleAttributionPlate';
 import { TripadvisorAttributionPlate } from '../../components/TripadvisorAttributionPlate';
 import { TripadvisorSubratingsPlate } from '../../components/TripadvisorSubratingsPlate';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { ReviewsSkeleton } from './DetailSkeletons';
 import { TripadvisorReviewsCarousel } from './TripadvisorReviewsCarousel';
 
 type TripadvisorBlockProps = {
@@ -14,6 +16,16 @@ type TripadvisorBlockProps = {
   // its own, so the caller threads it through from the parent Activity.
   rating: number;
   reviews: TripadvisorReview[];
+  // T4 (tripadvisor-google-review-fallback): the empty-slot fallback — only
+  // ever consumed when `reviews` above is empty (see the precedence branch
+  // in the JSX below). The caller already applies the same MAX_REVIEW_CARDS
+  // cap it uses for the Places-live path, so this arrives pre-capped.
+  googleReviews: GoogleReview[];
+  googleMapsUri: string | undefined;
+  // True while the widened live-details fetch (ActivityDetailScreen) is in
+  // flight for a review-less Tripadvisor row — shows the existing reviews
+  // skeleton in this slot instead of collapsing prematurely.
+  reviewsPending: boolean;
   address: string | undefined;
   ctaBusy: boolean;
   onCallPhone: (phone: string) => void;
@@ -32,6 +44,9 @@ export function TripadvisorBlock({
   tripadvisor,
   rating,
   reviews,
+  googleReviews,
+  googleMapsUri,
+  reviewsPending,
   address,
   ctaBusy,
   onCallPhone,
@@ -46,7 +61,20 @@ export function TripadvisorBlock({
 
       <TripadvisorSubratingsPlate subratings={tripadvisor.subratings} />
 
-      <TripadvisorReviewsCarousel reviews={reviews} />
+      {/* design-spec.md T4's "Empty review slot → Google review cards
+          (provider precedence)": (1) a Tripadvisor review wins outright,
+          unchanged; (2) else, while the widened fetch is in flight, reuse
+          the existing reviews skeleton (no new placeholder); (3) else,
+          Google reviews + a maps link fill the slot instead — same
+          no-link-no-cards compliance gate as the Places-live path; (4)
+          else nothing, matching today's silent degradation. */}
+      {reviews.length > 0 ? (
+        <TripadvisorReviewsCarousel reviews={reviews} />
+      ) : reviewsPending ? (
+        <ReviewsSkeleton />
+      ) : googleReviews.length > 0 && googleMapsUri ? (
+        <GoogleAttributionPlate variant="detail" reviews={googleReviews} googleMapsUri={googleMapsUri} />
+      ) : null}
 
       {/* design-spec.md T4's Place-facts list: address (static) + phone
           (tel: link) rows, separated from the section above by a hairline —
