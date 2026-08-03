@@ -861,27 +861,29 @@ func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
 // a Places-sourced row (T2, places-live-details), mirroring GetPhotos'
 // fallback-on-error contract exactly: an unconfigured places client, any
 // resolve error, or a timeout all fall back to the bare stored row, no
-// error surfaced. Tripadvisor-sourced rows (source == "tripadvisor") and
-// admin-created rows (source == "") never reach a.places. The one
-// deliberate difference from GetPhotos: this result is never passed to
-// a.repo.Update or any other persistence call — Places Terms §14.3 forbids
-// caching anything but place_id/lat-lng, so every call re-fetches fresh.
+// error surfaced. Admin-created rows (source == "") never reach a.places.
+// The one deliberate difference from GetPhotos: this result is never passed
+// to a.repo.Update or any other persistence call — Places Terms §14.3
+// forbids caching anything but place_id/lat-lng, so every call re-fetches
+// fresh.
 //
 // Details is merged (mergeLiveDetails), not replaced outright: live-sourced
 // keys (action_url/opening_hours/venue_type/...) win, everything else
 // already on the stored row (e.g. admin-curated Treatments/GoodToKnow) is
 // passed through unchanged.
+//
+// Tripadvisor-sourced rows (source == "tripadvisor") never take this path —
+// see withTripadvisorGoogleReviews for their own, narrower fallback.
 func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
-	if activity.Source == "" || activity.Source == "tripadvisor" || activity.ExternalID == "" || a.places == nil {
+	if activity.Source == "tripadvisor" {
+		return a.withTripadvisorGoogleReviews(ctx, activity)
+	}
+	if activity.Source == "" || activity.ExternalID == "" || a.places == nil {
 		return activity
 	}
 
-	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
-	defer cancel()
-
-	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID)
-	if err != nil {
-		slog.Warn("live place details resolve failed, falling back to stored row", "activity_id", activity.ID, "error", err)
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID)
+	if !ok {
 		return activity
 	}
 
@@ -902,6 +904,78 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
 	activity.GoogleMapsURI = detail.GoogleMapsURI
 	return activity
+}
+
+// withTripadvisorGoogleReviews fills a Tripadvisor row's empty review-cards
+// slot from Google (T3, tripadvisor-google-review-fallback): reviews on
+// Tripadvisor are compliance-gated to 5-bubble reviews on venues rated >=
+// 4.0 (see tripadvisorReviews), so a venue can carry a healthy Tripadvisor
+// review count and still have nothing quotable. When the row has a stored
+// google_place_id (T1's ResolveTripadvisorSubtype match) and its Details
+// blob carries no quotable Tripadvisor review, this calls PlaceDetails and
+// sets only GoogleReviews/GoogleMapsURI. Every other Tripadvisor row (no
+// stored place id, or it already has a quotable review) returns untouched,
+// same early return as before this task existed.
+//
+// Deliberately never touches Rating, ReviewCount, Description, or Details —
+// a Tripadvisor row's aggregate rating stays Tripadvisor's, verbatim,
+// regardless of what Google's Place Details response carries.
+//
+// Fallback-on-error contract mirrors withLiveDetails exactly: an
+// unconfigured places client, a resolve error, or a timeout all fall back to
+// the bare stored row, one warn log, no error surfaced. Reuses
+// detailResolveTimeout — same per-request, third-party Place Details call
+// shape as withLiveDetails' own, no reason for a different bound.
+func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
+	if activity.GooglePlaceID == "" || a.places == nil || hasTripadvisorReviews(activity.Details) {
+		return activity
+	}
+
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.GooglePlaceID)
+	if !ok {
+		return activity
+	}
+
+	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	activity.GoogleMapsURI = detail.GoogleMapsURI
+	return activity
+}
+
+// resolvePlaceDetails calls PlaceDetails for placeID within
+// detailResolveTimeout, the fallback-on-error step withLiveDetails and
+// withTripadvisorGoogleReviews both need identically: any error (including
+// a timeout, surfaced as ctx.Err()) logs one warning and reports ok=false so
+// the caller returns its bare stored row, no error surfaced to the request.
+func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeID string) (placesmap.PlaceDetail, bool) {
+	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
+	defer cancel()
+
+	detail, err := a.places.PlaceDetails(resolveCtx, placeID)
+	if err != nil {
+		slog.Warn("live place details resolve failed, falling back to stored row", "activity_id", activityID, "error", err)
+		return placesmap.PlaceDetail{}, false
+	}
+	return detail, true
+}
+
+// hasTripadvisorReviews reports whether details' `reviews` key carries any
+// quotable Tripadvisor review — absent, `null`, and an empty array all
+// count as none (T3, tripadvisor-google-review-fallback). Decodes just that
+// one key rather than the full category-specific Details shape (see
+// activitiessvc.Activity.Details' own doc on why only one of the 13 shapes
+// is ever valid for a given row), since presence is all that matters here,
+// not review content. Malformed JSON also reads as "none" — the same
+// best-effort-degrade convention mergeLiveDetails already uses — which lets
+// the Google fallback still fire rather than silently leaving the slot
+// empty over a stored-data problem this method has no way to repair.
+func hasTripadvisorReviews(details json.RawMessage) bool {
+	var d struct {
+		Reviews []json.RawMessage `json:"reviews"`
+	}
+	if err := json.Unmarshal(details, &d); err != nil {
+		return false
+	}
+	return len(d.Reviews) > 0
 }
 
 // liveDescription reads a Place Details response's description (T2): the
