@@ -86,6 +86,27 @@ run left off, since the read filter (`subcategory = ''`) and the write guard
 never touched — see the tool's package doc for why. Capture the printed
 before/after table into `engineering-notes.md` once run for real.
 
+Tripadvisor rows synced before `google_place_id` existed (tripadvisor-google-
+review-fallback T1) also need a one-time backfill, same shape as the tool
+above but its own command since the candidate filter and setter differ:
+
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+      go run ./cmd/backfillgoogleplaceid -dry-run
+
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+      go run ./cmd/backfillgoogleplaceid
+
+Same `-dry-run` and `-limit N` flags, same resume mechanism: the candidate
+read is published rows, filtered client-side on `source == "tripadvisor"` and
+empty `google_place_id` (`List` has no filter for either), and the write
+guard `SetGooglePlaceIDIfEmpty` rejects a row something else already set
+between the read and the write — same condition either way. Same fixed pace
+between Places calls. Reuses `ResolveTripadvisorSubtype` (T1) for the
+search/match — no second classification algorithm. A venue the resolver
+can't match is skipped and counted (`missed`), never written with a guess.
+Reports scanned/processed/resolved/written/already-set/missed/failed counts
+on completion.
+
 ## Testing
 
 - `go test ./...` — unit tests only (query-builder, validation, gRPC
