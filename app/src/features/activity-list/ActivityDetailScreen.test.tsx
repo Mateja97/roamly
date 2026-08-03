@@ -1124,6 +1124,94 @@ describe('ActivityDetailScreen', () => {
     });
   });
 
+  // T3 (detail-price-duration-purge): dedicated coverage for T2's shape
+  // changes — genuinely new fixtures only; points already proven by T2's own
+  // tests above (Culture's lone-Venue fold at "folds Culture's lone Venue
+  // value…", Art's 0-chip omission at "Art's stat grid omits entirely…",
+  // Sport's 2-column grid at "renders the Sport stat grid (Effort/Gear…)")
+  // aren't duplicated here — see engineering-notes.md's T3 entry.
+  describe('T3: empty-grid behavior and regression coverage', () => {
+    it('Wellness with only treatments (no other stat-worthy field): no stat grid, Treatments render as pills, no crash', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: {
+          category: 'wellness',
+          treatments: [{ item: 'Swedish massage' }, { item: 'Deep tissue massage' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      // No stat grid at all — factStripFields never reads a field for
+      // wellness post-T2, so neither of its retired chip labels can appear.
+      expect(screen.queryByText('Typical visit')).toBeNull();
+      expect(screen.queryByText('Price from')).toBeNull();
+      // Treatments render as pills (name only).
+      expect(screen.getByText('Treatments')).toBeTruthy();
+      expect(screen.getByText('Swedish massage')).toBeTruthy();
+      expect(screen.getByText('Deep tissue massage')).toBeTruthy();
+    });
+
+    it('Entertainment with only upcoming_shows: no stat grid, shows render as date-block rows with title only (no subline)', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        details: {
+          category: 'entertainment',
+          upcoming_shows: [{ date: '2026-09-01', title: 'Live jazz night' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={entertainment} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('Typical show')).toBeNull();
+      expect(screen.queryByText('Price from')).toBeNull();
+      expect(screen.getByText('Live jazz night')).toBeTruthy();
+    });
+
+    // The production-bug regression this whole system exists to prevent —
+    // unlike the T9 fixture above (denylisted/sentence-shaped hedges, which
+    // would fail `classifyField` even if a stale code path still read them),
+    // these values are well-formed, exactly the shape a legitimate scrape
+    // produced before T1 stopped collecting them. The fix has to be
+    // structural (the field is never read), not incidental (the value
+    // happens to be denylisted) — this fixture proves that.
+    it('Wellness: well-formed legacy price_from/typical_visit/treatments[].price/duration render nowhere, including the meta-line fold path', () => {
+      const wellness: Activity = {
+        ...activity,
+        category: 'wellness',
+        details: {
+          category: 'wellness',
+          typical_visit: '2-3 hrs',
+          price_from: '€25',
+          treatments: [{ item: 'Swedish massage', duration: '60 min', price: '€35' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={wellness} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('€25')).toBeNull();
+      expect(screen.queryByText('2-3 hrs')).toBeNull();
+      expect(screen.queryByText('€35')).toBeNull();
+      expect(screen.queryByText('60 min')).toBeNull();
+      // The treatment row itself survives, by name, as a pill.
+      expect(screen.getByText('Swedish massage')).toBeTruthy();
+    });
+
+    it('Entertainment: well-formed legacy price_from/typical_show_length/time_or_price render nowhere', () => {
+      const entertainment: Activity = {
+        ...activity,
+        category: 'entertainment',
+        details: {
+          category: 'entertainment',
+          typical_show_length: '2 hrs',
+          price_from: '€12',
+          upcoming_shows: [{ date: '2026-09-01', title: 'Live jazz night', time_or_price: '€15' }],
+        },
+      };
+      render(<ActivityDetailScreen activity={entertainment} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByText('€12')).toBeNull();
+      expect(screen.queryByText('2 hrs')).toBeNull();
+      expect(screen.queryByText('€15')).toBeNull();
+      expect(screen.getByText('Live jazz night')).toBeTruthy();
+    });
+  });
+
   describe('photo-set upgrade fetch (T4)', () => {
     it('fetches the T3 endpoint for this activity on open', () => {
       render(
