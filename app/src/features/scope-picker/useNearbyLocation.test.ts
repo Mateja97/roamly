@@ -77,4 +77,31 @@ describe('useNearbyLocation', () => {
     expect(result.current.state).toEqual({ status: 'unavailable' });
     jest.useRealTimers();
   });
+
+  describe('checkPermission', () => {
+    it('flips state to denied when already denied, with no request/GPS call', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
+
+      const { result } = renderHook(() => useNearbyLocation());
+      await act(async () => {
+        await result.current.checkPermission();
+      });
+
+      expect(result.current.state).toEqual({ status: 'denied' });
+      expect(mockedLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+      expect(mockedLocation.getCurrentPositionAsync).not.toHaveBeenCalled();
+    });
+
+    it('leaves state alone (no OS prompt) when granted or undetermined', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' } as never);
+
+      const { result } = renderHook(() => useNearbyLocation());
+      await act(async () => {
+        await result.current.checkPermission();
+      });
+
+      expect(result.current.state).toEqual({ status: 'idle' });
+      expect(mockedLocation.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+    });
+  });
 });

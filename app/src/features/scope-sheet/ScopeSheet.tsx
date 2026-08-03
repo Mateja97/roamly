@@ -26,6 +26,7 @@ import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { NEARBY_RADIUS_KM, RATING_OPTIONS } from '../activity-list/filters';
+import type { Scope } from '../scope-picker/types';
 import { useNearbyLocation } from '../scope-picker/useNearbyLocation';
 import type { NearbyLocationState } from '../scope-picker/useNearbyLocation';
 import { DISTANCE_STEP_KM, MAX_DISTANCE_KM, MIN_DISTANCE_KM, anywhereHasAnchor, defaultScopeDraft } from './scopeDraft';
@@ -61,6 +62,10 @@ type CityFetchState = { query: string; status: 'results' | 'no-match' | 'error';
 // Category/subtype controls are deliberately absent — they move to the Feed
 // (T3), not duplicated here.
 export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }: ScopeSheetProps) {
+  // `draft`/`error` are seeded straight from props above (via useState's
+  // initializer) rather than reset by an effect — the caller remounts this
+  // component (keyed on open/closed, same contract as FilterSheet) every
+  // time it opens, so a fresh mount already means a fresh draft.
   const [draft, setDraft] = useState<ScopeDraft>(initialDraft);
   const [count, setCount] = useState<number | null>(null);
   const [applying, setApplying] = useState(false);
@@ -139,6 +144,27 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
     return () => clearTimeout(timer);
   }, [cityQuery, draft.cities]);
 
+  // scopeDraft.ts's `cities`/`maxDistanceKm` comments claim "always empty"/
+  // "permanent null" for nearby — switching to nearby has to actually
+  // enforce that, not just leave stale Anywhere-only values sitting under
+  // `scope: 'nearby'` for onQuery/onApply to see. `coordinates`/`minRating`
+  // aren't scope-specific (a device anchor and a rating floor both still
+  // apply either way), so those carry over untouched.
+  function selectScope(scope: Scope) {
+    setDraft((prev) => (scope === 'nearby' ? { ...prev, scope, cities: [], maxDistanceKm: null } : { ...prev, scope }));
+  }
+
+  // Read-only permission check on entering the Nearby pane with no anchor
+  // yet — detects an already-denied permission on a fresh mount without
+  // requiring the "Turn on location" tap first (that tap is still what
+  // triggers an actual OS prompt for an undetermined user; this never does).
+  useEffect(() => {
+    if (visible && draft.scope === 'nearby' && !draft.coordinates) {
+      nearby.checkPermission();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission's identity is stable (useCallback with no deps); re-run only when the pane becomes relevant again
+  }, [visible, draft.scope, draft.coordinates]);
+
   function selectCity(city: CitySuggestion) {
     setDraft((prev) => ({ ...prev, cities: [...prev.cities, city] }));
     setCityQuery('');
@@ -216,7 +242,7 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
                 hint="Within reach"
                 selected={draft.scope === 'nearby'}
                 accessibilityLabel="Scope: Nearby"
-                onPress={() => setDraft((prev) => ({ ...prev, scope: 'nearby' }))}
+                onPress={() => selectScope('nearby')}
               />
               <ScopeTicket
                 icon={Globe}
@@ -224,7 +250,7 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
                 hint="Across the world"
                 selected={draft.scope === 'anywhere'}
                 accessibilityLabel="Scope: Anywhere"
-                onPress={() => setDraft((prev) => ({ ...prev, scope: 'anywhere' }))}
+                onPress={() => selectScope('anywhere')}
               />
             </View>
 
@@ -329,12 +355,11 @@ type NearbyPaneProps = {
 
 // design-spec.md T2's three Nearby panes: granted / not-yet-asked / denied.
 // `coordinates` present is the "granted" signal (either resolved by this
-// sheet or handed in already-anchored by the caller).
-// ponytail: `unavailable` (GPS fix failed after permission was already
-// granted) folds into this same explainer+button rather than a fourth pane
-// — the spec asks for three, and retrying via the same button is the same
-// affordance ScopePickerScreen already offers for this exact case. Add a
-// distinct copy/pane if a future spec calls one out.
+// sheet or handed in already-anchored by the caller). `unavailable` (GPS fix
+// failed after permission was already granted) gets its own branch below,
+// matching ScopePickerScreen's exact copy for this same case, rather than
+// silently falling through to the neutral not-yet-asked explainer with no
+// feedback at all.
 function NearbyPane({ coordinates, nearbyState, onTurnOnLocation }: NearbyPaneProps) {
   const busy = nearbyState.status === 'requesting-permission' || nearbyState.status === 'locating';
   const buttonFocus = useFocusable();
@@ -376,6 +401,24 @@ function NearbyPane({ coordinates, nearbyState, onTurnOnLocation }: NearbyPanePr
           style={[styles.secondaryButton, buttonFocus.focused && styles.secondaryButtonFocused]}
         >
           <Text style={styles.secondaryButtonLabel}>Open settings</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (nearbyState.status === 'unavailable') {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.paneText}>We couldn&apos;t get your current location. Try again, or choose Anywhere instead.</Text>
+        <Pressable
+          onPress={onTurnOnLocation}
+          onFocus={buttonFocus.onFocus}
+          onBlur={buttonFocus.onBlur}
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+          style={[styles.secondaryButton, buttonFocus.focused && styles.secondaryButtonFocused]}
+        >
+          <Text style={styles.secondaryButtonLabel}>Try again</Text>
         </Pressable>
       </View>
     );
@@ -487,7 +530,7 @@ function AnywherePane({
         )}
 
         {draft.cities.length > 0 && (
-          <View style={styles.chipsRow}>
+          <View style={styles.cityChipsRow}>
             {draft.cities.map((city) => (
               <FilterChip key={cityKey(city)} variant="remove" label={`${city.city}, ${city.country}`} onPress={() => onRemoveCity(city)} />
             ))}
@@ -793,7 +836,17 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.error,
   },
+  // FilterGroup's own `group` style already supplies the label->chips gap
+  // (space[3]) — no marginTop here, or it stacks on top of that gap (was
+  // 24px total on Minimum rating vs FilterSheet's 12px for the identical
+  // group). The city-chips row below isn't inside a `group`-gapped
+  // container, so it keeps its own top margin via cityChipsRow instead.
   chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space[2],
+  },
+  cityChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: space[2],

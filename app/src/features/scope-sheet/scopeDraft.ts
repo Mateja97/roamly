@@ -1,15 +1,16 @@
 import type { CitySuggestion } from '../../api/cities';
 import type { RatingOption } from '../activity-list/types';
 import type { Coordinates, Scope } from '../scope-picker/types';
-import { MAX_DISTANCE_KM, MIN_DISTANCE_KM } from '../search-setup/anywhereSearch';
 
-// design-spec.md T2: the app's one remaining Anywhere distance range —
-// reuses AnywhereSearchScreen's existing 5-500km constants rather than
-// declaring a second copy. FilterSheet's separate 100-2000km range stays
-// where it is (that file isn't touched here — T4 deletes it once T3/T4
-// land, per product-tasks.md's explicit out-of-scope note for this task).
-export { MIN_DISTANCE_KM, MAX_DISTANCE_KM };
-
+// design-spec.md T2: the app's one remaining Anywhere distance range — this
+// sheet's own canonical copy, not imported from `search-setup/anywhereSearch`
+// (T4 deletes that whole folder once T3/T4 land; importing from a file
+// scheduled for deletion would take the sheet's range down with it). Values
+// currently match that file's identical MIN_DISTANCE_KM/MAX_DISTANCE_KM by
+// design (Decision 5's single canonical range) — T4's retirement pass is the
+// point where the app is left with exactly one copy instead of two.
+export const MIN_DISTANCE_KM = 5;
+export const MAX_DISTANCE_KM = 500;
 // Reuses AnywhereSearchScreen's existing step convention (Slider step={5}).
 export const DISTANCE_STEP_KM = 5;
 

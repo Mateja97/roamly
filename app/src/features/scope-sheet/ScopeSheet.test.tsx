@@ -75,9 +75,30 @@ describe('ScopeSheet', () => {
       expect(screen.queryByRole('button', { name: /turn on location/i })).toBeNull();
     });
 
-    it('shows the Open settings pane when permission is already denied', async () => {
+    it('shows the Open settings pane on a fresh mount when permission is already denied (no tap needed)', async () => {
       mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
       const openSettings = jest.spyOn(Linking, 'openSettings').mockImplementation(() => Promise.resolve());
+
+      render(
+        <ScopeSheet
+          visible
+          initialDraft={defaultScopeDraft('nearby')}
+          onQuery={jest.fn().mockResolvedValue({ status: 'success', activities: [] })}
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+
+      expect(screen.getByText(/use anywhere instead/i)).toBeTruthy();
+      const settingsButton = screen.getByRole('button', { name: 'Open settings' });
+      fireEvent.press(settingsButton);
+      expect(openSettings).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows the "Try again" pane, matching ScopePickerScreen\'s copy, when the GPS fix fails after permission is granted', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+      mockedLocation.getCurrentPositionAsync.mockRejectedValue(new Error('timeout'));
 
       render(
         <ScopeSheet
@@ -94,10 +115,53 @@ describe('ScopeSheet', () => {
         fireEvent.press(screen.getByRole('button', { name: 'Turn on location' }));
       });
 
-      expect(screen.getByText(/use anywhere instead/i)).toBeTruthy();
-      const settingsButton = screen.getByRole('button', { name: 'Open settings' });
-      fireEvent.press(settingsButton);
-      expect(openSettings).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("We couldn't get your current location. Try again, or choose Anywhere instead.")).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    });
+  });
+
+  describe('Scope switch', () => {
+    it('clears Anywhere-only fields (cities/max distance) when switching back to Nearby, keeping minRating', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' } as never);
+      mockedSuggest.mockResolvedValue({
+        status: 'success',
+        suggestions: [{ city: 'Lisbon', country: 'Portugal', centroid: { lat: 38.7, lng: -9.1 } }],
+      });
+      render(
+        <ScopeSheet
+          visible
+          initialDraft={defaultScopeDraft('nearby')}
+          onQuery={jest.fn().mockResolvedValue({ status: 'success', activities: activities(1) })}
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Scope: Anywhere' }));
+      });
+      fireEvent.changeText(screen.getByLabelText('Search cities'), 'Lis');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Lisbon, Portugal' })).toBeTruthy());
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Lisbon, Portugal' }));
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
+      });
+      expect(screen.getByText('1 selected')).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Scope: Nearby' }));
+      });
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Scope: Anywhere' }));
+      });
+
+      // City cleared by the round trip through Nearby...
+      expect(screen.getByText('0 selected')).toBeTruthy();
+      // ...minRating (not scope-specific) survives it.
+      expect(screen.getByRole('button', { name: '4.5+, selected' })).toBeTruthy();
     });
   });
 
