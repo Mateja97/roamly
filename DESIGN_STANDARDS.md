@@ -47,7 +47,7 @@ puts the gold brand into the structure, not only the text.
 | `--error` | `#F5B79B` | light coral — true red disappears on wine |
 | `--error-hover` | `#F0A588` | destructive fill, hover (darker coral) |
 | `--card-highlight` | `rgba(206,144,66,0.5)` | gold 1px top edge on cards (decorative) |
-| `--glow` | `rgba(206,144,66,0.15)` | radial gold accent behind ONE focal element per screen |
+| `--glow` | `rgba(206,144,66,0.16)` | radial gold accent behind ONE focal element per screen |
 | `--surface-gradient` | — | faint top-lit gradient for large cards (`#93313A → #8A2C35`) |
 | `--scrim` | `rgba(42,14,17,0.72)` | modal dim behind bottom sheets/overlays (wine-black tint) |
 | `--photo-viewer-bg` | `#0F0405` | opaque near-black backdrop for the fullscreen photo viewer — photos pop against it; the app renders no other body UI on this surface |
@@ -628,10 +628,15 @@ everywhere else. Never place two side by side.
 gold fill, `--ink` label color throughout. Row layout, vertically centered:
 **pin well → dashed perforation → two-line label → go-disc**.
 
-- **Pin well (left):** a small circular gold-tinted well
-  (`rgba(206,144,66,0.14)`, the same tint as the Scope ticket's stub) holding
-  a 26px `--primary` gold pin icon (`lucide` `MapPin`, `aria-hidden` —
-  decorative, the title/accessible-name carry the meaning).
+- **Pin well (left):** a small circular **ink**-tinted well
+  (`rgba(42,14,17,0.10)`) holding a 26px **`--ink`** pin icon (`lucide`
+  `MapPin`, `aria-hidden` — decorative, the title/accessible-name carry the
+  meaning). Not the Scope ticket stub's gold tint / gold icon: that
+  combination was derived against the Scope ticket's wine surface-gradient
+  body, and gold-on-this-card's-own-gold `--primary` fill doesn't read at
+  all — confirmed by screenshot in review round 1. `--ink` on both the well
+  and the icon matches the label/go-disc contrast logic already used
+  elsewhere on this same gold card.
 - **Perforation:** a 2px dashed vertical rule, `rgba(42,14,17,0.35)` — same
   device as the Scope ticket stub's dashed tear-line (native dashed border,
   not SVG, since it's a short vertical rule rather than a full-width line).
@@ -648,7 +653,11 @@ no hover, so it can't be the only feedback state). No in-flight/disabled
 state: the CTA only navigates, it makes no request of its own.
 
 **Glow:** the one per-screen `--glow` sits behind this CTA (the screen's one
-focal element), not behind the brand block above it.
+focal element), not behind the brand block above it. The glow's container
+must extend past the opaque card's own bounds (e.g. extra padding above the
+card) so the radial fade actually bleeds into view — sizing the gradient
+container to exactly match the card leaves 100% of it hidden behind the
+card's own opaque fill (review round 1, Important #1).
 
 **Accessibility:** the whole card is one `Pressable`/button with an explicit
 accessible name (e.g. "Start exploring, real places picked for right now");

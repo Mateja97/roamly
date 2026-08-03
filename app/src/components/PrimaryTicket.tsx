@@ -10,7 +10,11 @@ type PrimaryTicketProps = {
   onPress: () => void;
 };
 
-const PIN_WELL_SIZE = 44;
+// ponytail: 36 (not the spec's 26px icon size, but not the original 44
+// either) — snug enough around the 26px icon to read as a well, and the
+// horizontal room it frees up (vs. 44) is what keeps the sub-label on one
+// line at 375pt (review round 1, Important #4).
+const PIN_WELL_SIZE = 36;
 const GO_DISC_SIZE = 40;
 
 // DESIGN_STANDARDS.md's "Primary ticket" Standard addition (Components):
@@ -59,9 +63,9 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: radius.lg,
     backgroundColor: colors.primary,
-    paddingHorizontal: space[4],
+    paddingHorizontal: space[3],
     paddingVertical: space[2],
-    gap: space[3],
+    gap: space[2],
     outlineStyle: 'solid',
     outlineWidth: 0,
   },
@@ -78,7 +82,11 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(206,144,66,0.14)',
+    // review round 1, Important #2: the ScopeTicket stub's gold tint
+    // (rgba(206,144,66,0.14)) was derived against a wine surface — on this
+    // card's own gold --primary fill it's gold-on-gold and invisible. Ink
+    // tint instead, so the well itself reads as a recess in the gold.
+    backgroundColor: 'rgba(42,14,17,0.10)',
   },
   divider: {
     width: 0,

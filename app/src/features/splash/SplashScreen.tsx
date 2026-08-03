@@ -22,10 +22,21 @@ type SplashScreenProps = {
 // hero->underline, 34 bottom spacer.
 const TOP_PADDING = 66;
 const GUTTER = 20;
+// Spec tension, not settled here (review round 1, Minor): the source spec's
+// "destination-block internal gap 20px" reads as internal to the
+// destination field, but design-spec.md T1's own prose puts 12px between
+// the tagline and the "Destination" overline instead. Applied as the gap
+// from the brand block (Wordmark+tagline) down to the destination field —
+// the tie-break documented in engineering-notes.md — pending the designer
+// settling which of the two docs is wrong.
 const DESTINATION_BLOCK_GAP = 20;
 const OVERLINE_TO_HERO_GAP = 12;
 const HERO_TO_UNDERLINE_GAP = 16;
 const BOTTOM_SPACER = 34;
+// Not a spec-named value — the room the glow's radial fade needs to bleed
+// above the CTA card instead of being fully occluded by it (review round 1,
+// Important #1).
+const GLOW_BLEED = space[6];
 
 // First-launch-only branded splash (T1): reuses FlightPathBackground and
 // Wordmark unchanged, Marcellus "Where to?" hero (36px per the spec's
@@ -81,7 +92,7 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
 
         <View style={styles.spacer} />
 
-        <View>
+        <View style={styles.ctaGlowWrap}>
           <LinearGradient
             colors={[colors.glow, 'transparent']}
             start={{ x: 0.5, y: 0 }}
@@ -147,5 +158,12 @@ const styles = StyleSheet.create({
   },
   spacer: {
     flex: 1,
+  },
+  // review round 1, Important #1: the gradient is `absoluteFill` on this
+  // wrapper — sizing the wrapper to the opaque card's exact bounds left
+  // 100% of the glow hidden behind it. GLOW_BLEED extends the wrapper
+  // above the card so the top band of the radial fade shows over --bg.
+  ctaGlowWrap: {
+    paddingTop: GLOW_BLEED,
   },
 });
