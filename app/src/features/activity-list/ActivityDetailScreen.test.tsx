@@ -1457,6 +1457,11 @@ describe('ActivityDetailScreen', () => {
             review_count: 104,
             web_url: 'https://tripadvisor.example/place',
           },
+          // T4: this café already has its own quotable review, so the
+          // widened fetch gate (tested separately below) doesn't apply here
+          // — keeps this test scoped to the café Tripadvisor-vs-Places-live
+          // precedence question alone.
+          reviews: [{ rating: 5, date: '1 June 2026', text: 'Lovely little spot.' }],
         },
       };
       render(<ActivityDetailScreen activity={tripadvisorCafe} showDistance onBack={jest.fn()} />);
@@ -1487,6 +1492,266 @@ describe('ActivityDetailScreen', () => {
       await waitFor(() => expect(screen.queryByTestId('rating-skeleton')).toBeNull());
       expect(announce).toHaveBeenCalledWith('Loading place details');
       expect(announce).not.toHaveBeenCalledWith('Place details added');
+    });
+  });
+
+  // T4 (tripadvisor-google-review-fallback): the widened fetch gate + the
+  // Google review-card fallback it unlocks for a review-less Tripadvisor row.
+  describe('Google review-card fallback for a review-less Tripadvisor row (T4)', () => {
+    const reviewlessTripadvisor: Activity = {
+      ...activity,
+      details: {
+        category: 'restaurants',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          web_url: 'https://tripadvisor.example/place',
+        },
+        // No `reviews` key — the fetch-gate's trigger shape.
+      },
+    };
+    const tripadvisorWithReviews: Activity = {
+      ...reviewlessTripadvisor,
+      details: {
+        category: 'restaurants',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          web_url: 'https://tripadvisor.example/place',
+        },
+        reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
+      },
+    };
+    const googleReviews = [
+      {
+        authorAttribution: { displayName: 'Nina', uri: 'https://maps.google.com/contrib/1' },
+        rating: 5,
+        text: 'Wonderful evening.',
+        date: '2026-06-01T00:00:00Z',
+      },
+    ];
+
+    it('fires getActivity for a review-less Tripadvisor row', () => {
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).toHaveBeenCalledWith(reviewlessTripadvisor.id);
+    });
+
+    it('does not fire getActivity for a Tripadvisor row that already has reviews', () => {
+      render(<ActivityDetailScreen activity={tripadvisorWithReviews} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).not.toHaveBeenCalled();
+    });
+
+    it('shows the reviews skeleton in the slot while the fallback fetch is pending', () => {
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
+    });
+
+    it('fills the slot with Google review cards once the fetch settles with reviews + a maps link', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisor,
+          google_reviews: googleReviews,
+          google_maps_uri: 'https://maps.google.com/place/xyz',
+        },
+      });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      expect(screen.getByText('Wonderful evening.')).toBeTruthy();
+      expect(screen.queryByTestId('reviews-skeleton')).toBeNull();
+    });
+
+    // Round-1 review finding: `hasLiveContent` is true for any Tripadvisor
+    // row (its own permanent `rating > 0` always satisfies it), so it can't
+    // gate this announcement on the fallback path — a row where the widened
+    // fetch found no Google reviews would still announce "added" even
+    // though TripadvisorBlock's slot stays collapsed exactly as before.
+    it('does NOT announce "added" when the widened fetch resolves with no Google reviews (nothing genuinely rendered)', async () => {
+      // `jest.spyOn` on an already-spied method (this file spies on this
+      // same method repeatedly, never restoring) returns the same mock
+      // instance with prior tests' call history still attached — clear it
+      // so this test's assertions are scoped to its own render only.
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      announce.mockClear();
+      mockedGetActivity.mockResolvedValue({ status: 'success', activity: { ...reviewlessTripadvisor } });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(announce).toHaveBeenCalledWith('Loading place details');
+      expect(announce).not.toHaveBeenCalledWith('Place details added');
+    });
+
+    it('does NOT announce "added" when Google reviews arrive with no maps link (slot still collapses, compliance)', async () => {
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      announce.mockClear();
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisor,
+          google_reviews: googleReviews,
+          google_maps_uri: undefined,
+        },
+      });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(announce).not.toHaveBeenCalledWith('Place details added');
+    });
+
+    it('DOES announce "added" once the fetch genuinely populates the slot with Google review cards', async () => {
+      const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      announce.mockClear();
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisor,
+          google_reviews: googleReviews,
+          google_maps_uri: 'https://maps.google.com/place/xyz',
+        },
+      });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      expect(announce).toHaveBeenCalledWith('Place details added');
+    });
+
+    it('collapses silently when Google reviews arrive with no maps link (compliance — no cards, no error)', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisor,
+          google_reviews: googleReviews,
+          google_maps_uri: undefined,
+        },
+      });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByText('Wonderful evening.')).toBeNull();
+    });
+
+    it('collapses silently on fetch failure — same as the empty case, no error banner', async () => {
+      mockedGetActivity.mockResolvedValue({ status: 500, message: 'boom' });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByText('boom')).toBeNull();
+    });
+
+    it('keeps the Tripadvisor carousel once a fetch settles but the row already had its own reviews (no switch to Google)', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisor,
+          google_reviews: googleReviews,
+          google_maps_uri: 'https://maps.google.com/place/xyz',
+        },
+      });
+      render(<ActivityDetailScreen activity={tripadvisorWithReviews} showDistance onBack={jest.fn()} />);
+      expect(screen.getByText('“Great spot.”')).toBeTruthy();
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+    });
+
+    it('never switches on any isPlacesLive-gated treatment for this row, in every case (pending, settled-with-fallback, settled-empty)', async () => {
+      const { unmount } = render(
+        <ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />,
+      );
+      // Pending: title-block gold star/skeleton never shows for a
+      // Tripadvisor row — the plate above carries the rating instead.
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.getByText('4.6')).toBeTruthy(); // Tripadvisor's own plate rating
+      unmount();
+
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisor,
+          google_reviews: googleReviews,
+          google_maps_uri: 'https://maps.google.com/place/xyz',
+        },
+      });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisor} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      // No Roamly-drawn score header (isPlacesLive-only "Reviews" overline +
+      // score number) ever appears beside the borrowed Google cards.
+      expect(screen.queryByText('Reviews')).toBeNull();
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      // Still exactly one rating on screen — Tripadvisor's plate figure.
+      expect(screen.getAllByText('4.6')).toHaveLength(1);
+    });
+
+    // Round-1 review finding: the describe's shared `reviewlessTripadvisor`
+    // fixture above is `category: 'restaurants'`, which is never in
+    // `PLACES_LIVE_CATEGORIES` — `isPlacesLive` is false there regardless of
+    // the Tripadvisor check, so the tests above prove nothing about the one
+    // category where `isPlacesLive` could actually flip on: `cafes`
+    // (#103/#104, dual-sourced). This block re-runs the same pending +
+    // settled assertions against a Tripadvisor-attributed, review-less
+    // *café* — the exact row shape this PR's widened fetch gate targets —
+    // to pin that `isPlacesLive`'s `!tripadvisorAttribution(seedActivity)`
+    // exclusion actually holds for it. Confirmed non-vacuous by hand: on
+    // `main` (pre-T4) this fixture never calls `getActivity` at all (no
+    // widened-fetch gate existed yet); on this branch it does, and every
+    // isPlacesLive-gated treatment below still stays off.
+    const reviewlessTripadvisorCafe: Activity = {
+      ...activity,
+      category: 'cafes',
+      details: {
+        category: 'cafes',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          web_url: 'https://tripadvisor.example/place',
+        },
+        // No `reviews` key — the fetch-gate's trigger shape.
+      },
+    };
+
+    it('fires getActivity for a review-less Tripadvisor CAFE (the one category isPlacesLive could flip on for)', () => {
+      render(<ActivityDetailScreen activity={reviewlessTripadvisorCafe} showDistance onBack={jest.fn()} />);
+      expect(mockedGetActivity).toHaveBeenCalledWith(reviewlessTripadvisorCafe.id);
+    });
+
+    it('shows the reviews skeleton in the slot while the fallback fetch is pending (cafe)', () => {
+      render(<ActivityDetailScreen activity={reviewlessTripadvisorCafe} showDistance onBack={jest.fn()} />);
+      expect(screen.getByTestId('reviews-skeleton')).toBeTruthy();
+    });
+
+    it('never switches on any isPlacesLive-gated treatment for a Tripadvisor cafe, in every case (pending, settled-with-fallback, settled-empty)', async () => {
+      const { unmount } = render(
+        <ActivityDetailScreen activity={reviewlessTripadvisorCafe} showDistance onBack={jest.fn()} />,
+      );
+      // Pending: none of the isPlacesLive-only skeletons show for a
+      // Tripadvisor-attributed cafe — the Tripadvisor plate carries the
+      // rating instead, same as the restaurants case above.
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByTestId('unique-section-skeleton')).toBeNull();
+      expect(screen.getByText('4.6')).toBeTruthy(); // Tripadvisor's own plate rating
+      unmount();
+
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...reviewlessTripadvisorCafe,
+          google_reviews: googleReviews,
+          google_maps_uri: 'https://maps.google.com/place/xyz',
+        },
+      });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisorCafe} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      // No Roamly-drawn score header (isPlacesLive-only "Reviews" overline +
+      // score number) ever appears beside the borrowed Google cards.
+      expect(screen.queryByText('Reviews')).toBeNull();
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      // Still exactly one rating on screen — Tripadvisor's plate figure.
+      expect(screen.getAllByText('4.6')).toHaveLength(1);
+    });
+
+    it('collapses silently for a Tripadvisor cafe when the fallback fetch settles with nothing (settled-empty)', async () => {
+      mockedGetActivity.mockResolvedValue({ status: 'success', activity: { ...reviewlessTripadvisorCafe } });
+      render(<ActivityDetailScreen activity={reviewlessTripadvisorCafe} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('reviews-skeleton')).toBeNull());
+      expect(screen.queryByTestId('google-attribution-plate-detail')).toBeNull();
+      expect(screen.queryByTestId('rating-skeleton')).toBeNull();
+      expect(screen.getAllByText('4.6')).toHaveLength(1);
     });
   });
 

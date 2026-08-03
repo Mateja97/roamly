@@ -189,13 +189,23 @@ export function ActivityDetailScreen({
   // excludes any row `tripadvisorAttribution` already claims.
   const isPlacesLive =
     PLACES_LIVE_CATEGORIES.has(seedActivity.category) && !tripadvisorAttribution(seedActivity);
-  // A Tripadvisor/admin row is never skeletoned and the merge can't improve
-  // it (T2's own gate never live-merges these), so it starts (and stays)
-  // settled — the effect below skips the round trip entirely for it,
-  // rather than fetch-and-discard on every open.
-  const [detailsPending, setDetailsPending] = useState(isPlacesLive);
+  // T4 (tripadvisor-google-review-fallback): a Tripadvisor row with no
+  // quotable reviews of its own also needs the round trip now — activitiessvc's
+  // GetByID live-merges Google reviews/maps link onto exactly that shape.
+  // Decided from the seed's own `details.reviews`, before spending the
+  // request. `isPlacesLive` itself is untouched, so every isPlacesLive-gated
+  // treatment below (score header, title-block rating, googleReviewsCardShown)
+  // stays off for a Tripadvisor row in every case.
+  const isReviewlessTripadvisor =
+    Boolean(tripadvisorAttribution(seedActivity)) && tripadvisorReviews(seedActivity).length === 0;
+  const shouldFetchDetails = isPlacesLive || isReviewlessTripadvisor;
+  // A Tripadvisor row with its own reviews (or any other non-Places-live,
+  // non-fallback row) is never skeletoned and the merge can't improve it, so
+  // it starts (and stays) settled — the effect below skips the round trip
+  // entirely for it, rather than fetch-and-discard on every open.
+  const [detailsPending, setDetailsPending] = useState(shouldFetchDetails);
   useEffect(() => {
-    if (!isPlacesLive) return;
+    if (!shouldFetchDetails) return;
     let cancelled = false;
     // design-spec.md's Accessibility notes: one polite loading status for
     // the whole enriching region.
@@ -222,15 +232,24 @@ export function ActivityDetailScreen({
         }));
         // Only announce "added" when the merge genuinely put something new
         // on screen — a merge that collapsed every block is nothing to
-        // tell an AT user arrived.
-        if (hasLiveContent(merged)) AccessibilityInfo.announceForAccessibility('Place details added');
+        // tell an AT user arrived. On the reviewless-Tripadvisor fallback
+        // path, `hasLiveContent` is useless as that gate: every Tripadvisor
+        // row already has its own permanent `rating > 0`, so it'd read
+        // "true" even when the widened fetch found no Google reviews and
+        // TripadvisorBlock's slot stays collapsed exactly as before — check
+        // the same `googleReviews.length > 0 && googleMapsUri` condition
+        // TripadvisorBlock itself renders cards on instead.
+        const addedLiveContent = isPlacesLive
+          ? hasLiveContent(merged)
+          : (merged.google_reviews?.length ?? 0) > 0 && Boolean(merged.google_maps_uri);
+        if (addedLiveContent) AccessibilityInfo.announceForAccessibility('Place details added');
       }
       setDetailsPending(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [seedActivity.id, isPlacesLive]);
+  }, [seedActivity.id, shouldFetchDetails, isPlacesLive]);
 
   const heroPhoto = photos[heroIndex];
   const metaText = metaDistanceText(activity, showDistance);
@@ -746,6 +765,13 @@ export function ActivityDetailScreen({
                   tripadvisor={tripadvisor}
                   rating={activity.rating}
                   reviews={reviews}
+                  // T4: the empty-slot Google fallback — same MAX_REVIEW_CARDS
+                  // cap as the Places-live call site below, same maps-link
+                  // compliance gate (TripadvisorBlock itself won't render
+                  // cards without it).
+                  googleReviews={activity.google_reviews?.slice(0, MAX_REVIEW_CARDS) ?? []}
+                  googleMapsUri={activity.google_maps_uri}
+                  reviewsPending={reviews.length === 0 && detailsPending}
                   address={address}
                   ctaBusy={ctaBusy}
                   onCallPhone={handleCallPhone}

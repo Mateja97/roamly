@@ -953,6 +953,23 @@ bubbles" rule.
   the lone card with **no dots and no prev/next** (a dead pager is noise); the
   section is **omitted entirely** when the place has no qualifying review.
 
+**Empty review slot → Google review cards (provider precedence).** A Tripadvisor
+row's review-cards slot resolves in exactly one order: **(1)** the Tripadvisor
+carousel above whenever the place has at least one quotable review; **(2)** else,
+when live Google reviews **and** a `googleMapsUri` exist for that same venue, the
+**Google attribution plate**'s `detail` variant (recipe below) fills that same
+slot, in place — no new surface, no second section, no heading announcing the
+swap; **(3)** else nothing renders (silent omission, never an empty state, never
+an error). The two never appear together, and each provider keeps its **own**
+attribution intact and unmodified — Tripadvisor's white plate and API-hosted
+bubbles for Tripadvisor content, Google's dark `--surface` plate with per-review
+author credit and the "View on Google Maps" link for Google content; the Google
+cards' compliance gate (no maps link → no cards, silently) applies here exactly as
+it does on a Places-live row. The row's **aggregate rating stays Tripadvisor's**
+whichever cards show: no provider's rating, star, review count, or ranking is ever
+drawn from the other's data, and borrowed Google cards never bring the generic
+Roamly score header with them (compliance rule 03). No new token.
+
 Composes from `--attribution-plate`, `--ink`, `--border`, `--primary`, `--text`,
 `--surface-hover`, `--radius`, `--radius-full`, `--space-1`/`--space-2`/`--space-3`/
 `--space-4`, `--font-size-xs`/`--font-size-sm`, and the platform `<Image>`. No new
@@ -963,7 +980,9 @@ token.
 The required on-surface attribution whenever **live Google Places** content
 renders (the 10 Places-sourced categories — cafes, nightlife, nature, sport,
 kids, culture, art, wellness, shopping, entertainment; Restaurants/Bars are
-Tripadvisor's and use the Partner attribution plate above). Google's Places
+Tripadvisor's and use the Partner attribution plate above), except when it
+fills a Tripadvisor row's empty review slot (see the precedence rule above).
+Google's Places
 Terms mandate, wherever their data shows: **Google Maps branding** (the logo or
 the literal words "Google Maps" — **never a bare "Google"**), **per-review
 author attribution** (avatar + name + a link to the author's Google profile), a
