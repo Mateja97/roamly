@@ -718,12 +718,14 @@ describe('ActivityDetailScreen', () => {
     // T2: Entertainment's stat grid is now always empty (`factStripFields`
     // returns `[]` unconditionally), so `foldedFactChip` can never be
     // defined for this category any more — the old 5-candidate collision
-    // this metaLineOverflow guard was written for (category + subtype +
-    // distance + neighborhood + a folded price_from) can no longer occur,
-    // since `metaExtras` (neighborhood) is Entertainment-only and a fold is
-    // Entertainment-never now. Category + subtype + distance + neighborhood
-    // is only 4 real candidates either way (the fold never sat among them,
-    // now it can't). This test pins that all four keep showing together.
+    // the (now-deleted) `metaLineOverflow` guard existed for (category +
+    // subtype + distance + neighborhood + a folded price_from) can no
+    // longer occur, since `metaExtras` (neighborhood) is Entertainment-only
+    // and a fold is Entertainment-never now. Category + subtype + distance +
+    // neighborhood is only 4 real candidates either way (the fold never sat
+    // among them, now it can't). This test pins that all four keep showing
+    // together, unconditionally (no eviction logic left to drop any one of
+    // them).
     it('keeps category, subtype, distance, and neighborhood together (a stat can never fold in to compete for the slot any more)', () => {
       const entertainment: Activity = {
         ...activity,

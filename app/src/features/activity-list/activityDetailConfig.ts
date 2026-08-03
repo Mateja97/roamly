@@ -47,7 +47,6 @@ export type CompactRow = {
   leading: string;
   main: string;
   trailing?: string;
-  trailingStyle?: 'muted';
   // Mockup's Itinerary rows render `leading` as a 22px gold-bordered numbered
   // circle instead of the plain wide text column sized for a time (e.g.
   // Nightlife's `21:00`) — every other `compact` consumer omits this and
@@ -820,25 +819,21 @@ export function uniqueSection(
   const d = activity.details;
   if (!d) return undefined;
   switch (d.category) {
-    case 'restaurants':
+    case 'restaurants': {
       // T2: was the 'nameprice' shape (name + price column) — now pills,
       // name only. `.price` (`ItemPrice.price`) is dropped at render time;
       // the backend model keeps the field (not this task's scope).
-      return d.popular_dishes?.length
-        ? {
-            shape: 'pills',
-            heading: 'Popular dishes',
-            items: d.popular_dishes.map((item) => item.name),
-          }
-        : undefined;
-    case 'cafes':
-      return d.on_the_bar?.length
-        ? {
-            shape: 'pills',
-            heading: 'On the bar',
-            items: d.on_the_bar.map((item) => item.name),
-          }
-        : undefined;
+      // Round 2 fix: each name now runs through `classifyPhrases` (same
+      // per-item survival rule as Wellness' Treatments/Tours' checklists
+      // below) — a blank/invalid name drops individually instead of
+      // rendering an empty pill, and 0 survivors omits the section.
+      const items = classifyPhrases(d.popular_dishes?.map((item) => item.name));
+      return items.length ? { shape: 'pills', heading: 'Popular dishes', items } : undefined;
+    }
+    case 'cafes': {
+      const items = classifyPhrases(d.on_the_bar?.map((item) => item.name));
+      return items.length ? { shape: 'pills', heading: 'On the bar', items } : undefined;
+    }
     case 'bars':
       return d.signature_pours?.length
         ? {
@@ -899,7 +894,6 @@ export function uniqueSection(
               leading: l.time,
               main: l.act,
               trailing: l.stage,
-              trailingStyle: 'muted' as const,
             })),
           }
         : undefined;

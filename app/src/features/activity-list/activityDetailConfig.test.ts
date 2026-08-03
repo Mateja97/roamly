@@ -594,6 +594,37 @@ describe('uniqueSection — Restaurants/Bars/Cafés (T6/T2)', () => {
     expect(uniqueSection(activity)).toBeUndefined();
   });
 
+  // Round-2 fix: a blank/denylisted name used to render as an empty pill
+  // (the retired 'nameprice' shape's `isEmptyNamePriceList` + per-row
+  // `.trim()` filter died with it) — now runs through the same
+  // `classifyPhrases` survival rule as Wellness' Treatments/Tours'
+  // checklists, so a blank name drops individually and its siblings render.
+  it('Restaurants: drops a popular dish whose name is blank, keeping its siblings', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      popular_dishes: [
+        { name: 'Truffle pasta', price: '€14' },
+        { name: '', price: '€8' },
+      ],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'pills',
+      heading: 'Popular dishes',
+      items: ['Truffle pasta'],
+    });
+  });
+
+  it('Restaurants: "Popular dishes" section omits (0 survivors) when every name is blank', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      popular_dishes: [
+        { name: '', price: '€8' },
+        { name: '   ', price: '€9' },
+      ],
+    });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
   it('Bars: "Signature pours" using the pills density', () => {
     const activity = baseActivity({
       category: 'bars',
@@ -620,6 +651,33 @@ describe('uniqueSection — Restaurants/Bars/Cafés (T6/T2)', () => {
 
   it('Cafés: "On the bar" section omits when the list is empty', () => {
     const activity = baseActivity({ category: 'cafes', on_the_bar: [] });
+    expect(uniqueSection(activity)).toBeUndefined();
+  });
+
+  // Round-2 fix: same blank-name guard as Restaurants' Popular dishes above.
+  it('Cafés: drops an on-the-bar item whose name is blank, keeping its siblings', () => {
+    const activity = baseActivity({
+      category: 'cafes',
+      on_the_bar: [
+        { name: 'Flat white', price: '€2.80' },
+        { name: '', price: '€3' },
+      ],
+    });
+    expect(uniqueSection(activity)).toEqual({
+      shape: 'pills',
+      heading: 'On the bar',
+      items: ['Flat white'],
+    });
+  });
+
+  it('Cafés: "On the bar" section omits (0 survivors) when every name is blank', () => {
+    const activity = baseActivity({
+      category: 'cafes',
+      on_the_bar: [
+        { name: '', price: '€3' },
+        { name: '   ', price: '€4' },
+      ],
+    });
     expect(uniqueSection(activity)).toBeUndefined();
   });
 });
@@ -1187,7 +1245,7 @@ describe('uniqueSection — nightlife/nature/sport (T7)', () => {
       shape: 'schedule',
       heading: 'Tonight',
       density: 'compact',
-      rows: [{ leading: '22:00', main: 'DJ Set', trailing: 'Main', trailingStyle: 'muted' }],
+      rows: [{ leading: '22:00', main: 'DJ Set', trailing: 'Main' }],
     });
   });
 

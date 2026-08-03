@@ -275,23 +275,6 @@ export function ActivityDetailScreen({
   // `kidsAgeLabel`), so it's counted here as-is, same treatment as
   // `foldedFactChip.value` below.
   const kidsAge = kidsAgeLabel(activity);
-  // T5 round-4 fix: round 3's guard counted *assumed* candidates (2 lead
-  // items, always) instead of what MetaLine will actually render, so it
-  // evicted `metaText` even when the real count never reached the 4-item
-  // cap — e.g. empty/off-taxonomy `subcategory` (no subtype item) or a
-  // >18-char neighborhood (`classifyField` drops it). Count the same items
-  // MetaLine's `rawItems`/`items` will render (lead items raw, `metaExtras`
-  // through the same `classifyField('scalar', …)` MetaLine's `items` prop
-  // applies — `foldedFactChip.value` is already classifyField'd output via
-  // `classifyFactChips`, so it's passed as-is) and only yield `metaText`'s
-  // slot when that real count already fills the cap.
-  const metaLineOverflow =
-    [
-      ...metaLineLeadItems(activity),
-      kidsAge,
-      ...metaExtras.map((v) => classifyField('scalar', v)),
-      foldedFactChip?.value,
-    ].filter(Boolean).length >= 4;
   const unique = uniqueSection(activity);
   const goodToKnow = goodToKnowSection(activity);
   // design-spec.md's Tours & Experiences composition (T10): three ordered
@@ -683,20 +666,25 @@ export function ActivityDetailScreen({
               // ahead of distance/country — all app-computed/taxonomy data,
               // never run through `classifyField` (see MetaLine's
               // `rawItems`). Absent entirely for a Tripadvisor row (its
-              // eyebrow above the title already carries category). T5
-              // round-3 fix: `metaText` drops out of the lead items (rather
-              // than the fold or neighborhood silently losing theirs — see
-              // `metaLineOverflow`) on the one Entertainment collision where
-              // all 5 candidates compete for 4 slots. T11 round 2:
-              // `foldedValue` also belongs here, not in `items` below — it's
-              // already been through `classifyField` once (via
+              // eyebrow above the title already carries category). T11
+              // round 2: `foldedValue` also belongs here, not in `items`
+              // below — it's already been through `classifyField` once (via
               // `classifyFactChips`) — `rawItems` is the already-final
               // bypass that avoids running it through a second
               // `classifyField` call.
+              // T2 round-2 fix: the old `metaLineOverflow` guard (which
+              // dropped `metaText` when the *other* rawItems candidates hit
+              // 4) is deleted — since T2 zeroed out Kids' and Entertainment's
+              // fact strips (`factStripFields` returns `[]` unconditionally
+              // for both), `foldedFactChip` can never be defined when
+              // `kidsAge`/`metaExtras` are, so the guard's own candidate
+              // count (category + subtype + one of {kidsAge, metaExtras,
+              // foldedValue}) now maxes out at 3 for every category — below
+              // its own >=4 threshold, permanently. `metaText` (distance/
+              // country) can never be evicted any more, so it's included
+              // unconditionally.
               rawItems={[
-                ...(!tripadvisor
-                  ? [...metaLineLeadItems(activity), kidsAge, metaLineOverflow ? undefined : metaText]
-                  : []),
+                ...(!tripadvisor ? [...metaLineLeadItems(activity), kidsAge, metaText] : []),
                 foldedValue,
               ]}
               items={metaExtras}

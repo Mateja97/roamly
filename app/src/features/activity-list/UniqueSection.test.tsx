@@ -184,7 +184,6 @@ describe('UniqueSection', () => {
           leading: '23:00',
           main: 'DJ Nina',
           trailing: 'Main stage',
-          trailingStyle: 'muted',
         },
       ],
     };
