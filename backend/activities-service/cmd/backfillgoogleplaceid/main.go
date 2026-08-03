@@ -49,9 +49,10 @@ const listPageSize = 200
 // backfillPace is the fixed sleep between Places calls — a conservative,
 // explicit floor under Places' own per-project QPS quota, independent of
 // however fast a given call happens to answer. Same value and same reasoning
-// as cmd/backfillsubtype's backfillPace: right-sized for a few hundred
-// one-time calls; reach for golang.org/x/time/rate if this tool ever needs
-// to process thousands of rows or run on a schedule.
+// as cmd/backfillsubtype's backfillPace. ponytail: a flat sleep, not a
+// token-bucket limiter — right-sized for a few hundred one-time calls; reach
+// for golang.org/x/time/rate if this tool ever needs to process thousands of
+// rows or run on a schedule.
 const backfillPace = 200 * time.Millisecond
 
 func main() {
@@ -59,7 +60,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	dryRun := flag.Bool("dry-run", false, "report how many rows are candidates without calling Places or writing")
-	limit := flag.Int("limit", 0, "stop after resolving this many rows (0 = no cap); lets a run be staged across multiple invocations against a tight daily quota")
+	limit := flag.Int("limit", 0, "stop after processing this many rows (0 = no cap); lets a run be staged across multiple invocations against a tight daily quota")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -98,9 +99,11 @@ func main() {
 	result := runBackfill(ctx, svc, repo, rows, *limit, func() { time.Sleep(backfillPace) })
 	logger.Info("backfill complete",
 		"scanned", len(rows),
+		"processed", result.processed,
 		"resolved", result.resolved,
 		"written", result.written,
 		"already_set", result.alreadySet,
+		"missed", result.missed,
 		"failed", result.failed,
 	)
 }
@@ -153,16 +156,19 @@ type googlePlaceIDSetter interface {
 	SetGooglePlaceIDIfEmpty(ctx context.Context, id, placeID string) (bool, error)
 }
 
-// backfillResult tallies one run: resolved is rows whose resolve returned a
-// non-empty place id (regardless of whether the write below then landed);
-// written is rows this run actually persisted; alreadySet is rows
-// SetGooglePlaceIDIfEmpty's WHERE guard rejected because something else
-// (a live sync) resolved the same row between the list read and this write;
-// failed is a write error, counted separately from "resolver found nothing"
-// since one means the venue couldn't be matched and the other means the
-// match was good but the write broke.
+// backfillResult tallies one run: processed is every row this run actually
+// looked at (bounded by limit, unlike scanned which is every candidate the
+// read step found); resolved is rows whose resolve returned a non-empty
+// place id (regardless of whether the write below then landed); missed is
+// rows whose resolve returned no id at all — skipped and counted, never
+// written with a guess; written is rows this run actually persisted;
+// alreadySet is rows SetGooglePlaceIDIfEmpty's WHERE guard rejected because
+// something else (a live sync) resolved the same row between the list read
+// and this write; failed is a write error, counted separately from a
+// resolve miss since one means the venue couldn't be matched and the other
+// means the match was good but the write broke.
 type backfillResult struct {
-	resolved, written, alreadySet, failed int
+	processed, resolved, missed, written, alreadySet, failed int
 }
 
 // runBackfill resolves rows in place, one at a time, in the order rows is
@@ -179,9 +185,11 @@ func runBackfill(ctx context.Context, resolver placeIDResolver, setter googlePla
 		if limit > 0 && i >= limit {
 			break
 		}
+		result.processed++
 		_, placeID := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
 		pace()
 		if placeID == "" {
+			result.missed++
 			continue
 		}
 		result.resolved++

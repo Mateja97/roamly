@@ -96,13 +96,16 @@ above but its own command since the candidate filter and setter differ:
     GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
       go run ./cmd/backfillgoogleplaceid
 
-Same `-dry-run` and `-limit N` flags, same resume mechanism (the read filter
-`source = 'tripadvisor' AND google_place_id = ''` and the write guard
-`SetGooglePlaceIDIfEmpty` are the same condition), same fixed pace between
-Places calls. Reuses `ResolveTripadvisorSubtype` (T1) for the search/match —
-no second classification algorithm. A venue the resolver can't match is
-skipped, never written with a guess. Reports scanned/resolved/written/
-already-set/failed counts on completion.
+Same `-dry-run` and `-limit N` flags, same resume mechanism: the candidate
+read is published rows, filtered client-side on `source == "tripadvisor"` and
+empty `google_place_id` (`List` has no filter for either), and the write
+guard `SetGooglePlaceIDIfEmpty` rejects a row something else already set
+between the read and the write — same condition either way. Same fixed pace
+between Places calls. Reuses `ResolveTripadvisorSubtype` (T1) for the
+search/match — no second classification algorithm. A venue the resolver
+can't match is skipped and counted (`missed`), never written with a guess.
+Reports scanned/processed/resolved/written/already-set/missed/failed counts
+on completion.
 
 ## Testing
 

@@ -189,8 +189,8 @@ func TestRunBackfill_ResolveMissSkippedNeverWrittenWithGuess(t *testing.T) {
 
 	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
 
-	if result.resolved != 0 || result.written != 0 || result.failed != 0 || result.alreadySet != 0 {
-		t.Fatalf("got %+v, want every count 0 (resolve miss is neither resolved nor written)", result)
+	if result.missed != 1 || result.resolved != 0 || result.written != 0 || result.failed != 0 || result.alreadySet != 0 {
+		t.Fatalf("got %+v, want missed=1 and every other count 0 (resolve miss is skipped and counted, never resolved or written)", result)
 	}
 	if len(setter.writes) != 0 {
 		t.Fatalf("setter.writes = %+v, want no write attempted for a resolve miss", setter.writes)
@@ -227,8 +227,11 @@ func TestRunBackfill_LimitCapsRowsProcessedNotJustWritten(t *testing.T) {
 	resolver := &fakeResolver{byID: map[string]string{"1": "places/a", "2": "places/b", "3": "places/c"}}
 	setter := &fakeSetter{}
 
-	runBackfill(context.Background(), resolver, setter, rows, 2, func() {})
+	result := runBackfill(context.Background(), resolver, setter, rows, 2, func() {})
 
+	if result.processed != 2 {
+		t.Fatalf("result.processed = %d, want 2 (bounded by limit, not scanned's 3)", result.processed)
+	}
 	if len(resolver.calls) != 2 {
 		t.Fatalf("resolver called %d times, want exactly 2 (limit), leaving row 3 for the next run", len(resolver.calls))
 	}
