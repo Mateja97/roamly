@@ -14,6 +14,14 @@ type UseNearbyLocation = {
   state: NearbyLocationState;
   /** Runs the permission + GPS-fix flow; resolves with coordinates on success, null otherwise. */
   requestLocation: () => Promise<Coordinates | null>;
+  /**
+   * Read-only status check — no OS permission prompt, no GPS fetch. Lets a
+   * caller detect an already-denied permission on mount/open (e.g. the Scope
+   * sheet's Nearby pane) without requestLocation's "Turn on location" tap,
+   * which would OS-prompt an undetermined user just by checking. Leaves
+   * `state` alone unless already denied.
+   */
+  checkPermission: () => Promise<void>;
 };
 
 // Encapsulates a scope ticket's async location flow (permission check →
@@ -24,6 +32,15 @@ type UseNearbyLocation = {
 // two (Nearby blocks with an error, Anywhere never does).
 export function useNearbyLocation(): UseNearbyLocation {
   const [state, setState] = useState<NearbyLocationState>({ status: 'idle' });
+
+  // Shares requestLocation's first check (below) but stops there — no
+  // request prompt, no GPS fetch — so it's safe to call passively on mount.
+  const checkPermission = useCallback(async (): Promise<void> => {
+    const current = await Location.getForegroundPermissionsAsync();
+    if (current.status === Location.PermissionStatus.DENIED) {
+      setState({ status: 'denied' });
+    }
+  }, []);
 
   const requestLocation = useCallback(async (): Promise<Coordinates | null> => {
     // Check current status first: if already denied, no OS prompt will
@@ -55,5 +72,5 @@ export function useNearbyLocation(): UseNearbyLocation {
     }
   }, []);
 
-  return { state, requestLocation };
+  return { state, requestLocation, checkPermission };
 }
