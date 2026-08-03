@@ -653,11 +653,17 @@ no hover, so it can't be the only feedback state). No in-flight/disabled
 state: the CTA only navigates, it makes no request of its own.
 
 **Glow:** the one per-screen `--glow` sits behind this CTA (the screen's one
-focal element), not behind the brand block above it. The glow's container
-must extend past the opaque card's own bounds (e.g. extra padding above the
-card) so the radial fade actually bleeds into view — sizing the gradient
-container to exactly match the card leaves 100% of it hidden behind the
-card's own opaque fill (review round 1, Important #1).
+focal element), not behind the brand block above it, as a true radial falloff
+— `radial-gradient(ellipse at 50% 0%, --glow, transparent 70%)`, not a flat
+rectangle. On `area: app`, `expo-linear-gradient` only draws a linear box, so
+render it with `react-native-svg`'s `RadialGradient` (`cx="50%" cy="0%"
+r="70%"`, stops `--glow` → transparent) filling a `Rect`, the same library
+already used for this screen's dashed underline. The glow's container must
+also extend past the opaque card's own bounds (e.g. extra padding above the
+card) so the fade actually bleeds into view — sizing it to exactly match the
+card leaves 100% hidden behind the card's own opaque fill (review round 1,
+Important #1; the radial-vs-rectangle shape itself was review round 2,
+Important).
 
 **Accessibility:** the whole card is one `Pressable`/button with an explicit
 accessible name (e.g. "Start exploring, real places picked for right now");

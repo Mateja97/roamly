@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Line } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, Line, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { PrimaryTicket } from '../../components/PrimaryTicket';
 import { Wordmark } from '../../components/Wordmark';
 import { colors, fontFamily, fontSize, space } from '../../theme/tokens';
@@ -93,13 +92,20 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
         <View style={styles.spacer} />
 
         <View style={styles.ctaGlowWrap}>
-          <LinearGradient
-            colors={[colors.glow, 'transparent']}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
+          {/* review round 2, Important: expo-linear-gradient only draws a
+              flat linear box — matched DESIGN_STANDARDS' `radial-gradient
+              (ellipse at 50% 0%, --glow, transparent 70%)` for real with
+              react-native-svg (already a dep, already imported here for the
+              dashed underline) instead of approximating it. */}
+          <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Defs>
+              <RadialGradient id="ctaGlow" cx="50%" cy="0%" r="70%">
+                <Stop offset="0" stopColor={colors.glow} />
+                <Stop offset="1" stopColor="rgba(206,144,66,0)" />
+              </RadialGradient>
+            </Defs>
+            <Rect x={0} y={0} width="100%" height="100%" fill="url(#ctaGlow)" />
+          </Svg>
           <PrimaryTicket
             title="Start exploring"
             subtitle="Real places, picked for right now"
