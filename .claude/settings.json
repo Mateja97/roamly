@@ -16,7 +16,23 @@
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(cd /Users/mateja/Documents/Projects/roamly)",
-      "Bash(cd /Users/mateja/Documents/Projects/roamly/*)"
+      "Bash(cd /Users/mateja/Documents/Projects/roamly/*)",
+      "Bash(golangci-lint run:*)",
+      "mcp__Claude_Browser__read_page",
+      "mcp__Claude_Browser__find",
+      "mcp__Claude_Browser__get_page_text",
+      "mcp__Claude_Browser__read_network_requests",
+      "mcp__Claude_Browser__read_console_messages",
+      "mcp__mobbin__search_screens",
+      "mcp__Claude_Browser__preview_logs",
+      "mcp__linear-server__get_project",
+      "mcp__tripadvisor-content__get-endpoint",
+      "mcp__linear-server__list_users",
+      "mcp__linear-server__list_issues",
+      "mcp__Claude_Browser__tabs_context",
+      "mcp__Claude_Browser__preview_list",
+      "mcp__tripadvisor-content__search-endpoints",
+      "mcp__linear-server__get_issue"
     ],
     "defaultMode": "auto"
   }
