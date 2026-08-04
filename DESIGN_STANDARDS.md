@@ -194,9 +194,25 @@ the sanctioned depth devices — tokenized, and still no drop shadows:
 - **Surface gradient** (optional, large/hero cards only):
   `background: var(--surface-gradient)` instead of flat `--surface`. The
   goal is "too subtle to notice consciously".
+- **Fill-edge bevel** — the inverse of the card top highlight, for a **light
+  filled element on the dark wine background** (a gold `--primary` CTA, not a
+  wine `--surface` card). The gold top-edge trick doesn't work there: a gold
+  hairline on a gold fill is invisible, so a large flat gold shape ships with
+  no contour at all and its rounded corners read soft and uneven against
+  wine. Give it a **uniform 1px border, per-side colors from the fill's own
+  hue ramp**: top edge `--primary-hover` (the lighter shade — light hitting
+  the top), left/right/bottom edges `--primary-active` (the darker shade —
+  the shaded underside). Uniform width with per-side colors is the same
+  construction the standard card uses (1px `--border` all round, top swapped
+  to `--card-highlight`) and is the only one that renders a clean radius on
+  Android; per-side border *widths* plus a radius do not. Decorative — no
+  contrast requirement. Still **not a shadow**: the no-box-shadow rule holds
+  on this background too, and a bevel drawn from the element's own hover/
+  active tokens costs no new token.
 - The no-box-shadow rule stands: these are border-color and background
   devices, not shadows. Don't stack all three on one element — highlight
-  is default for every card, glow and gradient are per-screen accents.
+  is default for every card (fill-edge bevel is its light-fill counterpart),
+  glow and gradient are per-screen accents.
 
 ## Components
 
@@ -626,27 +642,51 @@ surfaces only** — the standard Primary button (Buttons table) applies
 everywhere else. Never place two side by side.
 
 **Container:** full width, `min-height: 52px`, `--radius-lg`, flat `--primary`
-gold fill, `--ink` label color throughout. Row layout, vertically centered:
-**pin well → dashed perforation → two-line label → go-disc**.
+gold fill, `--ink` label color throughout, **content clipped to the radius**,
+padding `--space-3` (12px) vertical and horizontal, `--space-2` between the
+row's parts. Carries the **fill-edge bevel** (see Depth & accents): uniform
+1px border, top `--primary-hover`, left/right/bottom `--primary-active` — a
+flat gold fill with no contour is what makes a 16px radius read soft and
+"not quite a rounded rectangle" on a real device. Row layout, vertically
+centered: **pin well → dashed perforation → two-line label → go-disc**.
 
-- **Pin well (left):** a small circular **ink**-tinted well
-  (`rgba(42,14,17,0.10)`) holding a 26px **`--ink`** pin icon (`lucide`
+- **Pin well (left):** a **36px** circular **ink**-tinted well
+  (`rgba(42,14,17,0.16)`) holding a 26px **`--ink`** pin icon (`lucide`
   `MapPin`, `aria-hidden` — decorative, the title/accessible-name carry the
   meaning). Not the Scope ticket stub's gold tint / gold icon: that
   combination was derived against the Scope ticket's wine surface-gradient
   body, and gold-on-this-card's-own-gold `--primary` fill doesn't read at
   all — confirmed by screenshot in review round 1. `--ink` on both the well
   and the icon matches the label/go-disc contrast logic already used
-  elsewhere on this same gold card.
-- **Perforation:** a 2px dashed vertical rule, `rgba(42,14,17,0.35)` — same
-  device as the Scope ticket stub's dashed tear-line (native dashed border,
-  not SVG, since it's a short vertical rule rather than a full-width line).
+  elsewhere on this same gold card. The tint is 0.16, not the 0.10 first
+  shipped: at 0.10 on `--primary` the well is a ~5% luminance step and reads
+  as a smudge rather than a recess (`--ink` icon on the 0.16 well is still
+  4.96:1, well clear of the 3:1 UI bar it needs as decoration).
+- **Perforation:** a 2px dashed vertical rule in `rgba(42,14,17,0.40)`,
+  height 32px, drawn as an **SVG stroke with `stroke-dasharray` `"4 4"` and
+  round caps** — the same perforation language as the Destination header's
+  dashed underline directly above it on this screen. **Not** a native
+  per-side dashed border: RN only honours `borderStyle: 'dashed'` with a
+  uniform border width on all sides, so a `borderLeftWidth`-only rule
+  renders as a plain solid line — a stray tick mark, not a tear line. This
+  brings the recipe back under the system-wide "never a CSS/RN dashed
+  border" rule the Destination header and Activity card seam already follow;
+  the earlier short-vertical-rule carve-out was wrong.
 - **Label (middle, flex: 1):** title "Start exploring" `--font-size-md`
   (16px) weight 700 `--ink`; sub-label "Real places, picked for right now"
-  13.5px weight 400, line-height 1.45, `--ink`.
-- **Go-disc (right):** 40px circle, `--ink` fill, an 18px gold `ArrowRight`
-  (`aria-hidden`) — the Scope ticket / Activity card go-button device,
-  inverted (ink disc + gold arrow, since the card itself is already gold).
+  13.5px weight 400, line-height 1.45, `--ink`. Both lines stay full-strength
+  `--ink` (6.6:1 ✓) — size and weight carry the hierarchy. Do **not** mute the
+  sub-label with a lower-alpha ink: `rgba(42,14,17,0.80)` on `--primary` is
+  4.76:1 and 0.72 is 4.05:1, so the device runs out of headroom almost
+  immediately at this size.
+- **Go-disc (right):** **36px** circle, `--ink` fill, an 18px gold
+  `ArrowRight` (`aria-hidden`, 6.56:1 on `--ink`) — the Scope ticket /
+  Activity card go-button device, inverted (ink disc + gold arrow, since the
+  card itself is already gold). 36px, **matching the pin well exactly**: this
+  card is a symmetric ticket with a cap at each end, and the 40px inherited
+  from the Scope ticket's 104px-tall body left the two caps mismatched on a
+  ~67px card — a small asymmetry that reads as unfinished rather than as
+  emphasis.
 
 **States:** rest `--primary` fill; hover `--primary-hover`; **pressed
 `--primary-active`** — pressed must exist independently of hover (touch has
@@ -665,6 +705,27 @@ card) so the fade actually bleeds into view — sizing it to exactly match the
 card leaves 100% hidden behind the card's own opaque fill (review round 1,
 Important #1; the radial-vs-rectangle shape itself was review round 2,
 Important).
+
+**Glow bleed geometry — the halo hugs the card, it does not bridge to what's
+above it.** The gradient's origin sits at the *top of its container*, so the
+container's bleed padding decides where the brightest gold lands. Keep that
+bleed **small and on all three exposed sides**: `--space-3` (12px) above and
+`--space-3` to the left and right of the card (side bleed via a negative
+horizontal margin on the glow container, so the card itself keeps its full
+content width). Two failure modes this exists to prevent, both observed on
+device:
+- *A tall top bleed* (e.g. `--space-6`, 24px) puts the gradient's brightest
+  band a full 24px above the card, filling the gap to whatever sits above and
+  gluing the two together — the glow stops reading as the CTA's halo and
+  starts reading as a shared background.
+- *Zero side bleed* clips the fade dead flat at the card's left and right
+  edges, so the gold-tinted region on screen is a **square-cornered rectangle
+  wider and taller than the card**. The eye merges the haze with the fill and
+  the CTA reads as a square-topped gold block, not as a `--radius-lg`
+  rounded rectangle — the glow, not the card, is what looks "reshaped".
+The bleed is **not** the spacing between this CTA and the element above it.
+Glowing space is not empty space: spec that gap separately, as real
+background, on top of the bleed.
 
 **Accessibility:** the whole card is one `Pressable`/button with an explicit
 accessible name (e.g. "Start exploring, real places picked for right now");

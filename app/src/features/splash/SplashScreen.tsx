@@ -32,9 +32,16 @@ const DESTINATION_BLOCK_GAP = 20;
 const OVERLINE_TO_HERO_GAP = 12;
 const HERO_TO_UNDERLINE_GAP = 16;
 const BOTTOM_SPACER = 34;
-// Not a spec-named value — the room the glow's radial fade needs to bleed
-// above the CTA card instead of being fully occluded by it.
-const GLOW_BLEED = space[6];
+// The underline->CTA gap is two separate concerns, not one constant doing
+// both jobs. UNDERLINE_TO_CTA_GAP (space[8], 32px) is real clean --bg with
+// no gradient — daylight between the dashed underline and the glow.
+// GLOW_BLEED (space[3], 12px) is the glow's own bleed only: just enough
+// room for the radial fade to be visible above the opaque card on all three
+// exposed sides (top + horizontal, via padding+negative-margin below) —
+// widening this back out re-glues the gap to the underline (design-spec.md
+// T2's "Glow bleed geometry").
+const UNDERLINE_TO_CTA_GAP = space[8];
+const GLOW_BLEED = space[3];
 
 // First-launch-only branded splash: reuses FlightPathBackground and
 // Wordmark unchanged, Marcellus "Where to?" hero (36px per the spec's
@@ -97,11 +104,23 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
                   (ellipse at 50% 0%, --glow, transparent 70%)` for real with
                   react-native-svg (already a dep, already imported here for the
                   dashed underline) instead of approximating it. */}
-              <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
+              {/* T3 round 2, Important: no explicit width/height — those
+                  percentages resolve against this wrapper's content box
+                  (inside its paddingHorizontal), while absoluteFill's
+                  top/left/right/bottom:0 anchors to the wider padding box, so
+                  the two disagreed and the painted glow came out narrower
+                  than its position, pinned left. absoluteFill alone sizes
+                  the Svg to fill its containing block (Yoga does this for any
+                  absolutely-positioned view), so let it own both. */}
+              <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
                 <Defs>
+                  {/* T3: native react-native-svg doesn't reliably apply the
+                      alpha baked into an rgba() stopColor string — plain hex
+                      stopColor + explicit stopOpacity instead, or both stops
+                      collapse to opaque colors.primary on native. */}
                   <RadialGradient id="ctaGlow" cx="50%" cy="0%" r="70%">
-                    <Stop offset="0" stopColor={colors.glow} />
-                    <Stop offset="1" stopColor="rgba(206,144,66,0)" />
+                    <Stop offset="0" stopColor={colors.primary} stopOpacity={colors.glowOpacity} />
+                    <Stop offset="1" stopColor={colors.primary} stopOpacity={0} />
                   </RadialGradient>
                 </Defs>
                 <Rect x={0} y={0} width="100%" height="100%" fill="url(#ctaGlow)" />
@@ -183,8 +202,15 @@ const styles = StyleSheet.create({
   // The gradient is `absoluteFill` on this
   // wrapper — sizing the wrapper to the opaque card's exact bounds left
   // 100% of the glow hidden behind it. GLOW_BLEED extends the wrapper
-  // above the card so the top band of the radial fade shows over --bg.
+  // above (and, via the negative horizontal margin below, past the sides
+  // of) the card so the radial fade shows over --bg instead of being fully
+  // occluded. UNDERLINE_TO_CTA_GAP is the separate clean-background gap
+  // above that bleed (design-spec.md T2) — margin, not padding, so no glow
+  // paints inside it.
   ctaGlowWrap: {
+    marginTop: UNDERLINE_TO_CTA_GAP,
     paddingTop: GLOW_BLEED,
+    paddingHorizontal: GLOW_BLEED,
+    marginHorizontal: -GLOW_BLEED,
   },
 });

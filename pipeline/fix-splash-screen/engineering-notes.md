@@ -125,3 +125,197 @@ Dynamic Type in this environment.
 
 PR: https://github.com/Mateja97/roamly/pull/152 (same, unmerged, resolve
 pass pushed to `feature/fix-splash-screen-t1`)
+
+## T2
+
+area:app. Splash CTA polish per design-spec.md T2.
+
+`SplashScreen.tsx`: split `GLOW_BLEED` (was space[6]=24, one constant doing
+two jobs) into `UNDERLINE_TO_CTA_GAP` (space[8]=32, `ctaGlowWrap.marginTop`,
+clean `--bg`) plus `GLOW_BLEED` (space[3]=12, `paddingTop` +
+`paddingHorizontal` + equal negative `marginHorizontal` for side bleed).
+Card keeps full gutter-to-gutter width (padding cancels the negative
+margin), wrapper bleeds 12px past it each side for the ellipse fade.
+
+`PrimaryTicket.tsx`: 6 changes. Fill-edge bevel (`borderWidth:1`, top
+`--primary-hover`, sides/bottom `--primary-active`) + `overflow:'hidden'`.
+Divider `View`(`borderLeftWidth` dashed, rendered solid on RN, dead)
+replaced with `Svg`+`Line` dashed stroke, 32px, `rgba(42,14,17,0.40)`,
+dasharray "4 4". `GO_DISC_SIZE` 40 to 36 (matches pin well). Pin-well tint
+0.10 to 0.16. `paddingVertical` space[2] to space[3]. Deleted dead
+`outlineStyle`/`outlineWidth` (confirmed no-op per spec's Diagnosis).
+
+DESIGN_STANDARDS.md's T2 Standard additions (Fill-edge bevel, SVG-dashed-
+perforation correction, go-disc/tint/padding/clip corrections, glow-bleed
+geometry) were already on disk in this worktree (uncommitted, designer
+edit) — carried them onto `feature/fix-splash-screen-t2` (branched off
+freshly-pulled `main`, which didn't have them) since they weren't reachable
+from any commit; they ship as part of this PR's diff.
+
+Acceptance criteria:
+- Underline-to-CTA gap reads as visible daylight, not glow haze — checked:
+  screenshot pixel-scan confirms pure `--bg` rows between the dashed
+  underline and the card's glow band (`splash-default.png`).
+- Card reads as a rounded rectangle, not merged/reshaped — checked: bevel
+  border + `overflow:hidden` + 12px side bleed make an ellipse-around-card
+  glow shape; visible in screenshot crop.
+- `PrimaryTicket` states (rest/hover/pressed/focus) still swap only
+  `backgroundColor` — checked: `PrimaryTicket.test.tsx` unmodified, passes.
+- No dashed-border dead code — checked: `divider` View removed, replaced by
+  real SVG dash.
+- Go-disc/pin-well symmetric caps — checked: both 36px.
+
+Gates: `tsc --noEmit` clean. `npm test` 775/775 green (unmodified
+`SplashScreen.test.tsx`/`PrimaryTicket.test.tsx` both pass, per spec
+guarantee). `npm run lint` clean. Ponytail-review: diff is 1:1 spec-mapped
+style/constant edits + one dead-code deletion (`outlineStyle`/`outlineWidth`),
+no new abstractions, no new deps (`react-native-svg` already used on this
+screen) — nothing to cut. Rename sweep: grepped `divider`, `GO_DISC_SIZE`,
+`GLOW_BLEED`, `outlineStyle` — no stale references left.
+
+Visual check: Docker stack port 4174 held by a sibling checkout's `roamly`
+stack serving a different branch (not this one) — fell back to standalone
+`npm run export:web` + `npx serve dist -l 4175` (avoids the port
+collision), matching T1's precedent. Captured default/hover/pressed/focus
+at 375x812 via a throwaway Playwright script (screenshots dir T2/). First
+capture attempt via the bare `playwright screenshot` CLI raced the
+headline's `onLayout` (underline SVG only mounts once `headlineWidth>0`) —
+underline was missing from that shot. Recaptured with an explicit
+`waitForTimeout(400)` after page load in the script; underline present in
+all 4 recaptured screenshots. Read all 4: gap is genuine wine daylight
+before the glow, card corners crisp and rounded with the bevel visible,
+pressed/hover swap the fill as expected, focus shows the browser's native
+outline (unmodified, per spec). Dynamic-type compression paragraph in the
+spec (gap may shrink toward the 12px floor at largest text sizes) is
+descriptive of existing auto-margin/overflow behavior from T1, not a new
+mechanism — spec's own "Tokens used" section confirms these are two fixed
+constants, no adaptive logic added; not capturable in web preview anyway
+(no OS Dynamic Type control), same caveat as T1.
+
+PR: https://github.com/Mateja97/roamly/pull/154
+
+## T3
+
+area:app. Bug fix — T2 regression, opaque CTA glow rectangle on native.
+
+Root cause confirmed: `SplashScreen.tsx`'s `<RadialGradient id="ctaGlow">`
+baked alpha into `rgba()` `stopColor` strings (`colors.glow =
+'rgba(206,144,66,0.16)'`, `'rgba(206,144,66,0)'`). Native `react-native-svg`
+doesn't reliably apply that embedded alpha to `stopColor` — both stops
+collapsed to opaque `#CE9042`, painting `ctaGlowWrap`'s 12px `GLOW_BLEED` box
+as a solid square-cornered rectangle behind the card (the "ghost/duplicate
+button" the user saw). `npm run export:web`, T2's only visual check, doesn't
+hit this — it's a native-`react-native-svg`-only bug.
+
+Fix: both `<Stop>`s now use `stopColor={colors.primary}` (plain opaque hex)
+plus explicit `stopOpacity` — `colors.glowOpacity` (new token, `0.16`) on the
+first stop, `0` on the second. Added `glowOpacity: 0.16` as a sibling token
+in `tokens.ts` next to `glow`, so `colors.primary` + `glowOpacity` is the one
+source of truth for the glow's color/opacity without a second hardcoded
+`#CE9042`. Left `colors.glow` itself untouched — grepped for other callers
+first: `ScopeTicket.tsx:71` uses `colors.glow` via `expo-linear-gradient`'s
+`colors` array prop, a different API that takes rgba strings directly and
+isn't affected by this `stopColor`/`stopOpacity` bug, so reshaping `glow`
+itself would've silently broken that caller for no reason. Gradient geometry
+(`cx`/`cy`/`r`) and everything else about `SplashScreen.tsx`/
+`PrimaryTicket.tsx` untouched, per task scope.
+
+Grepped the whole app for `stopColor` — `SplashScreen.tsx` is the only
+`react-native-svg` gradient with `Stop` elements in the codebase (the CTA
+divider in `PrimaryTicket.tsx` and the underline in `SplashScreen.tsx` are
+plain `Line` strokes, no gradient). Nothing else has this bug pattern.
+
+Acceptance criteria, checked:
+- Both `<Stop>`s use opaque hex `stopColor` + explicit `stopOpacity`
+  (`0.16`/`0`) instead of rgba-string alpha — done,
+  `SplashScreen.tsx:109-116`.
+- `colors.glow` reshape: added sibling `glowOpacity` token, left `glow`
+  itself alone after confirming (grep) `ScopeTicket.tsx`'s different-API
+  usage would break if `glow` were reshaped to a non-rgba-string value.
+- Verified on native, not web — see below.
+- No other `SplashScreen.tsx`/`PrimaryTicket.tsx` layout/spacing/polish
+  touched — diff is 2 files, `stopColor`/`stopOpacity` lines +
+  `tokens.ts`'s new token, nothing else.
+- `SplashScreen.test.tsx` (9/9 incl. `PrimaryTicket.test.tsx`) unmodified,
+  still green.
+- Other `rgba(...)` `stopColor` usage elsewhere: none found (see grep above)
+  — nothing to flag.
+
+Gates: `tsc --noEmit` clean. `npx jest src/features/splash
+src/components/PrimaryTicket` 9/9 green; full `npm test` 775/775 green.
+`npm run lint` clean. Ponytail-review: diff is 2 files, additive-only
+(2 `stopOpacity` props + 1 new token), no new deps, no dead code — lean
+already, ship. No `ponytail:` comments added, nothing to self-audit.
+Pre-PR checklist: token exactness checked against `DESIGN_STANDARDS.md:50`
+(`--glow: rgba(206,144,66,0.16)`) — `0.16` and `#CE9042`==`colors.primary`
+match exactly; no rename/removal in this task, sweep n/a (nothing renamed).
+
+Native verification (the point of this task): killed stray Metro/expo
+processes, ran `npx expo start -c` (cache cleared) against the booted iOS
+Simulator (iPhone 17 Pro, Expo Go already installed), opened via
+`exp://127.0.0.1:8081`. To rule out a caching artifact, did the full
+before/after comparison on the same simulator session: `git stash`'d this
+fix, restarted Metro with `-c`, force-reloaded Expo Go (`simctl terminate`
++ reopen — a deep-link `openurl` alone doesn't force a fresh bundle fetch,
+learned this the hard way when a first "post-fix" screenshot round-tripped
+the still-cached buggy bundle) — reproduced the exact solid, opaque,
+square-cornered gold rectangle bleeding out from behind the card. Then
+`git stash pop`'d the fix back, repeated the same restart+terminate+reopen
+sequence, confirmed `iOS Bundled ... index.ts` in the Metro log (proof of a
+genuine fresh bundle), and captured the fixed render: glow now fades
+smoothly with soft rounded edges, no rectangle artifact.
+
+Screenshots (native iOS Simulator via Expo Go, not web export):
+`pipeline/fix-splash-screen/screenshots/T3/splash-native-ios-simulator.png`
+(full screen) and `splash-native-cta-glow-closeup.png` (crop on the glow
+area, the two states compared directly).
+
+PR: https://github.com/Mateja97/roamly/pull/155
+
+## T3 — resolve pass (review round 1)
+
+Two Important findings, one Minor. Fixed one, documented-not-fixed the other
+two per the review's own scope call.
+
+- **Important #1 (fixed)**: `SplashScreen.tsx:107` glow `<Svg>` had both
+  `width="100%" height="100%"` props AND `style={StyleSheet.absoluteFill}`.
+  The percentage props resolve against `ctaGlowWrap`'s content box (inside
+  its `paddingHorizontal: GLOW_BLEED`); `absoluteFill`'s `top/left/right/
+  bottom:0` anchors to the wider padding box. Two different boxes → painted
+  glow narrower than its position, pinned left (measured pre-fix: 12pt bleed
+  past the card on the left, 12pt short on the right). Fix: dropped the
+  `width`/`height` props, kept `style={StyleSheet.absoluteFill}` alone —
+  Yoga sizes an absolutely-positioned view (`top/right/bottom/left:0`) to
+  its containing block on its own, no separate size props needed.
+  Re-verified on a fresh native launch (killed stray Metro, `expo start -c`,
+  `simctl terminate` + `openurl` re-open, confirmed a genuine new `iOS
+  Bundled` log line — same discipline as the original T3 fix, not a
+  hot-reload). Pixel-scanned the new screenshot instead of eyeballing it:
+  glow band spans x=24–1181 (3x scale), card spans x=60–1145 → bleed is
+  **36px both sides = 12pt = `GLOW_BLEED` exactly**, card and glow share the
+  same center x=602.5. Symmetric, matches design-spec's "ellipse around the
+  card". `stopColor`/`stopOpacity` fix from round 1 untouched, still
+  correct — confirmed not touched in this diff.
+- **Important #2 / Minor (not fixed, re-verified as instructed)**: hard
+  edges / visible rectangle band at the glow boundary (`cy="0%" r="70%"`
+  geometry). Re-checked on the same fresh screenshot: still a hard 1px
+  top/side discontinuity, still doesn't fade to 0 inside the box — visible
+  in `splash-native-cta-glow-closeup.png`. Verdict: **same defect,
+  differently shaped** — it's no longer lopsided (both sides now cut off at
+  the same hard edge instead of one side trailing off mid-fade), so if
+  anything it now reads as a cleaner, more legible rectangle than before,
+  not a softer one. This is a data point for a follow-up task on `cx`/`cy`/
+  `r`, not something this PR's AC allows touching (geometry explicitly
+  forbidden here) — left alone per the review's own instruction.
+
+Diff: 1 source file, `<Svg>` prop removal (2 chars → 0) + one explanatory
+comment. `SplashScreen.test.tsx`/`PrimaryTicket.test.tsx` untouched, 9/9
+green; `tsc --noEmit` clean; `eslint` clean. Full `npm test`: 4 failures, all
+in `ActivityListScreen.test.tsx` (Nearby nudge / category pill / subtype
+rail suites, unrelated feature, different pipeline's T3) — re-ran that file
+in isolation and got a *different* count (6 failed) on the same unmodified
+code, pure `jest` timeout flakiness under load, not caused by this diff
+(nothing in it touches that feature). Splash-only run:
+`npx jest src/features/splash src/components/PrimaryTicket` → 9/9 green.
+
+PR: https://github.com/Mateja97/roamly/pull/155
