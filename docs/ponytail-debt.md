@@ -3,30 +3,29 @@
 A `ponytail:` comment marks a deliberate shortcut or deferral, made on purpose with the reasoning inline, not a TODO left by accident.
 This doc is a generated index for scanning; the in-code comment at each location stays the source of truth — edit the code, not this file.
 
-40 markers across 28 files, as of this writing — every `ponytail:` comment in `app/src`, test files included (`grep -rn "ponytail:" app/src --include='*.ts' --include='*.tsx' | wc -l` for markers, add `-l` before `wc` for files). Listed below as 38 entries: one entry groups three near-identical markers in `activities.ts` that record the same deferral at three call sites.
+38 markers across 29 files, as of this writing — every `ponytail:` comment in `app/src`, test files included (`grep -rn "ponytail:" app/src --include='*.ts' --include='*.tsx' | wc -l` for markers, add `-l` before `wc` for files). Listed below as 38 entries, one per marker: Task 10's `api/activities.ts` refactor collapsed the three near-identical non-JSON-error-body markers this doc used to group into one entry down into a single marker in a shared `request` helper, so no entries need grouping anymore.
 
 ## `features/scope-sheet/`
 
-- **ScopeSheet.tsx:461** — `AnywherePane`'s city-search code is a straight copy of the old `AnywhereSearchScreen` (deleted in T4) rather than a shared hook; now that the original screen is gone, this is the only copy left, so extraction only pays off if a second consumer shows up.
+- **AnywherePane.tsx:27** — `AnywherePane`'s city-search code is a straight copy of the old `AnywhereSearchScreen` (deleted in T4) rather than a shared hook; now that the original screen is gone, this is the only copy left, so extraction only pays off if a second consumer shows up.
 
 ## `features/activity-list/` — feed screen & scope
 
-- **ActivityListScreen.tsx:360** — The design spec's animated collapsing header (pill row/rail stay sticky while header collapses on scroll) was shipped as a static header instead; nothing in this codebase has ever implemented a scroll-driven collapse, and the category row/subtype rail already read as "sticky" simply by never leaving the screen.
-- **ActivityListScreen.tsx:451** — Reopening `ScopeSheet` after Apply re-triggers the main feed query with the same request the sheet just resolved, because `onApply` only hands back the draft, not the already-fetched result — one accepted extra round trip per Apply.
+- **ActivityListScreen.tsx:344** — The design spec's animated collapsing header (pill row/rail stay sticky while header collapses on scroll) was shipped as a static header instead; nothing in this codebase has ever implemented a scroll-driven collapse, and the category row/subtype rail already read as "sticky" simply by never leaving the screen.
+- **ActivityListScreen.tsx:435** — Reopening `ScopeSheet` after Apply re-triggers the main feed query with the same request the sheet just resolved, because `onApply` only hands back the draft, not the already-fetched result — one accepted extra round trip per Apply.
 - **feedContext.ts:21** — `scopePillInfo`'s filler copy only covers 3 of the reachable context-line states the design spec didn't enumerate (Nearby at midday, Anywhere cold start, and traveler mode combined with Nearby scope, which can never show a city name since there's no reverse-geocoding in the app) — flagged as a real design gap, not something to patch by inventing a geocoding feature.
-- **types.ts:24** — `Filters.minRating`/`maxDistanceKm` are dead (superseded by `ScopeDraft`) but left on the type rather than triggering a mechanical sweep of every `Filters` literal in production and tests; remove them if `Filters` is touched again anyway.
-- **nearbyNudge.ts:28** — A failed `AsyncStorage` write when dismissing the nearby nudge is swallowed silently; the flag is local-only and low-stakes, so worst case the nudge just reappears next launch.
-- **travelerMode.ts:37** — Same reasoning as `nearbyNudge.ts`: a failed write recording a home-base sample is swallowed, since it's a best-effort local signal with no UI to surface a retry into.
+- **types.ts:23** — `Filters.minRating`/`maxDistanceKm` are dead (superseded by `ScopeDraft`) but left on the type rather than triggering a mechanical sweep of every `Filters` literal in production and tests; remove them if `Filters` is touched again anyway.
+- **travelerMode.ts:37** — Same reasoning as the shared `boolFlag.ts` write-swallow below: a failed write recording a home-base sample is swallowed, since it's a best-effort local signal with no UI to surface a retry into.
 
 ## `features/activity-list/` — activity detail
 
-- **ActivityDetailScreen.tsx:286** — When a fact strip folds down to one value, only `.value` is kept and `.label` is dropped on purpose (asserted by a test); every field seen so far reads fine unlabelled, so a label-aware fold is deferred until a real field needs it.
-- **activityDetailConfig.ts:767** — The proxy always sends `details: {}` (no `omitempty`) for activities whose category has no category-specific data, so `.category` ends up missing rather than a known value; `factStripFields` degrades to an empty fact strip instead of crashing on that case.
-- **activityDetailConfig.ts:806** — If `Intl` throws while formatting an upcoming-show date, the code falls through to the same fallback path used for an unparseable date, rather than a dedicated Intl-failure branch.
-- **activityDetailConfig.ts:920** — Same `details: {}` shape/rationale as the 767 entry, this time for the second body section builder.
-- **fieldKind.ts:55** — `matchesDenylist` isn't exported since only `classifyField` calls it today; export it if a future task needs to check `PLACEHOLDER_DENYLIST` parity directly.
-- **fieldKind.ts:87** — A denylisted field value is logged via a plain `console.warn`, deduped per distinct value with an in-module `Set` (warn-once, not time-windowed) rather than following an established logging convention, because no such convention exists yet in `app/src`.
-- **fieldKind.ts:103** — Scalar field length is measured with `[...value].length` (Unicode code points) rather than `.length` (UTF-16 code units) so it agrees with the backend's Go rune-count check, including for emoji/astral characters.
+- **useActivityDetailData.ts:179** — When a fact strip folds down to one value, only `.value` is kept and `.label` is dropped on purpose (asserted by a test); every field seen so far reads fine unlabelled, so a label-aware fold is deferred until a real field needs it.
+- **activityDetailConfig.ts:501** — The proxy always sends `details: {}` (no `omitempty`) for activities whose category has no category-specific data, so `.category` ends up missing rather than a known value; `factStripFields` degrades to an empty fact strip instead of crashing on that case.
+- **activityDetailConfig.ts:539** — If `Intl` throws while formatting an upcoming-show date, the code falls through to the same fallback path used for an unparseable date, rather than a dedicated Intl-failure branch.
+- **activityDetailConfig.ts:650** — Same `details: {}` shape/rationale as the 501 entry, this time for the second body section builder.
+- **fieldKind.ts:54** — `matchesDenylist` isn't exported since only `classifyField` calls it today; export it if a future task needs to check `PLACEHOLDER_DENYLIST` parity directly.
+- **fieldKind.ts:86** — A denylisted field value is logged via a plain `console.warn`, deduped per distinct value with an in-module `Set` (warn-once, not time-windowed) rather than following an established logging convention, because no such convention exists yet in `app/src`.
+- **fieldKind.ts:102** — Scalar field length is measured with `[...value].length` (Unicode code points) rather than `.length` (UTF-16 code units) so it agrees with the backend's Go rune-count check, including for emoji/astral characters.
 
 ## `features/activity-list/` — reviews
 
@@ -59,10 +58,11 @@ This doc is a generated index for scanning; the in-code comment at each location
 ## `api/`
 
 - **cities.ts:40** — If a city-search error response body isn't valid JSON, the parse failure is swallowed and the generic fallback error message is used instead.
-- **activities.ts:102** — The `attributes`/`recommended_visit_length` fields are decoded off the wire but no screen renders them yet, since 0 of 83 sampled venues across categories ever returned a non-empty value for either; build the UI once a real venue actually populates one.
-- **activities.ts:513**, **557**, **606** — Same non-JSON-error-body fallback as `cities.ts:40`, repeated at each of the photos-upgrade, live-details-upgrade, and a third fetch's error-handling path.
+- **activities.ts:121** — Same non-JSON-error-body fallback as `cities.ts:40`; Task 10's shared `request` helper deduplicated the three fetch functions that used to carry this comment separately (the photos-upgrade, live-details-upgrade, and a third fetch's error-handling paths), so it now appears once for all of them.
+- **types.ts:99** — The `attributes`/`recommended_visit_length` fields are decoded off the wire but no screen renders them yet, since 0 of 83 sampled venues across categories ever returned a non-empty value for either; build the UI once a real venue actually populates one.
 
 ## `utils/`
 
 - **withTimeout.ts:3** — `LOCATION_TIMEOUT_MS` is hardcoded to 15 seconds as a reasonable GPS-fix bound, not a number specified anywhere; tune it if real-device testing shows it's too eager or too lax.
-- **firstLaunch.ts:3** — First-launch tracking uses `@react-native-async-storage/async-storage` directly rather than a per-feature storage abstraction, since it's Expo's own documented answer for a persisted flag and no local-storage mechanism existed anywhere in the app before this; other local flags (nearby-nudge-dismissed, home-base samples) reuse the same key-value primitive directly.
+- **firstLaunch.ts:3** — First-launch tracking uses `@react-native-async-storage/async-storage` directly rather than a per-feature storage abstraction, since it's Expo's own documented answer for a persisted flag and no local-storage mechanism existed anywhere in the app before this; other local flags (nearby-nudge-dismissed, home-base samples) reuse the same key-value primitive via the shared `boolFlag()` helper in this same directory, rather than each reimplementing the read/write.
+- **boolFlag.ts:21** — A failed `AsyncStorage` write inside the shared `boolFlag()` helper is swallowed silently; both `nearbyNudge.ts`'s dismiss flag and `firstLaunch.ts`'s seen flag route through this one write path (Task 14 extracted it out of `nearbyNudge.ts`, where this deferral used to live, into a helper both flags now share), and neither has a UI to surface a retry into.
