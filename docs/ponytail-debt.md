@@ -7,7 +7,7 @@ This doc is a generated index for scanning; the in-code comment at each location
 
 ## `features/scope-sheet/`
 
-- **AnywherePane.tsx:27** — `AnywherePane`'s city-search code is a straight copy of the old `AnywhereSearchScreen` (deleted in T4) rather than a shared hook; now that the original screen is gone, this is the only copy left, so extraction only pays off if a second consumer shows up.
+- **AnywherePane.tsx:27** — The city-search effect was already extracted into the shared `useCitySearch` hook (T13); what's still deferred is the city-search JSX (input row, results panel, chips), which stays inline here rather than a shared component since this is the one remaining consumer (`AnywhereSearchScreen`, the other, was deleted in T4) — extract only if a second consumer shows up.
 
 ## `features/activity-list/` — feed screen & scope
 

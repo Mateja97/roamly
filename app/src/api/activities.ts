@@ -80,6 +80,11 @@ function toActivity(raw: RawActivity): Activity {
   };
 }
 
+// product-tasks.md's T6 section specifies the photos-upgrade and
+// live-details-upgrade timeouts as independently tunable per-endpoint
+// values, not one shared knob — they share this constant only because both
+// happen to be specified at the same 10s today; split them back into two
+// named constants if either endpoint's bound ever needs to diverge.
 const FETCH_TIMEOUT_MS = 10000;
 
 const KNOWN_ERROR_STATUSES = [400, 403, 404, 409, 500] as const;
