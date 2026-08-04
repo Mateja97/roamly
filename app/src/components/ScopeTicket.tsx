@@ -26,11 +26,11 @@ const NOTCH_SIZE = 16;
 const GO_BUTTON_SIZE = 40;
 
 // DESIGN_STANDARDS.md's "Scope ticket (nearby / anywhere)" recipe: a
-// horizontal boarding-pass card (stub | body | go-button) replacing the
-// retired 3-way Choice card. The whole card is one tap target/one
-// accessible button; tapping either ticket sets the scope and advances
-// immediately, so "selected" doubles as both the resting emphasis on the
-// default (Nearby) and the press/active feedback (see ScopePickerScreen).
+// horizontal boarding-pass card (stub | body | go-button). The whole card
+// is one tap target/one accessible button; tapping either ticket sets the
+// scope and advances immediately, so "selected" doubles as both the
+// resting emphasis on the default (Nearby) and the press/active feedback
+// (see ScopePickerScreen).
 export function ScopeTicket({
   icon: Icon,
   title,

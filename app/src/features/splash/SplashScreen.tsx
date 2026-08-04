@@ -10,8 +10,9 @@ import { FlightPathBackground } from '../../components/FlightPathBackground';
 import { markSplashSeen } from '../../utils/firstLaunch';
 
 type SplashScreenProps = {
-  /** Advances to the Feed. T1 builds this screen only — the App-root routing
-   * decision of "show Splash vs. Feed at all" is T4's job. */
+  /** Advances to the Feed. This screen only renders the splash — the
+   * App-root routing decision of "show Splash vs. Feed at all" lives
+   * elsewhere. */
   onContinue: () => void;
 };
 
@@ -21,23 +22,21 @@ type SplashScreenProps = {
 // hero->underline, 34 bottom spacer.
 const TOP_PADDING = 66;
 const GUTTER = 20;
-// Spec tension, not settled here (review round 1, Minor): the source spec's
+// Spec tension, not settled here: the source spec's
 // "destination-block internal gap 20px" reads as internal to the
 // destination field, but design-spec.md T1's own prose puts 12px between
 // the tagline and the "Destination" overline instead. Applied as the gap
 // from the brand block (Wordmark+tagline) down to the destination field —
-// the tie-break documented in engineering-notes.md — pending the designer
-// settling which of the two docs is wrong.
+// pending the designer settling which of the two docs is wrong.
 const DESTINATION_BLOCK_GAP = 20;
 const OVERLINE_TO_HERO_GAP = 12;
 const HERO_TO_UNDERLINE_GAP = 16;
 const BOTTOM_SPACER = 34;
 // Not a spec-named value — the room the glow's radial fade needs to bleed
-// above the CTA card instead of being fully occluded by it (review round 1,
-// Important #1).
+// above the CTA card instead of being fully occluded by it.
 const GLOW_BLEED = space[6];
 
-// First-launch-only branded splash (T1): reuses FlightPathBackground and
+// First-launch-only branded splash: reuses FlightPathBackground and
 // Wordmark unchanged, Marcellus "Where to?" hero (36px per the spec's
 // permanent Decision 7 deviation, not the Design System's 26px token), and
 // the new Primary ticket CTA. No loading/error state — the CTA only
@@ -93,7 +92,7 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
             </View>
 
             <View style={styles.ctaGlowWrap}>
-              {/* review round 2, Important: expo-linear-gradient only draws a
+              {/* expo-linear-gradient only draws a
                   flat linear box — matched DESIGN_STANDARDS' `radial-gradient
                   (ellipse at 50% 0%, --glow, transparent 70%)` for real with
                   react-native-svg (already a dep, already imported here for the
@@ -144,12 +143,11 @@ const styles = StyleSheet.create({
     letterSpacing: 2.75, // ~0.22em at 12.5px
     textAlign: 'center',
   },
-  // Replaces the old destinationField -> standalone flex:1 spacer -> CTA
-  // stack: this group takes all remaining space below the fixed brandBlock.
+  // This group takes all remaining space below the fixed brandBlock.
   destinationCtaGroup: {
     flex: 1,
   },
-  // review round 2, Important: `justifyContent:'center'` on the flex:1
+  // `justifyContent:'center'` on the flex:1
   // parent (previous attempt) centers by shrinking equally from both edges,
   // pushing the "Destination" overline off the top once content is taller
   // than the available space. Auto margins center the same way when there's
@@ -182,7 +180,7 @@ const styles = StyleSheet.create({
   underline: {
     marginTop: HERO_TO_UNDERLINE_GAP,
   },
-  // review round 1, Important #1: the gradient is `absoluteFill` on this
+  // The gradient is `absoluteFill` on this
   // wrapper — sizing the wrapper to the opaque card's exact bounds left
   // 100% of the glow hidden behind it. GLOW_BLEED extends the wrapper
   // above the card so the top band of the radial fade shows over --bg.

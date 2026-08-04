@@ -56,7 +56,7 @@ export type CompactRow = {
 export type DateBlockRow = {
   day: string;
   date: string;
-  // T11: a raw `date` that's scalar-valid (passes classifyField, so it's
+  // A raw `date` that's scalar-valid (passes classifyField, so it's
   // not denylisted/over-length) but doesn't parse into the structured
   // day+numeral split — set instead of `date`/`day`, rendered as an
   // unstructured muted label in the row body rather than crushed into the
@@ -133,7 +133,7 @@ export function genericActionLabel(category: Category): 'Directions' | 'Share' {
 }
 
 // design-spec.md T8 addendum #1: the 8 non-directions categories' primary
-// CTA opens this external `action_url` (T7). `undefined` only when the
+// CTA opens this external `action_url`. `undefined` only when the
 // field is genuinely absent — never force-disabled by category alone.
 export function primaryActionURL(activity: Activity): string | undefined {
   const d = activity.details;
@@ -154,11 +154,10 @@ export function primaryActionURL(activity: Activity): string | undefined {
 }
 
 // design-spec.md's "Screen composition" section (T5): one fixed canonical
-// order replaces the 13 hand-maintained per-category arrays this retires
-// (`BODY_SECTION_ORDER`, deleted). Hero/title-block/action-chips/hours-row
-// live directly in ActivityDetailScreen.tsx (not category-dependent);
-// 'factstrip' below is the stat grid. Sections whose data is absent are
-// still skipped by the renderer — this only fixes order.
+// order. Hero/title-block/action-chips/hours-row live directly in
+// ActivityDetailScreen.tsx (not category-dependent); 'factstrip' below is
+// the stat grid. Sections whose data is absent are still skipped by the
+// renderer — this only fixes order.
 export type BodySection = 'description' | 'difficulty' | 'factstrip' | 'unique' | 'goodtoknow';
 
 const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique', 'goodtoknow'];
@@ -166,32 +165,20 @@ const CANONICAL_BODY_ORDER: BodySection[] = ['factstrip', 'description', 'unique
 // "A category may promote exactly one slot above the stat grid. That is the
 // entire per-category layout freedom [...]" — 'difficulty' (Sport's
 // DifficultyMeter) has no canonical resting position of its own, since it
-// only ever appears promoted. T5 carries over each category's *current*
-// promoted section unchanged, proving the mechanism without deciding any
-// category's final composition (T6-T10's job) — cafes/nightlife/sport/
-// culture/art/shopping already promoted the same section under the old
-// per-category arrays, so the *promoted* slot itself matches exactly.
+// only ever appears promoted.
 //
-// The rest of each row is NOT guaranteed byte-identical, though, because
-// this table (unlike the old 13 arrays) has no way to structurally exclude
-// a slot — every category now renders every canonical slot its data fills.
-// That's a correct, data-driven consequence of the new model, not a bug,
-// but it does change what's on screen for three categories whose old array
-// had left a slot out on purpose: Nightlife and Sport's old arrays never
-// listed 'description' at all (both are Places-live, so Google's prose can
-// arrive and now does), and Shopping's old array had 'unique' before
-// 'factstrip' (now 'factstrip' comes first, per the fixed canonical order).
-// See engineering-notes.md's T5 entry for the full disclosure.
+// This table has no way to structurally exclude a slot — every category
+// renders every canonical slot its data fills. That's a correct,
+// data-driven consequence of the model, not a bug.
 //
-// T8: Kids now has an explicit entry. `factStripFields` returns `[]`
+// Kids has an explicit entry. `factStripFields` returns `[]`
 // unconditionally for kids (no stat grid per spec), so this promotion is a
 // no-op on the *rendered* order (description already leads with nothing
 // above it) — kept explicit anyway so this table states the spec's
 // composition truthfully instead of relying on a side effect of another
-// function to read as "already correct" (T5/T5-round-2/3's own gap, closed
-// here).
+// function to read as "already correct".
 // Not exported — `bodySectionOrder` below is the only thing any other
-// module needs; T6-T10 edit this table in place.
+// module needs.
 type PromotableSection = 'description' | 'difficulty' | 'unique';
 
 const PROMOTE_ABOVE_STAT_GRID: Partial<Record<Category, PromotableSection>> = {
@@ -215,14 +202,12 @@ export function bodySectionOrder(category: Category): BodySection[] {
 // neighborhood moves into the rating/meta row (muted, "·"-separated)
 // instead of the removed fact strip. No other category uses this —
 // everything else keeps its scalar meta-row item (openStatus) or omits.
-// `genre` deliberately excluded here (T5 round-2 fix): once T5 also
-// prepends category-noun + subtype into the same row (`metaLineLeadItems`),
-// category + subtype + distance + genre + neighborhood overflows
-// `MetaLine`'s `MAX_ITEMS = 4` and silently truncates neighborhood — a
-// production regression T5's own "carry over current values unchanged"
-// scope must not introduce. `genre` isn't in the spec's canonical
-// Entertainment meta line at all, so dropping it both fixes the overflow
-// and matches the final composition T9 will land.
+// `genre` is deliberately excluded here: category-noun + subtype also
+// prepend into the same row (`metaLineLeadItems`), so category + subtype +
+// distance + genre + neighborhood overflows `MetaLine`'s `MAX_ITEMS = 4`
+// and silently truncates neighborhood. `genre` isn't in the spec's
+// canonical Entertainment meta line at all, so dropping it fixes the
+// overflow without losing anything the spec asks for.
 export function metaRowExtras(activity: Activity): string[] {
   const d = activity.details;
   if (!d || d.category !== 'entertainment') return [];
@@ -268,7 +253,7 @@ export function tripadvisorAttribution(activity: Activity): TripadvisorAttributi
 // Backend-gated per compliance rule 04 — only ever populated alongside a
 // Tripadvisor-treated row. Always an array (never undefined) so callers
 // (the reviews carousel) self-guard on `.length` the same way FactStrip
-// self-guards on an empty fields array — up to 3 per T3.
+// self-guards on an empty fields array — up to 3.
 export function tripadvisorReviews(activity: Activity): TripadvisorReview[] {
   const d = activity.details;
   if (!d) return [];
@@ -301,8 +286,8 @@ export function wellnessBookingNote(activity: Activity): string | undefined {
 
 // design-spec.md T8 addendum #2: the noun before the "·" is the *singular*
 // category word, not the plural CATEGORY_LABELS value — every other
-// category's label word is already singular (Kids stays "Kids"). T10:
-// Tours & Experiences' meta line reads "Tour · ..." (spec's own composition
+// category's label word is already singular (Kids stays "Kids"). Tours &
+// Experiences' meta line reads "Tour · ..." (spec's own composition
 // example), not the plural "Tours & Experiences" filter-list label.
 const SINGULAR_NOUN: Partial<Record<Category, string>> = {
   restaurants: 'Restaurant',
@@ -315,7 +300,7 @@ function categoryNoun(category: Category): string {
   return SINGULAR_NOUN[category] ?? CATEGORY_LABELS[category];
 }
 
-// §5b, extended by T6: the eyebrow line above a Tripadvisor row's title —
+// §5b: the eyebrow line above a Tripadvisor row's title —
 // this *is* the Meta line slot for a Tripadvisor restaurant/bar/café row
 // (§C's exact composition: `Restaurant · Fine Dining · $$$ · 400 m`,
 // `Bar · Cocktail Bar · 200 m`, `Café · Coffee Shop · 150 m` — category,
@@ -341,18 +326,15 @@ export function tripadvisorEyebrow(activity: Activity, distanceText: string): st
 // design-spec.md's "Two rules applied to all 13" (T5): subtype comes from
 // the activity's own `subcategory` slug — already taxonomy-validated
 // (BUSINESS_STANDARDS.md), translatable, always scalar by construction —
-// never from a generated field. Retires `badgeQualifier`'s 9-branch switch
-// over per-category generated fields (cuisine/venue_type/discipline/etc.).
+// never from a generated field.
 // `""`/absent (documented as common for the three Tripadvisor categories,
 // whose subtype is only set when the per-venue Google name lookup
-// succeeds) reads as "no subtype" — no fallback is invented, and the
-// retired generated qualifier is not resurrected as a stand-in.
+// succeeds) reads as "no subtype" — no fallback is invented.
 export function subtypeLabel(activity: Activity): string | undefined {
   if (!activity.subcategory) return undefined;
   // `activity.category` comes off an unvalidated wire cast (api/activities.ts)
   // — a category the app doesn't yet recognize has no `SUBCATEGORIES` entry,
-  // so this degrades to "no subtype" instead of crashing (the retired
-  // `badgeQualifier` switch had a `default:` doing the same job).
+  // so this degrades to "no subtype" instead of crashing.
   return SUBCATEGORIES[activity.category]?.find((option) => option.value === activity.subcategory)
     ?.label;
 }
@@ -364,8 +346,8 @@ export function subtypeLabel(activity: Activity): string | undefined {
 // MetaLine's `rawItems`) rather than being subject to the scalar kind's
 // length/word-count checks meant for generated content. Price level
 // (Tripadvisor-only today, via `tripadvisorEyebrow`) and any other
-// category-specific meta-line content is T6-T10's composition work, not
-// this mechanism.
+// category-specific meta-line content is each category's own composition
+// work, not this mechanism.
 export function metaLineLeadItems(activity: Activity): (string | undefined)[] {
   return [categoryNoun(activity.category), subtypeLabel(activity)];
 }
@@ -398,7 +380,7 @@ export function venueDiffersFromSubtype(activity: Activity, venueType: string | 
   return venueType;
 }
 
-// opening-hours T3: the seven in-scope categories may carry a structured
+// The seven in-scope categories may carry a structured
 // `opening_hours` object — this is the one place that reads it off the
 // discriminated `ActivityDetails` union (mirrors `factStripFields`'s own
 // per-category switch below).
@@ -503,7 +485,7 @@ function computeOpeningHoursStatus(oh: OpeningHours): boolean | undefined {
 // The one scalar field design-spec.md places in the rating/meta row instead
 // of the fact strip (Restaurants' open_status, Nightlife's live
 // open_tonight boolean) — "closed" is muted, never --error (not an error).
-// opening-hours T3: a structured `opening_hours` object, when present and
+// A structured `opening_hours` object, when present and
 // usable, supersedes both static flags below with a real computed status —
 // always the present-tense "Open"/"Closed" label (never "...tonight").
 export function openStatus(
@@ -533,7 +515,7 @@ export function openStatus(
   return undefined;
 }
 
-// T7 round-2 fix: the mockup's Nightlife screen renders the `Open tonight`
+// The mockup's Nightlife screen renders the `Open tonight`
 // meta chip *and* the HoursRow underneath at once (`Open 23:00 – 06:00`) —
 // two different questions, not one superseded by the other. `openStatus`
 // above deliberately can't answer both: its hours-first branch order is
@@ -551,7 +533,7 @@ export function nightlifeTonightChip(
   return { text: d.open_tonight ? 'Open tonight' : 'Closed tonight', isOpen: d.open_tonight };
 }
 
-// opening-hours T1: Monday-first display order for the week view.
+// Monday-first display order for the week view.
 // `DAY_ORDER` above stays Sunday-first — that's what `venueNow`/
 // `periodCoversNow` key off internally — this is purely a display order.
 const WEEK_VIEW_ORDER: DayOfWeek[] = [
@@ -582,8 +564,8 @@ function dayHours(oh: OpeningHours, day: DayOfWeek): string {
 // `periodCoversNow`'s own treatment of `period.day` as the start day. A day
 // with multiple periods (split hours) lists them ascending by start time,
 // comma-joined; a day with none reads "Closed"; `always_open` reads
-// "Open 24 hours" for every day. Feeds this task's Today row and T2's
-// full-week modal — no visual surface of its own.
+// "Open 24 hours" for every day. Feeds the Today row and the full-week
+// modal — no visual surface of its own.
 export function weekView(oh: OpeningHours): WeekViewDay[] {
   return WEEK_VIEW_ORDER.map((day) => ({ day, hours: dayHours(oh, day) }));
 }
@@ -598,12 +580,12 @@ export type TodayHoursRowData = {
   hours: string;
 };
 
-// opening-hours T1: the detail screen's default-state "today" line. Renders
-// only when `opening_hours` is present *and* usable — mirrors `openStatus`'s
-// own usability gate (`computeOpeningHoursStatus`) plus a resolvable
-// `venueNow` for "today"'s venue-local weekday — so a bad/missing timezone
-// degrades to `undefined` and the caller falls back to the legacy free-text
-// `hours` chip instead of showing a wrong or blank row.
+// The detail screen's default-state "today" line. Renders only when
+// `opening_hours` is present *and* usable — mirrors `openStatus`'s own
+// usability gate (`computeOpeningHoursStatus`) plus a resolvable `venueNow`
+// for "today"'s venue-local weekday — so a bad/missing timezone degrades to
+// `undefined` and the caller falls back to the legacy free-text `hours`
+// chip instead of showing a wrong or blank row.
 export function todayHoursRow(activity: Activity): TodayHoursRowData | undefined {
   const d = activity.details;
   if (!d) return undefined;
@@ -624,11 +606,11 @@ export function todayHoursRow(activity: Activity): TodayHoursRowData | undefined
 
 export type WeekHoursModalData = { days: WeekViewDay[]; today: DayOfWeek };
 
-// opening-hours T2: the full-week modal's data — same usability gate as
+// The full-week modal's data — same usability gate as
 // `todayHoursRow` above (usable `computeOpeningHoursStatus` + resolvable
 // `venueNow`), so the tap affordance and the modal it opens are defined
 // exactly when the Today row itself is. `today` is the venue-local weekday
-// (for the modal's current-day highlight), `days` is T1's own Monday-first
+// (for the modal's current-day highlight), `days` is the Monday-first
 // `weekView` — no reimplementation of its closed/split/always-open rendering.
 export function weekHoursModalData(activity: Activity): WeekHoursModalData | undefined {
   const d = activity.details;
@@ -658,25 +640,24 @@ function buildChips(
 export function factStripFields(activity: Activity): FactChip[] {
   const d = activity.details;
   if (!d) return [];
-  // T4 (activity-detail-system): structured `opening_hours`, when usable,
-  // now renders as its own standalone HoursRow (design-spec.md's "Hours
-  // row" slot leaves the stat grid entirely) — see ActivityDetailScreen's
-  // `<HoursRow>`. This helper only ever appends the legacy free-text
-  // fallback chip, and only when there's no usable structured data to
-  // supersede it (same mutual-exclusivity as before). Omits the chip
-  // (returns `chips` unchanged) when there's nothing to show.
+  // Structured `opening_hours`, when usable, renders as its own standalone
+  // HoursRow (design-spec.md's "Hours row" slot leaves the stat grid
+  // entirely) — see ActivityDetailScreen's `<HoursRow>`. This helper only
+  // ever appends the legacy free-text fallback chip, and only when there's
+  // no usable structured data to supersede it. Omits the chip (returns
+  // `chips` unchanged) when there's nothing to show.
   function withHours(chips: FactChip[], legacyHours: string | undefined): FactChip[] {
     if (todayHoursRow(activity)) return chips;
     return legacyHours ? [...chips, { icon: Clock, value: legacyHours, label: 'Hours' }] : chips;
   }
   switch (d.category) {
     case 'restaurants':
-      // §5b: a Tripadvisor-sourced row now carries its own cuisine (eyebrow
+      // §5b: a Tripadvisor-sourced row carries its own cuisine (eyebrow
       // subtitle) via `tripadvisorEyebrow` above — the generic Cuisine chip
       // would just repeat that, so it's dropped for Tripadvisor rows only;
-      // every other restaurant row keeps it exactly as before. T2: the
-      // `Price` chip (`price_tier`) is removed for every restaurant row —
-      // an LLM-scraped figure, not verifiable against the venue's own site.
+      // every other restaurant row keeps it. No `Price` chip
+      // (`price_tier`) for any restaurant row — an LLM-scraped figure, not
+      // verifiable against the venue's own site.
       return withHours(
         d.tripadvisor ? [] : buildChips([[Utensils, 'Cuisine', d.cuisine]]),
         d.hours,
@@ -696,8 +677,8 @@ export function factStripFields(activity: Activity): FactChip[] {
         d.hours,
       );
     case 'nightlife':
-      // T2: the `Entry` chip (`entry_price`) is removed — LLM-scraped, not
-      // verifiable against the venue's own site.
+      // No `Entry` chip (`entry_price`) — LLM-scraped, not verifiable
+      // against the venue's own site.
       return buildChips([
         [Shirt, 'Dress code', d.dress_code],
         [Clock, 'Opens', d.opens_time],
@@ -709,31 +690,31 @@ export function factStripFields(activity: Activity): FactChip[] {
         [Euro, 'Cost', d.cost],
       ]);
     case 'sport':
-      // T2: the `Duration` chip (`d.duration`) is removed — this is the
-      // LLM-scraped session duration, not the seeded Tours duration.
+      // No `Duration` chip (`d.duration`) — this is the LLM-scraped
+      // session duration, not the seeded Tours duration.
       return buildChips([
         [BarChart3, 'Effort', d.effort_level],
         [Wrench, 'Gear', d.gear],
       ]);
     case 'culture':
       // design-spec.md's Culture composition: `Venue`, shown only when it
-      // differs from the subtype (see `venueDiffersFromSubtype`). T2: the
-      // `Tickets` chip (`ticket_price`) is removed — LLM-scraped, not
+      // differs from the subtype (see `venueDiffersFromSubtype`). No
+      // `Tickets` chip (`ticket_price`) — LLM-scraped, not
       // verifiable. With only Venue left, a row where it matches the
-      // subtype now has 0 stat-grid chips (grid omits) instead of 1.
+      // subtype has 0 stat-grid chips (grid omits).
       return withHours(
         buildChips([[Landmark, 'Venue', venueDiffersFromSubtype(activity, d.venue_type)]]),
         d.hours,
       );
     case 'art':
-      // T2: Art's only chip (`Tickets`/`ticket_price`) is removed — LLM-
-      // scraped, not verifiable. Art now never has a stat-grid chip of its
+      // No `Tickets` chip (`ticket_price`, art's only candidate) — LLM-
+      // scraped, not verifiable. Art never has a stat-grid chip of its
       // own; only the legacy-hours fallback chip can still populate the
       // grid (or fold into the meta line as a 1-chip row).
       return withHours([], d.hours);
     case 'shopping':
-      // T9: "Best day, plus Venue when it differs from the subtype" — reuses
-      // T8's `venueDiffersFromSubtype` (same conditional Culture's stat grid
+      // "Best day, plus Venue when it differs from the subtype" — reuses
+      // `venueDiffersFromSubtype` (same conditional Culture's stat grid
       // above uses), not a re-derivation of it.
       return withHours(
         buildChips([
@@ -745,17 +726,15 @@ export function factStripFields(activity: Activity): FactChip[] {
     case 'kids':
       return [];
     case 'wellness':
-      // T2: both chips (`Typical visit`/`typical_visit`, `Price
-      // from`/`price_from`) are removed — both LLM-scraped, neither
-      // verifiable (a wrong scraped duration on this exact screen is the
-      // production bug this task exists to fix). Wellness never has a
-      // stat grid now — no legacy-hours fallback either (this category has
-      // no `hours` field).
+      // No `Typical visit`/`typical_visit` or `Price from`/`price_from`
+      // chips — both LLM-scraped, neither verifiable. Wellness never has a
+      // stat grid — no legacy-hours fallback either (this category has no
+      // `hours` field).
       return [];
     case 'entertainment':
-      // T2: both chips (`Typical show`/`typical_show_length`, `Price
-      // from`/`price_from`) are removed — both LLM-scraped. Entertainment
-      // never has a stat grid now.
+      // No `Typical show`/`typical_show_length` or `Price from`/
+      // `price_from` chips — both LLM-scraped. Entertainment never has a
+      // stat grid.
       return [];
     case 'tours_experiences':
       return buildChips([
@@ -775,7 +754,7 @@ export function factStripFields(activity: Activity): FactChip[] {
 // Backend's `upcoming_shows[].date` has no fixed documented format; parse it
 // as a real date for the day/numeral split when possible. When it isn't a
 // parseable date (or `Intl` throws), it's still an LLM-generated value —
-// T9 round-3 fix: route it through `classifyField('scalar', …)` like every
+// route it through `classifyField('scalar', …)` like every
 // other generated field, instead of rendering the raw string, so a
 // denylisted/oversized placeholder (`"Not specified"`, `"N/A"` — 41 of 231
 // live Entertainment rows carry one) omits instead of walking onto the
@@ -783,12 +762,11 @@ export function factStripFields(activity: Activity): FactChip[] {
 // date; the spec declares no kind for it explicitly. Never throws on
 // unexpected input.
 //
-// T11 fix: a value that passes the scalar check but still doesn't parse
-// (~99 of 761 live rows — e.g. "TBA", "Q4 2026") used to land in this same
-// `date` field, forcing it into the 44px-wide numeral column sized for a
-// 1-2 digit day and getting visually crushed/ellipsized. That fallback now
-// goes to `dateLabel` instead (an unstructured label the caller renders in
-// the row body, not the numeral box) — `date`/`day` stay empty, so the
+// A value that passes the scalar check but still doesn't parse
+// (~99 of 761 live rows — e.g. "TBA", "Q4 2026") goes to `dateLabel`
+// instead of the numeral column (an unstructured label the caller renders
+// in the row body, not the numeral box, avoiding the crush/ellipsis a
+// 44px-wide 1-2 digit column would cause) — `date`/`day` stay empty, so the
 // date-block box itself omits entirely for this row, per the spec's own
 // "no fallback forced into a scalar's format" absence reasoning.
 function dateBlockRow(show: { date: string; title: string }): DateBlockRow {
@@ -820,10 +798,9 @@ export function uniqueSection(
   if (!d) return undefined;
   switch (d.category) {
     case 'restaurants': {
-      // T2: was the 'nameprice' shape (name + price column) — now pills,
-      // name only. `.price` (`ItemPrice.price`) is dropped at render time;
-      // the backend model keeps the field (not this task's scope).
-      // Round 2 fix: each name now runs through `classifyPhrases` (same
+      // Pills, name only. `.price` (`ItemPrice.price`) is dropped at
+      // render time; the backend model keeps the field.
+      // Each name runs through `classifyPhrases` (same
       // per-item survival rule as Wellness' Treatments/Tours' checklists
       // below) — a blank/invalid name drops individually instead of
       // rendering an empty pill, and 0 survivors omits the section.
@@ -898,10 +875,8 @@ export function uniqueSection(
           }
         : undefined;
     case 'wellness': {
-      // T2: was the "duration" density (name + duration + `from €X`) —
-      // `duration`/`price` are both retired (LLM-scraped, unverifiable; a
-      // wrong scraped duration here is the production bug this task exists
-      // to fix). Now pills, one per surviving `item` name — same per-item
+      // Pills, one per surviving `item` name. `duration`/`price` aren't
+      // used — both LLM-scraped, neither verifiable. Same per-item
       // `classifyField('phrase', …)` survival rule as Tours' checklists
       // (`classifyPhrases` below).
       const items = classifyPhrases(d.treatments?.map((t) => t.item));
@@ -928,20 +903,15 @@ export function uniqueSection(
 // UniqueSectionData's single-value shape can't hold at once. Reuses the
 // existing 'checklist' shape (same one Nature/Sport already render via
 // uniqueSection) as a second, independent instance.
-// T9: `good_to_know[]` is `phrase` kind (design-spec.md's "Kind declarations
+// `good_to_know[]` is `phrase` kind (design-spec.md's "Kind declarations
 // on existing fields" — Wellness, Entertainment, Nature all share this
-// field). Every item now runs through `classifyField('phrase', …)`
+// field). Every item runs through `classifyField('phrase', …)`
 // individually — an item that's over-length or denylisted is dropped, the
 // rest of the list stays (same per-item survival rule as any other list),
 // and 0 survivors omits the section like every other shape's empty case.
-// This was the one real gap in the bug report's chain that isn't already
-// covered by a scalar/shape guard elsewhere: `factStripFields` uses
-// `classifyField('scalar', …)` for the stat grid and `dateBlockRow` already
-// classifies its trailing subline, but this function ran no validation at
-// all before this fix — see engineering-notes.md's T9 entry for why the
-// bug report's own sport-equipment string still passes this check (it's a
-// content-relevance defect, not a shape one, and this guard is scoped to
-// shape).
+// This guard is scoped to shape (length/denylist), not content relevance —
+// a syntactically fine but semantically wrong string (e.g. sport equipment
+// text on the wrong field) still passes.
 export function goodToKnowSection(activity: Activity): UniqueSectionData | undefined {
   const d = activity.details;
   if (!d) return undefined;

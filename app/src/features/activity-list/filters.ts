@@ -201,10 +201,8 @@ function toLocation(coordinates: { latitude: number; longitude: number }): Locat
   return { lat: coordinates.latitude, lng: coordinates.longitude };
 }
 
-// design-spec.md T3: the Feed's request builder, replacing the old
-// `buildActivitiesRequest` (which took the sheet's now-retired
-// categories+subtypes+minRating+maxDistanceKm `Filters` shape wholesale).
-// Scope/city/distance/rating now live in T2's `ScopeDraft`; only categories
+// design-spec.md T3: the Feed's request builder.
+// Scope/city/distance/rating live in `ScopeDraft`; only categories
 // stay on `Filters` (the Feed's own pill-row state) — `subtypes` are
 // deliberately **not** sent on the wire at all: see `filterBySubtypes`
 // below for why (client-side filtering off one category-scoped fetch, so

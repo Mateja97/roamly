@@ -33,7 +33,7 @@ const GO_BUTTON_SIZE = 38;
 // focused states swap the body bg / add a focus border per the
 // interactive-states addendum in DESIGN_STANDARDS.md's card recipe.
 // Memoized so a FlatList row only re-renders when its own props change —
-// unrelated screen state (filter sheet open, other rows) no longer forces a
+// unrelated screen state (filter sheet open, other rows) doesn't force a
 // re-render of every card.
 export const ActivityCard = memo(function ActivityCard({ activity, showDistance, onPress }: ActivityCardProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'broken'>('loading');

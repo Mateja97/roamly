@@ -11,16 +11,15 @@ type MetaLineProps = {
   // Already-final values — rendered first, in order, never run through
   // `classifyField`. Two distinct reasons a value lands here rather than in
   // `items`: (1) app-computed/taxonomy-derived data (category noun, subtype,
-  // distance/country) that was never generated content to begin with (T4
-  // round-2 review finding — a country name over 18 chars was silently
-  // dropped by the scalar check it was never meant to pass through), or (2)
+  // distance/country) that was never generated content to begin with (a
+  // country name over 18 chars was silently dropped by the scalar check it
+  // was never meant to pass through), or (2)
   // generated content that already passed `classifyField` once upstream and
   // had a UI-only prefix (e.g. "from ") appended after that check — passing
   // it through `items` would re-classify the *prefixed* string and could
-  // reject an otherwise-valid value on length alone (T11 round 2). T5: was a
-  // single `rawItem`, widened to an array so category noun +
-  // subtype-from-slug can lead ahead of distance/country without a second
-  // bypass prop.
+  // reject an otherwise-valid value on length alone. An array (not a
+  // single `rawItem`) so category noun + subtype-from-slug can lead ahead
+  // of distance/country without a second bypass prop.
   rawItems?: (string | undefined)[];
   items: (string | undefined)[];
   // Mutually exclusive per design-spec.md's "Meta line" slot — a category

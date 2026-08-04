@@ -376,10 +376,9 @@ export type Activity = {
   google_maps_uri?: string;
 };
 
-// The wire format today (pre-T3) is still a plain string[] of URLs; T3 will
-// move the backend to send { uri, attribution } objects. Accepting either
-// per-entry shape here means this client type change ships safely before
-// T3 lands, and needs no follow-up change once it does.
+// The wire may send either a plain string URL or a richer { uri,
+// attribution } object per entry. Accepting both shapes here means no
+// follow-up change is needed regardless of which one the backend sends.
 // T6: `google_reviews` is `RawGoogleReview[]` (snake_case) on the wire,
 // reshaped to `GoogleReview[]` (camelCase) by `toGoogleReviews` below —
 // every other field passes through `toActivity` unchanged.

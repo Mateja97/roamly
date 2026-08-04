@@ -12,9 +12,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // abstraction, just the one already-installed library, called directly.
 const FIRST_LAUNCH_SEEN_KEY = 'roamly:first-launch-seen';
 
-// review round 1 (Critical): a rejecting AsyncStorage read used to leave the
-// caller's own .then never firing, permanently blank. Caught here instead —
-// a failed read is indistinguishable from "never written", so it falls back
+// Without this catch, a rejecting AsyncStorage read leaves the
+// caller's own .then never firing, permanently blank. A failed read is
+// indistinguishable from "never written", so it falls back
 // to "unseen" (shows Splash), same default a fresh install gets from
 // AsyncStorage's own null-on-not-found semantics. The App.tsx call site adds
 // its own .catch as a second backstop (belt and suspenders, cheap).
