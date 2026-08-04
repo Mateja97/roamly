@@ -47,12 +47,9 @@ import {
   metaDistanceText,
   metaLineLeadItems,
   metaRowExtras,
-  nightlifeTonightChip,
-  openStatus,
   PRIMARY_CTA_LABEL,
   primaryActionURL,
   primaryCTAIsDirections,
-  todayHoursRow,
   toursIncludedChecklist,
   toursItinerary,
   toursMeetingPoint,
@@ -61,10 +58,15 @@ import {
   tripadvisorEyebrow,
   tripadvisorReviews,
   uniqueSection,
-  weekHoursModalData,
   wellnessBookingNote,
   type BodySection,
 } from './activityDetailConfig';
+import {
+  nightlifeTonightChip,
+  openStatus,
+  todayHoursRow,
+  weekHoursModalData,
+} from './openingHours';
 import { DifficultyMeter } from './DifficultyMeter';
 import {
   DescriptionSkeleton,

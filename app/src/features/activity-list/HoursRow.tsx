@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, Clock } from 'lucide-react-native';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import type { TodayHoursRowData } from './activityDetailConfig';
+import type { TodayHoursRowData } from './openingHours';
 
 type HoursRowProps = {
   data: TodayHoursRowData | undefined;
