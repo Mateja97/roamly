@@ -3,7 +3,7 @@
 A `ponytail:` comment marks a deliberate shortcut or deferral, made on purpose with the reasoning inline, not a TODO left by accident.
 This doc is a generated index for scanning; the in-code comment at each location stays the source of truth — edit the code, not this file.
 
-40 markers across 17 files, as of this writing (`grep -rn "ponytail:" app/src --include='*.ts' --include='*.tsx' | wc -l`).
+40 markers across 28 files, as of this writing — every `ponytail:` comment in `app/src`, test files included (`grep -rn "ponytail:" app/src --include='*.ts' --include='*.tsx' | wc -l` for markers, add `-l` before `wc` for files). Listed below as 38 entries: one entry groups three near-identical markers in `activities.ts` that record the same deferral at three call sites.
 
 ## `features/scope-sheet/`
 
