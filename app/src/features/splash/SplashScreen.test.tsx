@@ -21,6 +21,24 @@ describe('SplashScreen', () => {
     ).toBeTruthy();
   });
 
+  // Regression guard for review round 2, Important: `justifyContent:
+  // 'center'` on the flex:1 group centers by shrinking from both edges,
+  // which pushes content off the top under dynamic-type overflow. Auto
+  // margins collapse to 0 on overflow instead, packing from the top per
+  // design-spec.md T1's dynamic-text-scaling requirement — this asserts the
+  // mechanism, not just that it renders.
+  it('centers the destination+CTA group via auto margins, not justifyContent', () => {
+    render(<SplashScreen onContinue={jest.fn()} />);
+    const group = screen.getByTestId('splash-destination-cta-group');
+    const groupContent = screen.getByTestId('splash-group-content');
+
+    expect(group.props.style).not.toHaveProperty('justifyContent');
+    expect(groupContent.props.style).toMatchObject({
+      marginTop: 'auto',
+      marginBottom: 'auto',
+    });
+  });
+
   it('advances immediately on CTA tap and persists the first-launch-seen flag', async () => {
     const onContinue = jest.fn();
     render(<SplashScreen onContinue={onContinue} />);
