@@ -104,7 +104,15 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
                   (ellipse at 50% 0%, --glow, transparent 70%)` for real with
                   react-native-svg (already a dep, already imported here for the
                   dashed underline) instead of approximating it. */}
-              <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
+              {/* T3 round 2, Important: no explicit width/height — those
+                  percentages resolve against this wrapper's content box
+                  (inside its paddingHorizontal), while absoluteFill's
+                  top/left/right/bottom:0 anchors to the wider padding box, so
+                  the two disagreed and the painted glow came out narrower
+                  than its position, pinned left. absoluteFill alone sizes
+                  the Svg to fill its containing block (Yoga does this for any
+                  absolutely-positioned view), so let it own both. */}
+              <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
                 <Defs>
                   {/* T3: native react-native-svg doesn't reliably apply the
                       alpha baked into an rgba() stopColor string — plain hex
