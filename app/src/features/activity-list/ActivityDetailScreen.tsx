@@ -1,62 +1,36 @@
 import { useState } from 'react';
-import type { ReactNode } from 'react';
 import {
-  Linking,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Image } from 'expo-image';
 import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { ArrowUpRight, Info, MapPin, MapPinOff, Star } from 'lucide-react-native';
+import { ArrowUpRight, Info } from 'lucide-react-native';
 import type { Activity } from '../../api/activities';
-import {
-  hasMapsKey,
-  hasValidCoordinates,
-  staticMapUrl,
-} from '../../api/staticMap';
+import { hasValidCoordinates } from '../../api/staticMap';
 import { ErrorBanner } from '../../components/ErrorBanner';
 import { GoogleAttributionPlate } from '../../components/GoogleAttributionPlate';
 import { PhotoAttributionCaption } from '../../components/PhotoAttributionCaption';
-import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
-import {
-  colors,
-  fontFamily,
-  fontSize,
-  radius,
-  space,
-} from '../../theme/tokens';
+import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { ActionChips, type ActionChipItem } from './ActionChips';
-import {
-  bodySectionOrder,
-  metaLineLeadItems,
-  PRIMARY_CTA_LABEL,
-  type BodySection,
-} from './activityDetailConfig';
+import { bodySectionOrder, PRIMARY_CTA_LABEL } from './activityDetailConfig';
 import { useActivityDetailData } from './useActivityDetailData';
-import { DifficultyMeter } from './DifficultyMeter';
-import {
-  DescriptionSkeleton,
-  RatingSkeleton,
-  ReviewsSkeleton,
-  UniqueSectionSkeleton,
-} from './DetailSkeletons';
-import { FactStrip } from './FactStrip';
+import { useOSHandoff } from './useOSHandoff';
+import { DetailBody } from './DetailBody';
+import { DetailMapBox } from './DetailMapBox';
+import { DetailTitleBlock } from './DetailTitleBlock';
+import { ReviewsSkeleton } from './DetailSkeletons';
 import { HeroCarousel } from './HeroCarousel';
 import { HoursRow } from './HoursRow';
-import { MetaLine } from './MetaLine';
 import { PhotoViewerModal } from './PhotoViewerModal';
-import { ProseBlock } from './ProseBlock';
 import { ReviewsSection } from './ReviewsSection';
 import { TripadvisorBlock } from './TripadvisorBlock';
-import { UniqueSection, sectionHeadingStyle } from './UniqueSection';
 import { WeekHoursModal } from './WeekHoursModal';
 
 // design-spec.md's "Shared base layout" section: hero photo carousel (owns
@@ -71,8 +45,6 @@ import { WeekHoursModal } from './WeekHoursModal';
 // description/unique-section/reviews) while pending and merges onto them on
 // success. Other async surfaces here: hero/map images, CTA OS-handoff
 // failures.
-const DETAIL_MAP_WIDTH = 600;
-const DETAIL_MAP_HEIGHT = 400; // 3:2, per the map box's reserved aspect ratio.
 // design-spec.md's "Reviews" slot (§B10): "up to three cards" — the Google
 // attribution plate itself renders every review it's given (no cap of its
 // own, and it's compliance-critical so its internals stay untouched), so
@@ -92,14 +64,8 @@ export function ActivityDetailScreen({
 }: ActivityDetailScreenProps) {
   const genericFocus = useFocusable();
   const primaryFocus = useFocusable();
-  const mapFocus = useFocusable();
   const tripadvisorLinkFocus = useFocusable();
   const insets = useSafeAreaInsets();
-  const [mapState, setMapState] = useState<'loading' | 'loaded' | 'broken'>(
-    'loading',
-  );
-  const [ctaBusy, setCtaBusy] = useState(false);
-  const [ctaError, setCtaError] = useState<string | null>(null);
   // null = closed; a number = open the fullscreen viewer at that page
   // (the hero carousel's current page — continuity between the two).
   // Fewer than 2 photos never opens this (the hero's pill hides itself).
@@ -116,56 +82,14 @@ export function ActivityDetailScreen({
     googleReviewsAllowed, showRatingCluster, tripadvisor,
     reviews, address, eyebrow, showMetaRow, googleReviewsCardShown,
   } = useActivityDetailData(seedActivity, showDistance);
+  const {
+    ctaBusy, ctaError, setCtaError, openDirections, openShare,
+    openExternalLink, handleCallPhone,
+  } = useOSHandoff(activity);
   const heroPhoto = photos[heroIndex];
-
-  // OS handoff: opens the device's maps app on the activity's coordinates.
-  // Surfaces the generic error banner (never a silent no-op) when the intent
-  // can't be resolved — DESIGN_STANDARDS.md's Error banner recipe.
-  async function openDirections() {
-    if (!hasValidCoordinates(activity.location)) {
-      setCtaError('This activity has no location to get directions to.');
-      return;
-    }
-    setCtaBusy(true);
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${activity.location.lat},${activity.location.lng}`;
-    try {
-      await Linking.openURL(url);
-    } catch {
-      setCtaError('Could not open maps. Please try again.');
-    } finally {
-      setCtaBusy(false);
-    }
-  }
-
-  async function openShare() {
-    setCtaBusy(true);
-    try {
-      await Share.share({
-        message: `${activity.title} — ${activity.description}`,
-      });
-    } catch {
-      setCtaError('Could not open the share sheet. Please try again.');
-    } finally {
-      setCtaBusy(false);
-    }
-  }
 
   function handleGenericPress() {
     return genericLabel === 'Directions' ? openDirections() : openShare();
-  }
-
-  // design-spec.md: the 8 non-directions categories' primary CTA opens
-  // their external `action_url` via the same async/error pattern as
-  // openDirections above.
-  async function openExternalLink(url: string) {
-    setCtaBusy(true);
-    try {
-      await Linking.openURL(url);
-    } catch {
-      setCtaError('Could not open the link. Please try again.');
-    } finally {
-      setCtaBusy(false);
-    }
   }
 
   function handlePrimaryPress() {
@@ -173,122 +97,7 @@ export function ActivityDetailScreen({
     if (actionURL) return openExternalLink(actionURL);
   }
 
-  // design-spec.md's Place-facts list: "Phone... rendered as a tel: link
-  // (tap to call)". Reuses `openExternalLink`'s existing async/error-banner
-  // handling — a `tel:` URL fails the same way any other OS handoff can
-  // (e.g. simulator has no phone app), and it should surface the same
-  // generic error banner rather than a silent no-op.
-  function handleCallPhone(phone: string) {
-    return openExternalLink(`tel:${phone}`);
-  }
-
-  // design-spec.md's "Map + address" slot (§B11): existing, unchanged —
-  // extracted to a function only so Tours' "Meeting point" section (below)
-  // can render the same box in its own position instead of the generic
-  // bottom spot (design-import mockup: "Tours replaces this with its own
-  // Meeting point map"). Every other category still calls this once, at the
-  // same bottom position it always has.
-  function renderMapBox(): ReactNode {
-    if (!hasMapsKey()) return null;
-    return (
-      <Pressable
-        onPress={openDirections}
-        onFocus={mapFocus.onFocus}
-        onBlur={mapFocus.onBlur}
-        disabled={!hasValidCoordinates(activity.location) || ctaBusy}
-        accessibilityRole="button"
-        accessibilityLabel="Open in Google Maps"
-        style={[styles.mapBox, mapFocus.focused && styles.mapBoxFocused]}
-      >
-        {hasValidCoordinates(activity.location) && mapState !== 'broken' ? (
-          <>
-            <Image
-              testID="activity-detail-map-image"
-              source={{
-                uri: staticMapUrl(activity.location, DETAIL_MAP_WIDTH, DETAIL_MAP_HEIGHT),
-              }}
-              style={styles.image}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-              accessibilityIgnoresInvertColors
-              onLoad={() => setMapState('loaded')}
-              onError={() => setMapState('broken')}
-            />
-            {mapState === 'loading' && (
-              <Skeleton width="100%" height="100%" style={styles.imageSkeleton} />
-            )}
-          </>
-        ) : (
-          <View style={styles.imageFallback}>
-            <MapPinOff size={20} color={colors.textMuted} strokeWidth={1.75} />
-          </View>
-        )}
-      </Pressable>
-    );
-  }
-
-  // design-spec.md: per-category body-section order. FactStrip/
-  // UniqueSection/DifficultyMeter each already render nothing when their
-  // own data is absent, so this only controls order, not per-section
-  // omission.
-  function renderBodySection(section: BodySection): ReactNode {
-    switch (section) {
-      case 'description':
-        // Only skeleton when the seed description is genuinely empty —
-        // never pulse over text the user could already be reading.
-        // design-spec.md's "Prose block" slot (§B5): the one legal home
-        // for a generated sentence.
-        if (activity.description) {
-          return <ProseBlock key="description" heading="About" value={activity.description} />;
-        }
-        return isPlacesLive && detailsPending ? (
-          <DescriptionSkeleton key="description" />
-        ) : null;
-      case 'difficulty':
-        return activity.details?.category === 'sport' &&
-          activity.details.difficulty !== undefined ? (
-          <DifficultyMeter
-            key="difficulty"
-            difficulty={activity.details.difficulty}
-            inferred={activity.details.difficulty_inferred}
-          />
-        ) : null;
-      case 'factstrip':
-        return <FactStrip key="factstrip" fields={fields} />;
-      case 'unique':
-        // design-spec.md's Tours & Experiences composition: "What's
-        // included" → "Meeting point" → "Itinerary", three sections sharing
-        // this one canonical slot — see `toursChecklist`/`meetingPointText`/
-        // `toursItineraryData` above. Every other category keeps the plain
-        // single-`UniqueSection` render below, unchanged.
-        if (activity.details?.category === 'tours_experiences') {
-          if (!toursChecklist && !meetingPointText && !toursItineraryData) return null;
-          return (
-            <View key="unique" style={styles.toursUniqueGroup}>
-              {toursChecklist && <UniqueSection data={toursChecklist} />}
-              {meetingPointText && (
-                <View style={styles.toursMeetingPoint}>
-                  <Text style={sectionHeadingStyle}>Meeting point</Text>
-                  {renderMapBox()}
-                  <View style={styles.toursMeetingPointAddressRow}>
-                    <MapPin size={15} color={colors.textMuted} strokeWidth={1.75} />
-                    <Text style={styles.toursMeetingPointAddressText}>{meetingPointText}</Text>
-                  </View>
-                </View>
-              )}
-              {toursItineraryData && <UniqueSection data={toursItineraryData} />}
-            </View>
-          );
-        }
-        return isPlacesLive && detailsPending && !unique ? (
-          <UniqueSectionSkeleton key="unique" category={activity.category} />
-        ) : (
-          <UniqueSection key="unique" data={unique} />
-        );
-      case 'goodtoknow':
-        return goodToKnow ? <UniqueSection key="goodtoknow" data={goodToKnow} /> : null;
-    }
-  }
+  const mapDisabled = !hasValidCoordinates(activity.location) || ctaBusy;
 
   // design-spec.md's "Action chips" slot (§B2) — a fixed slot in the
   // canonical order for every category, right after the title block, not a
@@ -335,125 +144,22 @@ export function ActivityDetailScreen({
         />
 
         <View style={styles.titleBlock}>
-          {/* §5b: the gold-star rating is suppressed for a Tripadvisor row —
-              the TripadvisorBlock below carries rating instead (compliance
-              rule 03). `attribution` (art's artist/work/medium line) never
-              co-occurs with `tripadvisor` (art can't be a Tripadvisor
-              category), so the whole group is safely omitted rather than
-              left as an empty View + phantom gap. Category noun + subtype
-              lead the meta line below instead (see `metaLineLeadItems`), so
-              this cluster is rating-only. */}
-          {(attribution || (!tripadvisor && showRatingCluster)) && (
-            <View style={styles.badgeGroup}>
-              {attribution && (
-                <Text style={styles.attributionLine}>
-                  {[
-                    attribution.artist && <Text key="artist">{attribution.artist}</Text>,
-                    attribution.workYear && (
-                      <Text key="workYear" style={styles.attributionItalic}>
-                        {attribution.workYear}
-                      </Text>
-                    ),
-                    attribution.medium && <Text key="medium">{attribution.medium}</Text>,
-                  ]
-                    .filter(Boolean)
-                    .flatMap((node, i) => (i === 0 ? [node] : [' · ', node]))}
-                </Text>
-              )}
-
-              {/* "Rating value" — skeletoned only while the live fetch is
-                  pending and the seed genuinely has nothing yet (rule 1:
-                  never pulse over an already-good value); once settled with
-                  no rating (failed/empty merge), the whole block collapses
-                  (rule 3: no fabricated "0.0", no empty frame) rather than
-                  falling back to a fabricated zero. Once the Reviews slot
-                  below is genuinely showing this same score
-                  (`reviewsScoreShown`), this cluster stays hidden — one
-                  focal rating number, not two (folded into
-                  `showRatingCluster` above). */}
-              {!tripadvisor && showRatingCluster && (
-                isPlacesLive && detailsPending && activity.rating <= 0 ? (
-                  <View style={styles.rating}>
-                    <RatingSkeleton />
-                  </View>
-                ) : (
-                  <View style={styles.rating}>
-                    <Star
-                      size={16}
-                      color={colors.primary}
-                      strokeWidth={1.75}
-                      fill={colors.primary}
-                    />
-                    <Text style={styles.ratingLabel}>
-                      {activity.rating.toFixed(1)}
-                    </Text>
-                  </View>
-                )
-              )}
-            </View>
-          )}
-
-          <View style={styles.titleGroup}>
-            {eyebrow && <Text style={styles.tripadvisorEyebrow}>{eyebrow}</Text>}
-            <Text style={styles.title}>{activity.title}</Text>
-            {/* Same shared-wire-object scoping as `tripadvisorEyebrow`'s
-                price level: only Restaurants' composition names a cuisine
-                subtitle (it's the stand-in for the Cuisine chip
-                `factStripFields` drops on Tripadvisor rows). Bars/Cafés
-                compositions don't mention it, even though the wire type
-                carries `cuisine` for every Tripadvisor-sourced category. */}
-            {activity.category === 'restaurants' && tripadvisor?.cuisine && (
-              <Text style={styles.tripadvisorCuisineSubtitle}>{tripadvisor.cuisine}</Text>
-            )}
-          </View>
-
-          {/* design-spec.md's "Meta line" slot (§B1): join-never-prefix,
-              one optional status/level chip. Category noun + subtype (from
-              the taxonomy-validated `subcategory` slug, never a generated
-              field) lead the line via `metaLineLeadItems`; absent for a
-              Tripadvisor row (the eyebrow already carries category, per
-              §5b). */}
-          {showMetaRow && (
-            <MetaLine
-              // Category noun + subtype (from `subcategory`) lead, ahead of
-              // distance/country — all app-computed/taxonomy data, never
-              // run through `classifyField` (see MetaLine's `rawItems`).
-              // Absent entirely for a Tripadvisor row (its eyebrow above
-              // the title already carries category). `foldedValue` also
-              // belongs here, not in `items` below — it's already been
-              // through `classifyField` once (via `classifyFactChips`) —
-              // `rawItems` is the already-final bypass that avoids running
-              // it through a second `classifyField` call.
-              // Candidate count (category + subtype + one of {kidsAge,
-              // metaExtras, foldedValue}) maxes out at 3 for every
-              // category, since `factStripFields` returns `[]`
-              // unconditionally for Kids and Entertainment —
-              // `foldedFactChip` can never be defined when
-              // `kidsAge`/`metaExtras` are — so `metaText` (distance/
-              // country) is never at risk of overflow and is included
-              // unconditionally.
-              rawItems={[
-                ...(!tripadvisor ? [...metaLineLeadItems(activity), kidsAge, metaText] : []),
-                foldedValue,
-              ]}
-              items={metaExtras}
-              // Nightlife's `Open tonight` chip (folded into
-              // `metaChipStatus` above) takes priority over, and unlike, the
-              // generic status chip is never suppressed by `todayRow` — the
-              // mockup shows the chip and HoursRow together, not one
-              // replacing the other. Falls through to Tours-only
-              // `levelChipText` — the two are mutually exclusive (Tours
-              // never has a status/open-tonight chip, see `levelChipText`'s
-              // definition above).
-              chip={
-                metaChipStatus
-                  ? { kind: 'status', text: metaChipStatus.text, isOpen: metaChipStatus.isOpen }
-                  : levelChipText
-                    ? { kind: 'level', text: levelChipText }
-                    : undefined
-              }
-            />
-          )}
+          <DetailTitleBlock
+            activity={activity}
+            attribution={attribution}
+            tripadvisor={tripadvisor}
+            showRatingCluster={showRatingCluster}
+            isPlacesLive={isPlacesLive}
+            detailsPending={detailsPending}
+            eyebrow={eyebrow}
+            showMetaRow={showMetaRow}
+            metaText={metaText}
+            kidsAge={kidsAge}
+            metaExtras={metaExtras}
+            foldedValue={foldedValue}
+            metaChipStatus={metaChipStatus}
+            levelChipText={levelChipText}
+          />
 
           {/* design-spec.md's "Action chips" slot (§B2): fixed slot in the
               canonical order, right after the meta line — see
@@ -468,7 +174,23 @@ export function ActivityDetailScreen({
               grid → ... */}
           <HoursRow data={todayRow} onPress={() => setHoursModalOpen(true)} />
 
-          {bodySectionOrder(activity.category).map(renderBodySection)}
+          {bodySectionOrder(activity.category).map((section) => (
+            <DetailBody
+              key={section}
+              section={section}
+              activity={activity}
+              isPlacesLive={isPlacesLive}
+              detailsPending={detailsPending}
+              fields={fields}
+              unique={unique}
+              goodToKnow={goodToKnow}
+              toursChecklist={toursChecklist}
+              toursItineraryData={toursItineraryData}
+              meetingPointText={meetingPointText}
+              onMapPress={openDirections}
+              mapDisabled={mapDisabled}
+            />
+          ))}
 
           {activity.tags.length > 0 ? (
             <View style={styles.tagsRow}>
@@ -545,8 +267,13 @@ export function ActivityDetailScreen({
               body slot) is already rendering this same box — every other
               category (and Tours' own no-details/no-meeting_point states)
               renders it at this, its usual bottom position. */}
-          {!(activity.details?.category === 'tours_experiences' && meetingPointText) &&
-            renderMapBox()}
+          {!(activity.details?.category === 'tours_experiences' && meetingPointText) && (
+            <DetailMapBox
+              activity={activity}
+              onPress={openDirections}
+              disabled={mapDisabled}
+            />
+          )}
 
           {/* design-spec.md's Footer CTAs + disclaimer section: the
               deep-link button + disclaimer are the trailing elements of the
@@ -666,89 +393,10 @@ const styles = StyleSheet.create({
   body: {
     paddingBottom: space[8],
   },
-  mapBox: {
-    width: '100%',
-    aspectRatio: 3 / 2,
-    borderRadius: radius.default,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceHover,
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  mapBoxFocused: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  imageFallback: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  imageSkeleton: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-  },
   titleBlock: {
     paddingHorizontal: space[6],
     paddingTop: space[6],
     gap: space[6],
-  },
-  badgeGroup: {
-    gap: space[3],
-  },
-  attributionLine: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-    letterSpacing: 0.24,
-  },
-  attributionItalic: {
-    fontStyle: 'italic',
-  },
-  rating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-  },
-  ratingLabel: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-  },
-  // §5b: wraps eyebrow/title/cuisine-subtitle as one tight cluster — a
-  // smaller gap than titleBlock's own space[6] between its top-level
-  // sections, matching the mock's close eyebrow→h2→subtitle spacing.
-  titleGroup: {
-    gap: space[1],
-  },
-  // §5b: eyebrow (category · price level · distance) — same overline
-  // treatment as TripadvisorReviewsCarousel's section label.
-  tripadvisorEyebrow: {
-    fontSize: fontSize.xs,
-    textTransform: 'uppercase',
-    letterSpacing: fontSize.xs * 0.08,
-    color: colors.primary,
-  },
-  tripadvisorCuisineSubtitle: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    lineHeight: fontSize.sm * 1.5,
-  },
-  title: {
-    // Marcellus loads once, globally, gated by App.tsx's font-load gate —
-    // every screen (this one included) applies the token directly (see
-    // tokens.ts's fontFamily.display comment).
-    fontFamily: fontFamily.display,
-    fontSize: fontSize.xl,
-    color: colors.text,
-    fontWeight: '400',
-    lineHeight: fontSize.xl * 1.1,
   },
   tripadvisorFooterCta: {
     gap: space[4],
@@ -778,24 +426,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     lineHeight: fontSize.xs * 1.55,
-  },
-  // Tours & Experiences' three-part 'unique' body slot — same top-level
-  // rhythm as the other body sections' own space[6] gap.
-  toursUniqueGroup: {
-    gap: space[6],
-  },
-  toursMeetingPoint: {
-    gap: space[3],
-  },
-  toursMeetingPointAddressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-  },
-  toursMeetingPointAddressText: {
-    flex: 1,
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
   },
   tagsRow: {
     flexDirection: 'row',
