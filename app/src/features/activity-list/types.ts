@@ -1,5 +1,3 @@
-import type { Activity } from '../../api/activities';
-import type { CitySuggestion } from '../../api/cities';
 import type { ScopeSelection } from '../scope-picker/types';
 
 export type Category =
@@ -19,16 +17,18 @@ export type Category =
 
 export type RatingOption = 4.0 | 4.5 | 4.8;
 
-// The sheet's applied selection. `null` means "unset" for the single-select
-// groups; an empty array means "unset" for the multi-select category and
-// subtype groups. `maxDistanceKm` only has a slider/control for `anywhere` —
-// `null` there means "no limit" (the slider's widest/default stop). Nearby's
-// range is server-fixed and never adjustable, so it's always `null` too (no
-// slider, no chip, no request field) — see filters.ts's `defaultFilters`.
+// The Feed's own category/subtype pill-row state (T3/T4 — the retired
+// FilterSheet used to own this shape). Only `categories`/`subtypes` are
+// actually read anywhere now — `minRating`/`maxDistanceKm` moved to T2's
+// `ScopeDraft` and nothing reads them off `Filters` anymore.
+// ponytail: left in place rather than removed, to avoid a mechanical sweep
+// of every existing `Filters` literal (production + tests) for a field two
+// tasks' worth of behavior has already made dead; remove both fields (and
+// this sweep) if `Filters` is touched again for an unrelated reason.
 // `subtypes` holds selections across every selected category at once (one
-// subtype group per category — filters-subtypes-fix T5); a slug only ever
-// stays in this array while its owning category is still selected — see
-// filters.ts's SUBCATEGORIES/toggleCategory and FilterSheet's per-category
+// subtype rail per category — filters-subtypes-fix T5, then Decision 5); a
+// slug only ever stays in this array while its owning category is still
+// selected — see filters.ts's SUBCATEGORIES/toggleCategory's per-category
 // orphan-clearing.
 export type Filters = {
   categories: Category[];
@@ -39,17 +39,11 @@ export type Filters = {
 
 export type ActivityListScreenProps = {
   selection: ScopeSelection;
-  // T2: the activity-types picker carries its selection forward as the
-  // list's initial applied filter — arrives pre-filtered rather than
-  // fetching all-types first and re-filtering client-side.
-  initialCategories?: Category[];
-  // T5: the Anywhere search-setup screen already ran the (cities-aware)
-  // query itself — when present, this screen shows those results directly
-  // instead of re-querying with an equivalent request on mount.
-  initialActivities?: Activity[];
-  // T2: the Anywhere search-setup screen's selected cities, carried forward
-  // for the header's composite subtitle (`{count} places · {cities}`).
-  // Undefined/empty means the zero-city fallback (current_location anchor).
-  initialCities?: CitySuggestion[];
-  onBack: () => void;
+  // T4: Feed is the app's home screen now — App.tsx mounts this with no
+  // previous screen to pop back to, so `onBack` is omitted there. Optional
+  // (not removed outright) so this component still works standalone/in
+  // tests. See ActivityListScreen's own hardware-back handler for what an
+  // absent `onBack` means for Android's back button (falls through to the
+  // OS default — exit — once no overlay is open to close instead).
+  onBack?: () => void;
 };

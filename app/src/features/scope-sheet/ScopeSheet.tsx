@@ -458,10 +458,11 @@ type AnywherePaneProps = {
 // (design-spec.md T2: reuse its city-search code verbatim), plus the
 // distance slider — hidden with no anchor at all (anywhereHasAnchor),
 // same "Hidden" rule FilterSheet's DistanceSlider already follows.
-// ponytail: this duplicates AnywhereSearchScreen's city-search effect/JSX
-// rather than extracting a shared hook/component — that screen is deleted
-// in T4 once T3/T4 land, so a shared module now would just get un-extracted
-// again next task; dedupe only if AnywhereSearchScreen ever outlives T4.
+// ponytail: this duplicates the city-search effect/JSX that used to live in
+// `AnywhereSearchScreen` (deleted in T4) rather than extracting a shared
+// hook/component at the time — that screen's whole file is gone now, so
+// this is simply the one remaining copy, not a duplicate anymore; extract a
+// shared hook only if a second consumer shows up.
 function AnywherePane({
   draft,
   cityQuery,

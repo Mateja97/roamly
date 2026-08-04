@@ -120,19 +120,19 @@ provider yet and is deliberately empty.
 
 ## Known gaps vs. current implementation
 
-- **Anywhere without an anchor**: `app/src/features/search-setup/anywhereSearch.ts`'s
-  `buildAnywhereSearchRequest` currently allows a fully unanchored query (no
+- **Anywhere without an anchor**: `app/src/features/activity-list/filters.ts`'s
+  `buildFeedRequest` currently allows a fully unanchored query (no
   `current_location`, no `cities`) when location is denied/unavailable and
   no city is picked — it just runs a broad query. The target rule above says
   Anywhere should require at least one city in that case. Fixing this is a
-  separate follow-up task, not part of this doc.
-- **Two Anywhere distance ranges**: the 5-500km slider above is the
-  Anywhere search-setup screen's range
-  (`app/src/features/search-setup/anywhereSearch.ts`). The activity list's
-  Filter sheet has a second Anywhere distance slider with a different
-  100-2000km range plus a "No limit" stop
-  (`app/src/features/activity-list/filters.ts`). Converging on one
-  canonical range is a separate follow-up task.
+  separate follow-up task, not part of this doc. **Carve-out**: the content-
+  first Feed's cold start (`App.tsx`) is a deliberate exception to that
+  target rule, not an instance of this gap — the very first launch (and any
+  later launch before location permission has been granted) is *meant* to
+  run this same unanchored Anywhere query immediately, with no gate screen
+  and no city required, so the feed always renders something on first paint
+  (see `docs/superpowers/specs/2026-08-03-content-first-redesign-design.md`).
+  A future fix for this gap must preserve that cold-start carve-out.
 
 ## See also
 

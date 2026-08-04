@@ -1013,10 +1013,10 @@ const styles = StyleSheet.create({
     lineHeight: fontSize.sm * 1.5,
   },
   title: {
-    // Marcellus loads once, globally, gated by ScopePickerScreen at the
-    // start of the nav stack — every screen after it (this one included)
-    // applies the token directly, same as the activities-list/search-setup
-    // H1s (see tokens.ts's fontFamily.display comment).
+    // Marcellus loads once, globally, gated by App.tsx's font-load gate
+    // (moved there from ScopePickerScreen in T1) — every screen (this one
+    // included) applies the token directly (see tokens.ts's
+    // fontFamily.display comment).
     fontFamily: fontFamily.display,
     fontSize: fontSize.xl,
     color: colors.text,

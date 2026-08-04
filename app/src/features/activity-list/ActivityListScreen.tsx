@@ -43,36 +43,24 @@ const SKELETON_CARD_COUNT = 5;
 const TRAVELER_CATEGORIES: Category[] = ['tours_experiences', 'culture'];
 const TRAVELER_ROW_CAP = 8;
 
-export function ActivityListScreen({
-  selection,
-  initialCategories = [],
-  initialActivities,
-  initialCities = [],
-  onBack,
-}: ActivityListScreenProps) {
+export function ActivityListScreen({ selection, onBack }: ActivityListScreenProps) {
   // T2/T3: frozen via useState's lazy initializer (runs once, on mount) —
-  // a parent re-render passing fresh prop defaults won't retrigger these.
-  const [appliedFilters, setAppliedFilters] = useState<Filters>(() => ({
-    ...defaultFilters(selection.scope),
-    categories: initialCategories,
-  }));
+  // a parent re-render passing a fresh `selection` prop won't retrigger this.
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(() => defaultFilters(selection.scope));
   // design-spec.md T3: scope/city/distance/rating now live here (T2's
-  // ScopeDraft), not on `Filters` — seeded from the props the caller (still
-  // the pre-T4 scope-picker flow) hands in.
-  const [appliedScopeDraft, setAppliedScopeDraft] = useState<ScopeDraft>(() => ({
-    ...defaultScopeDraft(selection.scope, selection.coordinates),
-    cities: initialCities,
-  }));
-  const [queryState, setQueryState] = useState<QueryState>(() =>
-    initialActivities !== undefined ? { status: 'loaded', activities: initialActivities } : { status: 'loading' }
+  // ScopeDraft), not on `Filters` — seeded from `selection` (App.tsx's
+  // launch-derived scope; T4).
+  const [appliedScopeDraft, setAppliedScopeDraft] = useState<ScopeDraft>(() =>
+    defaultScopeDraft(selection.scope, selection.coordinates)
   );
+  const [queryState, setQueryState] = useState<QueryState>({ status: 'loading' });
   // The subtype rail's counts read from this, not from `queryState`
   // directly — `queryState` collapses to no-activities during a refetch or
   // on error, which would otherwise zero every subtype's count and disable
   // it (including a chip the user has *selected*, trapping them). This only
   // ever updates on a successful fetch, so it holds the last real data
   // across any loading/error state in between.
-  const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>(() => initialActivities ?? []);
+  const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>([]);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersRequestSeq = useRef(0);
@@ -114,14 +102,27 @@ export function ActivityListScreen({
   // handleToggleSubtype below), so they never trigger a re-fetch — they're
   // filtered client-side from the already-fetched, category-scoped result
   // (filters.ts's filterBySubtypes/subtypeCounts).
-  const skipFirstFetch = useRef(initialActivities !== undefined);
+  // review round 2 (Minor — round 1's stale-while-revalidate fix was too
+  // broad): design-spec.md keeps list/skeleton/empty/error states
+  // unchanged by this task — a category tap or a Scope sheet apply must
+  // still show the loading skeleton like it always has. Only the launch
+  // promotion's own *automatic* re-query (below) sets this ref right
+  // before it changes scope, so only that one silent refetch skips the
+  // skeleton; everything else (including the "quiet, later" coordinate-only
+  // add for a non-launch permission grant) goes back to showing loading.
+  const silentRefetchRef = useRef(false);
   useEffect(() => {
-    if (skipFirstFetch.current) {
-      skipFirstFetch.current = false;
-      return;
-    }
     const seq = startQuery();
-    setQueryState({ status: 'loading' });
+    if (silentRefetchRef.current) {
+      silentRefetchRef.current = false;
+    } else {
+      // review round 2 (Minor): the branch here (vs. an unconditional call)
+      // is what keeps `react-hooks/set-state-in-effect` quiet — same
+      // inconsistent heuristic T3 already documented on the traveler-row
+      // effect below, no eslint-disable needed on this one now that it has
+      // its own guard again.
+      setQueryState({ status: 'loading' });
+    }
     queryActivities(buildFeedRequest(appliedScopeDraft, appliedFilters.categories)).then((result) => {
       if (isCurrent(seq)) applyResult(result);
     });
@@ -191,17 +192,55 @@ export function ActivityListScreen({
   useEffect(() => {
     isNearbyNudgeDismissed().then(setNudgeDismissed);
   }, []);
+  // design-spec.md T4 + T3: one check, two purposes, told apart by
+  // `isLaunchRef`. (1) T4's "scope derives from permission state at
+  // launch" — App.tsx only ever hands this screen an unanchored-Anywhere
+  // `selection` at mount, so this effect's very *first* firing is always
+  // that cold start; an already-granted permission there promotes straight
+  // to a real `nearby` scope (not just a quietly-anchored `anywhere`).
+  // (2) T3's original fix for a stale "Turn on location" nudge on any
+  // *later* occurrence of unanchored Anywhere (e.g. the user explicitly
+  // re-selects Anywhere via the Scope sheet with no city) — `requestLocation`
+  // never shows an OS prompt for an already-granted permission, it just
+  // resolves the fix quietly, but that later case only ever adds
+  // `coordinates`, never overrides the scope the user just explicitly
+  // picked.
+  // review round 2 (Important — round 1's fix only narrowed this, didn't
+  // close it): the GPS fix this effect waits on can land up to
+  // LOCATION_TIMEOUT_MS (15s) later — long enough for the user to open the
+  // Scope sheet and explicitly apply Anywhere (with or without a city, e.g.
+  // just a minimum-rating change) while it's still in flight. `isLaunch` is
+  // a `const` captured once, at *effect-setup* time — it's a snapshot of
+  // "was this firing the launch", not a live read, so flipping
+  // `isLaunchRef.current` later (from onApply) can never reach an
+  // already-in-flight closure; only the (still-correct, still-needed)
+  // `prev.cities.length === 0` guard was ever doing anything for a race
+  // that lands after an apply, and it only covers the city sub-case. Fixed
+  // properly this time with a *second* ref that's read at write time
+  // (inside the async updater, right before it would promote), not
+  // capture time: `userAppliedRef`, set the moment `onApply` runs. A
+  // promotion only ever commits when it's both the launch firing *and*
+  // nothing has been explicitly applied since.
+  const isLaunchRef = useRef(true);
+  const userAppliedRef = useRef(false);
   useEffect(() => {
     if (appliedScopeDraft.scope !== 'anywhere' || appliedScopeDraft.coordinates) return;
-    // If permission was already granted (e.g. in an earlier session/screen),
-    // `requestLocation` never shows an OS prompt for an already-granted
-    // permission — it just resolves the fix quietly. Without this, a user
-    // who'd already granted location would still see the "Turn on location"
-    // nudge forever, since nothing here had ever actually fetched a fix.
+    const isLaunch = isLaunchRef.current;
+    isLaunchRef.current = false;
     nearby.checkPermission().then((granted) => {
       if (!granted) return;
       nearby.requestLocation().then((coordinates) => {
-        if (coordinates) setAppliedScopeDraft((prev) => ({ ...prev, coordinates }));
+        if (!coordinates) return;
+        setAppliedScopeDraft((prev) => {
+          if (prev.scope !== 'anywhere' || prev.coordinates || prev.cities.length > 0) return prev;
+          const promoteToNearby = isLaunch && !userAppliedRef.current;
+          // Only the launch's own promotion skips the query effect's loading
+          // skeleton (review round 2, Minor) — a quiet, later coordinate-only
+          // add (promoteToNearby false) still shows it, same as every other
+          // refetch.
+          if (promoteToNearby) silentRefetchRef.current = true;
+          return { ...prev, coordinates, scope: promoteToNearby ? 'nearby' : prev.scope };
+        });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission/requestLocation identities are stable (useCallback, no deps)
@@ -211,14 +250,24 @@ export function ActivityListScreen({
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (selectedActivity) {
         closeDetail();
-      } else {
-        onBack();
+        return true;
       }
-      return true;
+      if (sheetVisible) {
+        closeSheet();
+        return true;
+      }
+      if (onBack) {
+        onBack();
+        return true;
+      }
+      // T4: Feed is the app's home screen — no previous screen to pop to.
+      // Let the event fall through to the OS default (exit app) instead of
+      // trapping the user with a back button that silently does nothing.
+      return false;
     });
     return () => sub.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDetail reads current state via closure; re-subscribing on every selectedActivity change keeps the handler current
-  }, [onBack, selectedActivity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeDetail/closeSheet read current state via closure; re-subscribing on every selectedActivity/sheetVisible change keeps the handler current
+  }, [onBack, selectedActivity, sheetVisible]);
 
   function closeDetail() {
     setSelectedActivity(null);
@@ -273,11 +322,16 @@ export function ActivityListScreen({
   // — neither nudge shows during that brief window (showing "Turn on
   // location" would be actively wrong: it's already on). 'idle' covers both
   // "not asked yet" and "briefly, before the mount check resolves".
-  const showAskNudge =
-    unanchoredAnywhere &&
-    !nudgeDismissed &&
-    (nearby.state.status === 'idle' || nearby.state.status === 'unavailable');
-  const showCityNudge = unanchoredAnywhere && nearby.state.status === 'denied';
+  // review round 1/T3-round-2 (Minor, widened by T4): 'unavailable' only
+  // happens *after* permission was already granted (the fix itself failed —
+  // GPS timeout, no signal), so "Turn on location" is actively wrong there
+  // too; T4 made this reachable on every launch (not just an explicit tap),
+  // so it now routes to the quieter choose-a-city nudge instead, same as an
+  // OS-level deny — neither claims location is off, both just suggest an
+  // alternative anchor.
+  const showAskNudge = unanchoredAnywhere && !nudgeDismissed && nearby.state.status === 'idle';
+  const showCityNudge =
+    unanchoredAnywhere && (nearby.state.status === 'denied' || nearby.state.status === 'unavailable');
 
   const renderItem = useCallback(
     ({ item }: { item: Activity }) => (
@@ -407,7 +461,21 @@ export function ActivityListScreen({
           visible={sheetVisible}
           initialDraft={appliedScopeDraft}
           onQuery={(draft) => queryActivities(buildFeedRequest(draft, appliedFilters.categories))}
-          onApply={(draft) => setAppliedScopeDraft(draft)}
+          onApply={(draft) => {
+            // review round 1 (Important) + round 2 (still Important — see
+            // the launch-derivation effect's own comment for why round 1's
+            // fix alone wasn't enough): any explicit apply is a real user
+            // choice. `userAppliedRef` is read at write-time by an
+            // already-in-flight promotion, so it closes the race even for
+            // a chain that started before this apply. `isLaunchRef` covers
+            // a different case — this instance never having fired the
+            // launch effect at all yet (e.g. mounted pre-anchored, then
+            // later switched to unanchored Anywhere here) — so a *future*
+            // firing of that effect is never mistaken for launch either.
+            isLaunchRef.current = false;
+            userAppliedRef.current = true;
+            setAppliedScopeDraft(draft);
+          }}
           onClose={closeSheet}
         />
       </SafeAreaView>

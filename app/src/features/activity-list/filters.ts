@@ -6,26 +6,17 @@ import type { Category, Filters, RatingOption } from './types';
 import type { Scope } from '../scope-picker/types';
 
 // T2: Nearby's server-fixed radius (activities-service's activity.go) — the
-// one copy of the number; NearbySearchSetupScreen's range card and
-// ActivityListScreen's header subtitle both read it from here.
+// one copy of the number; the Scope sheet's (T2) fixed-range card reads it
+// from here.
 export const NEARBY_RADIUS_KM = 10;
 
-// Anywhere's wider, design-tuned range (product-tasks.md: "behavior is
-// fixed, not the exact numbers"). The slider's true top position is one
-// step past MAX_DISTANCE_KM_ANYWHERE — a dedicated "No limit" stop, not
-// itself a distance value — see ANYWHERE_NO_LIMIT_SLIDER_VALUE below.
-export const MIN_DISTANCE_KM_ANYWHERE = 100;
-export const MAX_DISTANCE_KM_ANYWHERE = 2000;
-export const ANYWHERE_DISTANCE_STEP_KM = 100;
-// Slider-control-only sentinel (never sent to the API): the position past
-// the numeric ceiling that maps to Filters.maxDistanceKm = null ("no limit").
-export const ANYWHERE_NO_LIMIT_SLIDER_VALUE = MAX_DISTANCE_KM_ANYWHERE + ANYWHERE_DISTANCE_STEP_KM;
-
 // `maxDistanceKm: null` means "no limit"/"not adjustable". Nearby's range is
-// server-fixed (see NearbySearchSetupScreen's buildRequest) and has no
-// slider or chip at all, so it's always null, same as anywhere's "no limit"
-// default — a filter's first load never narrows results the user hasn't
-// asked to narrow (Slider recipe's "pinned at max" rule).
+// server-fixed and has no slider or chip at all, so it's always null, same
+// as anywhere's "no limit" default — a filter's first load never narrows
+// results the user hasn't asked to narrow (Slider recipe's "pinned at max"
+// rule). T4: the old 100-2000km Anywhere range (`FilterSheet`'s
+// `DistanceSlider`) is gone — the Scope sheet's `scopeDraft.ts` now owns the
+// app's one canonical 5-500km range.
 // `scope` param kept for call-site clarity (defaultFilters('nearby') vs
 // ('anywhere')) even though both scopes share this default value now.
 export function defaultFilters(_scope: Scope): Filters {
