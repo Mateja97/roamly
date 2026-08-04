@@ -155,6 +155,9 @@ describe('ActivityListScreen', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Back' }));
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
     expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
+    // closeDetail() re-fires checkTravelerMode's getHomeBaseSamples() read
+    // (refreshAdaptivity on "focus regained") — settle it before the test ends.
+    await flush();
   });
 
   it('Android hardware back closes an open detail screen instead of leaving the list (onBack not called)', async () => {
@@ -177,6 +180,9 @@ describe('ActivityListScreen', () => {
     expect(onBack).not.toHaveBeenCalled();
 
     addBackListener.mockRestore();
+    // closeDetail() re-fires checkTravelerMode's getHomeBaseSamples() read
+    // (refreshAdaptivity on "focus regained") — settle it before the test ends.
+    await flush();
   });
 
   describe('Hardware back with no onBack (T4: Feed is the app\'s home screen)', () => {
@@ -212,6 +218,9 @@ describe('ActivityListScreen', () => {
       expect(screen.queryByText('Where to?')).toBeNull();
 
       addBackListener.mockRestore();
+      // closeSheet() re-fires checkTravelerMode's getHomeBaseSamples() read
+      // (refreshAdaptivity on "focus regained") — settle it before the test ends.
+      await flush();
     });
   });
 
