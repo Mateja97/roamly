@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { styles as screenStyles } from './ActivityListScreen';
+import { feedStateStyles } from './feedStateStyles';
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   const focus = useFocusable();
@@ -14,9 +14,9 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
         onBlur={focus.onBlur}
         accessibilityRole="button"
         accessibilityLabel="Try again"
-        style={[screenStyles.secondaryButton, focus.focused && screenStyles.secondaryButtonFocused]}
+        style={[feedStateStyles.secondaryButton, focus.focused && feedStateStyles.secondaryButtonFocused]}
       >
-        <Text style={screenStyles.secondaryButtonLabel}>Try again</Text>
+        <Text style={feedStateStyles.secondaryButtonLabel}>Try again</Text>
       </Pressable>
     </View>
   );

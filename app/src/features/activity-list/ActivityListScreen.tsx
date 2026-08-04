@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { ActivityCard, ActivityCardSkeleton } from '../../components/ActivityCard';
-import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontSize, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { tripadvisorAttribution } from './activityDetailConfig';
 import { CategoryRow } from './CategoryRow';
@@ -471,9 +471,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   );
 }
 
-// Exported for EmptyState/ErrorState: `secondaryButton*` below is the only
-// overlap between them, so it stays here rather than duplicated into both.
-export const styles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -508,25 +506,5 @@ export const styles = StyleSheet.create({
   tripadvisorFooter: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
-  },
-  secondaryButton: {
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.default,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: space[6],
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  secondaryButtonFocused: {
-    backgroundColor: colors.surfaceHover,
-    borderColor: colors.primary,
-  },
-  secondaryButtonLabel: {
-    fontSize: fontSize.md,
-    color: colors.text,
-    fontWeight: '500',
   },
 });

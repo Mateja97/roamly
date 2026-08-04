@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SearchX } from 'lucide-react-native';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, space } from '../../theme/tokens';
-import { styles as screenStyles } from './ActivityListScreen';
+import { feedStateStyles } from './feedStateStyles';
 
 export function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean; onClearFilters: () => void }) {
   const focus = useFocusable();
@@ -20,9 +20,9 @@ export function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean
           onBlur={focus.onBlur}
           accessibilityRole="button"
           accessibilityLabel="Clear filters"
-          style={[screenStyles.secondaryButton, focus.focused && screenStyles.secondaryButtonFocused]}
+          style={[feedStateStyles.secondaryButton, focus.focused && feedStateStyles.secondaryButtonFocused]}
         >
-          <Text style={screenStyles.secondaryButtonLabel}>Clear filters</Text>
+          <Text style={feedStateStyles.secondaryButtonLabel}>Clear filters</Text>
         </Pressable>
       )}
     </View>
