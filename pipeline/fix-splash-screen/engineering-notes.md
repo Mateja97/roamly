@@ -60,7 +60,7 @@ purely a stale local server artifact.
 PR: https://github.com/Mateja97/roamly/pull/152
 
 ## T1 — resolve pass (review round 1: changes-requested)
-Fixed all 3 findings, `SplashScreen.tsx`:
+Fixing commit: `f6b0787`. Fixed all 3 findings, `SplashScreen.tsx`:
 
 - **Important** (`justifyContent:'center'` overflow regression): swapped
   mechanism. `destinationCtaGroup` drops `justifyContent`, keeps `flex:1`
