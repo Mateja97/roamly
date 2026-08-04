@@ -214,6 +214,31 @@ describe('ActivityListScreen', () => {
       expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION });
     });
 
+    it('review round 1 (Minor): keeps the cold-start list visible during the promotion re-query instead of flashing back to skeletons', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+      mockedLocation.getCurrentPositionAsync.mockResolvedValue({
+        coords: { latitude: COORDINATES.latitude, longitude: COORDINATES.longitude },
+      } as never);
+      let resolveSecond!: (r: ActivitiesQueryResult) => void;
+      mockedQuery
+        .mockResolvedValueOnce(successResult([activity])) // cold-start anywhere query
+        .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve))); // promotion's nearby query
+
+      render(<ActivityListScreen selection={{ scope: 'anywhere' }} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      // The promotion's second (Nearby) query is now in flight — the card
+      // from the first query must still be visible, not a skeleton.
+      await flush();
+      expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
+
+      await act(async () => {
+        resolveSecond(successResult([activity]));
+      });
+      await waitFor(() => expect(screen.getByRole('button', { name: /scope: nearby/i })).toBeTruthy());
+      expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy();
+    });
+
     it('does not promote a later, user-chosen unanchored Anywhere back to Nearby (only the launch occurrence promotes)', async () => {
       // Undetermined at mount — the launch check fires once here and finds
       // nothing granted, so it never promotes, but it does consume the
@@ -251,6 +276,52 @@ describe('ActivityListScreen', () => {
 
       await flush();
       expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+    });
+
+    it('review round 1 (Important): a pending launch GPS fix does not clobber an Anywhere+city choice applied while it is still in flight', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+      let resolveFix!: (position: unknown) => void;
+      mockedLocation.getCurrentPositionAsync.mockReturnValue(
+        new Promise((resolve) => {
+          resolveFix = resolve;
+        }) as never
+      );
+      mockedSuggestCities.mockResolvedValue({
+        status: 'success',
+        suggestions: [{ city: 'Lisbon', country: 'Portugal', centroid: { lat: 38.7, lng: -9.1 } }],
+      });
+
+      render(<ActivityListScreen selection={{ scope: 'anywhere' }} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy());
+
+      // The launch GPS fix is now pending (mocked to hang). While it's still
+      // in flight, the user opens the sheet and applies Anywhere + Lisbon.
+      fireEvent.press(screen.getByRole('button', { name: /scope: exploring everywhere/i }));
+      await flush();
+      fireEvent.changeText(screen.getByLabelText('Search cities'), 'Lis');
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Lisbon, Portugal' })).toBeTruthy());
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Lisbon, Portugal' }));
+      });
+      await waitFor(() => expect(screen.getByRole('button', { name: /^show \d+ activit/i })).toBeTruthy());
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: /^show \d+ activit/i }));
+      });
+      await waitFor(() => expect(screen.getByRole('button', { name: /scope: anywhere · lisbon/i })).toBeTruthy());
+
+      // Now the pending launch fix resolves, late.
+      await act(async () => {
+        resolveFix({ coords: { latitude: COORDINATES.latitude, longitude: COORDINATES.longitude } });
+      });
+      await flush();
+
+      // Still Anywhere · Lisbon — never silently promoted to Nearby, and no
+      // incoherent `{scope:'nearby', cities:[...]}` request ever fired.
+      expect(screen.getByRole('button', { name: /scope: anywhere · lisbon/i })).toBeTruthy();
+      expect(mockedQuery).not.toHaveBeenCalledWith(
+        expect.objectContaining({ scope: 'nearby', cities: expect.anything() })
+      );
     });
   });
 
@@ -531,6 +602,15 @@ describe('ActivityListScreen', () => {
 
     it('shows the quiet "choose a city" nudge instead, after an OS-level deny', async () => {
       mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'anywhere' }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Choose a city to explore')).toBeTruthy());
+      expect(screen.queryByText("See what's near you")).toBeNull();
+    });
+
+    it('review round 1/T3-round-2 (Minor): a granted-but-failed launch fix shows the quiet choose-a-city nudge, not "Turn on location"', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+      mockedLocation.getCurrentPositionAsync.mockRejectedValue(new Error('timed out'));
       mockedQuery.mockResolvedValue(successResult([activity]));
       render(<ActivityListScreen selection={{ scope: 'anywhere' }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Choose a city to explore')).toBeTruthy());

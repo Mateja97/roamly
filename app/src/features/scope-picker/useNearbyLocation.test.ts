@@ -78,6 +78,19 @@ describe('useNearbyLocation', () => {
     jest.useRealTimers();
   });
 
+  it('review round: reports unavailable, not an unhandled rejection, when getForegroundPermissionsAsync itself rejects', async () => {
+    mockedLocation.getForegroundPermissionsAsync.mockRejectedValue(new Error('native module unavailable'));
+
+    const { result } = renderHook(() => useNearbyLocation());
+    let coords;
+    await act(async () => {
+      coords = await result.current.requestLocation();
+    });
+
+    expect(coords).toBeNull();
+    expect(result.current.state).toEqual({ status: 'unavailable' });
+  });
+
   describe('checkPermission', () => {
     it('flips state to denied when already denied, with no request/GPS call', async () => {
       mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
@@ -116,6 +129,16 @@ describe('useNearbyLocation', () => {
 
     it('resolves false when undetermined or denied', async () => {
       mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' } as never);
+      const { result } = renderHook(() => useNearbyLocation());
+      let granted!: boolean;
+      await act(async () => {
+        granted = await result.current.checkPermission();
+      });
+      expect(granted).toBe(false);
+    });
+
+    it('review round: resolves false, not an unhandled rejection, when the native call itself rejects', async () => {
+      mockedLocation.getForegroundPermissionsAsync.mockRejectedValue(new Error('native module unavailable'));
       const { result } = renderHook(() => useNearbyLocation());
       let granted!: boolean;
       await act(async () => {

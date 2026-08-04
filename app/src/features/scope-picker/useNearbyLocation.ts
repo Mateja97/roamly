@@ -38,39 +38,53 @@ export function useNearbyLocation(): UseNearbyLocation {
 
   // Shares requestLocation's first check (below) but stops there — no
   // request prompt, no GPS fetch — so it's safe to call passively on mount.
+  // review round: every caller (ScopeSheet's mount-effect check, the Feed's
+  // launch-derivation effect) called this with no `.catch` of its own, and
+  // neither native call was itself guarded — a rejecting
+  // `getForegroundPermissionsAsync` was an unhandled promise rejection at
+  // every call site (APP_STANDARDS Error handling). Fixed once, here, where
+  // every caller routes through — a read failure degrades to "not granted"
+  // (same as an undetermined/denied read), not a crash.
   const checkPermission = useCallback(async (): Promise<boolean> => {
-    const current = await Location.getForegroundPermissionsAsync();
-    if (current.status === Location.PermissionStatus.DENIED) {
-      setState({ status: 'denied' });
+    try {
+      const current = await Location.getForegroundPermissionsAsync();
+      if (current.status === Location.PermissionStatus.DENIED) {
+        setState({ status: 'denied' });
+      }
+      return current.status === Location.PermissionStatus.GRANTED;
+    } catch {
+      return false;
     }
-    return current.status === Location.PermissionStatus.GRANTED;
   }, []);
 
   const requestLocation = useCallback(async (): Promise<Coordinates | null> => {
-    // Check current status first: if already denied, no OS prompt will
-    // appear — jump straight to the denied message, no in-flight flash
-    // (per design-spec's re-entry rule).
-    const current = await Location.getForegroundPermissionsAsync();
-    if (current.status === Location.PermissionStatus.DENIED) {
-      setState({ status: 'denied' });
-      return null;
-    }
-
-    if (current.status !== Location.PermissionStatus.GRANTED) {
-      setState({ status: 'requesting-permission' });
-      const requested = await Location.requestForegroundPermissionsAsync();
-      if (requested.status !== Location.PermissionStatus.GRANTED) {
+    try {
+      // Check current status first: if already denied, no OS prompt will
+      // appear — jump straight to the denied message, no in-flight flash
+      // (per design-spec's re-entry rule).
+      const current = await Location.getForegroundPermissionsAsync();
+      if (current.status === Location.PermissionStatus.DENIED) {
         setState({ status: 'denied' });
         return null;
       }
-    }
 
-    setState({ status: 'locating' });
-    try {
+      if (current.status !== Location.PermissionStatus.GRANTED) {
+        setState({ status: 'requesting-permission' });
+        const requested = await Location.requestForegroundPermissionsAsync();
+        if (requested.status !== Location.PermissionStatus.GRANTED) {
+          setState({ status: 'denied' });
+          return null;
+        }
+      }
+
+      setState({ status: 'locating' });
       const position = await withTimeout(Location.getCurrentPositionAsync({}), LOCATION_TIMEOUT_MS);
       setState({ status: 'idle' });
       return { latitude: position.coords.latitude, longitude: position.coords.longitude };
     } catch {
+      // Covers both the GPS-fix failure this already handled (timeout/no
+      // signal) and a rejecting permission call — same "unavailable"
+      // outcome/recovery (Try again / choose Anywhere) either way.
       setState({ status: 'unavailable' });
       return null;
     }

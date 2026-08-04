@@ -5,6 +5,7 @@ import App from './App';
 import { queryActivities } from './src/api/activities';
 import type { Activity } from './src/api/activities';
 import { hasSeenSplash } from './src/utils/firstLaunch';
+import * as firstLaunch from './src/utils/firstLaunch';
 
 const activity: Activity = {
   id: '1',
@@ -49,18 +50,20 @@ jest.mock('@expo-google-fonts/marcellus', () => ({
 
 describe('App', () => {
   beforeEach(() => {
+    // review round 1 (Minor): `jest.clearAllMocks()`, not
+    // `jest.resetAllMocks()` — clear wipes each mock's *call history*
+    // (recorded calls/results) but keeps its implementation intact, so
+    // AsyncStorage's own auto-mock (jest-expo's, not one this file owns)
+    // keeps working across renders, which this suite genuinely needs (to
+    // prove "splash seen" persists). `resetAllMocks` would additionally
+    // strip that implementation with no auto-restore for a plain `jest.fn()`
+    // the way `jest.spyOn` has one — clear is the one that actually matches
+    // "start each test with a clean slate" here. Re-arm the resolved values
+    // for the two mocks this file owns straight after.
+    jest.clearAllMocks();
     mockedQuery.mockResolvedValue({ status: 'success', activities: [] });
     mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'undetermined' } as never);
   });
-  // ponytail: no jest.resetAllMocks() here — it wipes the *implementation*
-  // of every jest.fn(), including AsyncStorage's own auto-mock (jest-expo's,
-  // not one this file owns), and there's no auto-restore for a plain
-  // jest.fn() the way jest.spyOn has one. This suite genuinely needs
-  // AsyncStorage's real in-memory read/write to work across renders (to
-  // prove "splash seen" persists) — beforeEach already re-arms the two
-  // mocks this file *does* own (mockedQuery/mockedLocation) via
-  // mockResolvedValue, which fully replaces any prior implementation on its
-  // own, no reset needed.
   afterEach(async () => {
     await AsyncStorage.clear();
   });
@@ -107,6 +110,27 @@ describe('App', () => {
     await flush();
     expect(screen.queryByText('Where to?')).toBeNull();
     expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+  });
+
+  // Critical fix has two independent layers: firstLaunch.ts's own internal
+  // try/catch (unit-tested directly in firstLaunch.test.ts, including a
+  // rejecting AsyncStorage.getItem — the real read-failure path) and this
+  // App.tsx-level .catch backstop (tested below). Not duplicated here as a
+  // third, App-level "rejecting AsyncStorage" test — spying on
+  // AsyncStorage.getItem itself (vs. spying on hasSeenSplash directly, as
+  // below) left the shared jest-expo AsyncStorage mock in a broken state
+  // for every test running after it in this file, even past an explicit
+  // mockRestore(); not worth chasing for coverage firstLaunch.test.ts
+  // already carries.
+  it('review round 1 (Critical): a rejecting hasSeenSplash still lands on the Feed via App.tsx\'s own backstop', async () => {
+    // Bypasses firstLaunch.ts's own internal try/catch entirely, to prove
+    // App.tsx's .catch is a real, independent second layer, not dead code.
+    const hasSeenSpy = jest.spyOn(firstLaunch, 'hasSeenSplash').mockRejectedValueOnce(new Error('boom'));
+    const { unmount } = render(<App />);
+    await flush();
+    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+    unmount();
+    hasSeenSpy.mockRestore();
   });
 
   it('T4: a returning launch with location already granted derives Nearby scope instead of Anywhere', async () => {

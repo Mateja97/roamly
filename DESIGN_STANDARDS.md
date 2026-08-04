@@ -143,12 +143,11 @@ exempt (WCAG 1.4.3) — `--text-disabled` on `--surface-hover` is fine as-is.
   copy, labels, in-card titles (Activity card titles stay system font), or
   utility-bar titles. **Marcellus header sizes** (the full set — keep this
   list the single source so header work stays consistent):
-  Welcome destination hero `--font-size-2xl` (36px) · search-setup H1
-  ("Refine your search") `--font-size-xl` (28px) · activities-list title
-  (Nearby/Anywhere) 26px. All render `--text` cream on `--bg`, weight 400
-  (Marcellus ships one weight), line-height 1.2. Every size is ≥24px, so each
-  is large text and clears contrast with margin (`--text` on `--bg` is 8.5:1).
-  On
+  Welcome destination hero `--font-size-2xl` (36px) · Activity detail
+  screen's title `--font-size-xl` (28px). All render `--text` cream on
+  `--bg`, weight 400 (Marcellus ships one weight), line-height 1.2. Every
+  size is ≥24px, so each is large text and clears contrast with margin
+  (`--text` on `--bg` is 8.5:1). On
   `area: app` this is a new dependency (`expo-font` + `@expo-google-fonts/marcellus`);
   gate first paint on the font load so the prompt never flashes in the system
   stack, then falls back to the system stack only if loading fails. On
@@ -328,14 +327,16 @@ scaling). No new token or color pairing — reuses the documented
 **Display-title variant (Marcellus header):** a screen whose header IS the
 screen's identity (not a utility bar) sets its title in `--font-display`
 (Marcellus) at the matching **Marcellus header size** (see Typography) instead
-of the system `--font-size-lg` — e.g. the activities-list title (26px) and the
-search-setup H1 ("Refine your search", `--font-size-xl` 28px). `--text` cream
-on `--bg`, weight 400, line-height 1.2, tightened tracking. Font-load-gated
-like all Marcellus use — no system-stack flash before the font resolves. The
-optional subtitle above applies unchanged. The nav affordances that flank such
-a header (an interim back control, a scope indicator) are separate elements,
-not part of the title block — see the Mobile-specific interim back control and
-the scope indicator pill below.
+of the system `--font-size-lg`. `--text` cream on `--bg`, weight 400,
+line-height 1.2, tightened tracking. Font-load-gated like all Marcellus use —
+no system-stack flash before the font resolves. The optional subtitle above
+applies unchanged. The nav affordances that flank such a header (an interim
+back control, a scope indicator) are separate elements, not part of the title
+block — see the Mobile-specific interim back control and the scope indicator
+pill below. (T4: the two screens that shipped this variant —
+`NearbySearchSetupScreen`/`AnywhereSearchScreen`'s "Refine your search" H1 —
+were retired; no screen currently uses this variant. Kept documented for the
+next screen that needs a Marcellus-titled header bar, not a utility-bar one.)
 
 **Scope indicator pill (non-interactive):** a small status pill that names the
 active search scope (Nearby / Globe icon + "Nearby"/"Anywhere") in a header

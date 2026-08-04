@@ -86,12 +86,13 @@ export const radius = {
 } as const;
 
 // --font-display (Marcellus) — the one display accent, used for screen-
-// identity headers only: the Welcome/Splash "Where to?" headline (see
-// App.tsx's font-load gate — moved there from ScopePickerScreen in T1 so
-// every screen in the app rides on one gate, Marcellus loads once,
-// globally) and the activities-list/search-setup H1s, and the Activity
-// detail screen's title (T4). Every other surface stays on RN's system
-// font stack (the default when no fontFamily is set).
+// identity headers only: the Splash screen's "Where to?" headline and the
+// Feed's context line (`FeedHeader.tsx`, T3) are the current screen-header
+// consumers; see DESIGN_STANDARDS.md's "Marcellus header sizes" list for
+// the full, kept-current set. Loaded once, globally, gated by App.tsx's
+// font-load gate (moved there from ScopePickerScreen in T1 so every screen
+// rides on one gate, Marcellus loads once). Every other surface stays on
+// RN's system font stack (the default when no fontFamily is set).
 export const fontFamily = {
   display: 'Marcellus_400Regular',
 } as const;

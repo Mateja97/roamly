@@ -14,4 +14,9 @@ describe('firstLaunch', () => {
     await markSplashSeen();
     expect(await hasSeenSplash()).toBe(true);
   });
+
+  it('review round 1 (Critical): a rejecting read falls back to unseen instead of throwing/hanging', async () => {
+    jest.spyOn(AsyncStorage, 'getItem').mockRejectedValueOnce(new Error('storage unavailable'));
+    await expect(hasSeenSplash()).resolves.toBe(false);
+  });
 });

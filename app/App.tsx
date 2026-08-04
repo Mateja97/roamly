@@ -21,9 +21,18 @@ function AppContent() {
 
   useEffect(() => {
     let cancelled = false;
-    hasSeenSplash().then((seen) => {
-      if (!cancelled) setScreen(seen ? 'feed' : 'splash');
-    });
+    hasSeenSplash()
+      .then((seen) => {
+        if (!cancelled) setScreen(seen ? 'feed' : 'splash');
+      })
+      // review round 1 (Critical): hasSeenSplash already falls back to
+      // `false` internally on a storage-read failure, but this is a second,
+      // cheap backstop against `screen` staying `null` (permanently blank)
+      // for any other reason the promise could reject — straight to Feed,
+      // since that's the invariant that matters most (content over splash).
+      .catch(() => {
+        if (!cancelled) setScreen('feed');
+      });
     return () => {
       cancelled = true;
     };
