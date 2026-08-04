@@ -1,36 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ElementRef, ReactNode } from 'react';
+import type { ElementRef } from 'react';
 import {
   AccessibilityInfo,
   Animated,
   Easing,
-  Linking,
   Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Slider from '@react-native-community/slider';
-import { Globe, MapPin, Search, SearchX, X } from 'lucide-react-native';
+import { Globe, MapPin, X } from 'lucide-react-native';
 import type { ActivitiesQueryResult } from '../../api/activities';
 import type { CitySuggestion } from '../../api/cities';
 import { suggestCities } from '../../api/cities';
 import { FilterChip } from '../../components/FilterChip';
+import { AnywherePane } from './AnywherePane';
+import { FilterGroup } from './FilterGroup';
+import { NearbyPane } from './NearbyPane';
 import { ScopeTicket } from '../../components/ScopeTicket';
-import { Skeleton } from '../../components/Skeleton';
 import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { NEARBY_RADIUS_KM, RATING_OPTIONS } from '../activity-list/filters';
+import { RATING_OPTIONS } from '../activity-list/filters';
 import type { Scope } from '../../types/scope';
 import { useNearbyLocation } from '../../hooks/useNearbyLocation';
-import type { NearbyLocationState } from '../../hooks/useNearbyLocation';
-import { DISTANCE_STEP_KM, MAX_DISTANCE_KM, MIN_DISTANCE_KM, anywhereHasAnchor, defaultScopeDraft } from './scopeDraft';
-import type { ScopeDraft } from './scopeDraft';
+import { cityKey, defaultScopeDraft } from './scopeDraft';
+import type { CityFetchState, ScopeDraft } from './scopeDraft';
 
 type ScopeSheetProps = {
   visible: boolean;
@@ -50,8 +48,6 @@ type ScopeSheetProps = {
 // Same debounce window AnywhereSearchScreen/NearbySearchSetupScreen already
 // use for their live-count re-queries and city typeahead.
 const DEBOUNCE_MS = 300;
-
-type CityFetchState = { query: string; status: 'results' | 'no-match' | 'error'; results: CitySuggestion[]; error: string | null };
 
 // design-spec.md T2 / product-tasks.md T2: reuses FilterSheet's bottom-sheet
 // chrome (scrim, slide-up --surface panel, gold top edge, focus trap,
@@ -332,282 +328,6 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
   );
 }
 
-function cityKey(city: CitySuggestion): string {
-  return `${city.city}|${city.country}`;
-}
-
-function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <View style={styles.group}>
-      <Text style={styles.groupLabel} accessibilityRole="header">
-        {label}
-      </Text>
-      <View style={styles.chipsRow}>{children}</View>
-    </View>
-  );
-}
-
-type NearbyPaneProps = {
-  coordinates: ScopeDraft['coordinates'];
-  nearbyState: NearbyLocationState;
-  onTurnOnLocation: () => void;
-};
-
-// design-spec.md T2's three Nearby panes: granted / not-yet-asked / denied.
-// `coordinates` present is the "granted" signal (either resolved by this
-// sheet or handed in already-anchored by the caller). `unavailable` (GPS fix
-// failed after permission was already granted) gets its own branch below,
-// matching ScopePickerScreen's exact copy for this same case, rather than
-// silently falling through to the neutral not-yet-asked explainer with no
-// feedback at all.
-function NearbyPane({ coordinates, nearbyState, onTurnOnLocation }: NearbyPaneProps) {
-  const busy = nearbyState.status === 'requesting-permission' || nearbyState.status === 'locating';
-  const buttonFocus = useFocusable();
-
-  if (coordinates) {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Range</Text>
-        <View
-          style={styles.rangeCard}
-          accessible
-          accessibilityLabel={`Range: within ${NEARBY_RADIUS_KM} km, fixed range around your location`}
-        >
-          <MapPin size={20} color={colors.primary} strokeWidth={1.75} />
-          <View style={styles.rangeTextColumn}>
-            <Text style={styles.rangeTitle}>Within {NEARBY_RADIUS_KM} km</Text>
-            <Text style={styles.rangeSubtitle}>Fixed range around your location</Text>
-          </View>
-          <View style={styles.fixedBadge}>
-            <Text style={styles.fixedBadgeLabel}>Fixed</Text>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  if (nearbyState.status === 'denied') {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.paneText}>
-          Location access is off, so we can&apos;t show what&apos;s nearby. Turn it on in Settings, or use Anywhere instead.
-        </Text>
-        <Pressable
-          onPress={() => Linking.openSettings()}
-          onFocus={buttonFocus.onFocus}
-          onBlur={buttonFocus.onBlur}
-          accessibilityRole="button"
-          accessibilityLabel="Open settings"
-          style={[styles.secondaryButton, buttonFocus.focused && styles.secondaryButtonFocused]}
-        >
-          <Text style={styles.secondaryButtonLabel}>Open settings</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  if (nearbyState.status === 'unavailable') {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.paneText}>We couldn&apos;t get your current location. Try again, or choose Anywhere instead.</Text>
-        <Pressable
-          onPress={onTurnOnLocation}
-          onFocus={buttonFocus.onFocus}
-          onBlur={buttonFocus.onBlur}
-          accessibilityRole="button"
-          accessibilityLabel="Try again"
-          style={[styles.secondaryButton, buttonFocus.focused && styles.secondaryButtonFocused]}
-        >
-          <Text style={styles.secondaryButtonLabel}>Try again</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.paneText}>See what&apos;s nearby without typing a thing.</Text>
-      <Pressable
-        onPress={onTurnOnLocation}
-        onFocus={buttonFocus.onFocus}
-        onBlur={buttonFocus.onBlur}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={busy ? 'Requesting location' : 'Turn on location'}
-        style={[styles.secondaryButton, buttonFocus.focused && styles.secondaryButtonFocused]}
-      >
-        {busy && <Spinner />}
-        <Text style={styles.secondaryButtonLabel}>{busy ? 'Requesting…' : 'Turn on location'}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-type AnywherePaneProps = {
-  draft: ScopeDraft;
-  cityQuery: string;
-  onCityQueryChange: (query: string) => void;
-  cityFetch: CityFetchState;
-  isCityLoading: boolean;
-  onSelectCity: (city: CitySuggestion) => void;
-  onRemoveCity: (city: CitySuggestion) => void;
-  onDistanceChange: (maxDistanceKm: number | null) => void;
-};
-
-// City typeahead + selected-city chips copied from AnywhereSearchScreen
-// (design-spec.md T2: reuse its city-search code verbatim), plus the
-// distance slider — hidden with no anchor at all (anywhereHasAnchor),
-// same "Hidden" rule FilterSheet's DistanceSlider already follows.
-// ponytail: this duplicates the city-search effect/JSX that used to live in
-// `AnywhereSearchScreen` (deleted in T4) rather than extracting a shared
-// hook/component at the time — that screen's whole file is gone now, so
-// this is simply the one remaining copy, not a duplicate anymore; extract a
-// shared hook only if a second consumer shows up.
-function AnywherePane({
-  draft,
-  cityQuery,
-  onCityQueryChange,
-  cityFetch,
-  isCityLoading,
-  onSelectCity,
-  onRemoveCity,
-  onDistanceChange,
-}: AnywherePaneProps) {
-  const trimmedCityQuery = cityQuery.trim();
-  const panelState = isCityLoading ? 'loading' : cityFetch.status;
-
-  return (
-    <>
-      <View style={styles.section}>
-        <View style={styles.labelRow}>
-          <Text style={styles.sectionLabel}>Cities</Text>
-          <Text style={styles.countLabel}>{draft.cities.length} selected</Text>
-        </View>
-        <View style={styles.inputRow}>
-          <Search size={16} color={colors.textMuted} strokeWidth={1.75} />
-          <TextInput
-            value={cityQuery}
-            onChangeText={onCityQueryChange}
-            placeholder="Search cities"
-            placeholderTextColor={colors.textDisabled}
-            style={styles.input}
-            accessibilityLabel="Search cities"
-          />
-          {cityQuery.length > 0 && (
-            <Pressable onPress={() => onCityQueryChange('')} accessibilityRole="button" accessibilityLabel="Clear search" style={styles.clearButton}>
-              <X size={16} color={colors.textMuted} strokeWidth={1.75} />
-            </Pressable>
-          )}
-        </View>
-
-        {trimmedCityQuery.length > 0 && (
-          <View style={styles.resultsPanel}>
-            {panelState === 'loading' && [0, 1, 2].map((i) => <Skeleton key={i} width="100%" height={44} style={styles.skeletonRow} />)}
-            {panelState === 'results' &&
-              cityFetch.results.map((city) => (
-                <Pressable
-                  key={cityKey(city)}
-                  onPress={() => onSelectCity(city)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${city.city}, ${city.country}`}
-                  style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowActive]}
-                >
-                  <Text style={styles.resultCity}>{city.city}</Text>
-                  <Text style={styles.resultCountry}>{city.country}</Text>
-                </Pressable>
-              ))}
-            {panelState === 'no-match' && (
-              <View style={styles.resultMessage}>
-                <SearchX size={16} color={colors.textMuted} strokeWidth={1.75} />
-                <Text style={styles.resultMessageText}>No cities found</Text>
-              </View>
-            )}
-            {panelState === 'error' && (
-              <View style={styles.resultMessage}>
-                <Text style={styles.resultErrorText}>{cityFetch.error}</Text>
-              </View>
-            )}
-          </View>
-        )}
-
-        {draft.cities.length > 0 && (
-          <View style={styles.cityChipsRow}>
-            {draft.cities.map((city) => (
-              <FilterChip key={cityKey(city)} variant="remove" label={`${city.city}, ${city.country}`} onPress={() => onRemoveCity(city)} />
-            ))}
-          </View>
-        )}
-      </View>
-
-      {anywhereHasAnchor(draft) && <DistanceSlider value={draft.maxDistanceKm} onChange={onDistanceChange} />}
-    </>
-  );
-}
-
-// @react-native-community/slider's published typings don't expose a
-// `thumbStyle`/`thumbSize` override that actually reaches its web renderer —
-// 20 is that renderer's own fixed thumb size (`constants.THUMB_SIZE`), used
-// here only to position the decorative ring, not to resize the real thumb.
-const THUMB_SIZE = 20;
-const RING_SIZE = THUMB_SIZE + 8;
-
-// design-spec.md T2: one canonical 5-500km range, the top stop (500) itself
-// rendering "No limit" — same sentinel-value mechanism as FilterSheet's
-// DistanceSlider (a value beyond the "narrowed" range maps to
-// maxDistanceKm: null), just with the sentinel being the labeled ceiling
-// itself rather than one invisible step past it, per design-spec.md's exact
-// "5-500km, 500 renders 'No limit'" wording.
-function DistanceSlider({ value, onChange }: { value: number | null; onChange: (value: number | null) => void }) {
-  const min = MIN_DISTANCE_KM;
-  const max = MAX_DISTANCE_KM;
-  const sliderValue = value ?? max;
-  const isNoLimit = sliderValue >= max;
-
-  const [dragging, setDragging] = useState(false);
-  const [trackWidth, setTrackWidth] = useState(0);
-  const focus = useFocusable();
-  const showRing = (dragging || focus.focused) && trackWidth > 0;
-  const fraction = (sliderValue - min) / (max - min);
-  const thumbCenter = THUMB_SIZE / 2 + fraction * (trackWidth - THUMB_SIZE);
-
-  function handleValueChange(next: number) {
-    onChange(next >= max ? null : next);
-  }
-
-  return (
-    <View style={styles.section}>
-      <View style={styles.labelRow}>
-        <Text style={styles.sectionLabel}>Max distance</Text>
-        <Text style={styles.distanceValue}>{isNoLimit ? 'No limit' : `Within ${sliderValue} km`}</Text>
-      </View>
-      <View onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}>
-        <Slider
-          style={styles.slider}
-          minimumValue={min}
-          maximumValue={max}
-          step={DISTANCE_STEP_KM}
-          value={sliderValue}
-          minimumTrackTintColor={colors.primary}
-          maximumTrackTintColor={colors.border}
-          thumbTintColor={colors.primary}
-          onValueChange={handleValueChange}
-          onSlidingStart={() => setDragging(true)}
-          onSlidingComplete={() => setDragging(false)}
-          onFocus={focus.onFocus}
-          onBlur={focus.onBlur}
-          accessibilityLabel="Max distance"
-          accessibilityValue={{ text: isNoLimit ? 'No limit' : `${sliderValue} kilometres` }}
-        />
-        {showRing && <View pointerEvents="none" style={[styles.sliderRing, { left: thumbCenter - RING_SIZE / 2 }]} />}
-      </View>
-      <View style={styles.endLabelsRow}>
-        <Text style={styles.endLabel}>{min} km</Text>
-        <Text style={styles.endLabel}>No limit</Text>
-      </View>
-    </View>
-  );
-}
-
 const OFFSCREEN_Y = 600;
 
 // RN's own `StyleSheet.absoluteFillObject` isn't typed in this RN version's
@@ -672,213 +392,6 @@ const styles = StyleSheet.create({
   },
   tickets: {
     gap: space[4],
-  },
-  section: {
-    gap: space[3],
-  },
-  group: {
-    gap: space[3],
-  },
-  groupLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-  },
-  sectionLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.7,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  countLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    fontVariant: ['tabular-nums'],
-  },
-  paneText: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    lineHeight: fontSize.sm * 1.45,
-  },
-  rangeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-    backgroundColor: colors.surfaceHover,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderTopColor: colors.cardHighlight,
-    borderRadius: radius.default,
-    padding: space[4],
-  },
-  rangeTextColumn: {
-    flex: 1,
-  },
-  rangeTitle: {
-    fontSize: fontSize.md,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  rangeSubtitle: {
-    marginTop: space[1],
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-  },
-  fixedBadge: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.full,
-    paddingVertical: space[1],
-    paddingHorizontal: space[2],
-  },
-  fixedBadgeLabel: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-  },
-  secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space[2],
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.default,
-    paddingHorizontal: space[6],
-    alignSelf: 'flex-start',
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  secondaryButtonFocused: {
-    backgroundColor: colors.surfaceHover,
-    borderColor: colors.primary,
-  },
-  secondaryButtonLabel: {
-    fontSize: fontSize.md,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-    minHeight: 44,
-    backgroundColor: colors.surfaceHover,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.default,
-    paddingHorizontal: space[3],
-  },
-  input: {
-    flex: 1,
-    fontSize: fontSize.md,
-    color: colors.text,
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  clearButton: {
-    width: 44,
-    height: 44,
-    marginRight: -space[3],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  resultsPanel: {
-    marginTop: space[2],
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderTopWidth: 1,
-    borderTopColor: colors.cardHighlight,
-    borderRadius: radius.default,
-    overflow: 'hidden',
-  },
-  skeletonRow: {
-    marginVertical: space[1],
-    marginHorizontal: space[2],
-  },
-  resultRow: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: space[3],
-    paddingVertical: space[2],
-    outlineStyle: 'solid',
-    outlineWidth: 0,
-  },
-  resultRowActive: {
-    backgroundColor: colors.surfaceHover,
-  },
-  resultCity: {
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  resultCountry: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-  },
-  resultMessage: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: space[2],
-    paddingVertical: space[4],
-  },
-  resultMessageText: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-  },
-  resultErrorText: {
-    fontSize: fontSize.sm,
-    color: colors.error,
-  },
-  // FilterGroup's own `group` style already supplies the label->chips gap
-  // (space[3]) — no marginTop here, or it stacks on top of that gap (was
-  // 24px total on Minimum rating vs FilterSheet's 12px for the identical
-  // group). The city-chips row below isn't inside a `group`-gapped
-  // container, so it keeps its own top margin via cityChipsRow instead.
-  chipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space[2],
-  },
-  cityChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space[2],
-    marginTop: space[3],
-  },
-  distanceValue: {
-    fontSize: fontSize.md,
-    color: colors.text,
-    fontVariant: ['tabular-nums'],
-  },
-  slider: {
-    width: '100%',
-    height: 44,
-  },
-  sliderRing: {
-    position: 'absolute',
-    top: '50%',
-    marginTop: -RING_SIZE / 2,
-    width: RING_SIZE,
-    height: RING_SIZE,
-    borderRadius: RING_SIZE / 2,
-    borderWidth: 2,
-    borderColor: colors.text,
-  },
-  endLabelsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  endLabel: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
   },
   // Shared box for the zero-result copy and the apply-failure banner — same
   // shape, only the border/text color swaps for the error variant below.

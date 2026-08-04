@@ -45,3 +45,12 @@ export function defaultScopeDraft(scope: Scope, coordinates?: Coordinates): Scop
 export function anywhereHasAnchor(draft: Pick<ScopeDraft, 'cities' | 'coordinates'>): boolean {
   return draft.cities.length > 0 || draft.coordinates !== undefined;
 }
+
+// Shared by ScopeSheet (typeahead effect, select/removeCity) and its
+// AnywherePane — living here, not either of those files, keeps neither
+// having to import the other.
+export type CityFetchState = { query: string; status: 'results' | 'no-match' | 'error'; results: CitySuggestion[]; error: string | null };
+
+export function cityKey(city: CitySuggestion): string {
+  return `${city.city}|${city.country}`;
+}
