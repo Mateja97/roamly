@@ -125,3 +125,71 @@ Dynamic Type in this environment.
 
 PR: https://github.com/Mateja97/roamly/pull/152 (same, unmerged, resolve
 pass pushed to `feature/fix-splash-screen-t1`)
+
+## T2
+
+area:app. Splash CTA polish per design-spec.md T2.
+
+`SplashScreen.tsx`: split `GLOW_BLEED` (was space[6]=24, one constant doing
+two jobs) into `UNDERLINE_TO_CTA_GAP` (space[8]=32, `ctaGlowWrap.marginTop`,
+clean `--bg`) plus `GLOW_BLEED` (space[3]=12, `paddingTop` +
+`paddingHorizontal` + equal negative `marginHorizontal` for side bleed).
+Card keeps full gutter-to-gutter width (padding cancels the negative
+margin), wrapper bleeds 12px past it each side for the ellipse fade.
+
+`PrimaryTicket.tsx`: 6 changes. Fill-edge bevel (`borderWidth:1`, top
+`--primary-hover`, sides/bottom `--primary-active`) + `overflow:'hidden'`.
+Divider `View`(`borderLeftWidth` dashed, rendered solid on RN, dead)
+replaced with `Svg`+`Line` dashed stroke, 32px, `rgba(42,14,17,0.40)`,
+dasharray "4 4". `GO_DISC_SIZE` 40 to 36 (matches pin well). Pin-well tint
+0.10 to 0.16. `paddingVertical` space[2] to space[3]. Deleted dead
+`outlineStyle`/`outlineWidth` (confirmed no-op per spec's Diagnosis).
+
+DESIGN_STANDARDS.md's T2 Standard additions (Fill-edge bevel, SVG-dashed-
+perforation correction, go-disc/tint/padding/clip corrections, glow-bleed
+geometry) were already on disk in this worktree (uncommitted, designer
+edit) — carried them onto `feature/fix-splash-screen-t2` (branched off
+freshly-pulled `main`, which didn't have them) since they weren't reachable
+from any commit; they ship as part of this PR's diff.
+
+Acceptance criteria:
+- Underline-to-CTA gap reads as visible daylight, not glow haze — checked:
+  screenshot pixel-scan confirms pure `--bg` rows between the dashed
+  underline and the card's glow band (`splash-default.png`).
+- Card reads as a rounded rectangle, not merged/reshaped — checked: bevel
+  border + `overflow:hidden` + 12px side bleed make an ellipse-around-card
+  glow shape; visible in screenshot crop.
+- `PrimaryTicket` states (rest/hover/pressed/focus) still swap only
+  `backgroundColor` — checked: `PrimaryTicket.test.tsx` unmodified, passes.
+- No dashed-border dead code — checked: `divider` View removed, replaced by
+  real SVG dash.
+- Go-disc/pin-well symmetric caps — checked: both 36px.
+
+Gates: `tsc --noEmit` clean. `npm test` 775/775 green (unmodified
+`SplashScreen.test.tsx`/`PrimaryTicket.test.tsx` both pass, per spec
+guarantee). `npm run lint` clean. Ponytail-review: diff is 1:1 spec-mapped
+style/constant edits + one dead-code deletion (`outlineStyle`/`outlineWidth`),
+no new abstractions, no new deps (`react-native-svg` already used on this
+screen) — nothing to cut. Rename sweep: grepped `divider`, `GO_DISC_SIZE`,
+`GLOW_BLEED`, `outlineStyle` — no stale references left.
+
+Visual check: Docker stack port 4174 held by a sibling checkout's `roamly`
+stack serving a different branch (not this one) — fell back to standalone
+`npm run export:web` + `npx serve dist -l 4175` (avoids the port
+collision), matching T1's precedent. Captured default/hover/pressed/focus
+at 375x812 via a throwaway Playwright script (screenshots dir T2/). First
+capture attempt via the bare `playwright screenshot` CLI raced the
+headline's `onLayout` (underline SVG only mounts once `headlineWidth>0`) —
+underline was missing from that shot. Recaptured with an explicit
+`waitForTimeout(400)` after page load in the script; underline present in
+all 4 recaptured screenshots. Read all 4: gap is genuine wine daylight
+before the glow, card corners crisp and rounded with the bevel visible,
+pressed/hover swap the fill as expected, focus shows the browser's native
+outline (unmodified, per spec). Dynamic-type compression paragraph in the
+spec (gap may shrink toward the 12px floor at largest text sizes) is
+descriptive of existing auto-margin/overflow behavior from T1, not a new
+mechanism — spec's own "Tokens used" section confirms these are two fixed
+constants, no adaptive logic added; not capturable in web preview anyway
+(no OS Dynamic Type control), same caveat as T1.
+
+PR: https://github.com/Mateja97/roamly/pull/153

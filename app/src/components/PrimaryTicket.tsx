@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Line } from 'react-native-svg';
 import { ArrowRight, MapPin } from 'lucide-react-native';
 import { colors, fontSize, radius, space } from '../theme/tokens';
 
@@ -15,7 +16,14 @@ type PrimaryTicketProps = {
 // horizontal room it frees up (vs. 44) is what keeps the sub-label on one
 // line at 375pt (review round 1, Important #4).
 const PIN_WELL_SIZE = 36;
-const GO_DISC_SIZE = 40;
+// T2: 40 -> 36, matching the pin well exactly — the card is a symmetric
+// ticket, its two caps should be the same size (design-spec.md T2).
+const GO_DISC_SIZE = 36;
+// T2: perforation height, drawn as an SVG dashed stroke (see `divider`
+// below) instead of a `borderLeftWidth` dashed border, which RN only
+// renders dashed when the width is uniform on all four sides — a
+// left-only rule renders solid.
+const DIVIDER_HEIGHT = 32;
 
 // DESIGN_STANDARDS.md's "Primary ticket" Standard addition (Components):
 // a welcome/splash-only CTA taking the ticket card's 16px radius instead of
@@ -41,7 +49,18 @@ export function PrimaryTicket({ title, subtitle, accessibilityLabel, onPress }: 
         <MapPin size={26} color={colors.ink} strokeWidth={1.75} />
       </View>
 
-      <View style={styles.divider} />
+      <Svg width={2} height={DIVIDER_HEIGHT}>
+        <Line
+          x1={1}
+          y1={0}
+          x2={1}
+          y2={DIVIDER_HEIGHT}
+          stroke="rgba(42,14,17,0.40)"
+          strokeWidth={2}
+          strokeDasharray="4 4"
+          strokeLinecap="round"
+        />
+      </Svg>
 
       <View style={styles.labelBlock}>
         <Text style={styles.title}>{title}</Text>
@@ -63,11 +82,21 @@ const styles = StyleSheet.create({
     minHeight: 52,
     borderRadius: radius.lg,
     backgroundColor: colors.primary,
+    // T2: fill-edge bevel (DESIGN_STANDARDS.md "Depth & accents") — the flat
+    // gold fill had no contour, so the 16px radius read soft/uneven and the
+    // glow's haze made the card look "reshaped". Uniform 1px border, light
+    // top / shaded sides+bottom, same construction as the standard card's
+    // top-highlight border, just with the fill's own hover/active shades
+    // (no new token).
+    borderWidth: 1,
+    borderTopColor: colors.primaryHover,
+    borderLeftColor: colors.primaryActive,
+    borderRightColor: colors.primaryActive,
+    borderBottomColor: colors.primaryActive,
+    overflow: 'hidden',
     paddingHorizontal: space[3],
-    paddingVertical: space[2],
+    paddingVertical: space[3],
     gap: space[2],
-    outlineStyle: 'solid',
-    outlineWidth: 0,
   },
   cardHovered: {
     backgroundColor: colors.primaryHover,
@@ -86,14 +115,9 @@ const styles = StyleSheet.create({
     // (rgba(206,144,66,0.14)) was derived against a wine surface — on this
     // card's own gold --primary fill it's gold-on-gold and invisible. Ink
     // tint instead, so the well itself reads as a recess in the gold.
-    backgroundColor: 'rgba(42,14,17,0.10)',
-  },
-  divider: {
-    width: 0,
-    height: 36,
-    borderLeftWidth: 2,
-    borderStyle: 'dashed',
-    borderLeftColor: 'rgba(42,14,17,0.35)',
+    // T2: 0.10 -> 0.16 — at 0.10 the well was a ~5% luminance step and read
+    // as a smudge, not a recess.
+    backgroundColor: 'rgba(42,14,17,0.16)',
   },
   labelBlock: {
     flex: 1,
