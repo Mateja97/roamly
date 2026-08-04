@@ -15,20 +15,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Globe, MapPin, X } from 'lucide-react-native';
 import type { ActivitiesQueryResult } from '../../api/activities';
 import type { CitySuggestion } from '../../api/cities';
-import { suggestCities } from '../../api/cities';
 import { FilterChip } from '../../components/FilterChip';
 import { AnywherePane } from './AnywherePane';
 import { FilterGroup } from './FilterGroup';
 import { NearbyPane } from './NearbyPane';
 import { ScopeTicket } from '../../components/ScopeTicket';
 import { Spinner } from '../../components/Spinner';
+import { useCitySearch } from './useCitySearch';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { RATING_OPTIONS } from '../activity-list/filters';
 import type { Scope } from '../../types/scope';
 import { useNearbyLocation } from '../../hooks/useNearbyLocation';
 import { cityKey, defaultScopeDraft } from './scopeDraft';
-import type { CityFetchState, ScopeDraft } from './scopeDraft';
+import type { ScopeDraft } from './scopeDraft';
 
 type ScopeSheetProps = {
   visible: boolean;
@@ -73,7 +73,7 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
   const nearby = useNearbyLocation();
 
   const [cityQuery, setCityQuery] = useState('');
-  const [cityFetch, setCityFetch] = useState<CityFetchState>({ query: '', status: 'no-match', results: [], error: null });
+  const cityFetch = useCitySearch(cityQuery, draft.cities);
 
   // Open effect: move focus into the panel + entrance animation — identical
   // to FilterSheet's (see that file's comment for the reduce-motion/
@@ -119,26 +119,6 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- draft drives the re-query; onQuery's identity isn't a real dependency (same pattern as AnywhereSearchScreen)
   }, [draft, visible]);
-
-  // City typeahead — debounced, excludes already-selected cities. Copied
-  // from AnywhereSearchScreen's identical effect (design-spec.md T2: reuse
-  // its city-search code verbatim).
-  useEffect(() => {
-    const query = cityQuery.trim();
-    if (query.length === 0) return;
-    const timer = setTimeout(() => {
-      suggestCities(query).then((result) => {
-        if (result.status !== 'success') {
-          setCityFetch({ query, status: 'error', results: [], error: result.message });
-          return;
-        }
-        const selectedKeys = new Set(draft.cities.map(cityKey));
-        const suggestions = result.suggestions.filter((s) => !selectedKeys.has(cityKey(s)));
-        setCityFetch({ query, status: suggestions.length === 0 ? 'no-match' : 'results', results: suggestions, error: null });
-      });
-    }, DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [cityQuery, draft.cities]);
 
   // scopeDraft.ts's `cities`/`maxDistanceKm` comments claim "always empty"/
   // "permanent null" for nearby — switching to nearby has to actually
