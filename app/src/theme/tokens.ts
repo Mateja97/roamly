@@ -57,6 +57,12 @@ export const colors = {
   // them on other app surfaces without the same justification.
   surfaceGradient: ['#93313A', '#8A2C35'] as const,
   glow: 'rgba(206,144,66,0.16)',
+  // T3: same glow color as `glow` above, split so a native react-native-svg
+  // <Stop> can use `stopColor`+`stopOpacity` — native react-native-svg
+  // doesn't reliably read alpha baked into an rgba() `stopColor` string (the
+  // T2 regression). `glow` itself is untouched and stays the rgba string
+  // expo-linear-gradient's `colors` prop wants (see ScopeTicket.tsx).
+  glowOpacity: 0.16,
 } as const;
 
 export const fontSize = {
