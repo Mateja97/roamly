@@ -51,7 +51,7 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
     // Fire-and-forget: the CTA navigates immediately (no in-flight state,
     // per design-spec.md T1) — a slow/failed local write shouldn't stall
     // navigation, and the worst case is the splash showing once more.
-    markSplashSeen().catch(() => {});
+    markSplashSeen();
     onContinue();
   }
 
