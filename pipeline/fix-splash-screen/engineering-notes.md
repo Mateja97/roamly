@@ -192,4 +192,4 @@ mechanism — spec's own "Tokens used" section confirms these are two fixed
 constants, no adaptive logic added; not capturable in web preview anyway
 (no OS Dynamic Type control), same caveat as T1.
 
-PR: https://github.com/Mateja97/roamly/pull/153
+PR: https://github.com/Mateja97/roamly/pull/154
