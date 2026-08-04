@@ -102,21 +102,27 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // handleToggleSubtype below), so they never trigger a re-fetch — they're
   // filtered client-side from the already-fetched, category-scoped result
   // (filters.ts's filterBySubtypes/subtypeCounts).
+  // review round 2 (Minor — round 1's stale-while-revalidate fix was too
+  // broad): design-spec.md keeps list/skeleton/empty/error states
+  // unchanged by this task — a category tap or a Scope sheet apply must
+  // still show the loading skeleton like it always has. Only the launch
+  // promotion's own *automatic* re-query (below) sets this ref right
+  // before it changes scope, so only that one silent refetch skips the
+  // skeleton; everything else (including the "quiet, later" coordinate-only
+  // add for a non-launch permission grant) goes back to showing loading.
+  const silentRefetchRef = useRef(false);
   useEffect(() => {
     const seq = startQuery();
-    // review round 1 (Minor): stale-while-revalidate — once a list has ever
-    // loaded, a re-fetch (category change, Scope sheet apply, or the launch
-    // promotion effect below re-anchoring anywhere->nearby) keeps showing it
-    // instead of collapsing to skeletons; `applyResult` swaps in the new
-    // result (or surfaces an error) once it resolves. Without this, every
-    // granted-permission launch fired its cold-start query, rendered real
-    // cards, then immediately blanked them back to skeletons for the
-    // automatic Nearby re-query a few hundred ms later — a visible content
-    // swap on the single most common launch path. Only a genuine first load
-    // (nothing loaded yet) or a retry from an error state still shows
-    // loading.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- kicking off a fetch needs its "loading" flag set before the async call starts, same shape as the traveler-row effect below (which this same rule also flags) — T4 removed this effect's own early-return guard (the now-dead initialActivities skip), which is what silenced the rule here before.
-    setQueryState((prev) => (prev.status === 'loaded' ? prev : { status: 'loading' }));
+    if (silentRefetchRef.current) {
+      silentRefetchRef.current = false;
+    } else {
+      // review round 2 (Minor): the branch here (vs. an unconditional call)
+      // is what keeps `react-hooks/set-state-in-effect` quiet — same
+      // inconsistent heuristic T3 already documented on the traveler-row
+      // effect below, no eslint-disable needed on this one now that it has
+      // its own guard again.
+      setQueryState({ status: 'loading' });
+    }
     queryActivities(buildFeedRequest(appliedScopeDraft, appliedFilters.categories)).then((result) => {
       if (isCurrent(seq)) applyResult(result);
     });
@@ -199,19 +205,24 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // resolves the fix quietly, but that later case only ever adds
   // `coordinates`, never overrides the scope the user just explicitly
   // picked.
-  // review round 1 (Important): the GPS fix this effect waits on can land up
-  // to LOCATION_TIMEOUT_MS (15s) later — long enough for the user to open
-  // the Scope sheet and explicitly apply an Anywhere + city selection while
-  // it's still in flight. `isLaunchRef` alone isn't enough to stop that:
-  // it's already consumed by the time the fix resolves, so the promotion
-  // still ran through. Two guards now, not one: `isLaunchRef` is flipped
-  // false the moment the user actually applies anything from the sheet (see
-  // the ScopeSheet's onApply below), ending the "this still counts as
-  // launch" window outright — and the updater itself also requires
-  // `prev.cities.length === 0`, so even a same-tick race can't promote an
-  // Anywhere-with-a-city draft into an incoherent `{scope:'nearby',
-  // cities:[...]}` request.
+  // review round 2 (Important — round 1's fix only narrowed this, didn't
+  // close it): the GPS fix this effect waits on can land up to
+  // LOCATION_TIMEOUT_MS (15s) later — long enough for the user to open the
+  // Scope sheet and explicitly apply Anywhere (with or without a city, e.g.
+  // just a minimum-rating change) while it's still in flight. `isLaunch` is
+  // a `const` captured once, at *effect-setup* time — it's a snapshot of
+  // "was this firing the launch", not a live read, so flipping
+  // `isLaunchRef.current` later (from onApply) can never reach an
+  // already-in-flight closure; only the (still-correct, still-needed)
+  // `prev.cities.length === 0` guard was ever doing anything for a race
+  // that lands after an apply, and it only covers the city sub-case. Fixed
+  // properly this time with a *second* ref that's read at write time
+  // (inside the async updater, right before it would promote), not
+  // capture time: `userAppliedRef`, set the moment `onApply` runs. A
+  // promotion only ever commits when it's both the launch firing *and*
+  // nothing has been explicitly applied since.
   const isLaunchRef = useRef(true);
+  const userAppliedRef = useRef(false);
   useEffect(() => {
     if (appliedScopeDraft.scope !== 'anywhere' || appliedScopeDraft.coordinates) return;
     const isLaunch = isLaunchRef.current;
@@ -220,11 +231,16 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
       if (!granted) return;
       nearby.requestLocation().then((coordinates) => {
         if (!coordinates) return;
-        setAppliedScopeDraft((prev) =>
-          prev.scope === 'anywhere' && !prev.coordinates && prev.cities.length === 0
-            ? { ...prev, coordinates, scope: isLaunch ? 'nearby' : prev.scope }
-            : prev
-        );
+        setAppliedScopeDraft((prev) => {
+          if (prev.scope !== 'anywhere' || prev.coordinates || prev.cities.length > 0) return prev;
+          const promoteToNearby = isLaunch && !userAppliedRef.current;
+          // Only the launch's own promotion skips the query effect's loading
+          // skeleton (review round 2, Minor) — a quiet, later coordinate-only
+          // add (promoteToNearby false) still shows it, same as every other
+          // refetch.
+          if (promoteToNearby) silentRefetchRef.current = true;
+          return { ...prev, coordinates, scope: promoteToNearby ? 'nearby' : prev.scope };
+        });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- nearby.checkPermission/requestLocation identities are stable (useCallback, no deps)
@@ -446,12 +462,18 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
           initialDraft={appliedScopeDraft}
           onQuery={(draft) => queryActivities(buildFeedRequest(draft, appliedFilters.categories))}
           onApply={(draft) => {
-            // review round 1 (Important): any explicit apply ends the
-            // "still counts as launch" window outright — the user has now
-            // made a real choice, so the launch-derivation effect above
-            // must never again promote scope out from under it, even if a
-            // pending GPS fix from before this apply resolves afterwards.
+            // review round 1 (Important) + round 2 (still Important — see
+            // the launch-derivation effect's own comment for why round 1's
+            // fix alone wasn't enough): any explicit apply is a real user
+            // choice. `userAppliedRef` is read at write-time by an
+            // already-in-flight promotion, so it closes the race even for
+            // a chain that started before this apply. `isLaunchRef` covers
+            // a different case — this instance never having fired the
+            // launch effect at all yet (e.g. mounted pre-anchored, then
+            // later switched to unanchored Anywhere here) — so a *future*
+            // firing of that effect is never mistaken for launch either.
             isLaunchRef.current = false;
+            userAppliedRef.current = true;
             setAppliedScopeDraft(draft);
           }}
           onClose={closeSheet}

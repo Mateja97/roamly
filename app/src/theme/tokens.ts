@@ -85,11 +85,15 @@ export const radius = {
   full: 999,
 } as const;
 
-// --font-display (Marcellus) — the one display accent, used for screen-
-// identity headers only: the Splash screen's "Where to?" headline and the
-// Feed's context line (`FeedHeader.tsx`, T3) are the current screen-header
-// consumers; see DESIGN_STANDARDS.md's "Marcellus header sizes" list for
-// the full, kept-current set. Loaded once, globally, gated by App.tsx's
+// --font-display (Marcellus) — the display accent. For **screen-identity
+// headers** specifically (a screen's own title/H1, not a section heading
+// within it), DESIGN_STANDARDS.md's "Marcellus header sizes" list is the
+// single source of the exact set + sizes — don't duplicate that list here,
+// it goes stale. Marcellus is also used more narrowly as a decorative
+// accent on a few supporting lines that list deliberately excludes (the
+// Feed's context line, a reviews score number, the traveler row's
+// heading) — those aren't screen identity, so they're not "Marcellus
+// header sizes" entries. Loaded once, globally, gated by App.tsx's
 // font-load gate (moved there from ScopePickerScreen in T1 so every screen
 // rides on one gate, Marcellus loads once). Every other surface stays on
 // RN's system font stack (the default when no fontFamily is set).

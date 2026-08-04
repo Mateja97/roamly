@@ -323,6 +323,50 @@ describe('ActivityListScreen', () => {
         expect.objectContaining({ scope: 'nearby', cities: expect.anything() })
       );
     });
+
+    it('review round 2 (Important — round 1 only closed the city sub-case): a pending launch GPS fix does not clobber a no-city Anywhere choice (e.g. just a minimum-rating apply) applied while it is still in flight', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);
+      let resolveFix!: (position: unknown) => void;
+      mockedLocation.getCurrentPositionAsync.mockReturnValue(
+        new Promise((resolve) => {
+          resolveFix = resolve;
+        }) as never
+      );
+
+      render(<ActivityListScreen selection={{ scope: 'anywhere' }} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy());
+
+      // The launch GPS fix is now pending (mocked to hang). While it's
+      // still in flight, the user opens the sheet and applies Anywhere with
+      // no city at all — just a minimum-rating change (`prev.cities.length
+      // === 0` is already true both before and after this apply, so that
+      // guard alone can't tell the two apart; only a write-time check on
+      // "has the user applied anything since" can).
+      fireEvent.press(screen.getByRole('button', { name: /scope: exploring everywhere/i }));
+      await flush();
+      fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: /^show \d+ activit/i })).toBeTruthy());
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: /^show \d+ activit/i }));
+      });
+      await waitFor(() => expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy());
+      expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'anywhere', min_rating: 4.5 });
+
+      // Now the pending launch fix resolves, late.
+      await act(async () => {
+        resolveFix({ coords: { latitude: COORDINATES.latitude, longitude: COORDINATES.longitude } });
+      });
+      await flush();
+
+      // Still unanchored Anywhere with the applied rating — never silently
+      // promoted to Nearby, and no `current_location`-bearing Nearby
+      // request ever fired for it.
+      expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+      expect(mockedQuery).not.toHaveBeenCalledWith(
+        expect.objectContaining({ scope: 'nearby', current_location: expect.anything() })
+      );
+    });
   });
 
   describe('Category pill row (T3, relocated from the old header)', () => {
@@ -337,6 +381,29 @@ describe('ActivityListScreen', () => {
       ]) {
         expect(screen.getByRole('button', { name: label })).toBeTruthy();
       }
+    });
+
+    it('review round 2 (Minor — round 1 narrowed stale-while-revalidate too broadly): a category tap still shows the loading skeleton, not the stale list', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity])); // initial mount
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      let resolveCategoryQuery!: (r: ActivitiesQueryResult) => void;
+      mockedQuery.mockImplementationOnce(() => new Promise((resolve) => (resolveCategoryQuery = resolve)));
+      fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      await flush();
+
+      // Still in flight — design-spec.md's list/skeleton states stay
+      // unchanged by this task, so a user-initiated refetch collapses to
+      // the loading skeleton exactly like it always has; stale-while-
+      // revalidate is reserved for the launch promotion's own automatic
+      // re-query only (see the "keeps the cold-start list visible" test).
+      expect(screen.queryByText('Skadarlija Food Walk')).toBeNull();
+
+      await act(async () => {
+        resolveCategoryQuery(successResult([activity]));
+      });
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
     });
 
     it('selecting a category marks it active, re-queries with it, and All goes inactive', async () => {
