@@ -65,53 +65,53 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
           <Text style={styles.tagline}>Search activities to do</Text>
         </View>
 
-        <View style={styles.destinationField}>
-          <Text style={styles.overline}>Destination</Text>
-          <Text
-            style={[styles.headline, { fontFamily: fontFamily.display }]}
-            onLayout={onHeadlineLayout}
-          >
-            Where to?
-          </Text>
-          {headlineWidth > 0 && (
-            <Svg width={headlineWidth} height={4} style={styles.underline}>
-              <Line
-                x1={0}
-                y1={2}
-                x2={headlineWidth}
-                y2={2}
-                stroke={colors.cardHighlight}
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                strokeLinecap="round"
-              />
+        <View style={styles.destinationCtaGroup}>
+          <View style={styles.destinationField}>
+            <Text style={styles.overline}>Destination</Text>
+            <Text
+              style={[styles.headline, { fontFamily: fontFamily.display }]}
+              onLayout={onHeadlineLayout}
+            >
+              Where to?
+            </Text>
+            {headlineWidth > 0 && (
+              <Svg width={headlineWidth} height={4} style={styles.underline}>
+                <Line
+                  x1={0}
+                  y1={2}
+                  x2={headlineWidth}
+                  y2={2}
+                  stroke={colors.cardHighlight}
+                  strokeWidth={2}
+                  strokeDasharray="4 4"
+                  strokeLinecap="round"
+                />
+              </Svg>
+            )}
+          </View>
+
+          <View style={styles.ctaGlowWrap}>
+            {/* review round 2, Important: expo-linear-gradient only draws a
+                flat linear box — matched DESIGN_STANDARDS' `radial-gradient
+                (ellipse at 50% 0%, --glow, transparent 70%)` for real with
+                react-native-svg (already a dep, already imported here for the
+                dashed underline) instead of approximating it. */}
+            <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+              <Defs>
+                <RadialGradient id="ctaGlow" cx="50%" cy="0%" r="70%">
+                  <Stop offset="0" stopColor={colors.glow} />
+                  <Stop offset="1" stopColor="rgba(206,144,66,0)" />
+                </RadialGradient>
+              </Defs>
+              <Rect x={0} y={0} width="100%" height="100%" fill="url(#ctaGlow)" />
             </Svg>
-          )}
-        </View>
-
-        <View style={styles.spacer} />
-
-        <View style={styles.ctaGlowWrap}>
-          {/* review round 2, Important: expo-linear-gradient only draws a
-              flat linear box — matched DESIGN_STANDARDS' `radial-gradient
-              (ellipse at 50% 0%, --glow, transparent 70%)` for real with
-              react-native-svg (already a dep, already imported here for the
-              dashed underline) instead of approximating it. */}
-          <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Defs>
-              <RadialGradient id="ctaGlow" cx="50%" cy="0%" r="70%">
-                <Stop offset="0" stopColor={colors.glow} />
-                <Stop offset="1" stopColor="rgba(206,144,66,0)" />
-              </RadialGradient>
-            </Defs>
-            <Rect x={0} y={0} width="100%" height="100%" fill="url(#ctaGlow)" />
-          </Svg>
-          <PrimaryTicket
-            title="Start exploring"
-            subtitle="Real places, picked for right now"
-            accessibilityLabel="Start exploring, real places picked for right now"
-            onPress={handleContinue}
-          />
+            <PrimaryTicket
+              title="Start exploring"
+              subtitle="Real places, picked for right now"
+              accessibilityLabel="Start exploring, real places picked for right now"
+              onPress={handleContinue}
+            />
+          </View>
         </View>
       </View>
     </SafeAreaView>
@@ -141,6 +141,15 @@ const styles = StyleSheet.create({
     letterSpacing: 2.75, // ~0.22em at 12.5px
     textAlign: 'center',
   },
+  // Replaces the old destinationField -> standalone flex:1 spacer -> CTA
+  // stack: this group takes all remaining space below the fixed brandBlock
+  // and centers the destination text + CTA together within it, so the gap
+  // between them stays the fixed GLOW_BLEED value instead of growing with
+  // screen height.
+  destinationCtaGroup: {
+    flex: 1,
+    justifyContent: 'center',
+  },
   destinationField: {
     alignItems: 'center',
     marginTop: DESTINATION_BLOCK_GAP,
@@ -161,9 +170,6 @@ const styles = StyleSheet.create({
   },
   underline: {
     marginTop: HERO_TO_UNDERLINE_GAP,
-  },
-  spacer: {
-    flex: 1,
   },
   // review round 1, Important #1: the gradient is `absoluteFill` on this
   // wrapper — sizing the wrapper to the opaque card's exact bounds left
