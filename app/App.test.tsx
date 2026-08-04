@@ -133,6 +133,23 @@ describe('App', () => {
     hasSeenSpy.mockRestore();
   });
 
+  // T5 regression: existing coverage above only exercises granted (-> Nearby)
+  // and the beforeEach default of undetermined (-> Anywhere). An OS-level
+  // deny is the third permission state design-spec.md's "derived, not
+  // stored" rule names explicitly — same cold-start Anywhere path as
+  // undetermined, not a distinct blocked state.
+  it('T5: a launch with location permission denied also derives unanchored Anywhere, same as undetermined', async () => {
+    mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'denied' } as never);
+    render(<App />);
+    await flush();
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: /start exploring/i }));
+    });
+    await flush();
+    expect(screen.getByRole('button', { name: /scope: exploring everywhere/i })).toBeTruthy();
+    expect(mockedQuery).toHaveBeenCalledWith({ scope: 'anywhere' });
+  });
+
   it('T4: a returning launch with location already granted derives Nearby scope instead of Anywhere', async () => {
     await AsyncStorage.setItem('roamly:first-launch-seen', 'true');
     mockedLocation.getForegroundPermissionsAsync.mockResolvedValue({ status: 'granted' } as never);

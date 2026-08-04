@@ -59,7 +59,19 @@ async function flush() {
 }
 
 describe('ActivityListScreen', () => {
-  afterEach(() => jest.resetAllMocks());
+  // T5 (root-cause fix, same landmine App.test.tsx's own comment already
+  // documents): `resetAllMocks()` calls `mockReset()` on every jest.fn(),
+  // including the AsyncStorage jest mock's own `jest.fn(realImplementation)`
+  // methods (`@react-native-async-storage/async-storage/jest/async-storage-
+  // mock`) — stripping their real in-memory-store implementation back to a
+  // bare mock that returns `undefined` for the rest of this file's test run.
+  // Every test that only spies on/re-arms `mockedQuery`/`mockedLocation`/
+  // `mockedSuggestCities` (all explicitly reset in each test's own body)
+  // never noticed; the new AsyncStorage round-trip tests below (traveler
+  // mode, nudge-persists-across-a-mount) do. `clearAllMocks()` clears call
+  // history only, leaving every mock's implementation — including
+  // AsyncStorage's — intact across tests.
+  afterEach(() => jest.clearAllMocks());
 
   it('fetches on mount using the scope + device location, and renders loaded cards under the new Feed header', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
@@ -555,6 +567,44 @@ describe('ActivityListScreen', () => {
       expect(screen.getByText('Historical Site (1)')).toBeTruthy();
     });
 
+    // T5 regression, Decision 5 specifically: the superseded 07-30 rule gated
+    // the rail to a *single* selected category. Selecting Sport then Culture
+    // (above) already disproves "gated to a lone selection", but Sport and
+    // Culture also happen to already be in CATEGORY_OPTIONS taxonomy order,
+    // so that test alone can't tell "renders one rail per selection" apart
+    // from "renders rails in selection order" (a different, also-wrong
+    // rule). Selecting in the reverse order and a 3rd category closes both gaps.
+    it('renders rails in taxonomy order regardless of selection order, for any number of simultaneous categories', async () => {
+      const cultureActivity: Activity = { ...activity, id: '3', category: 'culture', subcategory: 'historical_site' };
+      const kidsActivity: Activity = { ...activity, id: '4', category: 'kids', subcategory: 'playground' };
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      // Culture (taxonomy index 7) selected before Sport (index 5) and Kids
+      // (index 6) — reverse of taxonomy order.
+      mockedQuery.mockResolvedValueOnce(successResult([cultureActivity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Culture' }));
+      });
+      mockedQuery.mockResolvedValueOnce(successResult([sportActivity, cultureActivity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Sport' }));
+      });
+      mockedQuery.mockResolvedValueOnce(successResult([sportActivity, cultureActivity, kidsActivity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Kids' }));
+      });
+
+      // SubtypeRail's heading is `{label} subtypes` — RN's JSX compiles the
+      // expression + literal into a children array, not a plain string, so
+      // join it rather than assume `.props.children` is already a string.
+      const railHeadings = screen
+        .getAllByRole('header')
+        .map((h) => (Array.isArray(h.props.children) ? h.props.children.join('') : h.props.children));
+      expect(railHeadings).toEqual(['Sport subtypes', 'Kids subtypes', 'Culture subtypes']);
+    });
+
     it('tapping an enabled subtype chip filters the visible list client-side — no new query', async () => {
       const otherSport: Activity = { ...activity, id: '4', title: 'City Golf Course', category: 'sport', subcategory: 'golf_course' };
       mockedQuery.mockResolvedValueOnce(successResult([sportActivity, otherSport]));
@@ -607,6 +657,70 @@ describe('ActivityListScreen', () => {
     });
   });
 
+  // T5 regression: travelerMode.ts's own pure functions (median, threshold,
+  // <3-samples gate) are unit-tested in travelerMode.test.ts, but the
+  // screen's own `checkTravelerMode` wiring — reading AsyncStorage's
+  // home-base samples, computing the median, and flipping `travelerMode`
+  // state on mount — had zero integration coverage until now.
+  describe('Traveler mode (T3 adaptivity wiring)', () => {
+    // Same fixtures as travelerMode.test.ts — Paris is ~1500km from
+    // Belgrade, comfortably past the 150km threshold.
+    const BELGRADE = { latitude: 44.8125, longitude: 20.4612 };
+    const PARIS = { latitude: 48.8566, longitude: 2.3522 };
+    const HOME_BASE_KEY = 'roamly:home-base-samples';
+    // "All" deliberately excluded — it's a separate, always-first control
+    // (deselects every category), not part of `order`, so it's not a real
+    // category name to filter for below.
+    const CATEGORY_LABELS = [
+      'Restaurants', 'Cafés', 'Bars', 'Nightlife', 'Nature', 'Sport', 'Kids', 'Culture', 'Art', 'Wellness', 'Shopping', 'Entertainment', 'Tours & Experiences',
+    ];
+    // categoryOrder.ts always prepends traveler floats ahead of any
+    // time-of-day float (`[...travelerFloats, ...timeFloats]`), so the pair
+    // ['Tours & Experiences', 'Culture'] can only ever lead the row when
+    // travelerMode is true — real wall-clock time at test-run can't produce
+    // it, no fake timers needed to isolate this from categoryOrder.test.ts's
+    // own time-bucket cases.
+    function pillOrder() {
+      return screen
+        .getAllByRole('button')
+        .map((b) => (b.props.accessibilityLabel as string).replace(/, selected$/, ''))
+        .filter((name) => CATEGORY_LABELS.includes(name));
+    }
+
+    afterEach(async () => {
+      await AsyncStorage.clear();
+    });
+
+    it('fewer than 3 home-base samples never activates traveler mode, even from a fix far from all of them', async () => {
+      await AsyncStorage.setItem(HOME_BASE_KEY, JSON.stringify([BELGRADE, BELGRADE]));
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: PARIS }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      // No further pending state change to await — checkTravelerMode already
+      // resolved by the time the query above settled (same microtask queue).
+
+      expect(screen.queryByText('Top experiences here')).toBeNull();
+      expect(pillOrder().slice(0, 2)).not.toEqual(['Tours & Experiences', 'Culture']);
+      expect(mockedQuery).toHaveBeenCalledTimes(1); // no second, curated-row query ever fires
+    });
+
+    it('3+ home-base samples with a median over 150km from the current fix turns traveler mode on: curated row + floated pills', async () => {
+      await AsyncStorage.setItem(HOME_BASE_KEY, JSON.stringify([BELGRADE, BELGRADE, BELGRADE]));
+      // Distinct title for the curated row's own query result — the main
+      // list and the traveler row both render an ActivityCard, so reusing
+      // the same fixture for both makes `getByText` ambiguous.
+      const curatedActivity: Activity = { ...activity, id: '9', title: 'Louvre Guided Tour' };
+      mockedQuery.mockResolvedValueOnce(successResult([activity])); // main list (mount)
+      mockedQuery.mockResolvedValue(successResult([curatedActivity])); // traveler row, once travelerMode flips true
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: PARIS }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      await waitFor(() => expect(screen.getByText('Top experiences here')).toBeTruthy());
+      expect(screen.getByText('Louvre Guided Tour')).toBeTruthy();
+      expect(pillOrder().slice(0, 2)).toEqual(['Tours & Experiences', 'Culture']);
+    });
+  });
+
   describe('Scope pill -> Scope sheet (T3 wiring T2)', () => {
     it('tapping the scope pill opens the Scope sheet', async () => {
       mockedQuery.mockResolvedValue(successResult([activity]));
@@ -629,14 +743,67 @@ describe('ActivityListScreen', () => {
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
       });
+      // T5 (Minor, self-caught while building the sibling close/reopen
+      // test below): the CTA stays disabled (`count === null`) until the
+      // sheet's own 300ms-debounced live count resolves — pressing
+      // `/^show/i` before that was a silent no-op, and this test's final
+      // assertion only ever passed because the live-count debounce itself
+      // (scheduled by the '4.5+' press above) produces an identically-
+      // shaped request that the `waitFor` below can't tell apart from a
+      // real Show tap. Waiting for the count-bearing label first is what
+      // makes the later press a real one.
+      await waitFor(() => expect(screen.getByRole('button', { name: /^show \d+ activit/i })).toBeTruthy());
       mockedQuery.mockResolvedValue(successResult([activity])); // Feed's own post-apply re-query
       await act(async () => {
-        fireEvent.press(screen.getByRole('button', { name: /^show/i }));
+        fireEvent.press(screen.getByRole('button', { name: /^show \d+ activit/i }));
       });
 
       await waitFor(() =>
         expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION, min_rating: 4.5 })
       );
+      expect(screen.queryByText('Where to?')).toBeNull(); // the sheet actually closed, not just the request landing
+    });
+
+    // T5 regression: the sheet remounts on every open/close
+    // (`key={sheetVisible ? 'open' : 'closed'}`) seeded from
+    // `initialDraft={appliedScopeDraft}` — proves that contract actually
+    // carries the applied rating forward, not just that Apply commits it once.
+    it('minimum-rating selection survives a sheet close/reopen', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      fireEvent.press(screen.getByRole('button', { name: /scope: nearby/i }));
+      await flush();
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
+      });
+      // The CTA stays disabled (`count === null`) until the sheet's own
+      // 300ms-debounced live count resolves — pressing it before that is a
+      // silent no-op (RN's Pressable ignores `onPress` while `disabled`).
+      // Same wait ScopeSheet.test.tsx's own "commits the draft and closes"
+      // test uses before its Show tap.
+      await waitFor(() => expect(screen.getByRole('button', { name: /^show \d+ activit/i })).toBeTruthy());
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: /^show \d+ activit/i }));
+      });
+      await waitFor(() =>
+        expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION, min_rating: 4.5 })
+      );
+      // Confirms the sheet actually closed (not just that the right request
+      // landed — the live-count debounce alone can produce the identical
+      // request shape while the sheet stays open, which is what silently
+      // masked this exact gap the first time this test was written).
+      expect(screen.queryByText('Where to?')).toBeNull();
+
+      // Sheet closed on Show (design-spec.md T2's apply-commits-and-closes
+      // contract) — reopen it and check the rating chip's own selected
+      // state via its accessible name (FilterChip's convention, same as the
+      // category row's "Sport, selected"), not just that "4.5+" is
+      // rendered at all (an unselected chip renders that text too).
+      fireEvent.press(screen.getByRole('button', { name: /scope: nearby/i }));
+      await flush();
+      expect(screen.getByRole('button', { name: '4.5+, selected' })).toBeTruthy();
     });
   });
 
@@ -665,6 +832,18 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Dismiss' }));
       expect(screen.queryByText("See what's near you")).toBeNull();
       expect(setItemSpy).toHaveBeenCalledWith('roamly:nearby-nudge-dismissed', 'true');
+    });
+
+    // T5 regression: the test above only proves dismissing *writes* the
+    // flag — it doesn't prove a later launch *reads* it back, the actual
+    // "persistence" the AC asks for (mirrors App.test.tsx's own
+    // record-then-remount shape for first-launch-seen).
+    it('a dismissal from an earlier session persists — a fresh mount with the flag already set never shows the nudge', async () => {
+      await AsyncStorage.setItem('roamly:nearby-nudge-dismissed', 'true');
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'anywhere' }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      expect(screen.queryByText("See what's near you")).toBeNull();
     });
 
     it('shows the quiet "choose a city" nudge instead, after an OS-level deny', async () => {
