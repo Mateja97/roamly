@@ -58,11 +58,28 @@ describe('isTraveler', () => {
     expect(isTraveler(nearby, BELGRADE)).toBe(false);
   });
 
-  it('boundary: exactly 150km is not > 150km, so not a traveler', () => {
-    expect(isTraveler(BELGRADE, BELGRADE)).toBe(false); // 0km, sanity for the boundary logic below
-    // isTraveler uses a strict >, so a distance of exactly TRAVELER_DISTANCE_KM must read false.
-    const exactlyAtBoundary = { latitude: BELGRADE.latitude, longitude: BELGRADE.longitude };
-    expect(isTraveler(exactlyAtBoundary, BELGRADE)).toBe(false);
+  // T5 regression: the point tested below used to be `{...BELGRADE}` — the
+  // same coordinates as BELGRADE itself, i.e. a 0km sanity check, not an
+  // actual 150km-away point. Real geodesic points instead: moving due north
+  // by `Δlat` degrees puts `dLng = 0`, which reduces `distanceKm`'s own
+  // haversine formula to exactly `EARTH_RADIUS_KM * Δlat_rad` (no
+  // approximation), so this is a real boundary check, not a same-point stand-in.
+  const EARTH_RADIUS_KM = 6371; // matches travelerMode.ts's own constant (not exported, so restated here)
+  function northOf(base: typeof BELGRADE, km: number) {
+    const deltaLatDeg = (km / EARTH_RADIUS_KM) * (180 / Math.PI);
+    return { latitude: base.latitude + deltaLatDeg, longitude: base.longitude };
+  }
+
+  it('boundary: a real point exactly 150km away is not > 150km, so not a traveler', () => {
+    const atBoundary = northOf(BELGRADE, TRAVELER_DISTANCE_KM);
+    expect(distanceKm(BELGRADE, atBoundary)).toBeCloseTo(TRAVELER_DISTANCE_KM, 3);
+    expect(isTraveler(atBoundary, BELGRADE)).toBe(false);
+  });
+
+  it('boundary: a real point just past 150km away is a traveler', () => {
+    const justPast = northOf(BELGRADE, TRAVELER_DISTANCE_KM + 0.01);
+    expect(distanceKm(BELGRADE, justPast)).toBeGreaterThan(TRAVELER_DISTANCE_KM);
+    expect(isTraveler(justPast, BELGRADE)).toBe(true);
   });
 });
 
