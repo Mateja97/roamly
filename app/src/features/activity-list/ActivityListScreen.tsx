@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BackHandler, FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, FlatList, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SearchX } from 'lucide-react-native';
 import type { Activity, ActivitiesQueryResult } from '../../api/activities';
 import { queryActivities } from '../../api/activities';
 import { ActivityCard, ActivityCardSkeleton } from '../../components/ActivityCard';
-import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { ActivityDetailScreen } from './ActivityDetailScreen';
 import { tripadvisorAttribution } from './activityDetailConfig';
 import { CategoryRow } from './CategoryRow';
 import { orderCategories } from './categoryOrder';
+import { EmptyState } from './EmptyState';
+import { ErrorState } from './ErrorState';
 import { FeedHeader } from './FeedHeader';
 import {
   CATEGORY_OPTIONS,
@@ -26,8 +26,9 @@ import { dismissNearbyNudge, isNearbyNudgeDismissed } from './nearbyNudge';
 import { SubtypeRail } from './SubtypeRail';
 import { TravelerRow } from './TravelerRow';
 import type { TravelerRowState } from './TravelerRow';
-import { getHomeBaseSamples, homeBaseMedian, isTraveler, recordHomeBaseSample } from './travelerMode';
+import { recordHomeBaseSample } from './travelerMode';
 import type { ActivityListScreenProps, Category, Filters } from './types';
+import { useTravelerMode } from './useTravelerMode';
 import { useNearbyLocation } from '../../hooks/useNearbyLocation';
 import { ScopeSheet } from '../scope-sheet/ScopeSheet';
 import { defaultScopeDraft } from '../scope-sheet/scopeDraft';
@@ -72,7 +73,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // the Scope sheet (the only other "screens" this app has today). See
   // `refreshAdaptivity` below.
   const [hourAtLastFocus, setHourAtLastFocus] = useState(() => new Date().getHours());
-  const [travelerMode, setTravelerMode] = useState(false);
+  const { travelerMode, checkTravelerMode } = useTravelerMode();
   const [travelerRowState, setTravelerRowState] = useState<TravelerRowState>({ status: 'omit' });
   const [nudgeDismissed, setNudgeDismissed] = useState(true); // starts hidden to avoid a flash before the stored flag resolves
   const nearby = useNearbyLocation();
@@ -156,24 +157,12 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
     if (appliedScopeDraft.coordinates) recordHomeBaseSample(appliedScopeDraft.coordinates);
   }, [appliedScopeDraft.coordinates]);
 
-  const mountedRef = useRef(true);
-  useEffect(() => () => {
-    mountedRef.current = false;
-  }, []);
-
   // Shared by the mount check below and the closeDetail/closeSheet "focus
   // regained" handlers — only the traveler-mode async check lives here
   // (setTravelerMode fires from its .then callback, not synchronously).
   // `hourAtLastFocus` itself is set separately by each interactive call
   // site — the mount case already has the right value from its own useState
   // lazy initializer above, so it doesn't need to be re-set here too.
-  function checkTravelerMode(currentCoordinates: ScopeDraft['coordinates']) {
-    getHomeBaseSamples().then((samples) => {
-      if (!mountedRef.current) return; // avoids a post-unmount setState (e.g. a test that unmounts before this microtask settles)
-      setTravelerMode(isTraveler(currentCoordinates, homeBaseMedian(samples)));
-    });
-  }
-
   function refreshAdaptivity(currentCoordinates: ScopeDraft['coordinates']) {
     setHourAtLastFocus(new Date().getHours());
     checkTravelerMode(currentCoordinates);
@@ -482,51 +471,9 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   );
 }
 
-function EmptyState({ hasFilters, onClearFilters }: { hasFilters: boolean; onClearFilters: () => void }) {
-  const focus = useFocusable();
-  return (
-    <View style={styles.emptyState}>
-      <SearchX size={20} color={colors.textMuted} strokeWidth={1.75} />
-      <Text style={styles.emptyTitle}>No activities match</Text>
-      <Text style={styles.emptyHint}>
-        {hasFilters ? 'Try removing a filter or widening your distance.' : 'Nothing here right now.'}
-      </Text>
-      {hasFilters && (
-        <Pressable
-          onPress={onClearFilters}
-          onFocus={focus.onFocus}
-          onBlur={focus.onBlur}
-          accessibilityRole="button"
-          accessibilityLabel="Clear filters"
-          style={[styles.secondaryButton, focus.focused && styles.secondaryButtonFocused]}
-        >
-          <Text style={styles.secondaryButtonLabel}>Clear filters</Text>
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const focus = useFocusable();
-  return (
-    <View style={styles.errorState}>
-      <Text style={styles.errorText}>{message}</Text>
-      <Pressable
-        onPress={onRetry}
-        onFocus={focus.onFocus}
-        onBlur={focus.onBlur}
-        accessibilityRole="button"
-        accessibilityLabel="Try again"
-        style={[styles.secondaryButton, focus.focused && styles.secondaryButtonFocused]}
-      >
-        <Text style={styles.secondaryButtonLabel}>Try again</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
+// Exported for EmptyState/ErrorState: `secondaryButton*` below is the only
+// overlap between them, so it stays here rather than duplicated into both.
+export const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -561,34 +508,6 @@ const styles = StyleSheet.create({
   tripadvisorFooter: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: space[12],
-    gap: space[3],
-  },
-  emptyTitle: {
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  emptyHint: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-  errorState: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.error,
-    borderRadius: radius.default,
-    padding: space[3],
-    gap: space[3],
-  },
-  errorText: {
-    fontSize: fontSize.sm,
-    color: colors.error,
-    textAlign: 'center',
   },
   secondaryButton: {
     minHeight: 44,
