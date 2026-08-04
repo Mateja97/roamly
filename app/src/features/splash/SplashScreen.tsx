@@ -106,9 +106,13 @@ export function SplashScreen({ onContinue }: SplashScreenProps) {
                   dashed underline) instead of approximating it. */}
               <Svg width="100%" height="100%" style={StyleSheet.absoluteFill} pointerEvents="none">
                 <Defs>
+                  {/* T3: native react-native-svg doesn't reliably apply the
+                      alpha baked into an rgba() stopColor string — plain hex
+                      stopColor + explicit stopOpacity instead, or both stops
+                      collapse to opaque colors.primary on native. */}
                   <RadialGradient id="ctaGlow" cx="50%" cy="0%" r="70%">
-                    <Stop offset="0" stopColor={colors.glow} />
-                    <Stop offset="1" stopColor="rgba(206,144,66,0)" />
+                    <Stop offset="0" stopColor={colors.primary} stopOpacity={colors.glowOpacity} />
+                    <Stop offset="1" stopColor={colors.primary} stopOpacity={0} />
                   </RadialGradient>
                 </Defs>
                 <Rect x={0} y={0} width="100%" height="100%" fill="url(#ctaGlow)" />
