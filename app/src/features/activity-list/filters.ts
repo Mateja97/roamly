@@ -3,7 +3,7 @@ import type { CitySuggestion } from '../../api/cities';
 import type { ScopeDraft } from '../scope-sheet/scopeDraft';
 import { anywhereHasAnchor } from '../scope-sheet/scopeDraft';
 import type { Category, Filters, RatingOption } from './types';
-import type { Scope } from '../scope-picker/types';
+import type { Scope } from '../../types/scope';
 
 // T2: Nearby's server-fixed radius (activities-service's activity.go) — the
 // one copy of the number; the Scope sheet's (T2) fixed-range card reads it

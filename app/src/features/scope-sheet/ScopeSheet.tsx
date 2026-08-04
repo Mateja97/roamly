@@ -26,9 +26,9 @@ import { Spinner } from '../../components/Spinner';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { NEARBY_RADIUS_KM, RATING_OPTIONS } from '../activity-list/filters';
-import type { Scope } from '../scope-picker/types';
-import { useNearbyLocation } from '../scope-picker/useNearbyLocation';
-import type { NearbyLocationState } from '../scope-picker/useNearbyLocation';
+import type { Scope } from '../../types/scope';
+import { useNearbyLocation } from '../../hooks/useNearbyLocation';
+import type { NearbyLocationState } from '../../hooks/useNearbyLocation';
 import { DISTANCE_STEP_KM, MAX_DISTANCE_KM, MIN_DISTANCE_KM, anywhereHasAnchor, defaultScopeDraft } from './scopeDraft';
 import type { ScopeDraft } from './scopeDraft';
 

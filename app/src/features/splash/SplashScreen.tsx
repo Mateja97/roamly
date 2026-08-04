@@ -6,7 +6,7 @@ import Svg, { Defs, Line, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { PrimaryTicket } from '../../components/PrimaryTicket';
 import { Wordmark } from '../../components/Wordmark';
 import { colors, fontFamily, fontSize, space } from '../../theme/tokens';
-import { FlightPathBackground } from '../scope-picker/FlightPathBackground';
+import { FlightPathBackground } from '../../components/FlightPathBackground';
 import { markSplashSeen } from '../../utils/firstLaunch';
 
 type SplashScreenProps = {

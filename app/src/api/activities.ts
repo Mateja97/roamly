@@ -1,6 +1,6 @@
 import type { Category } from '../features/activity-list/types';
-import { withTimeout } from '../features/scope-picker/withTimeout';
-import type { Scope } from '../features/scope-picker/types';
+import { withTimeout } from '../utils/withTimeout';
+import type { Scope } from '../types/scope';
 
 const PROXY_URL = process.env.EXPO_PUBLIC_PROXY_URL ?? 'http://localhost:8080';
 

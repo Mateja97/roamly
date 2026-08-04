@@ -1,6 +1,6 @@
 import type { CitySuggestion } from '../../api/cities';
 import type { RatingOption } from '../activity-list/types';
-import type { Coordinates, Scope } from '../scope-picker/types';
+import type { Coordinates, Scope } from '../../types/scope';
 
 // design-spec.md T2: the app's one remaining Anywhere distance range — this
 // sheet's own canonical copy, not imported from `search-setup/anywhereSearch`

@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { colors } from '../../theme/tokens';
+import { colors } from '../theme/tokens';
 
 // Decorative "flight paths" background motif from the Welcome screen design
 // import (Roamly Welcome (2c).dc.html) — seven dotted gold curves + endpoint

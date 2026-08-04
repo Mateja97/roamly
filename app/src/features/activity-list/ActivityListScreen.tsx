@@ -28,7 +28,7 @@ import { TravelerRow } from './TravelerRow';
 import type { TravelerRowState } from './TravelerRow';
 import { getHomeBaseSamples, homeBaseMedian, isTraveler, recordHomeBaseSample } from './travelerMode';
 import type { ActivityListScreenProps, Category, Filters } from './types';
-import { useNearbyLocation } from '../scope-picker/useNearbyLocation';
+import { useNearbyLocation } from '../../hooks/useNearbyLocation';
 import { ScopeSheet } from '../scope-sheet/ScopeSheet';
 import { defaultScopeDraft } from '../scope-sheet/scopeDraft';
 import type { ScopeDraft } from '../scope-sheet/scopeDraft';

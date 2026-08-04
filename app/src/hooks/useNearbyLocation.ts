@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import * as Location from 'expo-location';
-import type { Coordinates } from './types';
-import { LOCATION_TIMEOUT_MS, withTimeout } from './withTimeout';
+import type { Coordinates } from '../types/scope';
+import { LOCATION_TIMEOUT_MS, withTimeout } from '../utils/withTimeout';
 
 export type NearbyLocationState =
   | { status: 'idle' }

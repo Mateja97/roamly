@@ -1,4 +1,4 @@
-import type { ScopeSelection } from '../scope-picker/types';
+import type { ScopeSelection } from '../../types/scope';
 
 export type Category =
   | 'restaurants'
