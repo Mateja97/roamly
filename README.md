@@ -32,8 +32,16 @@ React + TypeScript (Vite). See [frontend/README.md](frontend/README.md).
 
 ## Getting started
 
-1. `docker compose up` — brings up postgres + proxy-service + frontend;
+1. Create a root `.env` (gitignored) with `ADMIN_API_TOKEN`,
+   `TRIPADVISOR_API_KEY`, `GOOGLE_MAPS_API_KEY`, and `FIRECRAWL_API_KEY`.
+   `docker-compose.yaml` passes each straight through under its own name to
+   the service that needs it — **except** the Google Maps key: the frontend
+   and app builds read it under separate build-arg names
+   (`VITE_GOOGLE_MAPS_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`), so `.env`
+   needs all three set to the same value, or the frontend/app build args
+   resolve empty and the Edit activity screen's map preview 403s from Google.
+2. `docker compose up` — brings up postgres + proxy-service + frontend;
    visit `http://localhost:4173`, which calls proxy-service's `/healthz`
    through to confirm the wiring works end to end.
-2. Run `/run-pipeline <topic>` from a fresh Claude Code session to research,
+3. Run `/run-pipeline <topic>` from a fresh Claude Code session to research,
    scope, and build your first real feature.
