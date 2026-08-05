@@ -209,6 +209,11 @@ message Activity {
   repeated GoogleReview google_reviews = 17;
   int32 review_count = 18;
   string google_maps_uri = 19;
+
+  // created_at (T3, admin-activities-schema-resync) is the row's creation
+  // timestamp, RFC3339-formatted — the `activities.created_at` DB column
+  // (NOT NULL DEFAULT now()), selected for the first time by this field.
+  string created_at = 20;
 }
 
 // GoogleAuthorAttribution is the Places API's mandatory per-review

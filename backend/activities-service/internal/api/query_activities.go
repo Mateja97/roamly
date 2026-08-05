@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -170,7 +171,19 @@ func toProtoActivity(a activitiessvc.Activity) *activitiesv1.Activity {
 		GoogleReviews: toProtoGoogleReviews(a.GoogleReviews),
 		ReviewCount:   int32(a.ReviewCount),
 		GoogleMapsUri: a.GoogleMapsURI,
+		// CreatedAt (T3, admin-activities-schema-resync) is only ever
+		// populated on rows scanned via scanAdminActivity (the public Query
+		// path doesn't select the column) — "" rather than a fabricated
+		// 0001-01-01 timestamp when unset.
+		CreatedAt: formatCreatedAt(a.CreatedAt),
 	}
+}
+
+func formatCreatedAt(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 // toProtoGoogleReviews maps a live-merged activity's reviews onto the wire

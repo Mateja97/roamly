@@ -519,6 +519,10 @@ type Activity struct {
 	GoogleReviews []*GoogleReview `protobuf:"bytes,17,rep,name=google_reviews,json=googleReviews,proto3" json:"google_reviews,omitempty"`
 	ReviewCount   int32           `protobuf:"varint,18,opt,name=review_count,json=reviewCount,proto3" json:"review_count,omitempty"`
 	GoogleMapsUri string          `protobuf:"bytes,19,opt,name=google_maps_uri,json=googleMapsUri,proto3" json:"google_maps_uri,omitempty"`
+	// created_at (T3, admin-activities-schema-resync) is the row's creation
+	// timestamp, RFC3339-formatted — the `activities.created_at` DB column
+	// (NOT NULL DEFAULT now()), selected for the first time by this field.
+	CreatedAt     string `protobuf:"bytes,20,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -675,6 +679,13 @@ func (x *Activity) GetReviewCount() int32 {
 func (x *Activity) GetGoogleMapsUri() string {
 	if x != nil {
 		return x.GoogleMapsUri
+	}
+	return ""
+}
+
+func (x *Activity) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
 	}
 	return ""
 }
@@ -1880,7 +1891,7 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\x06cities\x18\n" +
 	" \x03(\v2\x17.activities.v1.LocationR\x06cities\x12$\n" +
 	"\rsubcategories\x18\v \x03(\tR\rsubcategoriesJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\t\x10\n" +
-	"R\rhome_locationR\fhome_countryR\x04sort\"\x87\x05\n" +
+	"R\rhome_locationR\fhome_countryR\x04sort\"\xa6\x05\n" +
 	"\bActivity\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -1901,7 +1912,9 @@ const file_activities_v1_activities_proto_rawDesc = "" +
 	"\vsubcategory\x18\x10 \x01(\tR\vsubcategory\x12B\n" +
 	"\x0egoogle_reviews\x18\x11 \x03(\v2\x1b.activities.v1.GoogleReviewR\rgoogleReviews\x12!\n" +
 	"\freview_count\x18\x12 \x01(\x05R\vreviewCount\x12&\n" +
-	"\x0fgoogle_maps_uri\x18\x13 \x01(\tR\rgoogleMapsUriJ\x04\b\a\x10\b\"k\n" +
+	"\x0fgoogle_maps_uri\x18\x13 \x01(\tR\rgoogleMapsUri\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x14 \x01(\tR\tcreatedAtJ\x04\b\a\x10\b\"k\n" +
 	"\x17GoogleAuthorAttribution\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x1b\n" +
 	"\tphoto_uri\x18\x02 \x01(\tR\bphotoUri\x12\x10\n" +
