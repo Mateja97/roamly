@@ -68,12 +68,16 @@ actually ingests what passes the floor.
 Rows ingested before subtype resolution existed (T2) — every published
 `tripadvisor`/`firecrawl` row whose `subcategory` is still `""` — need a
 one-time backfill; nothing re-classifies them on its own, so this tool has to
-actually be run for the filter fix to reach existing data:
+actually be run for the filter fix to reach existing data. `TRIPADVISOR_API_KEY`
+is optional: when set, a row Google and the venue's name both fail to classify
+gets one more chance from Tripadvisor's price tier (restaurant subtype
+coverage); when unset, the tool logs a warning and those rows simply stay
+empty, same as before that signal existed.
 
-    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... [TRIPADVISOR_API_KEY=...] \
       go run ./cmd/backfillsubtype -dry-run
 
-    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... \
+    GOOGLE_MAPS_API_KEY=... DATABASE_URL=... [TRIPADVISOR_API_KEY=...] \
       go run ./cmd/backfillsubtype
 
 `-dry-run` (default `false`) reports the before-counts by source/category and
