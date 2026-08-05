@@ -34,7 +34,11 @@
 // cmd/backfilltripadvisor: never wired into activities-service's own
 // startup path, run by hand only.
 //
-// Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... go run ./cmd/backfillsubtype [-dry-run] [-limit 50]
+// TRIPADVISOR_API_KEY is optional (T3): unset, the tool logs a warning and
+// falls back to today's behavior — rows only Google/name resolve get
+// classified, and rows that need the price tier stay empty for this run.
+//
+// Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... [TRIPADVISOR_API_KEY=...] go run ./cmd/backfillsubtype [-dry-run] [-limit 50]
 package main
 
 import (
@@ -50,6 +54,7 @@ import (
 	"activities-service/internal/places"
 	"activities-service/internal/repository"
 	"activities-service/internal/service"
+	"activities-service/internal/tripadvisor"
 
 	sharedconfig "backend/shared/config"
 	shareddb "backend/shared/db"
@@ -114,7 +119,14 @@ func main() {
 	}
 	svc := service.New(repo).WithPlaces(placesClient)
 
-	result := runBackfill(ctx, svc, repo, rows, *limit, func() { time.Sleep(backfillPace) })
+	var prices priceLookup
+	if key := sharedconfig.OrDefault("TRIPADVISOR_API_KEY", ""); key != "" {
+		prices = tripadvisor.New(key)
+	} else {
+		logger.Warn("TRIPADVISOR_API_KEY unset; skipping the price tier (rows Google and names cannot classify will stay empty)")
+	}
+
+	result := runBackfill(ctx, svc, repo, prices, rows, *limit, func() { time.Sleep(backfillPace) })
 	report(result.byKey, false)
 	logger.Info("backfill complete", "candidates", len(rows), "resolved", result.resolved, "stayed_empty", result.stayedEmpty, "failed", result.failed, "already_set", result.alreadySet)
 }
@@ -187,6 +199,14 @@ type subtypeResolver interface {
 	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID, priceLevel string) (string, string)
 }
 
+// priceLookup is the one Tripadvisor capability this tool needs, narrowed
+// the same way subtypeResolver and subcategorySetter are. Nil when no
+// Tripadvisor key is configured, in which case the price tier is simply
+// skipped and the tool behaves exactly as it did before T3.
+type priceLookup interface {
+	LocationDetails(ctx context.Context, locationID string) (tripadvisor.LocationDetails, error)
+}
+
 // subcategorySetter is the pair of repository writes this tool uses: the
 // if-empty guard for Google-resolved subtypes (a live sync may legitimately
 // classify the same row mid-run), and the unconditional write for
@@ -223,13 +243,15 @@ type sourceCategoryCount struct {
 
 // runBackfill classifies rows in place, one at a time, in the order rows is
 // given — sequential, not worker-pool, see package doc for why. pace is
-// called once per row (a func, not a raw sleep, so tests run instantly) —
-// resolver early-returns without an HTTP call for a row with no name/coords,
-// so this is a slight over-pace on those rows, not an under-pace. limit caps
-// how many rows get processed this run (0 = every row); the rest are simply
+// called once per outbound call (a func, not a raw sleep, so tests run
+// instantly): once after the resolver, and once more after a lazy Terra
+// price lookup, so a row that needs both is paced twice — resolver
+// early-returns without an HTTP call for a row with no name/coords, so this
+// is a slight over-pace on those rows, not an under-pace. limit caps how
+// many rows get processed this run (0 = every row); the rest are simply
 // left for the next invocation, no different from how a mid-run failure
 // leaves them.
-func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcategorySetter, rows []activitiessvc.Activity, limit int, pace func()) backfillResult {
+func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcategorySetter, prices priceLookup, rows []activitiessvc.Activity, limit int, pace func()) backfillResult {
 	result := backfillResult{byKey: countsByKey(rows)}
 	for i, a := range rows {
 		if limit > 0 && i >= limit {
@@ -250,13 +272,34 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 			result.byKey[key].resolved++
 			continue
 		}
-		// priceLevel is "" here: this tool has no Tripadvisor client yet, so a
-		// row only the price tier could resolve stays empty for this run,
-		// same as before this parameter existed. A follow-up backfill task
-		// fetches it lazily for exactly the rows Google and the name both
-		// fail on.
+		// priceLevel is "" here: ResolveTripadvisorSubtype's own price
+		// fallback would need it, but this tool holds no Terra response for
+		// a stored row, only its ExternalID. Passing "" is not a missed
+		// signal — the lazy fetch below covers the price tier separately,
+		// only for rows this call leaves empty.
 		subtype, _ := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID, "")
 		pace()
+		// Lazy price fetch: only rows Google and the name both failed to
+		// classify are worth a Terra request, so a fully-resolved run costs
+		// zero Tripadvisor quota. Gated to Restaurants because
+		// service.SubtypeFromPriceLevel discards every other category's
+		// price outright — a Bars/Café/Nightlife row would pay a Terra call
+		// whose result is thrown away. Gated to source "tripadvisor" too:
+		// ExternalID is only guaranteed to be a Terra location id for that
+		// source; a legacy "firecrawl" row's ExternalID may be a Google
+		// place id (0029_strip_g_mp_from_source_url.sql), which would just
+		// be a guaranteed-failing Terra call. A failed lookup is logged and
+		// the row simply stays empty — one unpriceable venue must never
+		// fail the whole backfill.
+		if subtype == "" && prices != nil && a.ExternalID != "" && a.Source == "tripadvisor" && a.Category == activitiessvc.CategoryRestaurants {
+			details, err := prices.LocationDetails(ctx, a.ExternalID)
+			pace()
+			if err != nil {
+				slog.Warn("price lookup failed", "id", a.ID, "location_id", a.ExternalID, "error", err)
+			} else {
+				subtype = service.SubtypeFromPriceLevel(a.Category, details.PriceLevel)
+			}
+		}
 		if subtype == "" {
 			result.stayedEmpty++
 			continue

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"activities-service/internal/tripadvisor"
+
 	"backend/shared/models/activitiessvc"
 )
 
@@ -149,7 +151,7 @@ func TestRunBackfill_ResolvesAndWritesOnlyMatchedRows(t *testing.T) {
 	setter := &fakeSetter{}
 	var paceCalls int
 
-	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() { paceCalls++ })
+	result := runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() { paceCalls++ })
 
 	if result.resolved != 1 || result.stayedEmpty != 1 || result.alreadySet != 0 {
 		t.Fatalf("got %+v, want resolved=1 stayedEmpty=1 alreadySet=0", result)
@@ -176,7 +178,7 @@ func TestRunBackfill_ResolvesByExternalIDNotDBID(t *testing.T) {
 	resolver := &fakeResolver{byID: map[string]string{"ta-loc-42": "fine_dining_restaurant"}}
 	setter := &fakeSetter{}
 
-	runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+	runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() {})
 
 	if len(resolver.calls) != 1 || resolver.calls[0] != "ta-loc-42" {
 		t.Fatalf("resolver called with %+v, want [\"ta-loc-42\"] (the venue's ExternalID, not its DB ID)", resolver.calls)
@@ -190,7 +192,7 @@ func TestRunBackfill_AlreadySetRowNotDoubleCounted(t *testing.T) {
 	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant"}}
 	setter := &fakeSetter{rejectIDs: map[string]bool{"1": true}}
 
-	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+	result := runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() {})
 
 	if result.resolved != 0 || result.alreadySet != 1 {
 		t.Fatalf("got %+v, want resolved=0 alreadySet=1", result)
@@ -205,7 +207,7 @@ func TestRunBackfill_WriteErrorCountsAsFailedNotStayedEmpty(t *testing.T) {
 	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant", "2": "casual_dining"}}
 	setter := &fakeSetter{errIDs: map[string]bool{"1": true}}
 
-	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+	result := runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() {})
 
 	// Row 1's write errors — a distinct outcome (failed) from a genuine
 	// no-match (stayedEmpty), not a crash; row 2 still gets processed — one
@@ -230,7 +232,7 @@ func TestRunBackfill_LimitCapsRowsProcessedNotJustWritten(t *testing.T) {
 	resolver := &fakeResolver{byID: map[string]string{"1": "x", "2": "x", "3": "x"}}
 	setter := &fakeSetter{}
 
-	result := runBackfill(context.Background(), resolver, setter, rows, 2, func() {})
+	result := runBackfill(context.Background(), resolver, setter, nil, rows, 2, func() {})
 
 	if len(resolver.calls) != 2 {
 		t.Fatalf("resolver called %d times, want exactly 2 (limit), leaving row 3 for the next run", len(resolver.calls))
@@ -250,7 +252,7 @@ func TestRunBackfill_ByKeyTracksBeforeAndResolvedPerSourceCategory(t *testing.T)
 	resolver := &fakeResolver{byID: map[string]string{"1": "fine_dining_restaurant", "2": "", "3": "cocktail_bar"}}
 	setter := &fakeSetter{}
 
-	result := runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+	result := runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() {})
 
 	ta := result.byKey["tripadvisor|restaurants"]
 	if ta == nil || ta.before != 2 || ta.attempted != 2 || ta.resolved != 1 {
@@ -347,7 +349,7 @@ func TestRunBackfill_LocalKeywordUsesUnconditionalWrite(t *testing.T) {
 	resolver := &fakeResolver{byID: map[string]string{"ta-2": "pub"}}
 	setter := &fakeSetter{}
 
-	runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+	runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() {})
 
 	if setter.unconditional["1"] != "kafana_live" {
 		t.Errorf("row 1 unconditional write = %q, want kafana_live", setter.unconditional["1"])
@@ -357,6 +359,142 @@ func TestRunBackfill_LocalKeywordUsesUnconditionalWrite(t *testing.T) {
 	}
 	if len(resolver.calls) != 1 || resolver.calls[0] != "ta-2" {
 		t.Errorf("resolver calls = %v, want exactly one call for row 2 (the local-keyword row must not call the resolver)", resolver.calls)
+	}
+}
+
+// fakePriceLookup fakes tripadvisor.Client's LocationDetails, recording
+// every locationID it was asked to price so tests can assert an
+// already-resolved row never triggers a lookup.
+type fakePriceLookup struct {
+	byID    map[string]string
+	errIDs  map[string]bool
+	lookups []string
+}
+
+func (f *fakePriceLookup) LocationDetails(_ context.Context, locationID string) (tripadvisor.LocationDetails, error) {
+	f.lookups = append(f.lookups, locationID)
+	if f.errIDs[locationID] {
+		return tripadvisor.LocationDetails{}, errLookupFailed
+	}
+	return tripadvisor.LocationDetails{PriceLevel: f.byID[locationID]}, nil
+}
+
+// errLookupFailed is its own sentinel, distinct from errWriteFailed: the
+// tests that use it exist precisely to prove a Tripadvisor lookup failure is
+// not a repository write failure, so it must not share a sentinel with one.
+var errLookupFailed = errors.New("price lookup failed")
+
+// TestRunBackfill_PriceOnlyWhenUnresolved proves the lazy fetch: a row the
+// resolver already classified must not cost a Tripadvisor request (the
+// load-bearing negative — asserting the lookup count, not merely the happy
+// path), and a row it could not classify gets one more chance from the
+// price tier. Row 1 is deliberately Restaurants + tripadvisor + resolved —
+// not Bars — so this exercises the "already resolved, skip the lookup"
+// laziness path itself, independent of the category/source gates row 2's
+// category alone would already satisfy (see TestRunBackfill_PriceOnlyFor*
+// for those gates in isolation).
+func TestRunBackfill_PriceOnlyWhenUnresolved(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Restoran Zlatnik", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "ta-1"},
+		{ID: "2", Title: "Restoran Da Giorgio", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "ta-2"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": "fine_dining", "ta-2": ""}}
+	prices := &fakePriceLookup{byID: map[string]string{"ta-2": "Mid Range"}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
+
+	if setter.writes["1"] != "fine_dining" {
+		t.Errorf("row 1 = %q, want fine_dining from the resolver", setter.writes["1"])
+	}
+	if setter.writes["2"] != "casual_dining" {
+		t.Errorf("row 2 = %q, want casual_dining from the price tier", setter.writes["2"])
+	}
+	if got := prices.lookups; len(got) != 1 || got[0] != "ta-2" {
+		t.Errorf("price lookups = %v, want exactly [ta-2] — the resolved row (ta-1) must not cost a request", got)
+	}
+	if result.resolved != 2 {
+		t.Errorf("resolved = %d, want 2", result.resolved)
+	}
+}
+
+// TestRunBackfill_PriceOnlyForRestaurants proves the category gate: an
+// unresolved Bars row must not cost a Terra request at all, since
+// service.SubtypeFromPriceLevel discards every non-Restaurants category's
+// price outright — spending the call would be pure waste on quota Google
+// already fails to resolve for roughly a third of Bars rows.
+func TestRunBackfill_PriceOnlyForRestaurants(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Some Bar", Category: activitiessvc.CategoryBars, Source: "tripadvisor", ExternalID: "ta-1"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": ""}}
+	prices := &fakePriceLookup{byID: map[string]string{"ta-1": "Mid Range"}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
+
+	if len(prices.lookups) != 0 {
+		t.Errorf("price lookups = %v, want none — Bars price is discarded by SubtypeFromPriceLevel", prices.lookups)
+	}
+	if result.stayedEmpty != 1 || result.resolved != 0 {
+		t.Errorf("got %+v, want stayedEmpty=1 resolved=0", result)
+	}
+}
+
+// TestRunBackfill_PriceOnlyForTripadvisorSource proves the source gate: an
+// unresolved firecrawl row must not cost a Terra request, since a legacy
+// firecrawl row's ExternalID is not guaranteed to be a Terra location id
+// (0029_strip_g_mp_from_source_url.sql) — only "tripadvisor" rows are.
+func TestRunBackfill_PriceOnlyForTripadvisorSource(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Old Restoran", Category: activitiessvc.CategoryRestaurants, Source: "firecrawl", ExternalID: "legacy-1"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"legacy-1": ""}}
+	prices := &fakePriceLookup{byID: map[string]string{"legacy-1": "Mid Range"}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
+
+	if len(prices.lookups) != 0 {
+		t.Errorf("price lookups = %v, want none — firecrawl ExternalID is not a Terra location id", prices.lookups)
+	}
+	if result.stayedEmpty != 1 || result.resolved != 0 {
+		t.Errorf("got %+v, want stayedEmpty=1 resolved=0", result)
+	}
+}
+
+// TestRunBackfill_NilPriceLookupSkipsPriceTier proves TRIPADVISOR_API_KEY
+// unset (prices == nil) leaves an unresolved row empty, exactly like before
+// T3, rather than panicking on a nil interface call.
+func TestRunBackfill_NilPriceLookupSkipsPriceTier(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Restoran Da Giorgio", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "ta-1"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": ""}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, nil, rows, 0, func() {})
+
+	if result.stayedEmpty != 1 || result.resolved != 0 {
+		t.Errorf("got %+v, want stayedEmpty=1 resolved=0", result)
+	}
+}
+
+// TestRunBackfill_PriceLookupErrorLeavesRowEmpty proves a failed Tripadvisor
+// call is logged and simply leaves that row unclassified — the backfill
+// must never fail because one venue could not be priced.
+func TestRunBackfill_PriceLookupErrorLeavesRowEmpty(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Restoran Da Giorgio", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "ta-1"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": ""}}
+	prices := &fakePriceLookup{errIDs: map[string]bool{"ta-1": true}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
+
+	if result.stayedEmpty != 1 || result.resolved != 0 || result.failed != 0 {
+		t.Errorf("got %+v, want stayedEmpty=1 resolved=0 failed=0 (a price-lookup error is not a write failure)", result)
 	}
 }
 
