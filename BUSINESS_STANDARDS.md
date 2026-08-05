@@ -112,7 +112,7 @@ provider yet and is deliberately empty.
 
 | Rule | Nearby | Anywhere |
 |---|---|---|
-| Distance | Fixed 10km radius, not user-adjustable, no distance control shown | 5-500km slider, default pinned at 500 ("no limit") |
+| Distance | Fixed 10km radius, not user-adjustable, no distance control shown | 7-stop slider (5/10/25/50/100/200km/Any), default pinned at "Any" (no limit) |
 | Anchor | Current device location only | Current location (0 cities selected), or each selected city's centroid (1+ cities, union of radii) |
 | Location permission | Required — screen blocks/shows retry state until granted | Optional — denied/unavailable still works, but only if the user anchors via city search instead |
 | Category filter | Applies on top; same 13-category options in both scopes. Every selected category gets its own subtype chips (above, one group per category), OR'd within each category, AND-ed with the category filter overall | Same |

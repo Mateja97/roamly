@@ -1483,9 +1483,13 @@ No new color tokens.
 
 ### Slider (range)
 
-A continuous single-value control (e.g. the activity Filter sheet's "Max
-distance") — used instead of fixed chip buckets when the value genuinely
-spans a range rather than a handful of discrete options.
+A single-value control on one ordered axis (e.g. the activity Filter sheet's
+"Max distance") — used instead of fixed chip buckets when the value reads as a
+range the user tightens or loosens, rather than a handful of unrelated options.
+Two variants share every token and state below: the **continuous** variant
+(default, described first) for a value with even precision across its range,
+and the **stepped** variant (at the end of this recipe) for a range whose
+useful precision is non-linear.
 
 - **Layout:** a group label row — the group name left (`--font-size-sm`
   `--text-muted`, uppercase, `letter-spacing 0.05em`), the current value right
@@ -1521,8 +1525,52 @@ spans a range rather than a handful of discrete options.
   is direct manipulation; the focus/drag ring fades on `opacity` ≤150ms,
   `prefers-reduced-motion` → instant, no size animation on track or thumb.
 
-No new color tokens — composes entirely from `--surface`, `--primary`,
-`--border`, `--text`, `--text-muted`.
+**Stepped variant (uneven stops).** For a range whose useful precision is
+non-linear — the distances, prices, or durations where the gap between the two
+smallest values is a real decision and the gap between the two largest is not.
+A linear track spends most of its length on values nobody picks and compresses
+the ones they do into a few pixels; this variant gives every stop the same
+share of the track. Use it when the stops still read as one ordered axis;
+prefer Filter chips when they're 2–4 unrelated options.
+
+- **Index-driven.** The control's own minimum, maximum and step operate on the
+  **stop index** over an ordered stop list — min `0`, max `last index`, step
+  `1` — never on the raw value. That is what places uneven stops at equal
+  spacing. The raw value is derived from the index at the control's edge, so
+  everything outside the control still speaks in real values. An incoming
+  value that is **not** on the list resolves to the **nearest** stop's index —
+  never a fractional index, never a thumb resting between ticks.
+- **Per-stop label row.** The continuous variant's two min/max end labels are
+  **replaced** by a single row of one label per stop: equal-flex slots across
+  the track's full width, each label centred under its stop, in the **same**
+  `--font-size-xs` `--text-muted` (5.3:1 on `--surface` ✓ / 6.2:1 on `--bg` ✓)
+  as the end labels it replaces — same row, same vertical space, so the extra
+  stops cost the control no height. **The labels are the ticks**: draw no
+  separate tick marks (visible snapping the user cannot aim at is worse than
+  no snapping at all). Values only, no unit — the unit lives in the readout.
+  Every label must fit its 1/N slot at `--font-size-xs` without truncating or
+  wrapping; shorten the *wording* to fit, never the type size, and let the row
+  honour dynamic text scaling. Roughly 7 stops is the phone-width ceiling —
+  past that, the labels stop being legible and the control is the wrong shape.
+- **Open-ended top stop.** An unbounded end ("Any", "N+") is one more index at
+  the end of the list, mapping to the unbounded value. It is a labelled stop
+  like every other one, not an invisible overflow position — and the tick label
+  and the readout use the **same word** for it.
+- **Readout.** As in the continuous variant: the current stop stated in words,
+  with its unit, in the group's label row. The open-ended stop reads as its own
+  phrase, not as a number.
+- **Keyboard & AT.** One arrow-key press moves **one stop**, not one raw unit
+  (Home/End still jump to the first/last stop). The announced value is the
+  stop's own meaning ("25 kilometres" / "Any distance"), never the index. Still
+  exposed as an adjustable control; never drag-only.
+- **Unchanged from the continuous variant:** the track, thumb, gold active
+  fill, the offset cream drag/focus ring (its position along the track is now
+  `index / last index`), the ≥44×44 hit area, the default-at-the-least-
+  restrictive-end rule, and the disabled / hidden states and motion timing.
+
+No new color or size tokens — both variants compose entirely from `--surface`,
+`--primary`, `--border`, `--text`, `--text-muted`, `--font-size-xs`/
+`--font-size-md`.
 
 ### Bottom sheet
 

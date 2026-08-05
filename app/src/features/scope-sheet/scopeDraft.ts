@@ -2,17 +2,30 @@ import type { CitySuggestion } from '../../api/cities';
 import type { RatingOption } from '../activity-list/types';
 import type { Coordinates, Scope } from '../../types/scope';
 
-// design-spec.md T2: the app's one remaining Anywhere distance range — this
-// sheet's own canonical copy, not imported from `search-setup/anywhereSearch`
-// (T4 deletes that whole folder once T3/T4 land; importing from a file
-// scheduled for deletion would take the sheet's range down with it). Values
-// currently match that file's identical MIN_DISTANCE_KM/MAX_DISTANCE_KM by
-// design (Decision 5's single canonical range) — T4's retirement pass is the
-// point where the app is left with exactly one copy instead of two.
-export const MIN_DISTANCE_KM = 5;
-export const MAX_DISTANCE_KM = 500;
-// Reuses AnywhereSearchScreen's existing step convention (Slider step={5}).
-export const DISTANCE_STEP_KM = 5;
+// design-spec.md T1: the app's one canonical Anywhere distance scale — seven
+// evenly-spaced stops (DESIGN_STANDARDS.md's Slider "Stepped variant") instead
+// of a linear 5-500km range. The control is driven by the stop's *index*
+// (0..DISTANCE_STOPS_KM.length, the last being the open-ended "Any" stop);
+// these two helpers are the only place that index<->value mapping happens.
+export const DISTANCE_STOPS_KM = [5, 10, 25, 50, 100, 200] as const;
+
+// `null` (Nearby's permanent value, and Anywhere's default) maps to the open-
+// ended stop one index past the last real stop. A value that isn't on the
+// list (e.g. a value from before this scale existed) snaps to its nearest
+// stop — never a fractional index.
+export function distanceIndex(maxDistanceKm: number | null): number {
+  if (maxDistanceKm === null) return DISTANCE_STOPS_KM.length;
+  return DISTANCE_STOPS_KM.reduce(
+    (nearest, km, i) => (Math.abs(km - maxDistanceKm) < Math.abs(DISTANCE_STOPS_KM[nearest] - maxDistanceKm) ? i : nearest),
+    0
+  );
+}
+
+// Inverse of distanceIndex. Index 6 (past the array's last element) resolves
+// via `??` to `null`, the "Any" sentinel.
+export function distanceAtIndex(index: number): number | null {
+  return DISTANCE_STOPS_KM[index] ?? null;
+}
 
 // The sheet's draft selection — everything Screen 3 (design-spec.md) owns.
 // No categories/subtypes here: those live on the Feed (T3), not this sheet.

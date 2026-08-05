@@ -54,7 +54,7 @@ const DEBOUNCE_MS = 300;
 // safe-area footer, apply-in-flight/error lifecycle) rather than new sheet
 // infrastructure — this is the rename-and-recompose of that plumbing product-
 // tasks.md calls for, not a rebuild. Owns Nearby/Anywhere scope, city
-// selection, the canonical 5-500km distance range, and minimum rating.
+// selection, the canonical 7-stop distance scale, and minimum rating.
 // Category/subtype controls are deliberately absent — they move to the Feed
 // (T3), not duplicated here.
 export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }: ScopeSheetProps) {
