@@ -243,10 +243,12 @@ type sourceCategoryCount struct {
 
 // runBackfill classifies rows in place, one at a time, in the order rows is
 // given — sequential, not worker-pool, see package doc for why. pace is
-// called once per row (a func, not a raw sleep, so tests run instantly) —
-// resolver early-returns without an HTTP call for a row with no name/coords,
-// so this is a slight over-pace on those rows, not an under-pace. limit caps
-// how many rows get processed this run (0 = every row); the rest are simply
+// called once per outbound call (a func, not a raw sleep, so tests run
+// instantly): once after the resolver, and once more after a lazy Terra
+// price lookup, so a row that needs both is paced twice — resolver
+// early-returns without an HTTP call for a row with no name/coords, so this
+// is a slight over-pace on those rows, not an under-pace. limit caps how
+// many rows get processed this run (0 = every row); the rest are simply
 // left for the next invocation, no different from how a mid-run failure
 // leaves them.
 func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcategorySetter, prices priceLookup, rows []activitiessvc.Activity, limit int, pace func()) backfillResult {
@@ -279,10 +281,17 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 		pace()
 		// Lazy price fetch: only rows Google and the name both failed to
 		// classify are worth a Terra request, so a fully-resolved run costs
-		// zero Tripadvisor quota. A failed lookup is logged and the row
-		// simply stays empty — one unpriceable venue must never fail the
-		// whole backfill.
-		if subtype == "" && prices != nil && a.ExternalID != "" {
+		// zero Tripadvisor quota. Gated to Restaurants because
+		// service.SubtypeFromPriceLevel discards every other category's
+		// price outright — a Bars/Café/Nightlife row would pay a Terra call
+		// whose result is thrown away. Gated to source "tripadvisor" too:
+		// ExternalID is only guaranteed to be a Terra location id for that
+		// source; a legacy "firecrawl" row's ExternalID may be a Google
+		// place id (0029_strip_g_mp_from_source_url.sql), which would just
+		// be a guaranteed-failing Terra call. A failed lookup is logged and
+		// the row simply stays empty — one unpriceable venue must never
+		// fail the whole backfill.
+		if subtype == "" && prices != nil && a.ExternalID != "" && a.Source == "tripadvisor" && a.Category == activitiessvc.CategoryRestaurants {
 			details, err := prices.LocationDetails(ctx, a.ExternalID)
 			pace()
 			if err != nil {

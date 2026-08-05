@@ -374,10 +374,15 @@ type fakePriceLookup struct {
 func (f *fakePriceLookup) LocationDetails(_ context.Context, locationID string) (tripadvisor.LocationDetails, error) {
 	f.lookups = append(f.lookups, locationID)
 	if f.errIDs[locationID] {
-		return tripadvisor.LocationDetails{}, errWriteFailed
+		return tripadvisor.LocationDetails{}, errLookupFailed
 	}
 	return tripadvisor.LocationDetails{PriceLevel: f.byID[locationID]}, nil
 }
+
+// errLookupFailed is its own sentinel, distinct from errWriteFailed: the
+// tests that use it exist precisely to prove a Tripadvisor lookup failure is
+// not a repository write failure, so it must not share a sentinel with one.
+var errLookupFailed = errors.New("price lookup failed")
 
 // TestRunBackfill_PriceOnlyWhenUnresolved proves the lazy fetch: a row the
 // resolver already classified must not cost a Tripadvisor request (the
@@ -403,6 +408,51 @@ func TestRunBackfill_PriceOnlyWhenUnresolved(t *testing.T) {
 	}
 	if result.resolved != 2 {
 		t.Errorf("resolved = %d, want 2", result.resolved)
+	}
+}
+
+// TestRunBackfill_PriceOnlyForRestaurants proves the category gate: an
+// unresolved Bars row must not cost a Terra request at all, since
+// service.SubtypeFromPriceLevel discards every non-Restaurants category's
+// price outright — spending the call would be pure waste on quota Google
+// already fails to resolve for roughly a third of Bars rows.
+func TestRunBackfill_PriceOnlyForRestaurants(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Some Bar", Category: activitiessvc.CategoryBars, Source: "tripadvisor", ExternalID: "ta-1"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": ""}}
+	prices := &fakePriceLookup{byID: map[string]string{"ta-1": "Mid Range"}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
+
+	if len(prices.lookups) != 0 {
+		t.Errorf("price lookups = %v, want none — Bars price is discarded by SubtypeFromPriceLevel", prices.lookups)
+	}
+	if result.stayedEmpty != 1 || result.resolved != 0 {
+		t.Errorf("got %+v, want stayedEmpty=1 resolved=0", result)
+	}
+}
+
+// TestRunBackfill_PriceOnlyForTripadvisorSource proves the source gate: an
+// unresolved firecrawl row must not cost a Terra request, since a legacy
+// firecrawl row's ExternalID is not guaranteed to be a Terra location id
+// (0029_strip_g_mp_from_source_url.sql) — only "tripadvisor" rows are.
+func TestRunBackfill_PriceOnlyForTripadvisorSource(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Old Restoran", Category: activitiessvc.CategoryRestaurants, Source: "firecrawl", ExternalID: "legacy-1"},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"legacy-1": ""}}
+	prices := &fakePriceLookup{byID: map[string]string{"legacy-1": "Mid Range"}}
+	setter := &fakeSetter{}
+
+	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
+
+	if len(prices.lookups) != 0 {
+		t.Errorf("price lookups = %v, want none — firecrawl ExternalID is not a Terra location id", prices.lookups)
+	}
+	if result.stayedEmpty != 1 || result.resolved != 0 {
+		t.Errorf("got %+v, want stayedEmpty=1 resolved=0", result)
 	}
 }
 
