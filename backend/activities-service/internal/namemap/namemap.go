@@ -86,8 +86,10 @@ type subtypeRule struct {
 // for when Google resolves to nothing at all, and must never outrank a real
 // Google type.
 //
-// Spellings are those attested in the live database (shisha 12, nargila 6,
-// hookah 3 venues). Bare "šiša"/"sisa" is deliberately absent: diacriticFold
+// Spellings are those attested in venue NAMES in the live database when this
+// rule was written — 12 titles containing "shisha", 6 "nargila", 3 "hookah".
+// Those are name counts, not counts of rows this rule classifies; don't read
+// them as coverage. Bare "šiša"/"sisa" is deliberately absent: diacriticFold
 // maps š->s and "šišanje" is Serbian for haircut, so that keyword would
 // eventually match barbershops. Do not add it.
 //
