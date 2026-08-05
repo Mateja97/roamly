@@ -77,13 +77,15 @@ const NOT_EDITABLE: Record<string, string> = {
  * (a reformat that breaks the tag pattern) — a silent empty result would
  * make every "Go key missing from schema" check below pass vacuously. */
 function extractStructFields(source: string, structName: string): string[] {
-  const block = source.match(new RegExp(`type ${structName} struct \\{([^}]*)\\}`));
+  const block = source.match(
+    new RegExp(`type ${structName} struct \\{([\\s\\S]*?)\\n\\}`),
+  );
   if (!block) {
     throw new Error(
       `${GO_FILE}: struct "${structName}" not found — renamed or removed? Update CATEGORY_STRUCTS/ITEM_STRUCTS in the drift test alongside it.`,
     );
   }
-  const keys = [...block[1].matchAll(/json:"([a-zA-Z_]+)/g)].map((m) => m[1]);
+  const keys = [...block[1].matchAll(/json:"([^",]+)/g)].map((m) => m[1]);
   if (keys.length === 0) {
     throw new Error(
       `${GO_FILE}: extracted zero json keys from "${structName}" — the drift test's regex likely broke against a rename/reformat of this struct.`,
@@ -121,30 +123,55 @@ function twoWayDiff(
 describe('DETAILS_SCHEMA vs activity.go (two-way drift guard)', () => {
   const goSource = readFileSync(GO_FILE, 'utf-8');
 
+  it('CATEGORY_STRUCTS covers every DETAILS_SCHEMA category (and no extra ones)', () => {
+    expect(CATEGORY_STRUCTS.map(([category]) => category).sort()).toEqual(
+      Object.keys(DETAILS_SCHEMA).sort(),
+    );
+  });
+
+  it('CATEGORY_STRUCTS covers every *Details struct in activity.go (and no extra ones)', () => {
+    const goStructNames = [
+      ...goSource.matchAll(/type (\w+Details) struct/g),
+    ].map((m) => m[1]);
+    expect(CATEGORY_STRUCTS.map(([, structName]) => structName).sort()).toEqual(
+      goStructNames.sort(),
+    );
+  });
+
   it('every category struct matches its DETAILS_SCHEMA entry in both directions', () => {
     const violations = CATEGORY_STRUCTS.flatMap(([category, structName]) => {
       const goKeys = extractStructFields(goSource, structName);
-      const schemaKeys = (DETAILS_SCHEMA[category] ?? []).map((f) => f.key);
-      return twoWayDiff(`${category} (${structName})`, goKeys, schemaKeys, NOT_EDITABLE);
+      const schemaKeys = DETAILS_SCHEMA[category].map((f) => f.key);
+      return twoWayDiff(
+        `${category} (${structName})`,
+        goKeys,
+        schemaKeys,
+        NOT_EDITABLE,
+      );
     });
     expect(violations).toEqual([]);
   });
 
   it('every itemFields list matches its Go row struct in both directions', () => {
-    const violations = Object.entries(DETAILS_SCHEMA).flatMap(([category, fields]) =>
-      fields
-        .filter((f) => f.itemFields)
-        .flatMap((field) => {
-          const structName = ITEM_STRUCTS[field.key];
-          if (!structName) {
-            return [
-              `${category}.${field.key}: has itemFields but no entry in this test's ITEM_STRUCTS map — add the Go row struct name`,
-            ];
-          }
-          const goKeys = extractStructFields(goSource, structName);
-          const schemaKeys = field.itemFields!.map((f) => f.key);
-          return twoWayDiff(`${category}.${field.key} (${structName})`, goKeys, schemaKeys);
-        }),
+    const violations = Object.entries(DETAILS_SCHEMA).flatMap(
+      ([category, fields]) =>
+        fields
+          .filter((f) => f.itemFields)
+          .flatMap((field) => {
+            const structName = ITEM_STRUCTS[field.key];
+            if (!structName) {
+              return [
+                `${category}.${field.key}: has itemFields but no entry in this test's ITEM_STRUCTS map — add the Go row struct name`,
+              ];
+            }
+            const goKeys = extractStructFields(goSource, structName);
+            const schemaKeys = field.itemFields!.map((f) => f.key);
+            return twoWayDiff(
+              `${category}.${field.key} (${structName})`,
+              goKeys,
+              schemaKeys,
+            );
+          }),
     );
     expect(violations).toEqual([]);
   });
@@ -156,32 +183,49 @@ type FooDetails struct {
 	Price string
 }
 `;
-    expect(() => extractStructFields(reformatted, 'FooDetails')).toThrow(/zero json keys/);
+    expect(() => extractStructFields(reformatted, 'FooDetails')).toThrow(
+      /zero json keys/,
+    );
   });
 
   it('does not pass vacuously when the struct itself is renamed away', () => {
     const renamed = `type FooDetailsV2 struct {\n\tName string \`json:"name"\`\n}\n`;
-    expect(() => extractStructFields(renamed, 'FooDetails')).toThrow(/not found/);
+    expect(() => extractStructFields(renamed, 'FooDetails')).toThrow(
+      /not found/,
+    );
   });
 
   it('flags a Go field added with no matching schema field or NOT_EDITABLE entry (drift-detection self-test)', () => {
-    const violations = twoWayDiff('fixture (FooDetails)', ['name', 'newly_added'], ['name']);
+    const violations = twoWayDiff(
+      'fixture (FooDetails)',
+      ['name', 'newly_added'],
+      ['name'],
+    );
     expect(violations).toEqual([
       `fixture (FooDetails).newly_added: json tag in ${GO_FILE} has no DETAILS_SCHEMA field for it and is not in NOT_EDITABLE (${SCHEMA_FILE})`,
     ]);
   });
 
   it('flags a DETAILS_SCHEMA field with no matching Go json tag (drift-detection self-test)', () => {
-    const violations = twoWayDiff('fixture (FooDetails)', ['name'], ['name', 'made_up']);
+    const violations = twoWayDiff(
+      'fixture (FooDetails)',
+      ['name'],
+      ['name', 'made_up'],
+    );
     expect(violations).toEqual([
       `fixture (FooDetails).made_up: DETAILS_SCHEMA field in ${SCHEMA_FILE} has no matching json tag in ${GO_FILE}`,
     ]);
   });
 
   it('a NOT_EDITABLE entry suppresses its Go-only key (drift-detection self-test)', () => {
-    const violations = twoWayDiff('fixture (FooDetails)', ['name', 'hours'], ['name'], {
-      hours: 'legacy free-text hours',
-    });
+    const violations = twoWayDiff(
+      'fixture (FooDetails)',
+      ['name', 'hours'],
+      ['name'],
+      {
+        hours: 'legacy free-text hours',
+      },
+    );
     expect(violations).toEqual([]);
   });
 });
