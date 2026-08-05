@@ -84,10 +84,20 @@ var DiscoveryRows = []DiscoveryRow{
 	// that's expected coverage-test bookkeeping, not a bug.
 	{activitiessvc.CategoryRestaurants, "fine_dining", []string{"fine_dining_restaurant"}, ""},
 	{activitiessvc.CategoryRestaurants, "casual_dining", []string{"family_restaurant", "diner", "bistro", "buffet_restaurant"}, ""},
-	{activitiessvc.CategoryRestaurants, "fast_casual", []string{"fast_food_restaurant"}, ""},
+	// Service-FORMAT types only. cafeteria, meal_takeaway and food_court
+	// describe how a venue serves, so they belong on a format row;
+	// hamburger_restaurant and every other cuisine type deliberately do not,
+	// because cuisine does not report format — a gourmet burger restaurant is
+	// an ordinary sit-down venue.
+	//
+	// They live here so placesmap.Subtype resolves them before the price layer
+	// is consulted (see service.SubtypeFromPriceLevel). That ordering is what
+	// lets "Cheap Eats" safely yield nothing: a cheap venue whose format Google
+	// actually knows has already been classified by the time price is reached.
+	{activitiessvc.CategoryRestaurants, "fast_casual", []string{"fast_food_restaurant", "cafeteria", "meal_takeaway", "food_court"}, ""},
 	{activitiessvc.CategoryRestaurants, "street_food", nil, "street food"},
 	{activitiessvc.CategoryRestaurants, "bakery_dessert", []string{"dessert_restaurant", "dessert_shop", "donut_shop", "ice_cream_shop", "chocolate_shop", "candy_store", "confectionery", "pastry_shop", "cake_shop"}, ""},
-	{activitiessvc.CategoryRestaurants, "", []string{"food_court", "meal_delivery", "meal_takeaway"}, ""},
+	{activitiessvc.CategoryRestaurants, "", []string{"meal_delivery"}, ""},
 
 	// Cafés
 	{activitiessvc.CategoryCafes, "coffee_shop", []string{"coffee_shop"}, ""},
