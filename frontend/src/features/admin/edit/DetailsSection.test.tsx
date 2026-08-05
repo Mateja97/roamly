@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -74,24 +75,9 @@ describe('DetailsSection', () => {
     expect(screen.queryByText('Opening hours')).toBeNull();
   });
 
-  it('renders no price/duration input for any of the six purged categories (T4)', () => {
-    const removedLabels = [
-      'Price tier',
-      'Entry price',
-      'Ticket price',
-      'Duration',
-      'Price',
-      'Time / price',
-    ];
-    for (const category of [
-      'restaurants',
-      'nightlife',
-      'sport',
-      'culture',
-      'art',
-      'wellness',
-      'entertainment',
-    ]) {
+  it('renders no input for the scraped-value keys the Go model dropped for good (detail-price-duration-purge T1)', () => {
+    const removedLabels = ['Time / price'];
+    for (const category of ['sport', 'wellness', 'entertainment']) {
       const { unmount } = render(
         <DetailsSection category={category} details={{}} onChange={vi.fn()} />,
       );
@@ -112,5 +98,119 @@ describe('DetailsSection', () => {
     );
     expect(screen.getByText('Bring water')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Good to know' })).toBeNull();
+  });
+
+  it('tours_experiences renders all eight fields, not the "No additional details" fallback', () => {
+    render(
+      <DetailsSection
+        category="tours_experiences"
+        details={{}}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByText('No additional details for this category'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Duration')).toBeInTheDocument();
+    expect(screen.getByLabelText('Group size')).toBeInTheDocument();
+    expect(screen.getByLabelText('Languages')).toBeInTheDocument();
+    expect(screen.getByLabelText('Difficulty level')).toBeInTheDocument();
+    expect(screen.getByText('Included')).toBeInTheDocument();
+    expect(screen.getByText('Not included')).toBeInTheDocument();
+    expect(screen.getByText('Itinerary')).toBeInTheDocument();
+    expect(screen.getByLabelText('Meeting point')).toBeInTheDocument();
+  });
+
+  it('difficulty_level renders as a native select offering — plus exactly the three documented values, no free text', () => {
+    render(
+      <DetailsSection
+        category="tours_experiences"
+        details={{ difficulty_level: 'Moderate' }}
+        onChange={vi.fn()}
+      />,
+    );
+    const select = screen.getByLabelText('Difficulty level');
+    expect(select.tagName).toBe('SELECT');
+    expect(select).toHaveValue('Moderate');
+    const options = Array.from(select.querySelectorAll('option')).map(
+      (o) => o.textContent,
+    );
+    expect(options).toEqual(['—', 'Easy', 'Moderate', 'Challenging']);
+  });
+
+  it('picking — for difficulty_level removes the key (setScalar\'s empty-string branch)', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <DetailsSection
+        category="tours_experiences"
+        details={{ difficulty_level: 'Easy' }}
+        onChange={onChange}
+      />,
+    );
+    await user.selectOptions(screen.getByLabelText('Difficulty level'), '');
+    const lastCall = onChange.mock.calls.at(-1)![0];
+    expect(lastCall).not.toHaveProperty('difficulty_level');
+  });
+
+  it('restaurants/culture/art/nightlife render their new free-text price field', () => {
+    const cases: Array<[string, string]> = [
+      ['restaurants', 'Price tier'],
+      ['culture', 'Ticket price'],
+      ['art', 'Ticket price'],
+      ['nightlife', 'Entry price'],
+    ];
+    for (const [category, label] of cases) {
+      const { unmount } = render(
+        <DetailsSection category={category} details={{}} onChange={vi.fn()} />,
+      );
+      const input = screen.getByLabelText(label);
+      expect(input).toBeInTheDocument();
+      expect(input).toHaveAttribute('type', 'text');
+      unmount();
+    }
+  });
+
+  it('wellness and entertainment render good_to_know as chips', () => {
+    for (const category of ['wellness', 'entertainment']) {
+      const { unmount } = render(
+        <DetailsSection
+          category={category}
+          details={{ good_to_know: ['Bring cash'] }}
+          onChange={vi.fn()}
+        />,
+      );
+      expect(screen.getByText('Bring cash')).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('popular_dishes/on_the_bar rows grow a Price sub-field that reflects an existing value', () => {
+    render(
+      <DetailsSection
+        category="restaurants"
+        details={{ popular_dishes: [{ name: 'Pljeskavica', price: '$8' }] }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByDisplayValue('Pljeskavica')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('$8')).toBeInTheDocument();
+  });
+
+  it('adding a dish still moves focus to Name, not the new Price sub-field', async () => {
+    const user = userEvent.setup();
+    function Wrapper() {
+      const [details, setDetails] = useState<Record<string, unknown>>({});
+      return (
+        <DetailsSection
+          category="restaurants"
+          details={details}
+          onChange={setDetails}
+        />
+      );
+    }
+    render(<Wrapper />);
+    await user.click(screen.getByRole('button', { name: 'Add dish' }));
+    expect(screen.getByLabelText('Name')).toHaveFocus();
   });
 });

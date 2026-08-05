@@ -2,6 +2,7 @@ import type { Ref } from 'react';
 import { DETAILS_SCHEMA } from './detailsSchema';
 import { TextField } from './controls/TextField';
 import { TextareaField } from './controls/TextareaField';
+import { SelectField } from './controls/SelectField';
 import { RemovableChipList } from './controls/RemovableChipList';
 import { LineItemsEditor } from './controls/LineItemsEditor';
 import { ObjectGroupField } from './controls/ObjectGroupField';
@@ -121,10 +122,10 @@ export function DetailsSection({
   }
 
   if (fields.length === 0) {
-    // Defensive fallback only — the addendum confirms all 12 taxonomy
-    // categories have editable keys, so this path is unreachable for a
-    // valid category (an unrecognized string would hit it instead of
-    // crashing on a missing schema entry).
+    // Defensive fallback only — all 13 taxonomy categories have editable
+    // keys, so this path is unreachable for a valid category (an
+    // unrecognized string would hit it instead of crashing on a missing
+    // schema entry).
     return (
       <section className="admin-card admin-section">
         <h2 className="admin-section-heading">Details</h2>
@@ -171,6 +172,17 @@ export function DetailsSection({
                   value={asString(details[field.key])}
                   onChange={(v) => setScalar(field.key, v)}
                   disabled={disabled}
+                />
+              );
+            case 'select':
+              return (
+                <SelectField
+                  key={field.key}
+                  label={field.label}
+                  value={asString(details[field.key])}
+                  onChange={(v) => setScalar(field.key, v)}
+                  options={field.options ?? []}
+                  disabled={disabled || (field.options ?? []).length === 0}
                 />
               );
             case 'chips':
