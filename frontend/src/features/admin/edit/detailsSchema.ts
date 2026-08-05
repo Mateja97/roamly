@@ -1,9 +1,9 @@
-/** The build-deterministic per-category `details` key -> control mapping
- * from design-spec.md's T4 addendum, sourced 1:1 from
- * `backend/shared/models/activitiessvc/activity.go`'s 12 detail structs.
- * Data, not code — `DetailsSection` just iterates this per the selected
- * category. Never hand-add a field here that isn't a real JSON key on the
- * matching Go struct (an input that writes nowhere is forbidden). */
+/** The build-deterministic per-category `details` key -> control mapping,
+ * sourced 1:1 from `backend/shared/models/activitiessvc/activity.go`'s 13
+ * detail structs. Data, not code — `DetailsSection` just iterates this per
+ * the selected category. Never hand-add a field here that isn't a real JSON
+ * key on the matching Go struct (an input that writes nowhere is
+ * forbidden). */
 
 export type ControlKind =
   | 'text'
@@ -13,7 +13,8 @@ export type ControlKind =
   | 'chips'
   | 'line-items'
   | 'object-group'
-  | 'opening-hours';
+  | 'opening-hours'
+  | 'select';
 
 export interface SubFieldOption {
   value: string;
@@ -46,6 +47,11 @@ export interface DetailField {
   itemFields?: SubField[];
   /** line-items: singular noun for "Add <item>" / "No <items> yet" copy. */
   itemLabel?: string;
+  /** 'select': the field's own options, same shape a sub-field's `options`
+   * already uses. Leads with a selectable `{ value: '', label: '—' }` when
+   * the field is optional and clearable — never a disabled placeholder,
+   * which would make the field un-clearable once a value is set. */
+  options?: SubFieldOption[];
 }
 
 const BANNER: SubField[] = [
@@ -106,15 +112,32 @@ const OPENING_HOURS_FIELD: DetailField = {
   itemLabel: 'day',
 };
 
+/** `tours_experiences.difficulty_level`'s whole vocabulary — enum-backed on
+ * the Go side (`ToursExperiencesDetails.DifficultyLevel`'s doc comment), so
+ * a select with no free-text entry rather than a text input a typo could
+ * silently blank server-side. Leading `—` mirrors how `BasicsSection`
+ * builds `subtypeOptions`: difficulty is optional, so "no answer" must stay
+ * reachable after an answer has been given. */
+const DIFFICULTY_LEVEL_OPTIONS: SubFieldOption[] = [
+  { value: '', label: '—' },
+  { value: 'Easy', label: 'Easy' },
+  { value: 'Moderate', label: 'Moderate' },
+  { value: 'Challenging', label: 'Challenging' },
+];
+
 export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   restaurants: [
     { key: 'cuisine', label: 'Cuisine', control: 'text' },
+    { key: 'price_tier', label: 'Price tier', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'popular_dishes',
       label: 'Popular dishes',
       control: 'line-items',
-      itemFields: [{ key: 'name', label: 'Name', required: true }],
+      itemFields: [
+        { key: 'name', label: 'Name', required: true },
+        { key: 'price', label: 'Price' },
+      ],
       itemLabel: 'dish',
     },
     { key: 'action_url', label: 'Booking website', control: 'url' },
@@ -127,7 +150,10 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       key: 'on_the_bar',
       label: 'On the bar',
       control: 'line-items',
-      itemFields: [{ key: 'name', label: 'Name', required: true }],
+      itemFields: [
+        { key: 'name', label: 'Name', required: true },
+        { key: 'price', label: 'Price' },
+      ],
       itemLabel: 'item',
     },
   ],
@@ -139,6 +165,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'action_url', label: 'Booking website', control: 'url' },
   ],
   nightlife: [
+    { key: 'entry_price', label: 'Entry price', control: 'text' },
     { key: 'dress_code', label: 'Dress code', control: 'text' },
     OPENING_HOURS_FIELD,
     {
@@ -175,6 +202,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   ],
   culture: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
+    { key: 'ticket_price', label: 'Ticket price', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'now_showing',
@@ -186,6 +214,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
   ],
   art: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
+    { key: 'ticket_price', label: 'Ticket price', control: 'text' },
     OPENING_HOURS_FIELD,
     {
       key: 'artwork',
@@ -221,6 +250,8 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     },
     { key: 'action_url', label: 'Booking website', control: 'url' },
     { key: 'venue_type', label: 'Venue type', control: 'text' },
+    { key: 'good_to_know', label: 'Good to know', control: 'chips' },
+    OPENING_HOURS_FIELD,
   ],
   shopping: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
@@ -242,5 +273,22 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       itemLabel: 'show',
     },
     { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'good_to_know', label: 'Good to know', control: 'chips' },
+    OPENING_HOURS_FIELD,
+  ],
+  tours_experiences: [
+    { key: 'duration', label: 'Duration', control: 'text' },
+    { key: 'group_size', label: 'Group size', control: 'text' },
+    { key: 'languages', label: 'Languages', control: 'text' },
+    {
+      key: 'difficulty_level',
+      label: 'Difficulty level',
+      control: 'select',
+      options: DIFFICULTY_LEVEL_OPTIONS,
+    },
+    { key: 'included', label: 'Included', control: 'chips' },
+    { key: 'not_included', label: 'Not included', control: 'chips' },
+    { key: 'itinerary', label: 'Itinerary', control: 'chips' },
+    { key: 'meeting_point', label: 'Meeting point', control: 'textarea' },
   ],
 };
