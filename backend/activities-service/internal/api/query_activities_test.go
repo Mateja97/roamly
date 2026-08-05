@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -228,6 +229,24 @@ func TestDetailsJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := detailsJSON(tt.in); got != tt.want {
 				t.Errorf("detailsJSON(%s) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatCreatedAt(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Time
+		want string
+	}{
+		{"zero value formats to empty string, not 0001-01-01", time.Time{}, ""},
+		{"a real timestamp formats RFC3339", time.Date(2026, 8, 5, 12, 30, 0, 0, time.UTC), "2026-08-05T12:30:00Z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatCreatedAt(tt.in); got != tt.want {
+				t.Errorf("formatCreatedAt(%v) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

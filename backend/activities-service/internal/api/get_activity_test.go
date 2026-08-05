@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,7 +15,10 @@ import (
 )
 
 func TestGetActivity_HappyPath(t *testing.T) {
-	fake := &fakeQueryService{getOut: activitiessvc.Activity{ID: "1", Title: "Kayaking", Status: activitiessvc.StatusDraft}}
+	createdAt := time.Date(2026, 8, 5, 12, 30, 0, 0, time.UTC)
+	fake := &fakeQueryService{getOut: activitiessvc.Activity{
+		ID: "1", Title: "Kayaking", Status: activitiessvc.StatusDraft, CreatedAt: createdAt,
+	}}
 	client := dialServer(t, fake)
 
 	resp, err := client.GetActivity(context.Background(), &activitiesv1.GetActivityRequest{Id: "1"})
@@ -23,6 +27,9 @@ func TestGetActivity_HappyPath(t *testing.T) {
 	}
 	if resp.GetId() != "1" || resp.GetTitle() != "Kayaking" {
 		t.Errorf("unexpected activity: %+v", resp)
+	}
+	if resp.GetCreatedAt() != "2026-08-05T12:30:00Z" {
+		t.Errorf("created_at = %q, want RFC3339 2026-08-05T12:30:00Z", resp.GetCreatedAt())
 	}
 	if fake.gotGetID != "1" {
 		t.Errorf("service received id = %q, want 1", fake.gotGetID)

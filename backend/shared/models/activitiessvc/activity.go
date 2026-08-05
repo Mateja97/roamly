@@ -4,7 +4,10 @@
 // the only place that translates wire <-> domain.
 package activitiessvc
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Scope string
 
@@ -209,6 +212,10 @@ type Activity struct {
 	// exposed on any proto message or HTTP DTO — server-side only (Places
 	// ToS §14.3 permits caching the bare id, nothing else).
 	GooglePlaceID string
+	// CreatedAt (T3, admin-activities-schema-resync) is the row's creation
+	// timestamp, read from the `created_at` column (NOT NULL DEFAULT now(),
+	// migration 0001) — selected for the first time by this field.
+	CreatedAt time.Time
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar

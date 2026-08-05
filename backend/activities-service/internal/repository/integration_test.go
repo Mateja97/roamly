@@ -838,6 +838,9 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 		if created.Location.Lat != 0 || created.Location.Lng != 0 || created.Country != "" || created.Rating != 0 {
 			t.Errorf("created activity location/country/rating = %+v, want the (0,0)/''/0 sentinels", created)
 		}
+		if created.CreatedAt.IsZero() {
+			t.Error("created activity CreatedAt is zero, want the column's now() default")
+		}
 		var details activitiessvc.SportDetails
 		if err := json.Unmarshal(created.Details, &details); err != nil {
 			t.Fatalf("unmarshaling created details: %v", err)
@@ -856,6 +859,9 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 			}
 			if got.ID != created.ID || got.Title != created.Title {
 				t.Errorf("GetByID() = %+v, want the created activity", got)
+			}
+			if !got.CreatedAt.Equal(created.CreatedAt) {
+				t.Errorf("GetByID() CreatedAt = %v, want %v (matching Create's)", got.CreatedAt, created.CreatedAt)
 			}
 		})
 	})

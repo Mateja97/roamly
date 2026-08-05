@@ -52,6 +52,13 @@ type adminActivityListItemDTO struct {
 	Photos   []adminPhotoDTO `json:"photos"`
 }
 
+// adminLocationDTO is the admin DTO's coordinate pair (T3,
+// admin-activities-schema-resync) — mirrors the proto's Location shape.
+type adminLocationDTO struct {
+	Lat float64 `json:"lat"`
+	Lng float64 `json:"lng"`
+}
+
 // adminActivityDTO is the full admin activity view: GetActivity's response,
 // and the created/updated activity CreateActivity/PatchActivity return.
 type adminActivityDTO struct {
@@ -68,6 +75,15 @@ type adminActivityDTO struct {
 	// Subcategory (T1) is the optional, category-validated subtype slug;
 	// "" when not set.
 	Subcategory string `json:"subcategory"`
+	// Location (T3, admin-activities-schema-resync) is nil/omitted when the
+	// activity has no real coordinates (Null Island, (0,0) — every
+	// admin-created row) rather than a fabricated {0,0} that would render
+	// the map preview over the Gulf of Guinea.
+	Location *adminLocationDTO `json:"location,omitempty"`
+	// CreatedAt (T3, admin-activities-schema-resync) is RFC3339-formatted,
+	// already formatted upstream by activities-service; "" (also omitted)
+	// on the same not-yet-scanned edge case toProtoActivity's doc names.
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 type listActivitiesResponseDTO struct {
@@ -119,7 +135,20 @@ func toAdminActivityDTO(a *activitiesv1.Activity, logger *slog.Logger) adminActi
 		Details:     detailsJSON(a.GetDetails()),
 		Photos:      toAdminPhotoDTOs(a.GetPhotos()),
 		Subcategory: a.GetSubcategory(),
+		Location:    toAdminLocationDTO(a.GetLocation()),
+		CreatedAt:   a.GetCreatedAt(),
 	}
+}
+
+// toAdminLocationDTO omits the coordinate pair entirely for (0,0) — Null
+// Island, the sentinel every admin-created row's location scans as (no
+// admin-facing geocoding exists yet, see repository.Create's doc) — rather
+// than surfacing a fabricated real-looking coordinate.
+func toAdminLocationDTO(l *activitiesv1.Location) *adminLocationDTO {
+	if l.GetLat() == 0 && l.GetLng() == 0 {
+		return nil
+	}
+	return &adminLocationDTO{Lat: l.GetLat(), Lng: l.GetLng()}
 }
 
 // toProtoStatus is the admin write path's wire string -> proto enum, the
