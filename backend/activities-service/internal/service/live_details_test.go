@@ -302,12 +302,16 @@ func TestHasTripadvisorReviews(t *testing.T) {
 }
 
 // TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback covers T3
-// (tripadvisor-google-review-fallback): a Tripadvisor row with a stored
-// google_place_id and no quotable Tripadvisor review gets a live Google
-// Place Details lookup for GoogleReviews/GoogleMapsURI only, preserving
-// Rating/ReviewCount/Description/Details verbatim; every other Tripadvisor
-// row (quotable review present, or no stored place id) keeps the pre-T3
-// early return; a resolve error falls back to the bare stored row.
+// (tripadvisor-google-review-fallback) and T1 (tripadvisor-marks-require-
+// reviews): a Tripadvisor row with a stored google_place_id and no quotable
+// Tripadvisor review gets a live Google Place Details lookup that sets
+// GoogleReviews/GoogleMapsURI and unconditionally overwrites Rating/
+// ReviewCount with Google's (including 0/0 for an unrated Places venue — a
+// stale Tripadvisor rating must never survive under a Google GoogleMapsURI),
+// preserving Description/Details verbatim; every other Tripadvisor row
+// (quotable review present, or no stored place id) keeps the pre-T3 early
+// return, rating untouched; a resolve error falls back to the bare stored
+// row.
 func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) {
 	// Deliberately non-zero and different from baseRow's own Rating/
 	// ReviewCount/Description/Details below (round-2 review finding: an
@@ -337,51 +341,82 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 		Details: json.RawMessage(`{"tripadvisor":{"review_count":512}}`),
 	}
 
+	// zeroRatingDetail is googleDetail with Rating/UserRatingCount zeroed —
+	// Places omits both together for an unrated venue. Unlike withLiveDetails,
+	// this must NOT fall back to the stored Tripadvisor rating: once
+	// GoogleMapsURI is set the row's rating has to be Google's or nothing, so
+	// Rating/ReviewCount both become 0 here, not baseRow's stale 4.6/512.
+	zeroRatingDetail := googleDetail
+	zeroRatingDetail.Rating = 0
+	zeroRatingDetail.UserRatingCount = 0
+
 	tests := []struct {
-		name           string
-		activity       activitiessvc.Activity
-		places         *fakePlaces
-		noPlaces       bool
-		wantPlaceCalls int
-		wantReviews    int
-		wantMapsURI    string
+		name            string
+		activity        activitiessvc.Activity
+		places          *fakePlaces
+		noPlaces        bool
+		wantPlaceCalls  int
+		wantReviews     int
+		wantMapsURI     string
+		wantRating      float64
+		wantReviewCount int
 	}{
 		{
-			name:           "no quotable reviews: fetches and sets GoogleReviews/GoogleMapsURI only",
-			activity:       baseRow,
-			places:         &fakePlaces{detailOut: googleDetail},
-			wantPlaceCalls: 1,
-			wantReviews:    1,
-			wantMapsURI:    "https://maps.google.com/?cid=123",
+			name:            "no quotable reviews: fetches GoogleReviews/GoogleMapsURI and carries Google's rating",
+			activity:        baseRow,
+			places:          &fakePlaces{detailOut: googleDetail},
+			wantPlaceCalls:  1,
+			wantReviews:     1,
+			wantMapsURI:     "https://maps.google.com/?cid=123",
+			wantRating:      4.9,
+			wantReviewCount: 9001,
 		},
 		{
-			name: "quotable reviews already present: early return, no places call",
+			name:            "unrated Places venue: reviews/maps URI set, rating zeroed (not stored Tripadvisor value)",
+			activity:        baseRow,
+			places:          &fakePlaces{detailOut: zeroRatingDetail},
+			wantPlaceCalls:  1,
+			wantReviews:     1,
+			wantMapsURI:     "https://maps.google.com/?cid=123",
+			wantRating:      0,
+			wantReviewCount: 0,
+		},
+		{
+			name: "quotable reviews already present: early return, no places call, rating untouched",
 			activity: func() activitiessvc.Activity {
 				a := baseRow
 				a.Details = json.RawMessage(`{"tripadvisor":{"review_count":512},"reviews":[{"rating":5,"date":"July 2026","text":"Great."}]}`)
 				return a
 			}(),
-			places: &fakePlaces{detailOut: googleDetail},
+			places:          &fakePlaces{detailOut: googleDetail},
+			wantRating:      baseRow.Rating,
+			wantReviewCount: baseRow.ReviewCount,
 		},
 		{
-			name: "no stored place id: early return, no places call",
+			name: "no stored place id: early return, no places call, rating untouched",
 			activity: func() activitiessvc.Activity {
 				a := baseRow
 				a.GooglePlaceID = ""
 				return a
 			}(),
-			places: &fakePlaces{detailOut: googleDetail},
+			places:          &fakePlaces{detailOut: googleDetail},
+			wantRating:      baseRow.Rating,
+			wantReviewCount: baseRow.ReviewCount,
 		},
 		{
-			name:           "resolve error falls back to bare stored row",
-			activity:       baseRow,
-			places:         &fakePlaces{detailErr: errors.New("places is down")},
-			wantPlaceCalls: 1,
+			name:            "resolve error falls back to bare stored row",
+			activity:        baseRow,
+			places:          &fakePlaces{detailErr: errors.New("places is down")},
+			wantPlaceCalls:  1,
+			wantRating:      baseRow.Rating,
+			wantReviewCount: baseRow.ReviewCount,
 		},
 		{
-			name:     "unconfigured places client: falls back to bare row, no call",
-			activity: baseRow,
-			noPlaces: true,
+			name:            "unconfigured places client: falls back to bare row, no call",
+			activity:        baseRow,
+			noPlaces:        true,
+			wantRating:      baseRow.Rating,
+			wantReviewCount: baseRow.ReviewCount,
 		},
 	}
 
@@ -406,14 +441,14 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 			if got.GoogleMapsURI != tt.wantMapsURI {
 				t.Errorf("GoogleMapsURI = %q, want %q", got.GoogleMapsURI, tt.wantMapsURI)
 			}
-			// Every case, success or fallback, must leave the Tripadvisor
-			// row's own fields exactly as stored — T3's central guarantee.
-			if got.Rating != tt.activity.Rating {
-				t.Errorf("Rating = %v, want stored %v unchanged", got.Rating, tt.activity.Rating)
+			if got.Rating != tt.wantRating {
+				t.Errorf("Rating = %v, want %v", got.Rating, tt.wantRating)
 			}
-			if got.ReviewCount != tt.activity.ReviewCount {
-				t.Errorf("ReviewCount = %v, want stored %v unchanged", got.ReviewCount, tt.activity.ReviewCount)
+			if got.ReviewCount != tt.wantReviewCount {
+				t.Errorf("ReviewCount = %v, want %v", got.ReviewCount, tt.wantReviewCount)
 			}
+			// Description/Details stay untouched in every case — T1 only
+			// widens the Rating/ReviewCount contract, not these.
 			if got.Description != tt.activity.Description {
 				t.Errorf("Description = %q, want stored %q unchanged", got.Description, tt.activity.Description)
 			}

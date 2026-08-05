@@ -913,13 +913,22 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 // review count and still have nothing quotable. When the row has a stored
 // google_place_id (T1's ResolveTripadvisorSubtype match) and its Details
 // blob carries no quotable Tripadvisor review, this calls PlaceDetails and
-// sets only GoogleReviews/GoogleMapsURI. Every other Tripadvisor row (no
-// stored place id, or it already has a quotable review) returns untouched,
-// same early return as before this task existed.
+// sets GoogleReviews/GoogleMapsURI, plus Rating/ReviewCount (T1,
+// tripadvisor-marks-require-reviews): a row with no quotable Tripadvisor
+// review shows no Tripadvisor mark of any kind in the app (see that design),
+// so its rating needs to be Google's, attributable, instead of Tripadvisor's
+// unattributed number. Description and Details are still left untouched.
+// Every other Tripadvisor row (no stored place id, or it already has a
+// quotable review) returns untouched at the early guard below, same as
+// before this task existed — its rating stays Tripadvisor's, verbatim.
 //
-// Deliberately never touches Rating, ReviewCount, Description, or Details —
-// a Tripadvisor row's aggregate rating stays Tripadvisor's, verbatim,
-// regardless of what Google's Place Details response carries.
+// Unlike withLiveDetails, Rating/ReviewCount are copied unconditionally, no
+// Rating > 0 guard: the stored value here is always Tripadvisor's, and once
+// GooglePlaceID resolves the row's rating must be Google's or nothing —
+// leaving a stale Tripadvisor number in place under a Google GoogleMapsURI
+// is the exact unattributed-rating bug this task exists to prevent. Places
+// returning Rating == 0 for an unrated venue is a legitimate "no rating"
+// result here, not data loss to guard against.
 //
 // Fallback-on-error contract mirrors withLiveDetails exactly: an
 // unconfigured places client, a resolve error, or a timeout all fall back to
@@ -936,6 +945,8 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 		return activity
 	}
 
+	activity.Rating = detail.Rating
+	activity.ReviewCount = detail.UserRatingCount
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
 	activity.GoogleMapsURI = detail.GoogleMapsURI
 	return activity
