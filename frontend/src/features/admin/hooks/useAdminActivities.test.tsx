@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { useAdminActivities } from './useAdminActivities';
 import { listAdminActivities } from '../../../api/adminActivities';
 
@@ -8,6 +10,22 @@ vi.mock('../../../api/adminActivities', () => ({
 }));
 
 const mockedList = vi.mocked(listAdminActivities);
+
+/** The hook reads and writes its filters through `useSearchParams` (added by
+ * #68, "persist activity list filters across navigation"), so it only renders
+ * inside a router. MemoryRouter gives it a real, writable search string rather
+ * than a stub — which means the persistence half of the hook is genuinely
+ * exercised here instead of mocked away. Same wrapper the sibling admin tests
+ * use (AdminShell, EditActivityPage, ActivitiesPage, ...). */
+function withRouter({ children }: { children: ReactNode }) {
+  return <MemoryRouter>{children}</MemoryRouter>;
+}
+
+/** renderHook with the router wrapper applied — every test in this file needs
+ * it, so none of them should have to remember it. */
+function renderAdminActivities() {
+  return renderHook(() => useAdminActivities(), { wrapper: withRouter });
+}
 
 const emptyResponse = {
   status: 'success' as const,
@@ -32,7 +50,7 @@ describe('useAdminActivities', () => {
   });
 
   it('fetches once on mount with default params', async () => {
-    renderHook(() => useAdminActivities());
+    renderAdminActivities();
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -42,7 +60,7 @@ describe('useAdminActivities', () => {
   });
 
   it('debounces search — no request fired per keystroke', async () => {
-    const { result } = renderHook(() => useAdminActivities());
+    const { result } = renderAdminActivities();
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -70,7 +88,7 @@ describe('useAdminActivities', () => {
   });
 
   it('a filter change resets to page 1 in a single request', async () => {
-    const { result } = renderHook(() => useAdminActivities());
+    const { result } = renderAdminActivities();
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -97,7 +115,7 @@ describe('useAdminActivities', () => {
   });
 
   it('clearFilters resets search/category/city/status/page', async () => {
-    const { result } = renderHook(() => useAdminActivities());
+    const { result } = renderAdminActivities();
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -130,7 +148,7 @@ describe('useAdminActivities', () => {
       status: 403,
       message: 'invalid or missing admin token',
     });
-    const { result } = renderHook(() => useAdminActivities());
+    const { result } = renderAdminActivities();
     await act(async () => {
       await vi.runAllTimersAsync();
     });
