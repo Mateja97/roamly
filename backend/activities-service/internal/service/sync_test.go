@@ -673,6 +673,8 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 	tests := []struct {
 		name        string
 		category    activitiessvc.Category
+		venue       string // defaults to "Some Venue" below when empty
+		price       string
 		places      []placesmap.Place
 		err         error
 		want        string
@@ -684,6 +686,42 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 			places:      []placesmap.Place{{ID: "place-1", PrimaryType: "wine_bar", DisplayName: displayName("Some Venue")}},
 			want:        "wine_bar",
 			wantPlaceID: "place-1",
+		},
+		{
+			// Mutation-tested (see review-log.md T2): hoisting the price check
+			// above the Google-type check makes this return casual_dining
+			// instead — this case exists to fail exactly that mutation.
+			name:        "a Google type outranks price even when both resolve",
+			category:    activitiessvc.CategoryRestaurants,
+			price:       "Mid Range",
+			places:      []placesmap.Place{{ID: "place-7", PrimaryType: "fast_food_restaurant", DisplayName: displayName("Some Venue")}},
+			want:        "fast_casual",
+			wantPlaceID: "place-7",
+		},
+		{
+			// The load-bearing negative (design D5): Google's generic
+			// "restaurant" type deliberately maps to nothing (placesmap never
+			// classifies it), so this must fall through to the price layer —
+			// and Cheap Eats there is also deliberately "".
+			name:        "cheap eats plus an unmapped Google type still yields nothing",
+			category:    activitiessvc.CategoryRestaurants,
+			price:       "Cheap Eats",
+			places:      []placesmap.Place{{ID: "place-8", PrimaryType: "restaurant", DisplayName: displayName("Some Venue")}},
+			want:        "",
+			wantPlaceID: "place-8",
+		},
+		{
+			// namemap's override (kafana) must win even over a Google type
+			// that would otherwise resolve, and price (irrelevant here since
+			// SubtypeFromPriceLevel is Restaurants-only, but included to
+			// mirror the mutation shape) must not intervene either.
+			name:        "a namemap override outranks both the Google type and price",
+			category:    activitiessvc.CategoryBars,
+			venue:       "Kafana Zavicaj",
+			price:       "Mid Range",
+			places:      []placesmap.Place{{ID: "place-9", PrimaryType: "cocktail_bar", DisplayName: displayName("Kafana Zavicaj")}},
+			want:        "kafana",
+			wantPlaceID: "place-9",
 		},
 		{
 			name:        "primaryType maps to a subtype belonging to a different category yields an empty subtype, not a cross-category guess, but the confirmed match's place id still comes back",
@@ -729,9 +767,13 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			venue := tt.venue
+			if venue == "" {
+				venue = "Some Venue"
+			}
 			gp := &fakeGooglePlaces{nearbyOut: tt.places, nearbyErr: tt.err}
 			svc := New(&fakeRepo{}).WithPlaces(gp)
-			got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111", "")
+			got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, venue, 44.81, 20.46, "111", tt.price)
 			if got != tt.want {
 				t.Errorf("ResolveTripadvisorSubtype(...) subtype = %q, want %q", got, tt.want)
 			}

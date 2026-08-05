@@ -1604,17 +1604,18 @@ func SubtypeFromPriceLevel(cat activitiessvc.Category, priceLevel string) string
 // against exactly that: the candidate's own returned name must plausibly be
 // the same venue, or it's rejected same as no match at all.
 //
-// Returns the name-derived subtype (namemap.Subtype, often "") and an empty
-// place id when: no Places client is configured (a.places == nil); name is
-// empty or lat/lng is the zero value; the search errors (logged, the sync
-// itself must not fail); the search finds no candidate; it finds more than
-// one, which means the tight radius still couldn't disambiguate a
+// Returns the name-derived subtype, or the price tier when the name yields
+// nothing (namemap.Subtype and SubtypeFromPriceLevel are both often ""), and
+// an empty place id when: no Places client is configured (a.places == nil);
+// name is empty or lat/lng is the zero value; the search errors (logged, the
+// sync itself must not fail); the search finds no candidate; it finds more
+// than one, which means the tight radius still couldn't disambiguate a
 // same/similar-named venue; or the sole candidate's own name doesn't
 // plausibly match. Google finding nothing is not the same as the venue
 // having no subtype — it resolves nothing at all for roughly a third of
-// Bars — so the name fallback applies to every one of those paths. The
-// subtype is still never a guess: namemap.Subtype returns "" unless a
-// curated keyword matches.
+// Bars — so this fallback applies to every one of those paths. The subtype
+// is still never a guess: namemap.Subtype returns "" unless a curated
+// keyword matches, and SubtypeFromPriceLevel only maps Fine Dining/Mid Range.
 //
 // When Google does match, its answer wins unless namemap flagged a local
 // venue-type keyword (shisha, kafana), which overrides it — see
