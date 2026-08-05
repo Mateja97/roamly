@@ -42,8 +42,8 @@ similarly-named subtypes (e.g. `bakery_dessert` under Restaurants vs
 |---|---|
 | Restaurants (`restaurants`) | Fine Dining (`fine_dining`), Casual Dining (`casual_dining`), Fast Casual (`fast_casual`), Food Truck/Street Food (`street_food`), Bakery & Dessert (`bakery_dessert`) |
 | Cafés (`cafes`) | Coffee Shop (`coffee_shop`), Tea House (`tea_house`), Bakery Cafe (`bakery_cafe`) |
-| Bars (`bars`) | Cocktail Bar (`cocktail_bar`), Wine Bar (`wine_bar`), Brewery/Beer Garden (`brewery`), Sports Bar (`sports_bar`), Pub (`pub`) |
-| Nightlife (`nightlife`) | Nightclub (`nightclub`), Live Music Venue (`live_music_venue`), Lounge (`lounge`) |
+| Bars (`bars`) | Cocktail Bar (`cocktail_bar`), Wine Bar (`wine_bar`), Brewery/Beer Garden (`brewery`), Sports Bar (`sports_bar`), Pub (`pub`), Shisha Bar (`shisha`), Kafana (`kafana`) |
+| Nightlife (`nightlife`) | Nightclub (`nightclub`), Live Music Venue (`live_music_venue`), Lounge (`lounge`), Shisha Lounge (`shisha_lounge`), Kafana with Live Music (`kafana_live`) |
 | Nature (`nature`) | Hiking Trail (`hiking_trail`), Park (`park`), Beach (`beach`), Garden/Botanical (`botanical_garden`), Viewpoint/Lookout (`viewpoint`) |
 | Sport (`sport`) | Gym/Fitness Studio (`gym_fitness`), Climbing Gym (`climbing_gym`), Swimming Pool (`swimming_pool`), Sports Court/Field (`sports_court`), Golf Course (`golf_course`), Adventure/Extreme Sports (`extreme_sports`) |
 | Kids (`kids`) | Playground (`playground`), Indoor Play Center (`indoor_play_center`), Zoo/Aquarium (`zoo_aquarium`), Amusement Park (`amusement_park`), Kids' Museum (`kids_museum`) |
@@ -107,6 +107,17 @@ Kids, Culture, Art, Wellness, Shopping and Entertainment. Restaurants and Bars
 come from Tripadvisor (Cafés is also synced from Tripadvisor, but its
 coverage there is too thin to stand alone). Tours & Experiences has no
 provider yet and is deliberately empty.
+
+**Name-derived subtypes.** Two Serbian venue types are classified from the
+venue's name rather than a Google type, via `namemap.Subtype`: shisha bars
+(`shisha`/`shisha_lounge`) and kafanas (`kafana`/`kafana_live`). These two
+*override* a Google answer, because a name containing "nargila" or "kafana"
+is never accidental and Google's `cafe`/`lounge`/`nightclub` answer for such
+venues is the less accurate one. Every other name keyword is fallback-only:
+consulted when Google resolves to `""`, never over a real Google answer. A
+kafana is deliberately not mapped onto `pub` — a kafana is table service,
+rakija and often live folk music, a pub is beer-led, and collapsing them
+would be exactly the kind of guess this taxonomy refuses to make.
 
 ## Search scope rules (Nearby vs Anywhere)
 

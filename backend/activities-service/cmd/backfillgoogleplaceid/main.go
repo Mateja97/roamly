@@ -118,7 +118,7 @@ type activityLister interface {
 // emptyGooglePlaceIDRows pages through every published row (List has no
 // Source/GooglePlaceID filter of its own — narrowing further isn't worth
 // adding one to the shared admin query contract for this one-off need, same
-// reasoning as cmd/backfillsubtype's emptySubtypeRows) and keeps the ones
+// reasoning as cmd/backfillsubtype's candidateRows) and keeps the ones
 // whose Source is "tripadvisor" and whose GooglePlaceID is still "".
 func emptyGooglePlaceIDRows(ctx context.Context, repo activityLister, pageSize int) ([]activitiessvc.Activity, error) {
 	var out []activitiessvc.Activity

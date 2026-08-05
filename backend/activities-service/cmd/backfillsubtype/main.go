@@ -4,12 +4,14 @@
 // is still "". Reuses service.Activities.ResolveTripadvisorSubtype (T2) —
 // the same resolve-by-name-then-classify-by-Google-type path a live
 // Tripadvisor sync already uses per venue — so this needs no second
-// classification algorithm to keep in sync with the first. google_places
-// rows are never touched: their empty subcategory is the deliberate
-// Subtype: "" discovery row (see placesmap.DiscoveryRows), not a defect.
+// classification algorithm to keep in sync with the first.
+// google_places rows are touched only when the venue's name carries a local
+// venue-type keyword (shisha, kafana) — see keepCandidates. Their otherwise
+// empty subcategory is still left alone: that is the deliberate Subtype: ""
+// discovery row (see placesmap.DiscoveryRows), not a defect.
 //
 // Sequential by design, not pool-of-goroutines like the live sync
-// (syncVenueConcurrency): this is a one-time pass over ~210 rows, not a
+// (syncVenueConcurrency): this is a one-time pass over ~331 rows, not a
 // repeating hot path, so a plain loop with a fixed pace between Places
 // calls (see backfillPace) is the whole rate-limiting story — no new
 // limiter type earns its keep at this volume.
@@ -18,9 +20,15 @@
 // repository.SetSubcategoryIfEmpty, not batched into one transaction: a
 // mid-run failure (quota exhausted, network error) leaves every
 // already-classified row committed, and simply re-running the tool picks up
-// only whatever is still empty — the WHERE subcategory = ” on both the
-// read (this file) and the write (SetSubcategoryIfEmpty) side is the entire
-// resume mechanism, no checkpoint file needed.
+// only whatever is still empty — the WHERE subcategory = ” on the read
+// (this file) and the write (SetSubcategoryIfEmpty) side is the resume
+// mechanism for every *non-override* row, no checkpoint file needed.
+// Override rows (namemap.Subtype's local shisha/kafana keyword match) sit
+// outside that mechanism: keepCandidates re-selects and rewrites them on
+// every single run, regardless of source or current subcategory. That's
+// fine, not a resume bug — a name match is idempotent (the same name
+// always yields the same slug) and costs zero Places calls, so redoing one
+// on every invocation wastes nothing but a write.
 //
 // Live-writing, but a build/maintenance-time tool in the same sense as
 // cmd/backfilltripadvisor: never wired into activities-service's own
@@ -38,6 +46,7 @@ import (
 	"slices"
 	"time"
 
+	"activities-service/internal/namemap"
 	"activities-service/internal/places"
 	"activities-service/internal/repository"
 	"activities-service/internal/service"
@@ -86,7 +95,7 @@ func main() {
 	defer pool.Close()
 	repo := repository.New(pool)
 
-	rows, err := emptySubtypeRows(ctx, repo, listPageSize)
+	rows, err := candidateRows(ctx, repo, listPageSize)
 	if err != nil {
 		logger.Error("listing rows", "error", err)
 		os.Exit(1)
@@ -117,31 +126,55 @@ type activityLister interface {
 	List(ctx context.Context, filter activitiessvc.ListFilter) (activitiessvc.ListResult, error)
 }
 
-// emptySubtypeRows pages through every published row (List has no
+// candidateRows pages through every published row (List has no
 // Source/Subcategory filter of its own — narrowing further isn't worth
 // adding one to the shared admin query contract for this one-off need,
-// same reasoning as cmd/backfilltripadvisor's tripadvisorSourcedRows)
-// and keeps the ones whose Source is a backfillSources member and whose
-// Subcategory is still "".
-func emptySubtypeRows(ctx context.Context, repo activityLister, pageSize int) ([]activitiessvc.Activity, error) {
-	var out []activitiessvc.Activity
+// same reasoning as cmd/backfilltripadvisor's tripadvisorSourcedRows),
+// accumulates them all, then applies keepCandidates to select the ones this
+// tool actually classifies.
+func candidateRows(ctx context.Context, repo activityLister, pageSize int) ([]activitiessvc.Activity, error) {
+	var all []activitiessvc.Activity
 	offset := 0
 	for {
 		result, err := repo.List(ctx, activitiessvc.ListFilter{Status: activitiessvc.StatusPublished, Limit: pageSize, Offset: offset})
 		if err != nil {
 			return nil, err
 		}
-		for _, a := range result.Activities {
-			if a.Subcategory == "" && slices.Contains(backfillSources, a.Source) {
-				out = append(out, a)
-			}
-		}
+		all = append(all, result.Activities...)
 		offset += len(result.Activities)
 		if len(result.Activities) == 0 || offset >= result.Total {
 			break
 		}
 	}
-	return out, nil
+	return keepCandidates(all), nil
+}
+
+// keepCandidates is this tool's selection rule. Two disjoint reasons a row
+// qualifies:
+//
+//   - It has no subtype at all and came from a source whose subtype was never
+//     resolved (the original T3 case).
+//   - Its name carries a local venue-type keyword (shisha, kafana), whatever
+//     its source or current subtype. These rows are the point of the widened
+//     pass: Google labels a kafana "lounge" and a shisha bar "nightclub", and
+//     the stored value has to be replaced rather than preserved.
+//
+// The second reason deliberately includes google_places rows, reversing this
+// tool's original "google_places rows are never touched" rule — that rule
+// existed because an empty google_places subtype is a legitimate Subtype: ""
+// discovery row, which says nothing about a *wrong* non-empty one.
+func keepCandidates(rows []activitiessvc.Activity) []activitiessvc.Activity {
+	var out []activitiessvc.Activity
+	for _, a := range rows {
+		if _, override := namemap.Subtype(a.Category, a.Title); override {
+			out = append(out, a)
+			continue
+		}
+		if a.Subcategory == "" && slices.Contains(backfillSources, a.Source) {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // subtypeResolver is svc.ResolveTripadvisorSubtype's shape — narrowed so
@@ -154,10 +187,13 @@ type subtypeResolver interface {
 	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string)
 }
 
-// subcategorySetter is repository.Activities.SetSubcategoryIfEmpty's shape,
-// same narrowing reasoning as subtypeResolver.
+// subcategorySetter is the pair of repository writes this tool uses: the
+// if-empty guard for Google-resolved subtypes (a live sync may legitimately
+// classify the same row mid-run), and the unconditional write for
+// local-keyword matches, which exist to replace a wrong stored value.
 type subcategorySetter interface {
 	SetSubcategoryIfEmpty(ctx context.Context, id, subcategory string) (bool, error)
+	SetSubcategory(ctx context.Context, id, subcategory string) error
 }
 
 // backfillResult tallies one run: resolved is rows this run classified,
@@ -201,6 +237,19 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 		}
 		key := a.Source + "|" + string(a.Category)
 		result.byKey[key].attempted++
+		// Local-keyword rows resolve from the stored name alone — no Places
+		// call, so no pace() either — and overwrite whatever is stored.
+		if slug, override := namemap.Subtype(a.Category, a.Title); override {
+			if err := setter.SetSubcategory(ctx, a.ID, slug); err != nil {
+				slog.Warn("writing name-derived subtype failed", "id", a.ID, "title", a.Title, "error", err)
+				result.failed++
+				result.byKey[key].failed++
+				continue
+			}
+			result.resolved++
+			result.byKey[key].resolved++
+			continue
+		}
 		subtype, _ := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
 		pace()
 		if subtype == "" {

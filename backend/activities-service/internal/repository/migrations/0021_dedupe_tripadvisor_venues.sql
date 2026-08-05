@@ -1,5 +1,5 @@
 -- Every synced venue must now produce exactly one row (see
--- tripadvisormap.Category / service.syncTripadvisorAnchor): the venue's
+-- namemap.Category / service.syncTripadvisorAnchor): the venue's
 -- Roamly category is derived from its own name, not the caller's
 -- due-category loop. Before this fix, a venue due for both Restaurants and
 -- Bars got upserted once per due category (see 0017), so the same
@@ -30,7 +30,7 @@ WHERE dup.source = 'tripadvisor'
 -- Step 2: now exactly one row per external_id remains, so reassigning its
 -- category can never collide with a sibling row on
 -- (source_url, category). Reclassify by the same name-keyword heuristic
--- tripadvisormap.Category applies (kept in sync with that function by
+-- namemap.Category applies (kept in sync with that function by
 -- hand).
 UPDATE activities
 SET category = CASE

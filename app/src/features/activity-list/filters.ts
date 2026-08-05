@@ -53,7 +53,7 @@ export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce
   {} as Record<Category, string>
 );
 
-// T3: category -> subtype options, the same 59-slug taxonomy from
+// T3: category -> subtype options, the same 63-slug taxonomy from
 // BUSINESS_STANDARDS.md's subcategory table as the web frontend's
 // `SUBCATEGORIES` (frontend/src/features/admin/constants.ts) and the T1 wire
 // contract's `subcategories` field — one source of truth per surface (app has
@@ -78,11 +78,15 @@ export const SUBCATEGORIES: Record<Category, { value: string; label: string }[]>
     { value: 'brewery', label: 'Brewery/Beer Garden' },
     { value: 'sports_bar', label: 'Sports Bar' },
     { value: 'pub', label: 'Pub' },
+    { value: 'shisha', label: 'Shisha Bar' },
+    { value: 'kafana', label: 'Kafana' },
   ],
   nightlife: [
     { value: 'nightclub', label: 'Nightclub' },
     { value: 'live_music_venue', label: 'Live Music Venue' },
     { value: 'lounge', label: 'Lounge' },
+    { value: 'shisha_lounge', label: 'Shisha Lounge' },
+    { value: 'kafana_live', label: 'Kafana with Live Music' },
   ],
   nature: [
     { value: 'hiking_trail', label: 'Hiking Trail' },

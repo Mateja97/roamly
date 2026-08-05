@@ -581,6 +581,28 @@ func (r *Activities) SetSubcategoryIfEmpty(ctx context.Context, id, subcategory 
 	return tag.RowsAffected() > 0, nil
 }
 
+// SetSubcategory sets id's subcategory unconditionally, overwriting whatever
+// is stored. The deliberate counterpart to SetSubcategoryIfEmpty above, for
+// cmd/backfillsubtype's local-keyword pass: a venue named "Kafana Moskva"
+// that Google already labelled "lounge" needs that value replaced, not
+// preserved, so the if-empty guard would make the pass a no-op on exactly
+// the rows it exists to fix.
+//
+// Safe against the race SetSubcategoryIfEmpty guards, because the value
+// written here is derived from the venue's stored name alone: a concurrent
+// sync classifying the same row computes the same answer (see
+// service.subtypeFor), so the two cannot disagree.
+func (r *Activities) SetSubcategory(ctx context.Context, id, subcategory string) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE activities SET subcategory = $1 WHERE id = $2`,
+		subcategory, id,
+	)
+	if err != nil {
+		return fmt.Errorf("setting subcategory for activity %s: %w", id, err)
+	}
+	return nil
+}
+
 // SetGooglePlaceIDIfEmpty sets id's google_place_id to placeID, but only if
 // the stored value is still empty — the write-side half of
 // cmd/backfillgoogleplaceid (T2)'s "never overwrites an id a sync already

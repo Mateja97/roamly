@@ -1394,6 +1394,39 @@ func TestSetSubcategoryIfEmpty_WritesOnlyWhenStillEmpty(t *testing.T) {
 	}
 }
 
+// TestSetSubcategory_OverwritesNonEmpty is the difference from
+// SetSubcategoryIfEmpty: the shisha/kafana backfill has to replace a wrong
+// subtype Google already wrote, not just fill a blank one.
+func TestSetSubcategory_OverwritesNonEmpty(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	wrong, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		Title: "Kafana Moskva", Category: activitiessvc.CategoryNightlife,
+		Lat: 44.8, Lng: 20.4, Country: "Serbia", City: "Belgrade",
+		Rating: 4.5, Status: activitiessvc.StatusPublished,
+		Source: "google_places", SourceURL: "https://places/kafana-moskva", ExternalID: "kafana-moskva-1",
+		Subcategory: "lounge",
+	})
+	if err != nil {
+		t.Fatalf("seeding wrong-subtype row: %v", err)
+	}
+	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, wrong.ID) })
+
+	if err := repo.SetSubcategory(ctx, wrong.ID, "kafana_live"); err != nil {
+		t.Fatalf("SetSubcategory: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, wrong.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Subcategory != "kafana_live" {
+		t.Errorf("subcategory = %q, want kafana_live", got.Subcategory)
+	}
+}
+
 // TestUpsertPersistsGooglePlaceID proves Upsert's write side of
 // tripadvisor-google-review-fallback T1: a Tripadvisor ingest carrying a
 // resolved GooglePlaceID stores it, both on first insert and through a

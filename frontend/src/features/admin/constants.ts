@@ -19,7 +19,7 @@ export const CATEGORY_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Category -> subtype options (T2), the single source-of-truth taxonomy
- * from BUSINESS_STANDARDS.md's subcategory table — same 59 slugs/labels as
+ * from BUSINESS_STANDARDS.md's subcategory table — same 63 slugs/labels as
  * `backend/shared/models/activitiessvc.Subcategories`. Backs both the admin
  * editor's dependent Subcategory select and the user-facing subtype filter
  * chips. */
@@ -42,11 +42,15 @@ export const SUBCATEGORIES: Record<string, { value: string; label: string }[]> =
     { value: 'brewery', label: 'Brewery/Beer Garden' },
     { value: 'sports_bar', label: 'Sports Bar' },
     { value: 'pub', label: 'Pub' },
+    { value: 'shisha', label: 'Shisha Bar' },
+    { value: 'kafana', label: 'Kafana' },
   ],
   nightlife: [
     { value: 'nightclub', label: 'Nightclub' },
     { value: 'live_music_venue', label: 'Live Music Venue' },
     { value: 'lounge', label: 'Lounge' },
+    { value: 'shisha_lounge', label: 'Shisha Lounge' },
+    { value: 'kafana_live', label: 'Kafana with Live Music' },
   ],
   nature: [
     { value: 'hiking_trail', label: 'Hiking Trail' },

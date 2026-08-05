@@ -19,10 +19,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"activities-service/internal/namemap"
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
 	"activities-service/internal/tripadvisor"
-	"activities-service/internal/tripadvisormap"
 
 	"backend/shared/contentkind"
 	sharederrors "backend/shared/errors"
@@ -41,7 +41,7 @@ type repository interface {
 	// (source_url, category) — T4's Restaurants/Cafés/Bars lazy sync (see
 	// syncTripadvisorAnchor) reuses the same upsert the batch Google
 	// pipeline already relies on. Each source_url now maps to exactly one
-	// category, decided by tripadvisormap.Category before Upsert is called.
+	// category, decided by namemap.Category before Upsert is called.
 	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
 	// SyncedAt reports the last successful sync time for
 	// (provider, cellKey, category, subtype), and whether one has happened.
@@ -1383,7 +1383,7 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 // candidate, syncVenueConcurrency at a time. Candidates are gated and
 // classified from the summary alone, before any per-venue call:
 // hasFoodDrinkSignal on the summary's WebURL drops the non-food noise
-// Terra's unfiltered search returns, and tripadvisormap.Category on the
+// Terra's unfiltered search returns, and namemap.Category on the
 // summary's name — Terra gives no per-venue category signal (see that
 // function's doc) — decides the venue's one Roamly category, never the
 // caller's due-category loop. A candidate only gets a repo.Upsert when its
@@ -1430,7 +1430,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			continue
 		}
 		food++
-		category := tripadvisormap.Category(s.Name)
+		category := namemap.Category(s.Name)
 		if !slices.Contains(categories, category) {
 			continue
 		}
@@ -1544,7 +1544,7 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // activities row regardless of source, so it works unchanged for the
 // legacy firecrawl rows T3 also backfills, not just Tripadvisor ones.
 // Tripadvisor's own categories[] field never
-// carries a subtype-capable tag on our entitlement (see tripadvisormap's
+// carries a subtype-capable tag on our entitlement (see namemap's
 // package doc), so this resolves the venue by name via a Places Text Search
 // tightly bounded to its own coordinates (tripadvisorSubtypeRadiusKM) and
 // classifies the single match's Google primaryType/types through
@@ -1558,15 +1558,21 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // against exactly that: the candidate's own returned name must plausibly be
 // the same venue, or it's rejected same as no match at all.
 //
-// Returns "", "" — never a guess — when: no Places client is configured
-// (a.places == nil); name is empty or lat/lng is the zero value (nothing
-// to search on, and a call would waste a Places request); the search
-// errors (logged, the sync itself must not fail); the search finds no
-// candidate; it finds more than one, which means the tight radius still
-// couldn't disambiguate a same/similar-named venue and picking either
-// would be a guess; or the sole candidate's own name doesn't plausibly
-// match, meaning it's a different venue that merely happened to be the
-// only result in the box.
+// Returns the name-derived subtype (namemap.Subtype, often "") and an empty
+// place id when: no Places client is configured (a.places == nil); name is
+// empty or lat/lng is the zero value; the search errors (logged, the sync
+// itself must not fail); the search finds no candidate; it finds more than
+// one, which means the tight radius still couldn't disambiguate a
+// same/similar-named venue; or the sole candidate's own name doesn't
+// plausibly match. Google finding nothing is not the same as the venue
+// having no subtype — it resolves nothing at all for roughly a third of
+// Bars — so the name fallback applies to every one of those paths. The
+// subtype is still never a guess: namemap.Subtype returns "" unless a
+// curated keyword matches.
+//
+// When Google does match, its answer wins unless namemap flagged a local
+// venue-type keyword (shisha, kafana), which overrides it — see
+// namemap.subtypeRules for why exactly those two.
 //
 // The second return value is the matched candidate's own Google place id
 // (tripadvisor-google-review-fallback T1) — the same SearchTextInArea hit
@@ -1575,24 +1581,22 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // activitiessvc.IngestActivity.GooglePlaceID so a later live Place Details
 // lookup (T3) can reuse it.
 func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string) {
-	if a.places == nil {
-		return "", ""
-	}
-	if name == "" || (lat == 0 && lng == 0) {
-		return "", ""
+	nameSlug, override := namemap.Subtype(category, name)
+	if a.places == nil || name == "" || (lat == 0 && lng == 0) {
+		return nameSlug, ""
 	}
 	found, err := a.places.SearchTextInArea(ctx, name, lat, lng, tripadvisorSubtypeRadiusKM, places.NearbyFieldMask)
 	if err != nil {
 		slog.Warn("tripadvisor subtype resolve failed", "location_id", locationID, "name", name, "error", err)
-		return "", ""
+		return nameSlug, ""
 	}
-	if len(found) != 1 {
-		return "", ""
+	if len(found) != 1 || !venueNameMatches(name, found[0].DisplayName.Text) {
+		return nameSlug, ""
 	}
-	if !venueNameMatches(name, found[0].DisplayName.Text) {
-		return "", ""
+	if googleSlug := placesmap.Subtype(category, found[0].PrimaryType, found[0].Types); !override && googleSlug != "" {
+		return googleSlug, found[0].ID
 	}
-	return placesmap.Subtype(category, found[0].PrimaryType, found[0].Types), found[0].ID
+	return nameSlug, found[0].ID
 }
 
 // venueNameMatches reports whether candidateName (a Places Text Search
