@@ -388,18 +388,25 @@ var errLookupFailed = errors.New("price lookup failed")
 // resolver already classified must not cost a Tripadvisor request (the
 // load-bearing negative — asserting the lookup count, not merely the happy
 // path), and a row it could not classify gets one more chance from the
-// price tier.
+// price tier. Row 1 is deliberately Restaurants + tripadvisor + resolved —
+// not Bars — so this exercises the "already resolved, skip the lookup"
+// laziness path itself, independent of the category/source gates row 2's
+// category alone would already satisfy (see TestRunBackfill_PriceOnlyFor*
+// for those gates in isolation).
 func TestRunBackfill_PriceOnlyWhenUnresolved(t *testing.T) {
 	rows := []activitiessvc.Activity{
-		{ID: "1", Title: "Jackson Pub", Category: activitiessvc.CategoryBars, Source: "tripadvisor", ExternalID: "ta-1"},
+		{ID: "1", Title: "Restoran Zlatnik", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "ta-1"},
 		{ID: "2", Title: "Restoran Da Giorgio", Category: activitiessvc.CategoryRestaurants, Source: "tripadvisor", ExternalID: "ta-2"},
 	}
-	resolver := &fakeResolver{byID: map[string]string{"ta-1": "pub", "ta-2": ""}}
+	resolver := &fakeResolver{byID: map[string]string{"ta-1": "fine_dining", "ta-2": ""}}
 	prices := &fakePriceLookup{byID: map[string]string{"ta-2": "Mid Range"}}
 	setter := &fakeSetter{}
 
 	result := runBackfill(context.Background(), resolver, setter, prices, rows, 0, func() {})
 
+	if setter.writes["1"] != "fine_dining" {
+		t.Errorf("row 1 = %q, want fine_dining from the resolver", setter.writes["1"])
+	}
 	if setter.writes["2"] != "casual_dining" {
 		t.Errorf("row 2 = %q, want casual_dining from the price tier", setter.writes["2"])
 	}
