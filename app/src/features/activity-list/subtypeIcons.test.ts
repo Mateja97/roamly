@@ -7,7 +7,7 @@ describe('subtypeIcons', () => {
     expect(mapped).toEqual(canonical);
   });
 
-  it('covers all 59 subtypes across the 13-category taxonomy', () => {
-    expect(ALL_SUBTYPE_SLUGS).toHaveLength(59);
+  it('covers all 63 subtypes across the 13-category taxonomy', () => {
+    expect(ALL_SUBTYPE_SLUGS).toHaveLength(63);
   });
 });
