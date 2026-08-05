@@ -65,8 +65,8 @@ func (c Category) Valid() bool {
 var Subcategories = map[Category][]string{
 	CategoryRestaurants:      {"fine_dining", "casual_dining", "fast_casual", "street_food", "bakery_dessert"},
 	CategoryCafes:            {"coffee_shop", "tea_house", "bakery_cafe"},
-	CategoryBars:             {"cocktail_bar", "wine_bar", "brewery", "sports_bar", "pub"},
-	CategoryNightlife:        {"nightclub", "live_music_venue", "lounge"},
+	CategoryBars:             {"cocktail_bar", "wine_bar", "brewery", "sports_bar", "pub", "shisha", "kafana"},
+	CategoryNightlife:        {"nightclub", "live_music_venue", "lounge", "shisha_lounge", "kafana_live"},
 	CategoryNature:           {"hiking_trail", "park", "beach", "botanical_garden", "viewpoint"},
 	CategorySport:            {"gym_fitness", "climbing_gym", "swimming_pool", "sports_court", "golf_course", "extreme_sports"},
 	CategoryKids:             {"playground", "indoor_play_center", "zoo_aquarium", "amusement_park", "kids_museum"},

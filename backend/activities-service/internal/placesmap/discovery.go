@@ -101,12 +101,27 @@ var DiscoveryRows = []DiscoveryRow{
 	{activitiessvc.CategoryBars, "brewery", []string{"brewery", "beer_garden"}, ""},
 	{activitiessvc.CategoryBars, "sports_bar", []string{"sports_bar"}, ""},
 	{activitiessvc.CategoryBars, "pub", []string{"pub", "irish_pub"}, ""},
-	{activitiessvc.CategoryBars, "", []string{"bar", "hookah_bar"}, ""},
+	// shisha and kafana are filled by namemap.Subtype, not by a Google type.
+	// hookah_bar is the precise Table A type for these venues, but a type may
+	// appear on exactly one row and Bars never runs discovery, so it lives on
+	// the Nightlife shisha_lounge row below where it actually finds venues.
+	// These two TextQuery rows therefore never run and never yield — expected
+	// coverage-test bookkeeping, same as the street_food row above.
+	{activitiessvc.CategoryBars, "shisha", nil, "shisha bar"},
+	{activitiessvc.CategoryBars, "kafana", nil, "kafana"},
+	{activitiessvc.CategoryBars, "", []string{"bar"}, ""},
 
 	// Nightlife
 	{activitiessvc.CategoryNightlife, "nightclub", []string{"night_club"}, ""},
 	{activitiessvc.CategoryNightlife, "live_music_venue", []string{"concert_hall", "amphitheatre"}, ""},
 	{activitiessvc.CategoryNightlife, "lounge", nil, "cocktail lounge"},
+	// Verified live 2026-08-05: searchNearby on includedTypes ["hookah_bar"]
+	// in Belgrade returned three exact hits, every one with primaryType
+	// hookah_bar, none of them already stored. Nightlife is in
+	// GoogleCategories, so unlike the Bars shisha row this one runs forward
+	// and discovers new venues rather than only labelling known ones.
+	{activitiessvc.CategoryNightlife, "shisha_lounge", []string{"hookah_bar"}, ""},
+	{activitiessvc.CategoryNightlife, "kafana_live", nil, "kafana"},
 	{activitiessvc.CategoryNightlife, "", []string{"karaoke", "comedy_club", "dance_hall"}, ""},
 
 	// Nature
