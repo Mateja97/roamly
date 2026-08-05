@@ -96,11 +96,14 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if details.Tripadvisor.Cuisine != "Fine Dining" {
 		t.Errorf("details.Tripadvisor.Cuisine = %q, want Fine Dining", details.Tripadvisor.Cuisine)
 	}
-	// No Places client is configured on this svc (see ResolveTripadvisorSubtype),
-	// so subtype resolution is a no-op here; TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType
-	// below covers the resolved case.
-	if repo.gotUpsert.Subcategory != "" {
-		t.Errorf("gotUpsert.Subcategory = %q, want empty (no places client configured to resolve one)", repo.gotUpsert.Subcategory)
+	// No Places client is configured on this svc, so Google's type and the
+	// name keywords both yield nothing; but the fixture's PriceLevel ("Mid
+	// Range") is still threaded through to ResolveTripadvisorSubtype's price
+	// fallback (T2), so the price tier alone resolves this to casual_dining.
+	// TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType
+	// below covers the Google-resolved case, which wins over price.
+	if repo.gotUpsert.Subcategory != "casual_dining" {
+		t.Errorf("gotUpsert.Subcategory = %q, want casual_dining (from the Mid Range price tier)", repo.gotUpsert.Subcategory)
 	}
 	wantSubratings := &activitiessvc.TripadvisorSubratings{
 		Food:       &activitiessvc.TripadvisorAspectRating{Rating: 4.5, IconURL: "https://ta/food.svg"},
@@ -728,7 +731,7 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			gp := &fakeGooglePlaces{nearbyOut: tt.places, nearbyErr: tt.err}
 			svc := New(&fakeRepo{}).WithPlaces(gp)
-			got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111")
+			got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), tt.category, "Some Venue", 44.81, 20.46, "111", "")
 			if got != tt.want {
 				t.Errorf("ResolveTripadvisorSubtype(...) subtype = %q, want %q", got, tt.want)
 			}
@@ -750,7 +753,7 @@ func TestActivities_ResolveTripadvisorSubtype(t *testing.T) {
 // nil-safe degrade — no Places client attached must never panic or block.
 func TestActivities_ResolveTripadvisorSubtype_NoClientConfigured(t *testing.T) {
 	svc := New(&fakeRepo{})
-	got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111")
+	got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "x", 0, 0, "111", "")
 	if got != "" || gotPlaceID != "" {
 		t.Errorf("ResolveTripadvisorSubtype() = (%q, %q), want empty subtype and place id with no places client configured", got, gotPlaceID)
 	}
@@ -772,7 +775,7 @@ func TestActivities_ResolveTripadvisorSubtype_NoCoordsOrName(t *testing.T) {
 	for _, tt := range tests {
 		gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "place-1", PrimaryType: "wine_bar", DisplayName: displayName(tt.name)}}}
 		svc := New(&fakeRepo{}).WithPlaces(gp)
-		got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111")
+		got, gotPlaceID := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryBars, tt.name, tt.lat, tt.lng, "111", "")
 		if got != "" || gotPlaceID != "" {
 			t.Errorf("ResolveTripadvisorSubtype(name=%q, lat=%v, lng=%v) = (%q, %q), want empty subtype and place id", tt.name, tt.lat, tt.lng, got, gotPlaceID)
 		}
