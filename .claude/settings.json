@@ -33,7 +33,19 @@
       "mcp__Claude_Browser__preview_list",
       "mcp__tripadvisor-content__search-endpoints",
       "mcp__linear-server__get_issue",
-      "mcp__claude-in-chrome__tabs_context_mcp"
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__tripadvisor-content__list-endpoints",
+      "mcp__tripadvisor-content__list-specs",
+      "mcp__mobbin__search_flows",
+      "mcp__mobbin__search_sections",
+      "mcp__linear-server__list_teams",
+      "mcp__linear-server__list_projects",
+      "mcp__linear-server__list_issue_statuses",
+      "mcp__linear-server__list_comments",
+      "mcp__linear-server__get_document",
+      "mcp__Claude_Browser__resize_window",
+      "mcp__Claude_Preview__preview_list",
+      "mcp__terminal__read_terminal"
     ],
     "defaultMode": "auto"
   }
