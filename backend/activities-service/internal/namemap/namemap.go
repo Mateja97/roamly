@@ -91,19 +91,25 @@ type subtypeRule struct {
 // maps š->s and "šišanje" is Serbian for haircut, so that keyword would
 // eventually match barbershops. Do not add it.
 //
-// ponytail: the trailing \b this whole group shares is the same boundary
-// that keeps a future "sisa" keyword from matching inside "šišanje" (see
-// above), but it also means a fused compound with no word boundary inside
-// it is missed — real venues "HookahPlace Kraljevo" and "Shisharka Bar
-// Zlatibor" are shisha venues that "shisha"/"hookah" don't catch, since
-// there's no boundary between the keyword and what follows it in either
-// name. Accepted limitation, not a bug: dropping the trailing \b on just
-// those two alternatives (shisha|hookah) is the fix if that coverage is
-// ever wanted — neither is a substring of "šišanje" folded, so doing so
-// doesn't reopen the barbershop false positive above.
+// The shisha keywords match as a PREFIX — leading \b, no trailing one — so a
+// fused compound resolves: real venues "HookahPlace Kraljevo" and "Shisharka
+// Bar Zlatibor" run the keyword straight into the next syllable and were
+// missed while this group shared a trailing \b. The same shape also absorbs
+// Serbian declension without enumerating cases ("nargila/nargile/nargilu/
+// nargilom" are all just "nargil"), which is why "nargil" lost its [ae]?
+// suffix rather than growing more alternatives.
+//
+// Dropping the trailing \b does NOT reopen the barbershop false positive
+// above: folded "šišanje" is "sisanje", which starts "sisa", while the
+// keywords here are "shisha"/"sisha" — the fourth letter differs, so neither
+// can match it at any anchoring. TestSubtype pins that with both the folded
+// and the diacritic spelling; do not delete those two cases.
+//
+// The leading \b is still load-bearing and must stay: it is what keeps
+// "shisha" from matching inside "Bakshisha", also pinned by a test.
 var subtypeRules = []subtypeRule{
 	{
-		re: regexp.MustCompile(`\b(shisha|sisha|nargil[ae]?|hookah)\b`),
+		re: regexp.MustCompile(`\b(shisha|sisha|nargil|hookah)`),
 		byCategory: map[activitiessvc.Category]string{
 			activitiessvc.CategoryBars:      "shisha",
 			activitiessvc.CategoryNightlife: "shisha_lounge",
