@@ -59,3 +59,90 @@ func Category(name string) activitiessvc.Category {
 		return activitiessvc.CategoryRestaurants
 	}
 }
+
+// subtypeRule is one name-keyword rule: the pattern, the slug it yields per
+// category, and whether a match outranks a Google answer.
+//
+// byCategory doubles as the validity gate — a category absent from the map
+// simply has no slug for this rule, so a venue named "Stara Mehana" filed
+// under Culture yields "" rather than a slug Culture would reject anyway.
+type subtypeRule struct {
+	re         *regexp.Regexp
+	byCategory map[activitiessvc.Category]string
+	// override marks a local venue-type keyword whose match beats Google's
+	// own classification. See subtypeRules' doc for why only two rules
+	// carry it.
+	override bool
+}
+
+// subtypeRules is the name -> subtype table, evaluated in order, so the two
+// override rules are consulted before any generic one ("VIBE LOUNGE shisha &
+// cocktail bar" is a shisha venue, not a cocktail bar).
+//
+// Only shisha and kafana override a Google answer. Both are Serbian venue
+// types Google systematically mislabels — it returns cafe/lounge/nightclub
+// for them — and both are named unambiguously: a venue with "nargila" or
+// "kafana" in its name is that thing. Every other keyword here is a fallback
+// for when Google resolves to nothing at all, and must never outrank a real
+// Google type.
+//
+// Spellings are those attested in the live database (shisha 12, nargila 6,
+// hookah 3 venues). Bare "šiša"/"sisa" is deliberately absent: diacriticFold
+// maps š->s and "šišanje" is Serbian for haircut, so that keyword would
+// eventually match barbershops. Do not add it.
+var subtypeRules = []subtypeRule{
+	{
+		re: regexp.MustCompile(`\b(shisha|sisha|nargil[ae]?|hookah)\b`),
+		byCategory: map[activitiessvc.Category]string{
+			activitiessvc.CategoryBars:      "shisha",
+			activitiessvc.CategoryNightlife: "shisha_lounge",
+		},
+		override: true,
+	},
+	{
+		re: regexp.MustCompile(`\b(kafana|kafane|kafanica|mehana)\b`),
+		byCategory: map[activitiessvc.Category]string{
+			activitiessvc.CategoryBars:      "kafana",
+			activitiessvc.CategoryNightlife: "kafana_live",
+		},
+		override: true,
+	},
+	{
+		re:         regexp.MustCompile(`\b(pivnica|pivnice|pivara|brewery|brewpub)\b`),
+		byCategory: map[activitiessvc.Category]string{activitiessvc.CategoryBars: "brewery"},
+	},
+	{
+		re:         regexp.MustCompile(`\b(pub)\b`),
+		byCategory: map[activitiessvc.Category]string{activitiessvc.CategoryBars: "pub"},
+	},
+	{
+		re:         regexp.MustCompile(`\b(cocktail|koktel)\b`),
+		byCategory: map[activitiessvc.Category]string{activitiessvc.CategoryBars: "cocktail_bar"},
+	},
+	{
+		re:         regexp.MustCompile(`\b(wine|vinski|vinoteka)\b`),
+		byCategory: map[activitiessvc.Category]string{activitiessvc.CategoryBars: "wine_bar"},
+	},
+}
+
+// Subtype derives a subcategory slug for cat from a venue's name, and reports
+// whether the match is a local venue-type keyword that should outrank a
+// Google-derived answer (see subtypeRules).
+//
+// Returns ("", false) when no rule matches, or when the matching rule has no
+// slug for cat — never a guess, matching placesmap.Subtype's contract that ""
+// is always a valid subcategory. Case- and diacritic-insensitive, same
+// folding as Category.
+func Subtype(cat activitiessvc.Category, name string) (string, bool) {
+	folded := diacriticFold.Replace(strings.ToLower(name))
+	for _, r := range subtypeRules {
+		slug, ok := r.byCategory[cat]
+		if !ok {
+			continue
+		}
+		if r.re.MatchString(folded) {
+			return slug, r.override
+		}
+	}
+	return "", false
+}

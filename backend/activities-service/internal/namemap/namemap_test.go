@@ -49,3 +49,75 @@ func TestCategory(t *testing.T) {
 		})
 	}
 }
+
+// TestSubtype covers real venue names taken from the live database, so a
+// regression here is a regression against actual stored data rather than
+// against invented examples.
+func TestSubtype(t *testing.T) {
+	tests := []struct {
+		name         string
+		cat          activitiessvc.Category
+		venue        string
+		wantSlug     string
+		wantOverride bool
+	}{
+		// Local overrides — these beat a Google answer.
+		{"shisha, english spelling", activitiessvc.CategoryBars, "Caffe Shisha Bar Tranquila", "shisha", true},
+		{"shisha, serbian spelling nargila", activitiessvc.CategoryCafes, "Caffe Monroe & Nargila Bar", "", false},
+		{"nargila under nightlife", activitiessvc.CategoryNightlife, "Muar Lounge Nargila&Bar", "shisha_lounge", true},
+		{"hookah spelling", activitiessvc.CategoryNightlife, "Hookah House | Lounge Bar", "shisha_lounge", true},
+		{"kafana under bars", activitiessvc.CategoryBars, "Kafana Balkan", "kafana", true},
+		{"kafana under nightlife", activitiessvc.CategoryNightlife, "Kafana Moskva", "kafana_live", true},
+		{"mehana is a kafana", activitiessvc.CategoryBars, "Cadjava Mehana", "kafana", true},
+
+		// Local rules are checked before generic ones.
+		{"shisha beats cocktail in the same name", activitiessvc.CategoryNightlife, "VIBE LOUNGE shisha & cocktail bar", "shisha_lounge", true},
+
+		// Generic fallbacks — never override, so override is false.
+		{"pivnica means brewery", activitiessvc.CategoryBars, "Gradska Pivnica Terazije", "brewery", false},
+		{"brewery in english", activitiessvc.CategoryBars, "Zebraonica & Zebrew Brewery", "brewery", false},
+		{"pub", activitiessvc.CategoryBars, "Jackson Pub", "pub", false},
+
+		// Category gating: a slug is only offered where it is declared.
+		{"mehana under culture yields nothing", activitiessvc.CategoryCulture, "Stara Mehana", "", false},
+		{"kafana under sport yields nothing", activitiessvc.CategorySport, "Kafana Lovac", "", false},
+		{"pub is not a nightlife slug", activitiessvc.CategoryNightlife, "Jackson Pub", "", false},
+
+		// Case and diacritics, same contract as Category.
+		{"uppercase", activitiessvc.CategoryBars, "KAFANA JUGOSLAVIJA", "kafana", true},
+		{"diacritics folded", activitiessvc.CategoryBars, "Kafana Raskućin", "kafana", true},
+
+		// Word boundaries: no substring false positives.
+		{"pub does not match inside a word", activitiessvc.CategoryBars, "Republic Bar", "", false},
+		{"no keyword at all", activitiessvc.CategoryBars, "Gotham Bar", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			slug, override := namemap.Subtype(tt.cat, tt.venue)
+			if slug != tt.wantSlug || override != tt.wantOverride {
+				t.Errorf("Subtype(%q, %q) = (%q, %v), want (%q, %v)",
+					tt.cat, tt.venue, slug, override, tt.wantSlug, tt.wantOverride)
+			}
+		})
+	}
+}
+
+// TestSubtype_OnlyReturnsValidSlugs is a belt-and-braces guard: every slug
+// the rule table can produce must pass ValidSubcategory for the category it
+// is offered under, so a typo in the table cannot produce a slug the rest of
+// the system will reject at write time.
+func TestSubtype_OnlyReturnsValidSlugs(t *testing.T) {
+	venues := []string{
+		"Caffe Shisha Bar Tranquila", "Kafana Balkan", "Gradska Pivnica Terazije",
+		"Jackson Pub", "Monkey Cocktail Bar", "Wine Bar Vinoteka",
+	}
+	for cat := range activitiessvc.Subcategories {
+		for _, v := range venues {
+			slug, _ := namemap.Subtype(cat, v)
+			if !activitiessvc.ValidSubcategory(cat, slug) {
+				t.Errorf("Subtype(%q, %q) returned %q, which is not valid for that category", cat, v, slug)
+			}
+		}
+	}
+}
