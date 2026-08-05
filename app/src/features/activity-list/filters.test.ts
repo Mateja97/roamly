@@ -72,12 +72,12 @@ describe('buildFeedRequest', () => {
 
   it('sends max_distance_km for anywhere only when narrowed below "no limit", and only with an anchor', () => {
     const req = buildFeedRequest(
-      draft({ scope: 'anywhere', coordinates: { latitude: 1, longitude: 2 }, maxDistanceKm: 300 }),
+      draft({ scope: 'anywhere', coordinates: { latitude: 1, longitude: 2 }, maxDistanceKm: 100 }),
       []
     );
-    expect(req.max_distance_km).toBe(300);
+    expect(req.max_distance_km).toBe(100);
 
-    const noAnchor = buildFeedRequest(draft({ scope: 'anywhere', maxDistanceKm: 300 }), []);
+    const noAnchor = buildFeedRequest(draft({ scope: 'anywhere', maxDistanceKm: 100 }), []);
     expect(noAnchor.max_distance_km).toBeUndefined();
   });
 

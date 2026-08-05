@@ -10,13 +10,13 @@ import type { Scope } from '../../types/scope';
 // from here.
 export const NEARBY_RADIUS_KM = 10;
 
-// `maxDistanceKm: null` means "no limit"/"not adjustable". Nearby's range is
-// server-fixed and has no slider or chip at all, so it's always null, same
-// as anywhere's "no limit" default — a filter's first load never narrows
+// `maxDistanceKm: null` means "any distance"/"not adjustable". Nearby's range
+// is server-fixed and has no slider or chip at all, so it's always null, same
+// as anywhere's "Any" default — a filter's first load never narrows
 // results the user hasn't asked to narrow (Slider recipe's "pinned at max"
 // rule). T4: the old 100-2000km Anywhere range (`FilterSheet`'s
 // `DistanceSlider`) is gone — the Scope sheet's `scopeDraft.ts` now owns the
-// app's one canonical 5-500km range.
+// app's one canonical 7-stop distance scale.
 // `scope` param kept for call-site clarity (defaultFilters('nearby') vs
 // ('anywhere')) even though both scopes share this default value now.
 export function defaultFilters(_scope: Scope): Filters {
@@ -221,7 +221,7 @@ export function buildFeedRequest(draft: ScopeDraft, categories: Category[]): Act
   // Nearby's range is server-fixed and never sent (activities-service
   // ignores the field for that scope regardless); Anywhere only sends it
   // once an anchor exists (city or device location) and the user narrowed
-  // below the "no limit" top stop.
+  // off the "Any" top stop.
   if (draft.scope === 'anywhere' && anywhereHasAnchor(draft) && draft.maxDistanceKm !== null) {
     request.max_distance_km = draft.maxDistanceKm;
   }

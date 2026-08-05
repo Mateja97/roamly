@@ -206,7 +206,7 @@ describe('ScopeSheet', () => {
       expect(screen.getByText('1 selected')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Remove Lisbon, Portugal filter' })).toBeTruthy();
       expect(screen.getByText('Max distance')).toBeTruthy();
-      expect(screen.getAllByText('No limit')).toHaveLength(2);
+      expect(screen.getByText('Any distance')).toBeTruthy();
     });
 
     it('shows the slider once a device-location anchor is present, with no city', async () => {
@@ -227,14 +227,14 @@ describe('ScopeSheet', () => {
       render(
         <ScopeSheet
           visible
-          initialDraft={{ ...defaultScopeDraft('anywhere', { latitude: 1, longitude: 2 }), maxDistanceKm: 250 }}
+          initialDraft={{ ...defaultScopeDraft('anywhere', { latitude: 1, longitude: 2 }), maxDistanceKm: 100 }}
           onQuery={jest.fn().mockResolvedValue({ status: 'success', activities: [] })}
           onApply={jest.fn()}
           onClose={jest.fn()}
         />
       );
       await flush();
-      expect(screen.getByText('Within 250 km')).toBeTruthy();
+      expect(screen.getByText('Within 100 km')).toBeTruthy();
     });
   });
 
@@ -397,8 +397,8 @@ describe('ScopeSheet', () => {
       expect(screen.getByText('0 selected')).toBeTruthy();
       expect(screen.getByRole('button', { name: '4.5+' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: '4.5+, selected' })).toBeNull();
-      // Distance slider still shown (device coordinates survive Reset) at "No limit".
-      expect(screen.getAllByText('No limit')).toHaveLength(2);
+      // Distance slider still shown (device coordinates survive Reset) at "Any".
+      expect(screen.getByText('Any distance')).toBeTruthy();
     });
   });
 });
