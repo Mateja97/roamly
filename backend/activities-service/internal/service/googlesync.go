@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"activities-service/internal/namemap"
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
 
@@ -494,9 +495,26 @@ func toIngest(row placesmap.DiscoveryRow, p placesmap.Place, photos []activities
 // order-independent. The row's own subtype is the fallback for places whose
 // primaryType maps to nothing — the row is still what makes an unmappable
 // place land in the right bucket.
+//
+// A local venue-type keyword in the place's own name (namemap.Subtype's
+// override result) outranks all of the above: Google systematically labels
+// Serbian shisha bars and kafanas as cafe/lounge/nightclub, and the name is
+// the more accurate signal. A non-override keyword is the last resort before
+// the row's own subtype, so it can only fill what Google left empty.
+//
+// This function must stay deterministic for a given (row, place): Upsert
+// overwrites subcategory unconditionally, so a re-sync recomputes this and
+// would otherwise revert cmd/backfillsubtype's work.
 func subtypeFor(row placesmap.DiscoveryRow, p placesmap.Place) string {
+	nameSlug, override := namemap.Subtype(row.Category, p.DisplayName.Text)
+	if override {
+		return nameSlug
+	}
 	if sub := placesmap.Subtype(row.Category, p.PrimaryType, p.Types); sub != "" {
 		return sub
+	}
+	if nameSlug != "" {
+		return nameSlug
 	}
 	return row.Subtype
 }

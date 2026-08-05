@@ -762,3 +762,72 @@ func TestSyncGoogleIfNeeded_SaturatedSemaphoreDropsWithoutBlockingCaller(t *test
 		}
 	}
 }
+
+// TestSubtypeFor_NameOverride pins the three-way precedence subtypeFor now
+// implements: a local keyword beats Google, Google beats a generic keyword,
+// and a generic keyword beats the row's own fallback subtype.
+func TestSubtypeFor_NameOverride(t *testing.T) {
+	tests := []struct {
+		name string
+		row  placesmap.DiscoveryRow
+		p    placesmap.Place
+		want string
+	}{
+		{
+			name: "local keyword overrides a valid google answer",
+			row:  placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "lounge"},
+			p:    placeNamed("Hookah House | Lounge Bar", "night_club", nil),
+			want: "shisha_lounge",
+		},
+		{
+			name: "google wins when no local keyword matches",
+			row:  placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "lounge"},
+			p:    placeNamed("Club Drugstore", "night_club", nil),
+			want: "nightclub",
+		},
+		{
+			name: "row fallback when neither google nor a keyword resolves",
+			row:  placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "lounge"},
+			p:    placeNamed("Some Venue", "", nil),
+			want: "lounge",
+		},
+		{
+			name: "kafana overrides google's nightclub",
+			row:  placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "lounge"},
+			p:    placeNamed("Kafana Moskva", "night_club", nil),
+			want: "kafana_live",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := subtypeFor(tt.row, tt.p); got != tt.want {
+				t.Errorf("subtypeFor() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSubtypeFor_Idempotent guards the C4 hazard: Upsert overwrites
+// subcategory unconditionally, so classifying a venue twice must produce the
+// same answer or every re-sync would undo the backfill.
+func TestSubtypeFor_Idempotent(t *testing.T) {
+	row := placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "lounge"}
+	p := placeNamed("Muar Lounge Nargila&Bar", "night_club", nil)
+	first := subtypeFor(row, p)
+	if second := subtypeFor(row, p); first != second {
+		t.Errorf("subtypeFor not idempotent: %q then %q", first, second)
+	}
+	if first != "shisha_lounge" {
+		t.Errorf("subtypeFor() = %q, want shisha_lounge", first)
+	}
+}
+
+// placeNamed builds the minimal placesmap.Place the subtype tests need.
+func placeNamed(name, primaryType string, types []string) placesmap.Place {
+	var p placesmap.Place
+	p.DisplayName.Text = name
+	p.PrimaryType = primaryType
+	p.Types = types
+	return p
+}
