@@ -66,8 +66,11 @@ export function UniqueSection({ data }: UniqueSectionProps) {
 
       {data.shape === 'pills' && (
         <View style={styles.pillsRow}>
-          {data.items.map((item) => (
-            <View key={item} style={styles.pill}>
+          {/* ponytail: keyed by index — these are free-text values from
+              `details` and can legitimately repeat (two "Espresso" rows),
+              and the lists never reorder. */}
+          {data.items.map((item, i) => (
+            <View key={i} style={styles.pill}>
               <Text style={styles.pillLabel}>{item}</Text>
             </View>
           ))}
@@ -76,9 +79,9 @@ export function UniqueSection({ data }: UniqueSectionProps) {
 
       {data.shape === 'checklist' && (
         <View style={styles.checklist}>
-          {data.items.map((item) => (
+          {data.items.map((item, i) => (
             <View
-              key={item}
+              key={i}
               style={styles.checkRow}
               // Polarity lives only in the icon glyph+color otherwise, which
               // assistive tech can't read — the two-polarity checklist
@@ -108,9 +111,9 @@ export function UniqueSection({ data }: UniqueSectionProps) {
               for Tours & Experiences' what's-not-included list — every other
               checklist consumer never sets `crossItems`, so this simply
               never renders for them. */}
-          {data.crossItems?.map((item) => (
+          {data.crossItems?.map((item, i) => (
             <View
-              key={`x-${item}`}
+              key={`x-${i}`}
               style={styles.checkRow}
               accessible
               accessibilityLabel={`Not included: ${item}`}
@@ -124,10 +127,10 @@ export function UniqueSection({ data }: UniqueSectionProps) {
 
       {data.shape === 'icongrid' && (
         <View style={styles.grid}>
-          {data.items.map((item) => {
+          {data.items.map((item, i) => {
             const Icon = facilityIcon(item);
             return (
-              <View key={item} style={styles.gridCell}>
+              <View key={i} style={styles.gridCell}>
                 <Icon
                   size={20}
                   color={colors.primary}

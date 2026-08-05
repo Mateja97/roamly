@@ -19,6 +19,22 @@ describe('UniqueSection', () => {
     expect(screen.getByText('Negroni')).toBeTruthy();
   });
 
+  // `details` values are free text — an activity can legitimately carry two
+  // identical entries (a real "Cevapi" x3 in the Belgrade data). Keying by
+  // the string dropped rows and logged React's duplicate-key error.
+  it('renders every item when two carry the same text', () => {
+    const data: UniqueSectionData = {
+      shape: 'pills',
+      heading: 'Popular dishes',
+      items: ['Cevapi', 'Cevapi', 'Cevapi'],
+    };
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    render(<UniqueSection data={data} />);
+    expect(screen.getAllByText('Cevapi')).toHaveLength(3);
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
   it('shape C (checklist): renders each item', () => {
     const data: UniqueSectionData = {
       shape: 'checklist',
