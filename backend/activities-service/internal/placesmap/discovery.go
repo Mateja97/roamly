@@ -121,6 +121,13 @@ var DiscoveryRows = []DiscoveryRow{
 	// GoogleCategories, so unlike the Bars shisha row this one runs forward
 	// and discovers new venues rather than only labelling known ones.
 	{activitiessvc.CategoryNightlife, "shisha_lounge", []string{"hookah_bar"}, ""},
+	// This TextQuery row runs forward in every Google-synced cell worldwide,
+	// not just Serbia — searchText "kafana" is a fuzzy match with no locale
+	// gate. When a returned venue's primaryType maps to no subtype, subtypeFor
+	// falls back to row.Subtype (see subtypeFor's doc), which can stamp
+	// "kafana_live" on a non-Serbian venue this row happened to return.
+	// Same accepted failure mode as the "lounge" row above (495 rows) — ships
+	// anyway, but a future reader should know the fallback isn't precise here.
 	{activitiessvc.CategoryNightlife, "kafana_live", nil, "kafana"},
 	{activitiessvc.CategoryNightlife, "", []string{"karaoke", "comedy_club", "dance_hall"}, ""},
 

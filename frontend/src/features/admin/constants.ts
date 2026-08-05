@@ -19,7 +19,7 @@ export const CATEGORY_OPTIONS: { value: string; label: string }[] = [
 ];
 
 /** Category -> subtype options (T2), the single source-of-truth taxonomy
- * from BUSINESS_STANDARDS.md's subcategory table — same 59 slugs/labels as
+ * from BUSINESS_STANDARDS.md's subcategory table — same 63 slugs/labels as
  * `backend/shared/models/activitiessvc.Subcategories`. Backs both the admin
  * editor's dependent Subcategory select and the user-facing subtype filter
  * chips. */

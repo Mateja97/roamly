@@ -78,13 +78,17 @@ actually be run for the filter fix to reach existing data:
 
 `-dry-run` (default `false`) reports the before-counts by source/category and
 writes nothing — run this first to see how many rows are candidates.
-`-limit N` (default `0`, no cap) stops after processing `N` rows, so a run
-can be staged across multiple invocations against a tight daily Places quota;
-re-running with no `-limit` (or a higher one) picks up exactly where the last
-run left off, since the read filter (`subcategory = ''`) and the write guard
-(`SetSubcategoryIfEmpty`) are the same condition. `google_places` rows are
-touched only when the venue's name carries a local venue-type keyword
-(shisha, kafana) — see the tool's package doc and `keepCandidates` for why.
+`-limit N` (default `0`, no cap) caps a run at **at most N Places calls**,
+not N rows of permanent progress: rows whose name carries a local
+venue-type keyword (shisha, kafana) resolve from the stored name alone, no
+Places call, and are re-selected as candidates on every run regardless of
+source or current subcategory (see the tool's package doc and
+`keepCandidates`), so they never leave the candidate set and consume
+`-limit` budget on every staged invocation at zero Places cost. Every other
+row follows the resume-by-emptiness rule: the read filter
+(`subcategory = ''`) and the write guard (`SetSubcategoryIfEmpty`) are the
+same condition, so re-running with no `-limit` (or a higher one) picks up
+where the last run left off for those rows.
 Capture the printed before/after table into `engineering-notes.md` once run
 for real.
 

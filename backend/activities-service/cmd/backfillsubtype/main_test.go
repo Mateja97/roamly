@@ -15,7 +15,7 @@ import (
 
 // fakeLister paginates a fixed in-memory activity set, honoring
 // filter.Status/Limit/Offset the same way repository.Activities' real List
-// does — enough to exercise emptySubtypeRows' own pagination/filter loop
+// does — enough to exercise candidateRows' own pagination/filter loop
 // without a real DB, same pattern as cmd/backfilltripadvisor's fakeLister.
 type fakeLister struct {
 	all []activitiessvc.Activity
@@ -52,9 +52,9 @@ func TestEmptySubtypeRows_FiltersBySourceStatusAndEmptySubcategory(t *testing.T)
 		{ID: "5", Source: "tripadvisor", Subcategory: "", Status: activitiessvc.StatusDraft},
 	}}
 
-	got, err := emptySubtypeRows(context.Background(), lister, listPageSize)
+	got, err := candidateRows(context.Background(), lister, listPageSize)
 	if err != nil {
-		t.Fatalf("emptySubtypeRows: %v", err)
+		t.Fatalf("candidateRows: %v", err)
 	}
 	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "2" {
 		t.Fatalf("got %+v, want rows 1 and 2 only", got)
@@ -72,9 +72,9 @@ func TestEmptySubtypeRows_PagesAcrossMultiplePages(t *testing.T) {
 	}
 	lister := &fakeLister{all: all}
 
-	got, err := emptySubtypeRows(context.Background(), lister, 2)
+	got, err := candidateRows(context.Background(), lister, 2)
 	if err != nil {
-		t.Fatalf("emptySubtypeRows: %v", err)
+		t.Fatalf("candidateRows: %v", err)
 	}
 	if len(got) != 5 {
 		t.Fatalf("got %d rows, want all 5 across multiple pages", len(got))
@@ -82,9 +82,9 @@ func TestEmptySubtypeRows_PagesAcrossMultiplePages(t *testing.T) {
 }
 
 func TestEmptySubtypeRows_EmptyCatalogReturnsNilNotError(t *testing.T) {
-	got, err := emptySubtypeRows(context.Background(), &fakeLister{}, listPageSize)
+	got, err := candidateRows(context.Background(), &fakeLister{}, listPageSize)
 	if err != nil {
-		t.Fatalf("emptySubtypeRows: %v", err)
+		t.Fatalf("candidateRows: %v", err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("got %+v, want empty", got)

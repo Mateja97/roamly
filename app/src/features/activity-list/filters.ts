@@ -53,7 +53,7 @@ export const CATEGORY_LABELS: Record<Category, string> = CATEGORY_OPTIONS.reduce
   {} as Record<Category, string>
 );
 
-// T3: category -> subtype options, the same 59-slug taxonomy from
+// T3: category -> subtype options, the same 63-slug taxonomy from
 // BUSINESS_STANDARDS.md's subcategory table as the web frontend's
 // `SUBCATEGORIES` (frontend/src/features/admin/constants.ts) and the T1 wire
 // contract's `subcategories` field — one source of truth per surface (app has

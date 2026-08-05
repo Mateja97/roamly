@@ -11,7 +11,7 @@
 // discovery row (see placesmap.DiscoveryRows), not a defect.
 //
 // Sequential by design, not pool-of-goroutines like the live sync
-// (syncVenueConcurrency): this is a one-time pass over ~210 rows, not a
+// (syncVenueConcurrency): this is a one-time pass over ~331 rows, not a
 // repeating hot path, so a plain loop with a fixed pace between Places
 // calls (see backfillPace) is the whole rate-limiting story — no new
 // limiter type earns its keep at this volume.
@@ -20,9 +20,15 @@
 // repository.SetSubcategoryIfEmpty, not batched into one transaction: a
 // mid-run failure (quota exhausted, network error) leaves every
 // already-classified row committed, and simply re-running the tool picks up
-// only whatever is still empty — the WHERE subcategory = ” on both the
-// read (this file) and the write (SetSubcategoryIfEmpty) side is the entire
-// resume mechanism, no checkpoint file needed.
+// only whatever is still empty — the WHERE subcategory = ” on the read
+// (this file) and the write (SetSubcategoryIfEmpty) side is the resume
+// mechanism for every *non-override* row, no checkpoint file needed.
+// Override rows (namemap.Subtype's local shisha/kafana keyword match) sit
+// outside that mechanism: keepCandidates re-selects and rewrites them on
+// every single run, regardless of source or current subcategory. That's
+// fine, not a resume bug — a name match is idempotent (the same name
+// always yields the same slug) and costs zero Places calls, so redoing one
+// on every invocation wastes nothing but a write.
 //
 // Live-writing, but a build/maintenance-time tool in the same sense as
 // cmd/backfilltripadvisor: never wired into activities-service's own
@@ -89,7 +95,7 @@ func main() {
 	defer pool.Close()
 	repo := repository.New(pool)
 
-	rows, err := emptySubtypeRows(ctx, repo, listPageSize)
+	rows, err := candidateRows(ctx, repo, listPageSize)
 	if err != nil {
 		logger.Error("listing rows", "error", err)
 		os.Exit(1)
@@ -120,15 +126,13 @@ type activityLister interface {
 	List(ctx context.Context, filter activitiessvc.ListFilter) (activitiessvc.ListResult, error)
 }
 
-// emptySubtypeRows pages through every published row (List has no
+// candidateRows pages through every published row (List has no
 // Source/Subcategory filter of its own — narrowing further isn't worth
 // adding one to the shared admin query contract for this one-off need,
 // same reasoning as cmd/backfilltripadvisor's tripadvisorSourcedRows),
 // accumulates them all, then applies keepCandidates to select the ones this
-// tool actually classifies. Despite the name (kept for the small diff off
-// the original T3 tool), it no longer selects only empty-subtype rows — see
-// keepCandidates for the current selection rule.
-func emptySubtypeRows(ctx context.Context, repo activityLister, pageSize int) ([]activitiessvc.Activity, error) {
+// tool actually classifies.
+func candidateRows(ctx context.Context, repo activityLister, pageSize int) ([]activitiessvc.Activity, error) {
 	var all []activitiessvc.Activity
 	offset := 0
 	for {
