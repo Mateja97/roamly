@@ -1,9 +1,9 @@
-package tripadvisormap_test
+package namemap_test
 
 import (
 	"testing"
 
-	"activities-service/internal/tripadvisormap"
+	"activities-service/internal/namemap"
 
 	"backend/shared/models/activitiessvc"
 )
@@ -43,7 +43,7 @@ func TestCategory(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tripadvisormap.Category(tt.venue); got != tt.want {
+			if got := namemap.Category(tt.venue); got != tt.want {
 				t.Errorf("Category(%q) = %q, want %q", tt.venue, got, tt.want)
 			}
 		})

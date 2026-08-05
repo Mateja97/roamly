@@ -186,7 +186,7 @@ func TestActivities_Query_TripadvisorSync_NonTripadvisorCategoryNeverSyncs(t *te
 func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsOneSearchOneRow(t *testing.T) {
 	// Restaurants, Cafés and Bars are all due for the one anchor here. Terra
 	// has no per-category search distinction, so a NearbySearch(RESTAURANT)
-	// covers all three — but the venue's name (tripadvisormap.Category)
+	// covers all three — but the venue's name (namemap.Category)
 	// decides its one true category, so it gets exactly one Upsert, not one
 	// per due category.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
@@ -217,7 +217,7 @@ func TestActivities_Query_TripadvisorSync_OneVenueOneRowInvariant(t *testing.T) 
 	// The core bug fix: before, a Restaurants sync and a Bars sync for the
 	// same anchor each upserted the same venue under their own category, so
 	// one real-world venue produced two rows with the same source_url. Now
-	// tripadvisormap.Category derives the venue's one true category from its
+	// namemap.Category derives the venue's one true category from its
 	// name, so even when both Restaurants and Bars are due, a bar-named
 	// venue produces exactly one row, filed as Bars.
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}

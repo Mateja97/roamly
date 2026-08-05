@@ -21,8 +21,8 @@ import (
 
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
+	"activities-service/internal/namemap"
 	"activities-service/internal/tripadvisor"
-	"activities-service/internal/tripadvisormap"
 
 	"backend/shared/contentkind"
 	sharederrors "backend/shared/errors"
@@ -41,7 +41,7 @@ type repository interface {
 	// (source_url, category) — T4's Restaurants/Cafés/Bars lazy sync (see
 	// syncTripadvisorAnchor) reuses the same upsert the batch Google
 	// pipeline already relies on. Each source_url now maps to exactly one
-	// category, decided by tripadvisormap.Category before Upsert is called.
+	// category, decided by namemap.Category before Upsert is called.
 	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
 	// SyncedAt reports the last successful sync time for
 	// (provider, cellKey, category, subtype), and whether one has happened.
@@ -1383,7 +1383,7 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 // candidate, syncVenueConcurrency at a time. Candidates are gated and
 // classified from the summary alone, before any per-venue call:
 // hasFoodDrinkSignal on the summary's WebURL drops the non-food noise
-// Terra's unfiltered search returns, and tripadvisormap.Category on the
+// Terra's unfiltered search returns, and namemap.Category on the
 // summary's name — Terra gives no per-venue category signal (see that
 // function's doc) — decides the venue's one Roamly category, never the
 // caller's due-category loop. A candidate only gets a repo.Upsert when its
@@ -1430,7 +1430,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 			continue
 		}
 		food++
-		category := tripadvisormap.Category(s.Name)
+		category := namemap.Category(s.Name)
 		if !slices.Contains(categories, category) {
 			continue
 		}
@@ -1544,7 +1544,7 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // activities row regardless of source, so it works unchanged for the
 // legacy firecrawl rows T3 also backfills, not just Tripadvisor ones.
 // Tripadvisor's own categories[] field never
-// carries a subtype-capable tag on our entitlement (see tripadvisormap's
+// carries a subtype-capable tag on our entitlement (see namemap's
 // package doc), so this resolves the venue by name via a Places Text Search
 // tightly bounded to its own coordinates (tripadvisorSubtypeRadiusKM) and
 // classifies the single match's Google primaryType/types through

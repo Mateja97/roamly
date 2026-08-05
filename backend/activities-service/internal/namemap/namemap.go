@@ -1,10 +1,11 @@
-// Package tripadvisormap classifies a Tripadvisor venue into one of Roamly's
-// Restaurants/Cafés/Bars categories from its name (see Category) — the one
-// signal Tripadvisor's Content API entitlement actually provides. Subtype
-// classification for these venues does not live here: it's resolved via
-// Google Places at sync time and shares placesmap's Google-type-driven table
-// instead (see service.ResolveTripadvisorSubtype, BUSINESS_STANDARDS.md).
-package tripadvisormap
+// Package namemap classifies a venue from its name alone: into one of
+// Roamly's Restaurants/Cafés/Bars categories (see Category), and into a
+// subtype within its category (see Subtype). The name is the only signal
+// Tripadvisor's Content API entitlement actually provides, and it is also
+// the only signal left for the ~36% of venues Google Places cannot resolve
+// at all. Google-type-driven subtype classification lives in placesmap;
+// this package is what fills the gaps that leaves.
+package namemap
 
 import (
 	"regexp"
