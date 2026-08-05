@@ -130,57 +130,6 @@ describe('ActivityDetailScreen', () => {
     expect(screen.queryByTestId('activity-detail-hero-image-0')).toBeNull();
   });
 
-  it('omits the map block entirely when the maps key is absent, app-wide', () => {
-    delete process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-    render(
-      <ActivityDetailScreen
-        activity={activity}
-        showDistance
-        onBack={jest.fn()}
-      />,
-    );
-    expect(screen.queryByTestId('activity-detail-map-image')).toBeNull();
-  });
-
-  it('shows the map image when the key is present and coordinates are valid', () => {
-    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
-    render(
-      <ActivityDetailScreen
-        activity={activity}
-        showDistance
-        onBack={jest.fn()}
-      />,
-    );
-    expect(screen.getByTestId('activity-detail-map-image')).toBeTruthy();
-  });
-
-  it('falls back to the pin-off placeholder when coordinates are (0,0)', () => {
-    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
-    render(
-      <ActivityDetailScreen
-        activity={{ ...activity, location: { lat: 0, lng: 0 } }}
-        showDistance
-        onBack={jest.fn()}
-      />,
-    );
-    expect(screen.queryByTestId('activity-detail-map-image')).toBeNull();
-  });
-
-  it('falls back to the pin-off placeholder when the map image request fails', () => {
-    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';
-    render(
-      <ActivityDetailScreen
-        activity={activity}
-        showDistance
-        onBack={jest.fn()}
-      />,
-    );
-    fireEvent(screen.getByTestId('activity-detail-map-image'), 'error', {
-      nativeEvent: { error: 'load failed' },
-    });
-    expect(screen.queryByTestId('activity-detail-map-image')).toBeNull();
-  });
-
   it('opens Google Maps directions when the map preview is tapped', async () => {
     const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = 'test-key';

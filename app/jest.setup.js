@@ -1,4 +1,6 @@
 /* global jest */
+import { AccessibilityInfo } from 'react-native';
+
 // react-native-safe-area-context needs a real on-screen layout pass to
 // measure insets, which the Jest environment never performs — mock it with
 // fixed zero insets so SafeAreaProvider/SafeAreaView render their children
@@ -6,7 +8,11 @@
 // Everything the factory needs must be required/declared inside it —
 // babel-plugin-jest-hoist forbids referencing outer-scope variables here.
 jest.mock('react-native-safe-area-context', () => {
+  // babel-plugin-jest-hoist forbids referencing outer-scope variables (e.g. a top-level
+  // import) inside a jest.mock factory; it must require its own dependencies internally.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- see comment above
   const React = require('react');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- see comment above
   const { View } = require('react-native');
   const insets = { top: 0, right: 0, bottom: 0, left: 0 };
   const frame = { x: 0, y: 0, width: 320, height: 640 };
@@ -32,13 +38,15 @@ jest.mock('react-native-safe-area-context', () => {
 // `{ remove }` subscription by default), and a resetAllMocks() call anywhere in
 // the same test file strips that default, making it return undefined and
 // crashing the same reduce-motion effect's unmount cleanup (`sub.remove()`).
-const { AccessibilityInfo } = require('react-native');
 AccessibilityInfo.isReduceMotionEnabled = () => Promise.resolve(false);
 AccessibilityInfo.addEventListener = () => ({ remove: () => {} });
 
 // The package's own official in-memory mock — every local-flag module
 // (T1's firstLaunch.ts, T3's nearbyNudge.ts/travelerMode.ts) reads/writes
 // real AsyncStorage, which has no native module in the Jest environment.
+// babel-plugin-jest-hoist forbids referencing outer-scope variables inside a jest.mock
+// factory; it must require its own dependency internally.
 jest.mock('@react-native-async-storage/async-storage', () =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- see comment above
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );

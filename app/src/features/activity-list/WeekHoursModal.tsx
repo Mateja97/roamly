@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { capitalize, type WeekHoursModalData } from './activityDetailConfig';
+import { capitalize, type WeekHoursModalData } from './openingHours';
 
 type WeekHoursModalProps = { data: WeekHoursModalData; onClose: () => void };
 

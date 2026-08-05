@@ -4,7 +4,7 @@ import { Wordmark } from '../../components/Wordmark';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
 import { contextLine, scopePillInfo } from './feedContext';
-import type { Scope } from '../scope-picker/types';
+import type { Scope } from '../../types/scope';
 
 type FeedHeaderProps = {
   scope: Scope;

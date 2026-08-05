@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react-native';
 import type { CitySuggestion } from '../../api/cities';
 import { citiesJoinLabel } from './filters';
 import { timeBucket } from './categoryOrder';
-import type { Scope } from '../scope-picker/types';
+import type { Scope } from '../../types/scope';
 
 export type ScopePillInfo = { label: string; icon: LucideIcon };
 

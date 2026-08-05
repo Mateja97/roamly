@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    // review round 1, Important #2: the ScopeTicket stub's gold tint
+    // The ScopeTicket stub's gold tint
     // (rgba(206,144,66,0.14)) was derived against a wine surface — on this
     // card's own gold --primary fill it's gold-on-gold and invisible. Ink
     // tint instead, so the well itself reads as a recess in the gold.

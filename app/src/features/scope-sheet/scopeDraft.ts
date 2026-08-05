@@ -1,6 +1,6 @@
 import type { CitySuggestion } from '../../api/cities';
 import type { RatingOption } from '../activity-list/types';
-import type { Coordinates, Scope } from '../scope-picker/types';
+import type { Coordinates, Scope } from '../../types/scope';
 
 // design-spec.md T2: the app's one remaining Anywhere distance range — this
 // sheet's own canonical copy, not imported from `search-setup/anywhereSearch`
@@ -44,4 +44,13 @@ export function defaultScopeDraft(scope: Scope, coordinates?: Coordinates): Scop
 // disabled).
 export function anywhereHasAnchor(draft: Pick<ScopeDraft, 'cities' | 'coordinates'>): boolean {
   return draft.cities.length > 0 || draft.coordinates !== undefined;
+}
+
+// Shared by ScopeSheet (typeahead effect, select/removeCity) and its
+// AnywherePane — living here, not either of those files, keeps neither
+// having to import the other.
+export type CityFetchState = { query: string; status: 'results' | 'no-match' | 'error'; results: CitySuggestion[]; error: string | null };
+
+export function cityKey(city: CitySuggestion): string {
+  return `${city.city}|${city.country}`;
 }

@@ -1,6 +1,6 @@
 import { AccessibilityInfo, Modal } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
-import type { WeekHoursModalData } from './activityDetailConfig';
+import type { WeekHoursModalData } from './openingHours';
 import { WeekHoursModal } from './WeekHoursModal';
 
 beforeEach(() => {

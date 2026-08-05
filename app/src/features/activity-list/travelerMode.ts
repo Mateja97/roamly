@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Coordinates } from '../scope-picker/types';
+import type { Coordinates } from '../../types/scope';
 
 // design-spec.md's Adaptivity rules + Persistence section: "Home base =
 // median of recent granted location samples, stored locally, no UI...

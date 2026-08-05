@@ -28,6 +28,7 @@ import { PhotoAttributionCaption } from '../../components/PhotoAttributionCaptio
 import { Skeleton } from '../../components/Skeleton';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
+import { SHARE_FAILED_MESSAGE } from './useOSHandoff';
 
 type PhotoViewerModalProps = {
   photos: ActivityPhoto[];
@@ -147,7 +148,7 @@ export function PhotoViewerModal({
         url: current.uri,
       });
     } catch {
-      setShareError('Could not open the share sheet. Please try again.');
+      setShareError(SHARE_FAILED_MESSAGE);
     } finally {
       setShareBusy(false);
     }

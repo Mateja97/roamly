@@ -11,8 +11,8 @@ type PhotoAttributionCaptionProps = {
 
 // DESIGN_STANDARDS.md's Photo attribution recipe: a caption flush below the
 // photo it credits, with a --border top hairline as the "Google-sourced"
-// visual distinction. Renders nothing when attribution is absent — the
-// no-op T2 requires so today's (pre-T3) placeholder photos are unaffected.
+// visual distinction. Renders nothing when attribution is absent, so
+// placeholder photos with no attribution data are unaffected.
 export function PhotoAttributionCaption({ attribution, horizontalInset }: PhotoAttributionCaptionProps) {
   const focus = useFocusable();
   if (!attribution) return null;

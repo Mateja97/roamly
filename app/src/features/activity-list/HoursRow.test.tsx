@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { HoursRow } from './HoursRow';
-import type { TodayHoursRowData } from './activityDetailConfig';
+import type { TodayHoursRowData } from './openingHours';
 
 const openData: TodayHoursRowData = {
   status: { text: 'Open', isOpen: true },

@@ -51,8 +51,8 @@ export function UniqueSection({ data }: UniqueSectionProps) {
   if (!data) return null;
   // design-spec.md's degradation table: "List row, name absent → drop the
   // whole row." Filtered at render time (see below) since the upstream
-  // caller that builds `dateblock` data doesn't defend against it — T11
-  // round 2. 0 survivors omits the section and its heading entirely, same
+  // caller that builds `dateblock` data doesn't defend against it.
+  // 0 survivors omits the section and its heading entirely, same
   // as every other shape's "0 items" case.
   const isEmptyDateBlockList =
     data.shape === 'schedule' && data.density === 'dateblock' && data.rows.every((row) => !row.title?.trim());

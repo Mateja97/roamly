@@ -3,7 +3,7 @@ import type { CitySuggestion } from '../../api/cities';
 import type { ScopeDraft } from '../scope-sheet/scopeDraft';
 import { anywhereHasAnchor } from '../scope-sheet/scopeDraft';
 import type { Category, Filters, RatingOption } from './types';
-import type { Scope } from '../scope-picker/types';
+import type { Scope } from '../../types/scope';
 
 // T2: Nearby's server-fixed radius (activities-service's activity.go) — the
 // one copy of the number; the Scope sheet's (T2) fixed-range card reads it
@@ -201,10 +201,8 @@ function toLocation(coordinates: { latitude: number; longitude: number }): Locat
   return { lat: coordinates.latitude, lng: coordinates.longitude };
 }
 
-// design-spec.md T3: the Feed's request builder, replacing the old
-// `buildActivitiesRequest` (which took the sheet's now-retired
-// categories+subtypes+minRating+maxDistanceKm `Filters` shape wholesale).
-// Scope/city/distance/rating now live in T2's `ScopeDraft`; only categories
+// design-spec.md T3: the Feed's request builder.
+// Scope/city/distance/rating live in `ScopeDraft`; only categories
 // stay on `Filters` (the Feed's own pill-row state) — `subtypes` are
 // deliberately **not** sent on the wire at all: see `filterBySubtypes`
 // below for why (client-side filtering off one category-scoped fetch, so
