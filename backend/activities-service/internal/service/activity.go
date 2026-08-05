@@ -19,9 +19,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"activities-service/internal/namemap"
 	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
-	"activities-service/internal/namemap"
 	"activities-service/internal/tripadvisor"
 
 	"backend/shared/contentkind"
