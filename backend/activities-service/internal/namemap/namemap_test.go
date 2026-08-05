@@ -66,6 +66,24 @@ func TestSubtype(t *testing.T) {
 		{"shisha, serbian spelling nargila", activitiessvc.CategoryCafes, "Caffe Monroe & Nargila Bar", "", false},
 		{"nargila under nightlife", activitiessvc.CategoryNightlife, "Muar Lounge Nargila&Bar", "shisha_lounge", true},
 		{"hookah spelling", activitiessvc.CategoryNightlife, "Hookah House | Lounge Bar", "shisha_lounge", true},
+
+		// Fused compounds: the shisha keywords match as a PREFIX, so a name
+		// that runs the keyword straight into the next syllable still
+		// resolves. Both are real venues that the earlier trailing-\b rule
+		// missed.
+		{"fused compound: HookahPlace", activitiessvc.CategoryNightlife, "HookahPlace Kraljevo", "shisha_lounge", true},
+		{"fused compound: Shisharka", activitiessvc.CategoryNightlife, "Shisharka Bar Zlatibor", "shisha_lounge", true},
+		{"fused compound still category-gated", activitiessvc.CategoryCafes, "Shisharka Bar Zlatibor", "", false},
+		{"serbian declension: nargilu", activitiessvc.CategoryNightlife, "Kafe Nargilu", "shisha_lounge", true},
+		{"serbian declension: nargilom", activitiessvc.CategoryBars, "Bar sa Nargilom", "shisha", true},
+
+		// The prefix rule must not reopen the barbershop false positive the
+		// keyword set was designed around: Serbian "šišanje" (haircut) folds
+		// to "sisanje", which starts "sisa", not "sisha". If either of these
+		// ever matches, the shisha keywords have drifted somewhere unsafe.
+		{"barbershop is not a shisha bar (folded)", activitiessvc.CategoryBars, "Frizerski Salon Sisanje", "", false},
+		{"barbershop is not a shisha bar (diacritics)", activitiessvc.CategoryBars, "Šišanje Studio", "", false},
+		{"shisha still needs a word start", activitiessvc.CategoryNightlife, "Bakshisha Lounge", "", false},
 		{"kafana under bars", activitiessvc.CategoryBars, "Kafana Balkan", "kafana", true},
 		{"kafana under nightlife", activitiessvc.CategoryNightlife, "Kafana Moskva", "kafana_live", true},
 		{"mehana is a kafana", activitiessvc.CategoryBars, "Cadjava Mehana", "kafana", true},
