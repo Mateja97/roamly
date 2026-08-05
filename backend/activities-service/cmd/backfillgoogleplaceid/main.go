@@ -147,7 +147,7 @@ func emptyGooglePlaceIDRows(ctx context.Context, repo activityLister, pageSize i
 // The first return value (the subtype) isn't this tool's concern — T1's
 // live sync already persists it — so runBackfill discards it.
 type placeIDResolver interface {
-	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string)
+	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID, priceLevel string) (string, string)
 }
 
 // googlePlaceIDSetter is repository.Activities.SetGooglePlaceIDIfEmpty's
@@ -186,7 +186,9 @@ func runBackfill(ctx context.Context, resolver placeIDResolver, setter googlePla
 			break
 		}
 		result.processed++
-		_, placeID := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
+		// priceLevel is "" — this tool only wants the place id, and price
+		// never affects it.
+		_, placeID := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID, "")
 		pace()
 		if placeID == "" {
 			result.missed++

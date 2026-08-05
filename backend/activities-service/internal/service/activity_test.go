@@ -1606,3 +1606,110 @@ func TestActivities_Create_StillAllowsOtherCategories(t *testing.T) {
 		t.Fatalf("Create() error: %v, want culture still allowed", err)
 	}
 }
+
+// TestSubtypeFromPriceLevel pins the price tier. The Cheap Eats case is the
+// load-bearing one: "Cheap Eats" is a price band, while fast_casual and
+// casual_dining differ by service format, which the band does not report. A
+// future change that makes it return a slug has re-introduced exactly the
+// guess this function exists to refuse.
+func TestSubtypeFromPriceLevel(t *testing.T) {
+	tests := []struct {
+		name  string
+		cat   activitiessvc.Category
+		price string
+		want  string
+	}{
+		{"fine dining is the same concept under the same name", activitiessvc.CategoryRestaurants, "Fine Dining", "fine_dining"},
+		{"mid range is a sit-down mid-priced venue", activitiessvc.CategoryRestaurants, "Mid Range", "casual_dining"},
+		{"cheap eats is deliberately unclassified", activitiessvc.CategoryRestaurants, "Cheap Eats", ""},
+		{"absent price yields nothing", activitiessvc.CategoryRestaurants, "", ""},
+		{"unknown value yields nothing", activitiessvc.CategoryRestaurants, "$$$$", ""},
+
+		// Restaurants-only: Bars and Cafés carry a price_level too, but their
+		// subtypes are not price-shaped.
+		{"bars get no tier", activitiessvc.CategoryBars, "Mid Range", ""},
+		{"cafes get no tier", activitiessvc.CategoryCafes, "Fine Dining", ""},
+		{"nightlife gets no tier", activitiessvc.CategoryNightlife, "Mid Range", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := SubtypeFromPriceLevel(tt.cat, tt.price); got != tt.want {
+				t.Errorf("SubtypeFromPriceLevel(%q, %q) = %q, want %q", tt.cat, tt.price, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSubtypeFromPriceLevel_OnlyValidSlugs guards against a typo producing a
+// slug the rest of the system would reject at write time.
+func TestSubtypeFromPriceLevel_OnlyValidSlugs(t *testing.T) {
+	for _, p := range []string{"Fine Dining", "Mid Range", "Cheap Eats", "", "nonsense"} {
+		got := SubtypeFromPriceLevel(activitiessvc.CategoryRestaurants, p)
+		if !activitiessvc.ValidSubcategory(activitiessvc.CategoryRestaurants, got) {
+			t.Errorf("SubtypeFromPriceLevel(restaurants, %q) returned %q, not a valid Restaurants subcategory", p, got)
+		}
+	}
+}
+
+// TestResolveTripadvisorSubtype_PriceIsLastResort pins the precedence chain.
+// Price must never outrank a Google type or a name keyword — it only fills
+// what both left empty.
+func TestResolveTripadvisorSubtype_PriceIsLastResort(t *testing.T) {
+	// No Places client configured, so Google always yields nothing and the
+	// name/price precedence is what is under test.
+	svc := New(nil)
+
+	tests := []struct {
+		name  string
+		cat   activitiessvc.Category
+		venue string
+		price string
+		want  string
+	}{
+		{"price fills what nothing else knows", activitiessvc.CategoryRestaurants, "Restoran Da Giorgio", "Mid Range", "casual_dining"},
+		{"fine dining tier", activitiessvc.CategoryRestaurants, "Nekakav Restoran", "Fine Dining", "fine_dining"},
+		{"cheap eats alone yields nothing", activitiessvc.CategoryRestaurants, "Casual Pizza", "Cheap Eats", ""},
+		{"no price, no name, nothing", activitiessvc.CategoryRestaurants, "Splav restoran Veso", "", ""},
+		{"bars ignore price entirely", activitiessvc.CategoryBars, "Neki Bar", "Mid Range", ""},
+
+		// Cuisine words must NOT imply a service format. A burger place in
+		// Belgrade is an ordinary sit-down restaurant, so these take the price
+		// tier — never fast_casual. A change that makes either return
+		// fast_casual has re-introduced the inference spec D4 rejects.
+		{"burger name does not imply fast_casual", activitiessvc.CategoryRestaurants, "Burger Bar", "Mid Range", "casual_dining"},
+		{"cevap name does not imply fast_casual", activitiessvc.CategoryRestaurants, "Ćevap Kuća", "Cheap Eats", ""},
+		{"pekara name does not imply bakery_dessert", activitiessvc.CategoryRestaurants, "Pekara Trpkovic", "", ""},
+
+		// The load-bearing negative from the design spec: Cheap Eats plus a
+		// Google type that resolves to nothing (namemap.Subtype has no
+		// Restaurants rule — D4) must still yield "", never a guessed slug.
+		{"cheap eats plus an unresolved google type stays empty", activitiessvc.CategoryRestaurants, "Restoran Kod Marka", "Cheap Eats", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, placeID := svc.ResolveTripadvisorSubtype(context.Background(), tt.cat, tt.venue, 44.8, 20.4, "loc-1", tt.price)
+			if got != tt.want {
+				t.Errorf("ResolveTripadvisorSubtype(%q, price=%q) = %q, want %q", tt.venue, tt.price, got, tt.want)
+			}
+			if placeID != "" {
+				t.Errorf("place id = %q, want empty when no Places client is configured", placeID)
+			}
+		})
+	}
+}
+
+// TestResolveTripadvisorSubtype_Idempotent: the backfill rewrites rows, so
+// the same inputs must always produce the same subtype.
+func TestResolveTripadvisorSubtype_Idempotent(t *testing.T) {
+	svc := New(nil)
+	first, _ := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "Restoran Da Giorgio", 44.8, 20.4, "loc-1", "Mid Range")
+	second, _ := svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "Restoran Da Giorgio", 44.8, 20.4, "loc-1", "Mid Range")
+	if first != second {
+		t.Errorf("not idempotent: %q then %q", first, second)
+	}
+	if first != "casual_dining" {
+		t.Errorf("got %q, want casual_dining", first)
+	}
+}

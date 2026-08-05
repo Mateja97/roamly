@@ -99,7 +99,7 @@ type fakeResolver struct {
 	calls []string
 }
 
-func (f *fakeResolver) ResolveTripadvisorSubtype(_ context.Context, _ activitiessvc.Category, _ string, _, _ float64, locationID string) (string, string) {
+func (f *fakeResolver) ResolveTripadvisorSubtype(_ context.Context, _ activitiessvc.Category, _ string, _, _ float64, locationID, _ string) (string, string) {
 	f.calls = append(f.calls, locationID)
 	return f.byID[locationID], ""
 }

@@ -184,7 +184,7 @@ func keepCandidates(rows []activitiessvc.Activity) []activitiessvc.Activity {
 // Google place id) isn't this tool's concern — cmd/backfillgoogleplaceid
 // (T2) is the one that persists it — so runBackfill discards it.
 type subtypeResolver interface {
-	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string)
+	ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID, priceLevel string) (string, string)
 }
 
 // subcategorySetter is the pair of repository writes this tool uses: the
@@ -250,7 +250,12 @@ func runBackfill(ctx context.Context, resolver subtypeResolver, setter subcatego
 			result.byKey[key].resolved++
 			continue
 		}
-		subtype, _ := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID)
+		// priceLevel is "" here: this tool has no Tripadvisor client yet, so a
+		// row only the price tier could resolve stays empty for this run,
+		// same as before this parameter existed. A follow-up backfill task
+		// fetches it lazily for exactly the rows Google and the name both
+		// fail on.
+		subtype, _ := resolver.ResolveTripadvisorSubtype(ctx, a.Category, a.Title, a.Location.Lat, a.Location.Lng, a.ExternalID, "")
 		pace()
 		if subtype == "" {
 			result.stayedEmpty++

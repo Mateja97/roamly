@@ -1484,7 +1484,7 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 					photos = nil
 				}
 
-				subtype, placeID := a.ResolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID)
+				subtype, placeID := a.ResolveTripadvisorSubtype(syncCtx, c.category, details.Name, details.Lat, details.Lng, c.summary.LocationID, details.PriceLevel)
 
 				if _, err := a.repo.Upsert(ctx, tripadvisorIngestActivity(c.category, subtype, placeID, details, reviews, photos, cellLoc)); err != nil {
 					slog.Warn("upserting tripadvisor activity failed", "location_id", c.summary.LocationID, "category", c.category, "error", err)
@@ -1535,6 +1535,52 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 	return cellLocation{City: city, Country: country}
 }
 
+// Tripadvisor's price_level values for food venues, verified live against the
+// Terra API (terra.tripadvisor.com/api, locale=en-US). Spelled out as
+// constants because they are external API strings, not our vocabulary.
+const (
+	priceMidRange   = "Mid Range"
+	priceFineDining = "Fine Dining"
+)
+
+// SubtypeFromPriceLevel maps a Tripadvisor price_level to a Restaurants
+// subtype — the last resort in ResolveTripadvisorSubtype's precedence chain,
+// consulted only when Google's type and the venue's name have both yielded
+// nothing.
+//
+// Restaurants only. Bars and Cafés carry a price_level too, but their
+// subtypes are not price-shaped, so a tier there would be meaningless.
+//
+// "Cheap Eats" deliberately returns "" and must keep doing so. It is a price
+// band, while the two slugs it could plausibly mean — fast_casual and
+// casual_dining — differ by *service format*, which the band does not report.
+// Guessing would mislabel a ćevabdžinica or a bakery counter as a sit-down
+// restaurant, and worse, it would look classified, so nobody would know to
+// correct it. An empty subtype is valid, visibly unfinished, and fixable from
+// the admin panel. Cheap Eats venues whose format Google actually knows still
+// resolve — via its counter-service types (cafeteria, meal_takeaway,
+// food_court, fast_food_restaurant) — before reaching here. There is
+// deliberately no name-based escape hatch: cuisine words do not report
+// format.
+//
+// The two retained mappings are not the same kind of inference: "Fine Dining"
+// is the same concept under the same name, and "Mid Range" is a short step to
+// casual_dining, which BUSINESS_STANDARDS.md defines as exactly a mid-priced
+// sit-down venue.
+func SubtypeFromPriceLevel(cat activitiessvc.Category, priceLevel string) string {
+	if cat != activitiessvc.CategoryRestaurants {
+		return ""
+	}
+	switch priceLevel {
+	case priceFineDining:
+		return "fine_dining"
+	case priceMidRange:
+		return "casual_dining"
+	default:
+		return ""
+	}
+}
+
 // ResolveTripadvisorSubtype derives a subtype for one Tripadvisor venue,
 // once per venue per sync (called from syncTripadvisorAnchor's per-venue
 // goroutine and RefreshTripadvisorLocation's single-location refresh, never
@@ -1558,17 +1604,18 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // against exactly that: the candidate's own returned name must plausibly be
 // the same venue, or it's rejected same as no match at all.
 //
-// Returns the name-derived subtype (namemap.Subtype, often "") and an empty
-// place id when: no Places client is configured (a.places == nil); name is
-// empty or lat/lng is the zero value; the search errors (logged, the sync
-// itself must not fail); the search finds no candidate; it finds more than
-// one, which means the tight radius still couldn't disambiguate a
+// Returns the name-derived subtype, or the price tier when the name yields
+// nothing (namemap.Subtype and SubtypeFromPriceLevel are both often ""), and
+// an empty place id when: no Places client is configured (a.places == nil);
+// name is empty or lat/lng is the zero value; the search errors (logged, the
+// sync itself must not fail); the search finds no candidate; it finds more
+// than one, which means the tight radius still couldn't disambiguate a
 // same/similar-named venue; or the sole candidate's own name doesn't
 // plausibly match. Google finding nothing is not the same as the venue
 // having no subtype — it resolves nothing at all for roughly a third of
-// Bars — so the name fallback applies to every one of those paths. The
-// subtype is still never a guess: namemap.Subtype returns "" unless a
-// curated keyword matches.
+// Bars — so this fallback applies to every one of those paths. The subtype
+// is still never a guess: namemap.Subtype returns "" unless a curated
+// keyword matches, and SubtypeFromPriceLevel only maps Fine Dining/Mid Range.
 //
 // When Google does match, its answer wins unless namemap flagged a local
 // venue-type keyword (shisha, kafana), which overrides it — see
@@ -1580,23 +1627,41 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 // additional Places request. Callers persist it via
 // activitiessvc.IngestActivity.GooglePlaceID so a later live Place Details
 // lookup (T3) can reuse it.
-func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID string) (string, string) {
+//
+// priceLevel is the venue's Tripadvisor price_level, "" when unknown. It is
+// the last resort in the chain — consulted only when neither Google's type
+// nor the venue's name resolved anything — and applies to Restaurants only
+// (see SubtypeFromPriceLevel). Both live sync call sites already hold the
+// Terra response, so supplying it costs them no extra request;
+// cmd/backfillsubtype fetches it lazily for stored rows.
+func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category activitiessvc.Category, name string, lat, lng float64, locationID, priceLevel string) (string, string) {
 	nameSlug, override := namemap.Subtype(category, name)
 	if a.places == nil || name == "" || (lat == 0 && lng == 0) {
-		return nameSlug, ""
+		return orPrice(nameSlug, category, priceLevel), ""
 	}
 	found, err := a.places.SearchTextInArea(ctx, name, lat, lng, tripadvisorSubtypeRadiusKM, places.NearbyFieldMask)
 	if err != nil {
 		slog.Warn("tripadvisor subtype resolve failed", "location_id", locationID, "name", name, "error", err)
-		return nameSlug, ""
+		return orPrice(nameSlug, category, priceLevel), ""
 	}
 	if len(found) != 1 || !venueNameMatches(name, found[0].DisplayName.Text) {
-		return nameSlug, ""
+		return orPrice(nameSlug, category, priceLevel), ""
 	}
 	if googleSlug := placesmap.Subtype(category, found[0].PrimaryType, found[0].Types); !override && googleSlug != "" {
 		return googleSlug, found[0].ID
 	}
-	return nameSlug, found[0].ID
+	return orPrice(nameSlug, category, priceLevel), found[0].ID
+}
+
+// orPrice is the tail of ResolveTripadvisorSubtype's precedence chain: a
+// name-derived subtype when there is one, otherwise the Tripadvisor price
+// tier. Price is deliberately last — it reports a tier, not a service format,
+// so it must never outrank a signal that knows the format.
+func orPrice(nameSlug string, cat activitiessvc.Category, priceLevel string) string {
+	if nameSlug != "" {
+		return nameSlug
+	}
+	return SubtypeFromPriceLevel(cat, priceLevel)
 }
 
 // venueNameMatches reports whether candidateName (a Places Text Search
@@ -1779,7 +1844,7 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 	// CONFLICT unconditionally overwrites subcategory (see its own doc), so
 	// skipping this here would silently wipe out a subtype a prior sync
 	// already resolved every time cmd/backfilltripadvisor's refresh runs.
-	subtype, placeID := a.ResolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID)
+	subtype, placeID := a.ResolveTripadvisorSubtype(ctx, category, details.Name, details.Lat, details.Lng, locationID, details.PriceLevel)
 	// No anchor here — a direct-by-ID backfill has no sweep to resolve a
 	// city once for (see resolveTripadvisorCity) — so this always falls
 	// back to Terra's own City/Country, same as every call before this
