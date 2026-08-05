@@ -194,8 +194,8 @@ export function ActivityDetailScreen({
 
           {activity.tags.length > 0 ? (
             <View style={styles.tagsRow}>
-              {activity.tags.map((tag) => (
-                <View key={tag} style={styles.tagPill}>
+              {activity.tags.map((tag, i) => (
+                <View key={i} style={styles.tagPill}>
                   <Text style={styles.tagLabel}>{tag}</Text>
                 </View>
               ))}
