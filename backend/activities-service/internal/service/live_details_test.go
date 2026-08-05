@@ -305,11 +305,13 @@ func TestHasTripadvisorReviews(t *testing.T) {
 // (tripadvisor-google-review-fallback) and T1 (tripadvisor-marks-require-
 // reviews): a Tripadvisor row with a stored google_place_id and no quotable
 // Tripadvisor review gets a live Google Place Details lookup that sets
-// GoogleReviews/GoogleMapsURI and — guarded on Rating > 0 — Rating/
-// ReviewCount, preserving Description/Details verbatim; every other
-// Tripadvisor row (quotable review present, or no stored place id) keeps the
-// pre-T3 early return, rating untouched; a resolve error falls back to the
-// bare stored row.
+// GoogleReviews/GoogleMapsURI and unconditionally overwrites Rating/
+// ReviewCount with Google's (including 0/0 for an unrated Places venue — a
+// stale Tripadvisor rating must never survive under a Google GoogleMapsURI),
+// preserving Description/Details verbatim; every other Tripadvisor row
+// (quotable review present, or no stored place id) keeps the pre-T3 early
+// return, rating untouched; a resolve error falls back to the bare stored
+// row.
 func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) {
 	// Deliberately non-zero and different from baseRow's own Rating/
 	// ReviewCount/Description/Details below (round-2 review finding: an
@@ -340,9 +342,10 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 	}
 
 	// zeroRatingDetail is googleDetail with Rating/UserRatingCount zeroed —
-	// Places omits both together for an unrated venue, and T1's guard must
-	// leave the stored Tripadvisor rating alone in that case even though
-	// GoogleReviews/GoogleMapsURI still get set from the same response.
+	// Places omits both together for an unrated venue. Unlike withLiveDetails,
+	// this must NOT fall back to the stored Tripadvisor rating: once
+	// GoogleMapsURI is set the row's rating has to be Google's or nothing, so
+	// Rating/ReviewCount both become 0 here, not baseRow's stale 4.6/512.
 	zeroRatingDetail := googleDetail
 	zeroRatingDetail.Rating = 0
 	zeroRatingDetail.UserRatingCount = 0
@@ -369,14 +372,14 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 			wantReviewCount: 9001,
 		},
 		{
-			name:            "zero live rating: reviews/maps URI still set, stored rating untouched",
+			name:            "unrated Places venue: reviews/maps URI set, rating zeroed (not stored Tripadvisor value)",
 			activity:        baseRow,
 			places:          &fakePlaces{detailOut: zeroRatingDetail},
 			wantPlaceCalls:  1,
 			wantReviews:     1,
 			wantMapsURI:     "https://maps.google.com/?cid=123",
-			wantRating:      baseRow.Rating,
-			wantReviewCount: baseRow.ReviewCount,
+			wantRating:      0,
+			wantReviewCount: 0,
 		},
 		{
 			name: "quotable reviews already present: early return, no places call, rating untouched",

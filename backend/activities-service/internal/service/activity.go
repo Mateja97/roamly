@@ -922,10 +922,13 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 // quotable review) returns untouched at the early guard below, same as
 // before this task existed — its rating stays Tripadvisor's, verbatim.
 //
-// The Rating > 0 guard mirrors withLiveDetails' own: Places omits rating and
-// count together for an unrated venue, and the zero value is
-// indistinguishable from "absent", so an unguarded copy would clobber a real
-// Tripadvisor rating with a fabricated 0.0.
+// Unlike withLiveDetails, Rating/ReviewCount are copied unconditionally, no
+// Rating > 0 guard: the stored value here is always Tripadvisor's, and once
+// GooglePlaceID resolves the row's rating must be Google's or nothing —
+// leaving a stale Tripadvisor number in place under a Google GoogleMapsURI
+// is the exact unattributed-rating bug this task exists to prevent. Places
+// returning Rating == 0 for an unrated venue is a legitimate "no rating"
+// result here, not data loss to guard against.
 //
 // Fallback-on-error contract mirrors withLiveDetails exactly: an
 // unconfigured places client, a resolve error, or a timeout all fall back to
@@ -942,10 +945,8 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 		return activity
 	}
 
-	if detail.Rating > 0 {
-		activity.Rating = detail.Rating
-		activity.ReviewCount = detail.UserRatingCount
-	}
+	activity.Rating = detail.Rating
+	activity.ReviewCount = detail.UserRatingCount
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
 	activity.GoogleMapsURI = detail.GoogleMapsURI
 	return activity
