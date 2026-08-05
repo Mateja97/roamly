@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,10 +106,22 @@ func (f *fakeResolver) ResolveTripadvisorSubtype(_ context.Context, _ activities
 
 // fakeSetter records every write attempt and lets a test force a specific
 // row to look "already set by something else" (wrote=false) or to error.
+// unconditional records SetSubcategory calls (the T6 override path)
+// separately from writes (SetSubcategoryIfEmpty) so a test can assert which
+// path a given row went through.
 type fakeSetter struct {
-	writes    map[string]string
-	rejectIDs map[string]bool
-	errIDs    map[string]bool
+	writes        map[string]string
+	unconditional map[string]string
+	rejectIDs     map[string]bool
+	errIDs        map[string]bool
+}
+
+func (f *fakeSetter) SetSubcategory(_ context.Context, id, subcategory string) error {
+	if f.unconditional == nil {
+		f.unconditional = map[string]string{}
+	}
+	f.unconditional[id] = subcategory
+	return nil
 }
 
 func (f *fakeSetter) SetSubcategoryIfEmpty(_ context.Context, id, subcategory string) (bool, error) {
@@ -302,6 +315,57 @@ func TestReport_DryRunPrintsPlaceholdersForEveryAttemptedOutcome(t *testing.T) {
 			t.Fatalf("field %d: got %q, want %q (full row %v)", i, fields[i], w, fields)
 		}
 	}
+}
+
+// TestCandidateRows_IncludesLocalKeywordRows proves the widened selection: a
+// google_places row that already has a subtype is still a candidate when its
+// name carries a local keyword.
+func TestCandidateRows_IncludesLocalKeywordRows(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Jackson Pub", Category: activitiessvc.CategoryBars, Source: "tripadvisor", Subcategory: ""},
+		{ID: "2", Title: "Kafana Moskva", Category: activitiessvc.CategoryNightlife, Source: "google_places", Subcategory: "lounge"},
+		{ID: "3", Title: "Club Drugstore", Category: activitiessvc.CategoryNightlife, Source: "google_places", Subcategory: "nightclub"},
+		{ID: "4", Title: "Some Cafe", Category: activitiessvc.CategoryCafes, Source: "google_places", Subcategory: ""},
+	}
+
+	got := candidateIDs(keepCandidates(rows))
+	want := []string{"1", "2"}
+	if !slices.Equal(got, want) {
+		t.Errorf("candidates = %v, want %v", got, want)
+	}
+}
+
+// TestRunBackfill_LocalKeywordUsesUnconditionalWrite proves the override path
+// writes through SetSubcategory and never calls the resolver (no Places
+// call), while an ordinary row still goes through the resolver and the
+// if-empty write.
+func TestRunBackfill_LocalKeywordUsesUnconditionalWrite(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "1", Title: "Kafana Moskva", Category: activitiessvc.CategoryNightlife, Source: "google_places", Subcategory: "lounge"},
+		{ID: "2", ExternalID: "ta-2", Title: "Jackson Pub", Category: activitiessvc.CategoryBars, Source: "tripadvisor", Subcategory: ""},
+	}
+	resolver := &fakeResolver{byID: map[string]string{"ta-2": "pub"}}
+	setter := &fakeSetter{}
+
+	runBackfill(context.Background(), resolver, setter, rows, 0, func() {})
+
+	if setter.unconditional["1"] != "kafana_live" {
+		t.Errorf("row 1 unconditional write = %q, want kafana_live", setter.unconditional["1"])
+	}
+	if setter.writes["2"] != "pub" {
+		t.Errorf("row 2 if-empty write = %q, want pub", setter.writes["2"])
+	}
+	if len(resolver.calls) != 1 || resolver.calls[0] != "ta-2" {
+		t.Errorf("resolver calls = %v, want exactly one call for row 2 (the local-keyword row must not call the resolver)", resolver.calls)
+	}
+}
+
+func candidateIDs(rows []activitiessvc.Activity) []string {
+	out := make([]string, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, a.ID)
+	}
+	return out
 }
 
 // captureReport runs report against a redirected os.Stdout and returns what

@@ -83,8 +83,10 @@ can be staged across multiple invocations against a tight daily Places quota;
 re-running with no `-limit` (or a higher one) picks up exactly where the last
 run left off, since the read filter (`subcategory = ''`) and the write guard
 (`SetSubcategoryIfEmpty`) are the same condition. `google_places` rows are
-never touched — see the tool's package doc for why. Capture the printed
-before/after table into `engineering-notes.md` once run for real.
+touched only when the venue's name carries a local venue-type keyword
+(shisha, kafana) — see the tool's package doc and `keepCandidates` for why.
+Capture the printed before/after table into `engineering-notes.md` once run
+for real.
 
 Tripadvisor rows synced before `google_place_id` existed (tripadvisor-google-
 review-fallback T1) also need a one-time backfill, same shape as the tool
