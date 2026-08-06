@@ -69,7 +69,7 @@ function asOpeningHoursValue(v: unknown): OpeningHoursFormValue {
 /** Renders the selected category's actual `details` shape (per the T4
  * addendum's build-deterministic key -> control table), never the mock's
  * fixed five inputs. Every scalar edit either sets or (when cleared)
- * deletes the key — an empty `action_url` must never be sent as `""`
+ * deletes the key — an empty `website_url` must never be sent as `""`
  * (would fail the server's "absolute URL when present" check), so "empty"
  * means "key absent", matching the model's nullable-pointer convention. */
 export function DetailsSection({

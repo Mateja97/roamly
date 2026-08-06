@@ -410,4 +410,36 @@ describe('EditActivityPage', () => {
       expect(screen.queryByText('Opening hours')).toBeNull();
     });
   });
+
+  describe('website_url save path (T3, website-url-action-chip)', () => {
+    // Confirms the exact regression T1's review flagged: an admin-entered
+    // link for one of the 6 admin-entered-only categories must reach the
+    // backend under the `website_url` key, never the retired `action_url`.
+    it('typing a Booking website value for restaurants PATCHes website_url, not action_url', async () => {
+      const user = userEvent.setup();
+      const restaurant: AdminActivityDetail = {
+        ...ACTIVITY,
+        category: 'restaurants',
+        details: { cuisine: 'Serbian' },
+      };
+      getAdminActivity.mockResolvedValue({ status: 'success', data: restaurant });
+      patchAdminActivity.mockResolvedValue({ status: 'success', data: restaurant });
+      renderEditPage('/activities/a1/edit');
+
+      await screen.findByDisplayValue('Kalemegdan Park');
+      await user.type(
+        screen.getByLabelText('Booking website'),
+        'https://example.com/book',
+      );
+      await user.click(screen.getByRole('button', { name: /Save changes/ }));
+
+      await waitFor(() => expect(patchAdminActivity).toHaveBeenCalled());
+      const [, payload] = patchAdminActivity.mock.calls.at(-1)!;
+      expect(payload.details).toEqual({
+        cuisine: 'Serbian',
+        website_url: 'https://example.com/book',
+      });
+      expect(payload.details).not.toHaveProperty('action_url');
+    });
+  });
 });

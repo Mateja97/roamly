@@ -51,7 +51,7 @@ describe('DetailsSection', () => {
     render(
       <DetailsSection
         category="bars"
-        details={{ action_url: 'https://example.com' }}
+        details={{ website_url: 'https://example.com' }}
         onChange={onChange}
       />,
     );
@@ -59,8 +59,24 @@ describe('DetailsSection', () => {
     await user.clear(input);
     await user.tab();
     const lastCall = onChange.mock.calls.at(-1)![0];
-    expect(lastCall).not.toHaveProperty('action_url');
+    expect(lastCall).not.toHaveProperty('website_url');
   });
+
+  it.each(['cafes', 'nature', 'kids', 'shopping', 'tours_experiences'])(
+    '%s renders the Booking website field and round-trips a saved value',
+    (category) => {
+      render(
+        <DetailsSection
+          category={category}
+          details={{ website_url: 'https://example.com' }}
+          onChange={vi.fn()}
+        />,
+      );
+      expect(screen.getByLabelText('Booking website')).toHaveValue(
+        'https://example.com',
+      );
+    },
+  );
 
   it('restaurants renders the Opening hours group after the free-text hours field', () => {
     render(

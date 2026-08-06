@@ -140,7 +140,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       ],
       itemLabel: 'dish',
     },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   cafes: [
     { key: 'known_for_brew', label: 'Known for brew', control: 'text' },
@@ -156,13 +156,14 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       ],
       itemLabel: 'item',
     },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   bars: [
     { key: 'vibe', label: 'Vibe', control: 'text' },
     { key: 'happy_hour_window', label: 'Happy hour window', control: 'text' },
     OPENING_HOURS_FIELD,
     { key: 'signature_pours', label: 'Signature pours', control: 'chips' },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   nightlife: [
     { key: 'entry_price', label: 'Entry price', control: 'text' },
@@ -179,7 +180,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       ],
       itemLabel: 'lineup entry',
     },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
     { key: 'venue_type', label: 'Venue type', control: 'text' },
   ],
   nature: [
@@ -187,18 +188,20 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'best_time', label: 'Best time', control: 'text' },
     { key: 'cost', label: 'Cost', control: 'text' },
     { key: 'good_to_know', label: 'Good to know', control: 'chips' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   sport: [
     { key: 'difficulty', label: 'Difficulty', control: 'numeric' },
     { key: 'effort_level', label: 'Effort level', control: 'text' },
     { key: 'gear', label: 'Gear', control: 'text' },
     { key: 'what_to_bring', label: 'What to bring', control: 'chips' },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
     { key: 'discipline', label: 'Discipline', control: 'text' },
   ],
   kids: [
     { key: 'age_range', label: 'Age range', control: 'text' },
     { key: 'facilities', label: 'Facilities', control: 'chips' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   culture: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
@@ -210,7 +213,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       control: 'object-group',
       itemFields: BANNER,
     },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   art: [
     { key: 'venue_type', label: 'Venue type', control: 'text' },
@@ -232,7 +235,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       control: 'object-group',
       itemFields: BANNER,
     },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
     { key: 'year', label: 'Year', control: 'numeric' },
   ],
   wellness: [
@@ -248,7 +251,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       label: 'External booking note',
       control: 'textarea',
     },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
     { key: 'venue_type', label: 'Venue type', control: 'text' },
     { key: 'good_to_know', label: 'Good to know', control: 'chips' },
     OPENING_HOURS_FIELD,
@@ -258,6 +261,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'best_day', label: 'Best day', control: 'text' },
     OPENING_HOURS_FIELD,
     { key: 'what_youll_find', label: "What you'll find", control: 'chips' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
   entertainment: [
     { key: 'genre', label: 'Genre', control: 'text' },
@@ -272,7 +276,7 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
       ],
       itemLabel: 'show',
     },
-    { key: 'action_url', label: 'Booking website', control: 'url' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
     { key: 'good_to_know', label: 'Good to know', control: 'chips' },
     OPENING_HOURS_FIELD,
   ],
@@ -290,5 +294,6 @@ export const DETAILS_SCHEMA: Record<string, DetailField[]> = {
     { key: 'not_included', label: 'Not included', control: 'chips' },
     { key: 'itinerary', label: 'Itinerary', control: 'chips' },
     { key: 'meeting_point', label: 'Meeting point', control: 'textarea' },
+    { key: 'website_url', label: 'Booking website', control: 'url' },
   ],
 };

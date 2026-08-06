@@ -25,7 +25,7 @@ describe('DETAILS_SCHEMA', () => {
     }
   });
 
-  it('tours_experiences mirrors ToursExperiencesDetails: 3 text, 1 select, 3 chips, 1 textarea', () => {
+  it('tours_experiences mirrors ToursExperiencesDetails: 3 text, 1 select, 3 chips, 1 textarea, 1 url', () => {
     const fields = DETAILS_SCHEMA.tours_experiences;
     expect(fields.map((f) => f.key)).toEqual([
       'duration',
@@ -36,6 +36,7 @@ describe('DETAILS_SCHEMA', () => {
       'not_included',
       'itinerary',
       'meeting_point',
+      'website_url',
     ]);
     expect(fields.find((f) => f.key === 'difficulty_level')?.control).toBe(
       'select',
