@@ -4,6 +4,20 @@
 **Owner:** whoever holds the GetYourGuide partner account.
 **Created:** 2026-08-06.
 
+## Partner ID — where it lives
+
+`EXPO_PUBLIC_GYG_PARTNER_ID` is set in `app/.env`, which is gitignored
+(`app/.gitignore:34`). **It is deliberately not committed:** this repo is
+public, and a harvested affiliate ID appended to someone else's spam links can
+get the partner account flagged for low-quality traffic. `docker-compose.yaml`
+and `app/Dockerfile` pin the variable with an empty default; real builds pass it
+from the shell env or a CI secret.
+
+The value itself is in the partner portal under **Tools → Links** — build any
+link and read its `partner_id=` parameter. Without it, `toursPartner.ts`'s
+`hasPartnerId()` omits the tours ticket entirely, by design. If the ticket ever
+"disappears", check this variable first.
+
 ## What shipped, and why it's interim
 
 `app/assets/getyourguide-logo.svg` and `app/src/components/GetYourGuideLogo.tsx`
