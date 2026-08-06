@@ -153,3 +153,53 @@ func TestPassesFloor(t *testing.T) {
 		})
 	}
 }
+
+// TestToursExperiences_HasNoDiscoverySource makes a contractual constraint
+// fail the build instead of living in a document someone skims.
+//
+// Tours & Experiences has no provider and cannot get one. GetYourGuide is the
+// obvious candidate, and their Partner T&Cs §4.2.2(iii) forbid copying,
+// storing, caching or building a database of their content, while §4.2.2(v)
+// forbids intermixing it with other sources — so their tours can never become
+// rows sorted and filtered beside Google and Tripadvisor venues. See
+// BUSINESS_STANDARDS.md's "Tours & Experiences will stay row-less".
+//
+// The failure mode this guards against is specific and plausible: the category
+// looks provider-less by omission rather than by contract, adding a provider is
+// the obvious next feature, and internal/tripadvisor sits right there as a
+// template. An autonomous pipeline run would reach for it immediately.
+//
+// Scope, stated plainly so this isn't mistaken for total coverage: it guards
+// the Google discovery table and the sync schedule. A standalone provider
+// package added the way internal/tripadvisor was — routed by the hardcoded
+// category switches in internal/service/activity.go — would bypass it
+// entirely and keep this test green. Extending the guard there would mean
+// asserting against a switch statement, which is more brittle than it is
+// worth; the backstop for that path is BUSINESS_STANDARDS.md and review.
+//
+// If this test ever fails, the fix is almost certainly to delete the new
+// discovery row — not to relax the test. Changing it means someone has decided
+// to breach the partner terms, which is a decision for a human with the
+// contract in front of them.
+func TestDiscoveryRows_NeverSourcesToursExperiences(t *testing.T) {
+	for _, r := range DiscoveryRows {
+		if r.Category == activitiessvc.CategoryToursExperiences {
+			t.Errorf("DiscoveryRows contains a tours_experiences row (subtype %q): the category is "+
+				"contractually row-less, see BUSINESS_STANDARDS.md", r.Subtype)
+		}
+	}
+
+	for _, c := range GoogleCategories {
+		if c == activitiessvc.CategoryToursExperiences {
+			t.Error("GoogleCategories includes tours_experiences: it must never be scheduled for sync")
+		}
+	}
+
+	// The subtypes stay in the taxonomy on purpose — they describe the
+	// category and would be used by Roamly-authored editorial tours, which
+	// carry no partner constraints. Their presence must not be read as a
+	// gap waiting for a discovery row to fill.
+	if len(activitiessvc.Subcategories[activitiessvc.CategoryToursExperiences]) == 0 {
+		t.Error("tours_experiences lost its subtypes: they are the taxonomy, not a discovery TODO")
+	}
+}
