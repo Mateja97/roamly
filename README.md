@@ -40,6 +40,10 @@ React + TypeScript (Vite). See [frontend/README.md](frontend/README.md).
    (`VITE_GOOGLE_MAPS_API_KEY`, `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY`), so `.env`
    needs all three set to the same value, or the frontend/app build args
    resolve empty and the Edit activity screen's map preview 403s from Google.
+   Optionally add `EXPO_PUBLIC_GYG_PARTNER_ID` (your GetYourGuide partner
+   ID, from the partner portal's Tools → Links builder) — unset, the app's
+   Tours & Experiences referral card omits itself rather than shipping an
+   untracked affiliate link.
 2. `docker compose up` — brings up postgres + proxy-service + frontend;
    visit `http://localhost:4173`, which calls proxy-service's `/healthz`
    through to confirm the wiring works end to end.

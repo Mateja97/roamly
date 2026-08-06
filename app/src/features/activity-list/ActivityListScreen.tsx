@@ -24,6 +24,8 @@ import {
 import { NearbyNudgeCard } from './NearbyNudgeCard';
 import { dismissNearbyNudge, isNearbyNudgeDismissed } from './nearbyNudge';
 import { SubtypeRail } from './SubtypeRail';
+import { ToursTicket } from './ToursTicket';
+import { hasPartnerId, resolveTourCity } from './toursPartner';
 import { TravelerRow } from './TravelerRow';
 import type { TravelerRowState } from './TravelerRow';
 import { recordHomeBaseSample } from './travelerMode';
@@ -62,6 +64,8 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // ever updates on a successful fetch, so it holds the last real data
   // across any loading/error state in between.
   const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>([]);
+  // See applyResult: survives the tours query's always-empty response.
+  const [lastKnownCity, setLastKnownCity] = useState<string | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersRequestSeq = useRef(0);
@@ -89,6 +93,17 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
     if (result.status === 'success') {
       setQueryState({ status: 'loaded', activities: result.activities });
       setLastLoadedActivities(result.activities);
+      // Sticky, and deliberately never cleared by an empty success. In Nearby
+      // the only city source is the rows themselves, and the tours query
+      // *always* comes back empty (the category has no provider) — so without
+      // this, selecting Tours wipes the city and the ticket falls back to the
+      // generic copy and an un-citied link, which is precisely the case the
+      // feature exists for. Overwritten whenever a later result carries a
+      // city, so moving cities still updates it; holding a slightly stale
+      // city beats flashing the generic title (design-spec: the title must
+      // not visibly flip).
+      const city = resolveTourCity([], result.activities);
+      if (city) setLastKnownCity(city);
     } else {
       setQueryState({ status: 'error', message: result.message });
     }
@@ -334,6 +349,23 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
     <NearbyNudgeCard variant="choose-city" onOpenScope={() => setSheetVisible(true)} />
   ) : null;
 
+  // Tours & Experiences is the one category with no rows and no provider
+  // (BUSINESS_STANDARDS.md) — and `categoryOrder.ts` floats it *first* in
+  // traveler mode, so without this the leading pill dead-ends on "No
+  // activities match". The ticket is the category's content: an outbound
+  // GetYourGuide referral, no partner data in the app.
+  //
+  // Omitted with no partner ID configured — an untracked link earns no
+  // commission, so a silently unattributed referral is worse than no ticket.
+  const showToursTicket = appliedFilters.categories.includes('tours_experiences') && hasPartnerId();
+  const toursTicket = showToursTicket ? (
+    <ToursTicket city={resolveTourCity(appliedScopeDraft.cities, lastLoadedActivities) ?? lastKnownCity} />
+  ) : null;
+  // Tours alone means the ticket *is* the answer — "No activities match"
+  // below it would contradict it. Selected alongside other categories, the
+  // empty state still speaks for those, so both render.
+  const toursIsOnlySelection = showToursTicket && appliedFilters.categories.length === 1;
+
   return (
     <View style={styles.container}>
       <SafeAreaView
@@ -395,6 +427,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
             ListHeaderComponent={
               <View style={styles.listHeader}>
                 {nudge}
+                {toursTicket}
                 {travelerMode && (
                   <TravelerRow state={travelerRowState} showDistance={hasLocationAnchor} onPressActivity={setSelectedActivity} />
                 )}
@@ -414,6 +447,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
         ) : (
           <ScrollView contentContainerStyle={styles.list}>
             {nudge}
+            {toursTicket}
             {travelerMode && (
               <TravelerRow state={travelerRowState} showDistance={hasLocationAnchor} onPressActivity={setSelectedActivity} />
             )}
@@ -421,7 +455,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
             {queryState.status === 'loading' &&
               Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
 
-            {queryState.status === 'loaded' && displayActivities.length === 0 && (
+            {queryState.status === 'loaded' && displayActivities.length === 0 && !toursIsOnlySelection && (
               <EmptyState hasFilters={hasFilters} onClearFilters={handleClearCategories} />
             )}
 

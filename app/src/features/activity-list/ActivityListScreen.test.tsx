@@ -530,6 +530,74 @@ describe('ActivityListScreen', () => {
     });
   });
 
+  describe('Tours ticket (GetYourGuide referral — the provider-less category)', () => {
+    const originalPartnerId = process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
+    beforeEach(() => {
+      process.env.EXPO_PUBLIC_GYG_PARTNER_ID = 'ABC123';
+    });
+    afterEach(() => {
+      process.env.EXPO_PUBLIC_GYG_PARTNER_ID = originalPartnerId;
+      if (originalPartnerId === undefined) delete process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
+    });
+
+    async function selectTours() {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      mockedQuery.mockResolvedValue(successResult([]));
+      fireEvent.press(screen.getByRole('button', { name: 'Tours & Experiences' }));
+      await flush();
+    }
+
+    it('is absent until the category is selected', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      expect(screen.queryByText(/Book a guided tour/)).toBeNull();
+    });
+
+    it('replaces the empty state when Tours is the only selection', async () => {
+      await selectTours();
+      // The category has no provider, so it always comes back empty — the
+      // ticket is the answer, not "No activities match" beneath it.
+      expect(screen.getByText(/Book a guided tour/)).toBeTruthy();
+      expect(screen.queryByText('No activities match')).toBeNull();
+    });
+
+    // The tours query ALWAYS resolves empty in production — the category has no
+    // provider. So the city has to survive that empty response, which is the
+    // only sequence this feature ever actually sees in Nearby. An earlier
+    // version of this test left the mock resolving rows for the tours query
+    // too, and passed against a response the backend can never return.
+    it('keeps the Nearby city after the tours query returns empty', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([{ ...activity, city: 'Belgrade' }]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      mockedQuery.mockResolvedValue(successResult([]));
+      fireEvent.press(screen.getByRole('button', { name: 'Tours & Experiences' }));
+      await flush();
+
+      expect(screen.getByText('Book a guided tour in Belgrade')).toBeTruthy();
+    });
+
+    it('keeps the empty state when other categories are also selected', async () => {
+      await selectTours();
+      fireEvent.press(screen.getByRole('button', { name: 'Culture' }));
+      await flush();
+      // "No activities match" still speaks for Culture, so both render.
+      expect(screen.getByText(/Book a guided tour/)).toBeTruthy();
+      expect(screen.getByText('No activities match')).toBeTruthy();
+    });
+
+    it('is omitted entirely with no partner id configured — an untracked referral earns nothing', async () => {
+      delete process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
+      await selectTours();
+      expect(screen.queryByText(/Book a guided tour/)).toBeNull();
+      expect(screen.getByText('No activities match')).toBeTruthy();
+    });
+  });
+
   describe('Subtype rail (T3, Decision 5 — one rail per selected category)', () => {
     const sportActivity: Activity = { ...activity, id: '2', title: 'Downtown Climbing Gym', category: 'sport', subcategory: 'climbing_gym' };
 
