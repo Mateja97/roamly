@@ -108,6 +108,17 @@ come from Tripadvisor (Cafés is also synced from Tripadvisor, but its
 coverage there is too thin to stand alone). Tours & Experiences has no
 provider yet and is deliberately empty.
 
+**Tours & Experiences will stay row-less.** GetYourGuide — the obvious
+provider — forbids it: their Partner T&Cs §4.2.2(iii) bar copying, storing,
+caching or building a database of their content, and §4.2.2(v) bars
+intermixing it with other sources, so GYG tours can never become rows sorted
+and filtered beside Google/Tripadvisor venues. The category is served instead
+by an outbound referral (`app/src/features/activity-list/ToursTicket.tsx`),
+which carries no partner content at all. Selecting the category still returns
+zero rows by design; the ticket is what the user sees. Roamly-authored
+editorial tours remain possible and would use the existing per-category
+detail composition in `activityDetailConfig.ts`.
+
 **Name-derived subtypes.** Two Serbian venue types are classified from the
 venue's name rather than a Google type, via `namemap.Subtype`: shisha bars
 (`shisha`/`shisha_lounge`) and kafanas (`kafana`/`kafana_live`). These two

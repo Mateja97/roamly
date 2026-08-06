@@ -113,6 +113,10 @@ services:
         # from the shell env, empty by default so the build never requires a
         # live billed key; the app degrades to its no-key fallback instead.
         EXPO_PUBLIC_GOOGLE_MAPS_API_KEY: ${EXPO_PUBLIC_GOOGLE_MAPS_API_KEY:-}
+        # GetYourGuide partner/tracking ID for the Tours & Experiences
+        # referral link. Empty by default — the tours ticket omits itself
+        # rather than sending an unattributed (uncommissioned) referral.
+        EXPO_PUBLIC_GYG_PARTNER_ID: ${EXPO_PUBLIC_GYG_PARTNER_ID:-}
     ports:
       - "4174:4174"
     depends_on:
