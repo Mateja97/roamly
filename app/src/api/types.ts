@@ -162,8 +162,10 @@ export type ActivityDetails =
       hours?: string;
       open_status?: string;
       popular_dishes?: ItemPrice[];
-      // T7: primary CTA's external link ("Book a table").
-      action_url?: string;
+      // T7: primary CTA's external link ("Book a table"). Renamed from
+      // `action_url` (website-url-action-chip T2) — the venue's own website,
+      // regardless of which CTA label wraps it.
+      website_url?: string;
       // opening-hours T3: structured alternative to `open_status` above —
       // when present, supersedes it in the meta-row status slot.
       opening_hours?: OpeningHours;
@@ -178,8 +180,9 @@ export type ActivityDetails =
       happy_hour_window?: string;
       opens_time?: string;
       signature_pours?: string[];
-      // T7: primary CTA's external link ("See menu").
-      action_url?: string;
+      // T7: primary CTA's external link ("See menu"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       opening_hours?: OpeningHours;
       // T8: present only for Tripadvisor-sourced rows (see TripadvisorAttribution).
       tripadvisor?: TripadvisorAttribution;
@@ -193,6 +196,10 @@ export type ActivityDetails =
       hours?: string;
       on_the_bar?: ItemPrice[];
       opening_hours?: OpeningHours;
+      // website-url-action-chip T2: venue's own website — feeds the Website
+      // action chip. Cafés is directions-primary, so this never drives the
+      // primary CTA (stays "Get directions").
+      website_url?: string;
       // Cafés is the one dual-sourced category (#103/#104) — present only
       // for a Tripadvisor-sourced café row, same as restaurants/bars.
       tripadvisor?: TripadvisorAttribution;
@@ -205,8 +212,9 @@ export type ActivityDetails =
       opens_time?: string;
       open_tonight?: boolean;
       lineup?: { time: string; act: string; stage: string }[];
-      // T7: primary CTA's external link ("Guest list").
-      action_url?: string;
+      // T7: primary CTA's external link ("Guest list"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       // T8: badge subtype qualifier, e.g. "Club".
       venue_type?: string;
       // opening-hours T3: structured alternative to `open_tonight` above —
@@ -219,6 +227,10 @@ export type ActivityDetails =
       best_time?: string;
       cost?: string;
       good_to_know?: string[];
+      // website-url-action-chip T2: venue's own website — feeds the Website
+      // action chip. Nature is directions-primary, so this never drives the
+      // primary CTA (stays "Get directions").
+      website_url?: string;
     }
   | {
       category: 'sport';
@@ -231,8 +243,9 @@ export type ActivityDetails =
       duration?: string;
       gear?: string;
       what_to_bring?: string[];
-      // T7: primary CTA's external link ("Book session").
-      action_url?: string;
+      // T7: primary CTA's external link ("Book session"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       // T8: badge subtype qualifier, e.g. "Climbing".
       discipline?: string;
     }
@@ -240,6 +253,10 @@ export type ActivityDetails =
       category: 'kids';
       age_range?: string;
       facilities?: string[];
+      // website-url-action-chip T2: venue's own website — feeds the Website
+      // action chip. Kids is directions-primary, so this never drives the
+      // primary CTA (stays "Get directions").
+      website_url?: string;
     }
   | {
       category: 'culture';
@@ -247,8 +264,9 @@ export type ActivityDetails =
       ticket_price?: string;
       hours?: string;
       now_showing?: DetailBanner;
-      // T7: primary CTA's external link ("Get tickets").
-      action_url?: string;
+      // T7: primary CTA's external link ("Get tickets"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       opening_hours?: OpeningHours;
     }
   | {
@@ -258,8 +276,9 @@ export type ActivityDetails =
       hours?: string;
       artwork?: { artist?: string; work?: string; medium?: string };
       current_exhibition?: DetailBanner;
-      // T7: primary CTA's external link ("Get tickets").
-      action_url?: string;
+      // T7: primary CTA's external link ("Get tickets"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       // T7: current exhibition's artwork year, e.g. 2019.
       year?: number;
       opening_hours?: OpeningHours;
@@ -268,8 +287,9 @@ export type ActivityDetails =
       category: 'wellness';
       treatments?: { item: string; duration?: string; price?: string }[];
       external_booking_note?: string;
-      // T7: primary CTA's external link ("Visit website").
-      action_url?: string;
+      // T7: primary CTA's external link ("Visit website"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       // T8: badge subtype qualifier, e.g. "Spa".
       venue_type?: string;
       // Website-sourced (weekly scrape) — never Places-sourced.
@@ -283,8 +303,9 @@ export type ActivityDetails =
       genre?: string;
       neighborhood?: string;
       upcoming_shows?: { date: string; title: string; time_or_price?: string }[];
-      // T7: primary CTA's external link ("Get tickets").
-      action_url?: string;
+      // T7: primary CTA's external link ("Get tickets"). Renamed from
+      // `action_url` (website-url-action-chip T2).
+      website_url?: string;
       // Website-sourced (weekly scrape) — never Places-sourced.
       typical_show_length?: string;
       price_from?: string;
@@ -298,6 +319,10 @@ export type ActivityDetails =
       hours?: string;
       what_youll_find?: string[];
       opening_hours?: OpeningHours;
+      // website-url-action-chip T2: venue's own website — feeds the Website
+      // action chip. Shopping is directions-primary, so this never drives
+      // the primary CTA (stays "Get directions").
+      website_url?: string;
     }
   | {
       // T10 (activity-detail-system): mirrors T2's backend
@@ -318,6 +343,11 @@ export type ActivityDetails =
       not_included?: string[];
       meeting_point?: string;
       itinerary?: string[];
+      // website-url-action-chip T2: venue's own website. Tours &
+      // Experiences is non-directions, so this is also its primary CTA
+      // ("Check availability") source — previously permanently disabled
+      // since no such field existed.
+      website_url?: string;
     };
 
 export type Activity = {

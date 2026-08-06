@@ -1,10 +1,11 @@
 import { Clock } from 'lucide-react-native';
 import type { Activity } from '../../api/activities';
-import { CATEGORY_LABELS } from './filters';
+import { CATEGORY_LABELS, CATEGORY_OPTIONS } from './filters';
 import type { Category } from './types';
 import {
   bodySectionOrder,
   factStripFields,
+  getWebsiteURL,
   goodToKnowSection,
   kidsAgeLabel,
   metaDistanceText,
@@ -42,6 +43,46 @@ function baseActivity(details: Activity['details']): Activity {
     details,
   };
 }
+
+// website-url-action-chip T2: `getWebsiteURL` replaces the old 8-case
+// `primaryActionURL` switch — every one of the 13 `ActivityDetails` branches
+// now carries `website_url`, so this is a plain common-property read.
+describe('getWebsiteURL (website-url-action-chip T2)', () => {
+  const detailsWithWebsiteByCategory: Record<Category, Activity['details']> = {
+    restaurants: { category: 'restaurants', website_url: 'https://example.com/restaurants' },
+    bars: { category: 'bars', website_url: 'https://example.com/bars' },
+    cafes: { category: 'cafes', website_url: 'https://example.com/cafes' },
+    nightlife: { category: 'nightlife', website_url: 'https://example.com/nightlife' },
+    nature: { category: 'nature', website_url: 'https://example.com/nature' },
+    sport: { category: 'sport', website_url: 'https://example.com/sport' },
+    kids: { category: 'kids', website_url: 'https://example.com/kids' },
+    culture: { category: 'culture', website_url: 'https://example.com/culture' },
+    art: { category: 'art', website_url: 'https://example.com/art' },
+    wellness: { category: 'wellness', website_url: 'https://example.com/wellness' },
+    entertainment: { category: 'entertainment', website_url: 'https://example.com/entertainment' },
+    shopping: { category: 'shopping', website_url: 'https://example.com/shopping' },
+    tours_experiences: {
+      category: 'tours_experiences',
+      website_url: 'https://example.com/tours_experiences',
+    },
+  };
+
+  it.each(CATEGORY_OPTIONS.map((option) => option.value))(
+    'returns the website_url for %s',
+    (category) => {
+      const activity = baseActivity(detailsWithWebsiteByCategory[category]);
+      expect(getWebsiteURL(activity)).toBe(`https://example.com/${category}`);
+    },
+  );
+
+  it('returns undefined when the category has no website_url', () => {
+    expect(getWebsiteURL(baseActivity({ category: 'restaurants' }))).toBeUndefined();
+  });
+
+  it('returns undefined when details is absent entirely', () => {
+    expect(getWebsiteURL(baseActivity(undefined))).toBeUndefined();
+  });
+});
 
 describe('factStripFields — Hours chip (opening-hours T3)', () => {
   beforeEach(() => {
