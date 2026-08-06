@@ -102,14 +102,13 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   const isPlacesLive =
     (PLACES_LIVE_CATEGORIES.has(seedActivity.category) || seedTripadvisorSourced) &&
     !tripadvisorAttribution(seedActivity);
-  const shouldFetchDetails = isPlacesLive;
   // A Tripadvisor row with its own reviews (or any other non-Places-live,
   // non-fallback row) is never skeletoned and the merge can't improve it, so
   // it starts (and stays) settled — the effect below skips the round trip
   // entirely for it, rather than fetch-and-discard on every open.
-  const [detailsPending, setDetailsPending] = useState(shouldFetchDetails);
+  const [detailsPending, setDetailsPending] = useState(isPlacesLive);
   useEffect(() => {
-    if (!shouldFetchDetails) return;
+    if (!isPlacesLive) return;
     let cancelled = false;
     // design-spec.md's Accessibility notes: one polite loading status for
     // the whole enriching region.
@@ -149,7 +148,7 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
     return () => {
       cancelled = true;
     };
-  }, [seedActivity.id, shouldFetchDetails, isPlacesLive, seedTripadvisorSourced]);
+  }, [seedActivity.id, isPlacesLive, seedTripadvisorSourced]);
 
   const metaText = metaDistanceText(activity, showDistance);
   const status = openStatus(activity);
@@ -273,6 +272,15 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   // (no link) — silence, not a premature plate.
   const googleReviewsCardShown =
     isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
+  // Description skeleton must never show for a Tripadvisor-sourced row
+  // (de-marked or not): `withTripadvisorGoogleReviews` (T1) never sets
+  // `Description` on that merge path — only Rating/ReviewCount/
+  // GoogleReviews/GoogleMapsURI — so an empty stored TA description (a real
+  // case, TA sync can store one) would otherwise skeleton forever and never
+  // resolve into content, the flash-then-collapse DESIGN_STANDARDS.md
+  // forbids. Genuine Places-live categories are unaffected — their skeleton
+  // still resolves once the merge lands.
+  const descriptionPending = isPlacesLive && detailsPending && !seedTripadvisorSourced;
 
   return {
     activity,
@@ -312,5 +320,6 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
     eyebrow,
     showMetaRow,
     googleReviewsCardShown,
+    descriptionPending,
   };
 }

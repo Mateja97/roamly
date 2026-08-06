@@ -81,6 +81,7 @@ export function ActivityDetailScreen({
     genericLabel, websiteURL, primaryEnabled, attribution, bookingNote,
     googleReviewsAllowed, showRatingCluster, ratingSkeletonShown, tripadvisor,
     reviews, address, eyebrow, showMetaRow, googleReviewsCardShown,
+    descriptionPending,
   } = useActivityDetailData(seedActivity, showDistance);
   const {
     ctaBusy, ctaError, setCtaError, openDirections, openShare,
@@ -180,6 +181,7 @@ export function ActivityDetailScreen({
               activity={activity}
               isPlacesLive={isPlacesLive}
               detailsPending={detailsPending}
+              descriptionPending={descriptionPending}
               fields={fields}
               unique={unique}
               goodToKnow={goodToKnow}

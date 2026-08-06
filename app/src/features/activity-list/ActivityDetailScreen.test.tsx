@@ -1530,6 +1530,18 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText('4.6')).toBeNull();
     });
 
+    // Review round 1: `withTripadvisorGoogleReviews` (T1, backend) never
+    // sets `Description` on this merge path — only Rating/ReviewCount/
+    // GoogleReviews/GoogleMapsURI — so a de-marked row with a genuinely
+    // empty stored description (TA sync can store one) must never show the
+    // description skeleton while pending: it would never resolve into
+    // content, a permanent flash-then-collapse.
+    it('does not show the description skeleton while pending — Tripadvisor sync never live-merges a description', () => {
+      const emptyDescription: Activity = { ...reviewlessTripadvisor, description: '' };
+      render(<ActivityDetailScreen activity={emptyDescription} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+    });
+
     it('renders the Google score header + attribution plate once the merge lands with a maps link', async () => {
       mockedGetActivity.mockResolvedValue({
         status: 'success',

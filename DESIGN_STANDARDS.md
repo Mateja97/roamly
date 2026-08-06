@@ -1106,9 +1106,10 @@ token.
 The required on-surface attribution whenever **live Google Places** content
 renders (the 10 Places-sourced categories — cafes, nightlife, nature, sport,
 kids, culture, art, wellness, shopping, entertainment; Restaurants/Bars are
-Tripadvisor's and use the Partner attribution plate above), except when it
-fills a Tripadvisor row's empty review slot (see the precedence rule above).
-Google's Places
+Tripadvisor's and use the Partner attribution plate above), including a
+Tripadvisor-sourced row with no quotable review — that row is an ordinary
+Google row for reviews/rating purposes and renders this plate normally, same
+as any other Places-sourced venue. Google's Places
 Terms mandate, wherever their data shows: **Google Maps branding** (the logo or
 the literal words "Google Maps" — **never a bare "Google"**), **per-review
 author attribution** (avatar + name + a link to the author's Google profile), a
