@@ -134,10 +134,25 @@ The portal generates either form. They are not equivalent in cost.
 | Maintenance | None | One portal visit per city, forever |
 | Unmapped city | Still works | Nothing renders |
 
-**Decide by launch footprint, and pick one — not both.** A handful of cities →
-`location-id`, exact and cheap to compile in one sitting. Arbitrary cities →
-`q`, the only form without a silent coverage hole, since `suggestCities` lets a
-user pick any city and Nearby resolves to wherever they are.
+**Decided: `q`.** The MVP targets every city in Serbia, which is an open set —
+it cannot be hand-mapped, and most Serbian towns have no GetYourGuide location
+ID at all because they have no inventory. An ID map would cover Belgrade and a
+few resorts and render nothing everywhere else. `q` degrades gracefully instead.
+
+(The general rule, if the footprint ever changes: a handful of named cities →
+`location-id`, exact and cheap to compile. Arbitrary cities → `q`.)
+
+**Dependency this creates: check the actual inventory before building.** Serbia's
+city count is not the number that matters — GetYourGuide's Serbian destination
+count is. Open the portal's Link builder, type Serbian city names, and see which
+resolve to real destinations. If coverage is Belgrade-plus-a-few, an embedded
+panel will render empty across most of the country, which reads as *our* feature
+being broken rather than their catalogue being thin. Phase 1 tolerates that (the
+user lands on their search page, which suggests alternatives); Phase 2 does not.
+That check may decide this phase on its own.
+
+Do not check this by scraping their site — §3.1.4 forbids programmatically
+extracting content from it. The Link builder is the sanctioned route.
 
 A "location-id when mapped, `q` otherwise" fallback is two code paths for one
 job. Only build it if `q` demonstrably misresolves in practice.
@@ -164,6 +179,61 @@ appending the country is the fix — the data is already on the client
 
 Null city → skip the panel and keep the Phase 1 deep link. A locationless widget
 is a worse experience than a working link.
+
+## The WebView shell
+
+Both halves are portal-verified, so this is the document to generate — not a
+sketch. Values in `{braces}` are interpolated; nothing is hard-coded.
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- GetYourGuide Analytics — mandatory for widgets -->
+<script async defer
+        src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"
+        data-gyg-partner-id="{partnerId}"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #7D2027; }
+  body { padding: 16px; color: #F5EBDD;
+         font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  a { color: #CE9042; }
+</style>
+</head>
+<body>
+<div data-gyg-href="https://widget.getyourguide.com/default/activities.frame"
+     data-gyg-widget="activities"
+     data-gyg-partner-id="{partnerId}"
+     data-gyg-q="{city}"
+     data-gyg-locale-code="en-US"
+     data-gyg-cmp="roamly-app"
+     data-gyg-number-of-items="6"><span>Powered by <a target="_blank"
+     rel="sponsored" href="https://www.getyourguide.com/">GetYourGuide</a></span></div>
+</body>
+</html>
+```
+
+Four things in there are load-bearing:
+
+- **`background: #7D2027` on `html`/`body`, and `backgroundColor` on the
+  `WebView` itself.** React Native's WebView paints white before the document
+  does; setting only the CSS still gives a white flash on open. Both, or it
+  looks broken every single time the panel is opened.
+- **The `font-family` and link colour** are what the widget's advertised
+  host-font matching has to work with. Give it Roamly's stack rather than
+  letting it inherit a browser default.
+- **`{city}` must be HTML-attribute-escaped.** It comes from our own API rather
+  than user input, so this is not an injection defence so much as ordinary
+  correctness — a stray quote in a city name would silently break the attribute
+  and render nothing.
+- **`{partnerId}` is read from `EXPO_PUBLIC_GYG_PARTNER_ID`**, never written
+  literally. The repo is public (see `getyourguide-brand-asset.md`).
+
+The `<span>` fallback keeps a bare GetYourGuide link rather than the city's
+slugged URL — we cannot derive a slug for an arbitrary city, and an unattributed
+link to the right city is no better than an attributed one to their home page.
 
 ## Screen: `ToursPanelScreen`
 
