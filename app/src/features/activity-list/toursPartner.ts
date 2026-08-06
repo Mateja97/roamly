@@ -19,7 +19,13 @@ export function hasPartnerId(): boolean {
   return Boolean(process.env.EXPO_PUBLIC_GYG_PARTNER_ID);
 }
 
-export type TourLocation = { city: string; country: string };
+// `country` is optional on purpose: a confirmed city is self-sufficient (it
+// searches itself), and country only matters as the widening target for an
+// unconfirmed one. Requiring both would throw away a perfectly good city
+// whenever reverse geocoding returns one without the other — which the
+// Tripadvisor path can produce, since service/activity.go fills city and
+// country from independent sources.
+export type TourLocation = { city: string; country: string | null };
 
 // Where the tour link should land. Both scopes are served by data already on
 // the client — no reverse-geocode call, no extra permission.
@@ -32,14 +38,17 @@ export type TourLocation = { city: string; country: string };
 // null is a normal outcome (unanchored Anywhere with no results yet), not an
 // error — callers fall back to GYG's own landing page.
 export function resolveTourLocation(cities: CitySuggestion[], activities: Activity[]): TourLocation | null {
-  const selected = cities[0];
-  if (selected?.city?.trim() && selected.country?.trim()) {
-    return { city: selected.city.trim(), country: selected.country.trim() };
+  // Keyed on city alone. Gating this branch on country too would let a
+  // selected city with a blank country fall through to the loop below and
+  // name a *different* city than the user picked — the same over-promise this
+  // module exists to prevent, arrived at from the other direction.
+  const selectedCity = cities[0]?.city?.trim();
+  if (selectedCity) {
+    return { city: selectedCity, country: cities[0].country?.trim() || null };
   }
   for (const activity of activities) {
     const city = activity.city?.trim();
-    const country = activity.country?.trim();
-    if (city && country) return { city, country };
+    if (city) return { city, country: activity.country?.trim() || null };
   }
   return null;
 }
@@ -61,7 +70,7 @@ export function resolveTourLocation(cities: CitySuggestion[], activities: Activi
 // string exactly as it arrived.
 const CONFIRMED_TOUR_CITIES = new Set(['belgrade', 'beograd', 'novi sad', 'niš', 'nis']);
 
-export function isConfirmedTourCity(city: string): boolean {
+function isConfirmedTourCity(city: string): boolean {
   return CONFIRMED_TOUR_CITIES.has(city.trim().toLowerCase());
 }
 
@@ -82,7 +91,7 @@ export function tourTarget(location: TourLocation | null): { city: string | null
 // ponytail: the search page, not a per-city landing URL — GYG's city URLs are
 // slugged per city ("/belgrade-l1688/") and we have no slug table and no
 // licence to build one. `/s/?q=` resolves the same city server-side from the
-// plain name we already hold. A null city drops `q` and lands on the GYG home
+// plain name we already hold. A null query drops `q` and lands on the GYG home
 // page rather than searching for nothing.
 //
 // Returns null with no partner id rather than emitting `partner_id=`. The

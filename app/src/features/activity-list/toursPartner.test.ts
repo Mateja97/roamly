@@ -41,6 +41,18 @@ describe('resolveTourLocation', () => {
     expect(resolveTourLocation(cities, [activity('Belgrade')])).toEqual({ city: 'Belgrade', country: 'Serbia' });
     expect(resolveTourLocation([], [activity('  ')])).toBeNull();
   });
+
+  // A selected city with a blank country must NOT fall through to the
+  // activities loop — that would name a city the user never picked.
+  it('keeps a selected city even when its country is blank', () => {
+    const cities = [{ city: 'Barcelona', country: '  ', centroid: { lat: 41.4, lng: 2.2 } }];
+    expect(resolveTourLocation(cities, [activity('Belgrade')])).toEqual({ city: 'Barcelona', country: null });
+  });
+
+  it("keeps a row's city when the row has no country", () => {
+    const noCountry = { ...activity('Belgrade'), country: '' };
+    expect(resolveTourLocation([], [noCountry])).toEqual({ city: 'Belgrade', country: null });
+  });
 });
 
 describe('tourTarget', () => {
@@ -63,6 +75,17 @@ describe('tourTarget', () => {
     for (const name of ['Niš', 'Nis', 'niš', 'Beograd', 'Novi Sad']) {
       expect(tourTarget({ city: name, country: 'Serbia' })).toEqual({ city: name, query: name });
     }
+  });
+
+  // Reverse geocoding can return a city without a country (the Tripadvisor
+  // path fills the two from independent sources). A confirmed city is
+  // self-sufficient; an unconfirmed one has nothing to widen to.
+  it('still names a confirmed city when the country is missing', () => {
+    expect(tourTarget({ city: 'Belgrade', country: null })).toEqual({ city: 'Belgrade', query: 'Belgrade' });
+  });
+
+  it('promises nothing rather than guessing when an unconfirmed city has no country', () => {
+    expect(tourTarget({ city: 'Novi Pazar', country: null })).toEqual({ city: null, query: null });
   });
 
   it('promises nothing with no location at all', () => {

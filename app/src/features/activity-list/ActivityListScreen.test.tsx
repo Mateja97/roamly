@@ -581,9 +581,6 @@ describe('ActivityListScreen', () => {
       expect(screen.getByText('Book a guided tour in Belgrade')).toBeTruthy();
     });
 
-    // Novi Pazar has no confirmed GetYourGuide inventory — a search there
-    // returns one Belgrade day-trip — so the card must not promise tours
-    // there. It goes generic and the link widens to the country.
     // Six chips all reading "(0)" and disabled is a filter that can't exist —
     // the category's whole answer is one outbound link.
     it('shows no subtype rail, unlike every other category', async () => {
@@ -595,12 +592,15 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: 'Tours & Experiences' }));
       await flush();
 
-      expect(screen.queryByText('TOURS & EXPERIENCES SUBTYPES')).toBeNull();
+      expect(screen.queryByText('Tours & Experiences subtypes')).toBeNull();
       expect(screen.queryByText(/Walking Tour/)).toBeNull();
       // The ticket still renders — only the rail is gone.
       expect(screen.getByText(/Book a guided tour/)).toBeTruthy();
     });
 
+    // Novi Pazar has no confirmed GetYourGuide inventory — a search there
+    // returns one Belgrade day-trip — so the card must not promise tours
+    // there. It goes generic and the link widens to the country.
     it('drops the city name for a city with no confirmed inventory', async () => {
       mockedQuery.mockResolvedValueOnce(successResult([{ ...activity, city: 'Novi Pazar' }]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);

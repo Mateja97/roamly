@@ -30,10 +30,20 @@ describe('ToursTicket', () => {
     );
   });
 
-  it('drops the city from the copy when none is known', () => {
-    jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+  // The headline behaviour of the coverage fallback: the copy stops naming a
+  // place while the link widens to the country. Asserting the URL is what
+  // stops `query` being silently rewired back to `city` — with only the title
+  // asserted, that swap passes every test.
+  it('drops the city from the copy and searches the country instead', async () => {
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
     render(<ToursTicket city={null} query="Serbia" />);
+
     expect(screen.getByText('Book a guided tour')).toBeTruthy();
+    fireEvent.press(screen.getByRole('link', { name: /Book a guided tour/ }));
+
+    await waitFor(() =>
+      expect(openURL).toHaveBeenCalledWith('https://www.getyourguide.com/s/?q=Serbia&partner_id=ABC123')
+    );
   });
 
   it('attributes the partner', () => {
