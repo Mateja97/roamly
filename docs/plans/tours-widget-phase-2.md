@@ -44,14 +44,14 @@ Verified against GetYourGuide's published integration snippet:
         src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"
         data-gyg-partner-id="Z2BLKH2"></script>
 
-<!-- 2. The widget itself, in <body> -->
+<!-- 2. The widget, verbatim from our own portal (manual variant, Belgrade). -->
 <div data-gyg-href="https://widget.getyourguide.com/default/activities.frame"
-     data-gyg-widget="activities"
-     data-gyg-partner-id="Z2BLKH2"
-     data-gyg-q="Belgrade, Serbia"
      data-gyg-locale-code="en-US"
-     data-gyg-cmp="roamly-app"
-     data-gyg-number-of-items="3"></div>
+     data-gyg-widget="activities"
+     data-gyg-number-of-items="6"
+     data-gyg-partner-id="Z2BLKH2"
+     data-gyg-q="Belgrade"><span>Powered by <a target="_blank" rel="sponsored"
+     href="https://www.getyourguide.com/belgrade-l1688/">GetYourGuide</a></span></div>
 ```
 
 **The Integration Analyzer is not optional.** Widgets 101's troubleshooting
@@ -60,48 +60,83 @@ render or fails to attribute is very likely a missing analyzer. On a website it
 is added once to the site header; in our WebView shell it belongs in the `<head>`
 of the generated HTML, so it ships with every panel load by construction.
 
-**Item count: 3.** GetYourGuide's own recommendation for the manual widget. The
-earlier draft of this spec said 6 on the reasoning that the panel is a full
-screen rather than a sidebar; their recommendation wins until we have data to
-argue otherwise. Revisit only with tap-through numbers.
+### The inner fallback anchor
+
+The portal's snippet ships a child of the widget div:
+
+```html
+<span>Powered by <a target="_blank" rel="sponsored"
+  href="https://www.getyourguide.com/belgrade-l1688/">GetYourGuide</a></span>
+```
+
+Three things follow:
+
+- **Keep it verbatim.** It is GetYourGuide's own attribution markup. Stripping it
+  would be altering content they supplied (§4.2.2 v), and `rel="sponsored"` is
+  the correct disclosure rel for a paid link — removing it would be a step
+  backwards on disclosure, not a cleanup.
+- **It is the degraded state.** If the widget script is blocked, slow, or offline,
+  this text link is what the user sees inside the panel. That is a reasonable
+  fallback, but it means the panel's own error state must not fight it — treat a
+  rendered-but-scriptless widget as content, not as an error.
+- **It carries no `partner_id`.** The bare city URL is unattributed as written,
+  which suggests the Integration Analyzer rewrites links at runtime — one more
+  reason it is mandatory, and directly relevant to the attribution question in
+  §3. The navigation interceptor must expect this anchor too, not only the
+  widget's own click-throughs.
+
+Its slugged city URL (`/belgrade-l1688/`) also confirms that GetYourGuide city
+pages are slugged per city, which is why Phase 1's deep link uses `/s/?q=`
+instead — we cannot derive a slug for an arbitrary city.
+
+**Item count: 6, and the portal allows it.** Their docs recommend 3, and the automatic
+variant is fixed at 3 — but both are tuned for a widget sitting *inside a blog
+post*, competing with the article around it. Our panel is a dedicated screen
+reached by an explicit tap, with nothing to compete with: 3 image-led cards fill
+roughly one screenful and read as a thin result set. 6 gives about two screens
+of scroll without reaching the tail where affiliate click-through collapses.
+
+Use **3** for any widget that is ever placed inline in the feed — their
+recommendation is right for that placement, it just doesn't transfer to this one.
+
+This is a judgement, and `data-gyg-cmp` is what makes it correctable: if the tail
+items draw no clicks in the Integrations report, drop back toward 3.
 
 Their docs and the portal both advertise that the widget matches the host page's
 font. Set the shell's `font-family` and base colours to Roamly's so it inherits
 something closer to the app than a default web page — cheap, but verify how far
 the adaptation actually goes rather than assuming.
 
-**Open: the exact manual-widget attribute set.** The portal's *automatic* widget
-emits a minimal `<div data-gyg-widget="auto" data-gyg-partner-id="…"></div>`.
-The manual variant's full attribute list above is reconstructed from a
-third-party integration guide, not from our own portal output. Generate one
-manual widget in the portal for a named city and use whatever it emits as the
-source of truth before building.
+The snippet above is our portal's own manual-widget output, not a reconstruction
+— every attribute in it is confirmed. The single remaining unknown is the
+campaign attribute name (see the table).
 
 | Attribute | Value | Note |
 |---|---|---|
 | `data-gyg-partner-id` | `Z2BLKH2` | From `EXPO_PUBLIC_GYG_PARTNER_ID`, never inlined literally |
-| `data-gyg-q` | `"{city}, {country}"` | **Format matters** — see "City format" below |
-| `data-gyg-cmp` | `roamly-app` | Campaign label. Set it: this is what separates widget revenue from Phase 1 deep-link revenue in their analytics, and it's the only way to answer "did Phase 2 pay for itself" |
+| `data-gyg-q` | `"{city}"` | Bare city name — the same value `resolveTourCity` already returns. See "City format" below |
+| `data-gyg-cmp` | `roamly-app` | Campaign label — **attribute name still unconfirmed**: our portal snippet was generated without a campaign, so this name comes from a third-party guide. Regenerate with a campaign set to confirm. Set it either way: it is the only thing separating widget revenue from Phase 1 deep-link revenue, and therefore the only way to answer "did Phase 2 pay for itself" |
 | `data-gyg-number-of-items` | `6` | Start here; the panel is a full screen, not a sidebar |
 | `data-gyg-locale-code` | `en-US` | App is English-only today; wire to device locale when it isn't |
 
-### City format
+### City format — no new resolver needed
 
-`data-gyg-q` wants **"City, Country"** ("Belgrade, Serbia"), not the bare city
-`toursPartner.ts` currently returns. Both halves are already on the client:
+`data-gyg-q` takes the **bare city name** ("Belgrade"). An earlier draft of this
+spec said "City, Country", taken from a third-party integration guide; our own
+portal emits the bare city, so that guide was wrong or describing a different
+case.
 
-- Anywhere → `CitySuggestion` carries `city` **and** `country` (`api/cities.ts:5`)
-- Nearby → `Activity` carries `city` (`api/types.ts:343`) and `country`
+**This deletes planned work.** `resolveTourCity` already returns exactly this —
+the widget and the deep link want the same value, so there is no second resolver
+to write and nothing to change in `toursPartner.ts`.
 
-So `resolveTourCity` gains a sibling — `resolveTourLocation(): {city, country} | null`
-— rather than being changed. The deep link keeps taking the bare city (its `q`
-parameter is a free-text search and does better without the country); the widget
-takes the pair. **Don't collapse these into one resolver**; they have different
-correct answers.
+One caveat kept in view: "Belgrade" is globally unambiguous, "Springfield" is
+not. If an ambiguous city ever resolves to the wrong country's activities,
+appending the country is the fix — the data is already on the client
+(`CitySuggestion.country`, `Activity.country`). Don't pre-build it.
 
-Null location → render the panel without `data-gyg-q` and let the widget pick,
-or skip the panel and keep the Phase 1 deep link. Prefer the latter: a
-locationless widget is a worse experience than a working link.
+Null city → skip the panel and keep the Phase 1 deep link. A locationless widget
+is a worse experience than a working link.
 
 ## Screen: `ToursPanelScreen`
 
