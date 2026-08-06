@@ -115,9 +115,7 @@ export const PRIMARY_CTA_LABEL: Record<Category, string> = {
   shopping: 'Get directions',
   // design-spec.md's Tours & Experiences composition (T10): "Bottom:
   // `From €18` + `Check availability`" — label is fixed regardless of
-  // `details` being present (no `action_url`-equivalent field exists on
-  // this category's schema; the CTA is disabled until one does, same as
-  // any other category with no `primaryActionURL`).
+  // `details` being present or the CTA's enabled/disabled state.
   tours_experiences: 'Check availability',
 };
 
@@ -129,25 +127,13 @@ export function genericActionLabel(category: Category): 'Directions' | 'Share' {
   return primaryCTAIsDirections(category) ? 'Share' : 'Directions';
 }
 
-// design-spec.md T8 addendum #1: the 8 non-directions categories' primary
-// CTA opens this external `action_url`. `undefined` only when the
-// field is genuinely absent — never force-disabled by category alone.
-export function primaryActionURL(activity: Activity): string | undefined {
-  const d = activity.details;
-  if (!d) return undefined;
-  switch (d.category) {
-    case 'restaurants':
-    case 'bars':
-    case 'nightlife':
-    case 'sport':
-    case 'culture':
-    case 'art':
-    case 'wellness':
-    case 'entertainment':
-      return d.action_url;
-    default:
-      return undefined;
-  }
+// website-url-action-chip T2: every category's `ActivityDetails` branch
+// carries `website_url` now, so this is a plain common-property read across
+// the discriminated union (no per-category switch needed) — feeds both the
+// non-directions categories' primary CTA and the Website action chip.
+// `undefined` only when the field is genuinely absent.
+export function getWebsiteURL(activity: Activity): string | undefined {
+  return activity.details?.website_url;
 }
 
 // design-spec.md's "Screen composition" section (T5): one fixed canonical

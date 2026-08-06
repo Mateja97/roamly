@@ -7,11 +7,11 @@ import {
   artAttribution,
   factStripFields,
   genericActionLabel,
+  getWebsiteURL,
   goodToKnowSection,
   kidsAgeLabel,
   metaDistanceText,
   metaRowExtras,
-  primaryActionURL,
   primaryCTAIsDirections,
   toursIncludedChecklist,
   toursItinerary,
@@ -199,8 +199,8 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   const meetingPointText = toursMeetingPoint(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
   const genericLabel = genericActionLabel(activity.category);
-  const actionURL = primaryActionURL(activity);
-  const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
+  const websiteURL = getWebsiteURL(activity);
+  const primaryEnabled = isDirectionsPrimary || Boolean(websiteURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
   // Compliance: a Google-sourced reviews section (score, cards, attribution)
@@ -282,7 +282,7 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
     meetingPointText,
     isDirectionsPrimary,
     genericLabel,
-    actionURL,
+    websiteURL,
     primaryEnabled,
     attribution,
     bookingNote,

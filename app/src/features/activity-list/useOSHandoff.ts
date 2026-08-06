@@ -45,9 +45,9 @@ export function useOSHandoff(activity: Activity) {
     }
   }
 
-  // design-spec.md: the 8 non-directions categories' primary CTA opens
-  // their external `action_url` via the same async/error pattern as
-  // openDirections above.
+  // design-spec.md: the non-directions categories' primary CTA (and any
+  // category's Website chip) opens their external `website_url` via the
+  // same async/error pattern as openDirections above.
   async function openExternalLink(url: string) {
     setCtaBusy(true);
     try {

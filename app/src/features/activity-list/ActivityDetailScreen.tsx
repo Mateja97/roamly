@@ -78,7 +78,7 @@ export function ActivityDetailScreen({
     metaText, levelChipText, todayRow, metaChipStatus, weekData,
     metaExtras, fields, foldedValue, kidsAge, unique, goodToKnow,
     toursChecklist, toursItineraryData, meetingPointText, isDirectionsPrimary,
-    genericLabel, actionURL, primaryEnabled, attribution, bookingNote,
+    genericLabel, websiteURL, primaryEnabled, attribution, bookingNote,
     googleReviewsAllowed, showRatingCluster, tripadvisor,
     reviews, address, eyebrow, showMetaRow, googleReviewsCardShown,
   } = useActivityDetailData(seedActivity, showDistance);
@@ -94,7 +94,7 @@ export function ActivityDetailScreen({
 
   function handlePrimaryPress() {
     if (isDirectionsPrimary) return openDirections();
-    if (actionURL) return openExternalLink(actionURL);
+    if (websiteURL) return openExternalLink(websiteURL);
   }
 
   const mapDisabled = !hasValidCoordinates(activity.location) || ctaBusy;
@@ -102,7 +102,7 @@ export function ActivityDetailScreen({
   // design-spec.md's "Action chips" slot (§B2) — a fixed slot in the
   // canonical order for every category, right after the title block, not a
   // per-category opt-in. Sourced entirely from fields the bottom
-  // bar/generic actions already use above (`openDirections`/`actionURL`/
+  // bar/generic actions already use above (`openDirections`/`websiteURL`/
   // `openShare`/`handleCallPhone`) — no new backend data — each chip
   // individually omitting when its own data is absent, per `ActionChips`'
   // own contract. "Menu" has no backing field on any category today, so it
@@ -116,9 +116,9 @@ export function ActivityDetailScreen({
       // Tripadvisor's own `web_url` already has a dedicated "Read all
       // reviews on Tripadvisor" footer CTA below — a Website chip pointing
       // at that same Tripadvisor page would mislabel it, so this only ever
-      // sources a venue's own external link (the 8 non-directions
-      // categories' shared `action_url`), never `tripadvisor.web_url`.
-      actionURL ? { kind: 'website', onPress: () => openExternalLink(actionURL) } : undefined,
+      // sources a venue's own external link (`website_url`, on every
+      // category), never `tripadvisor.web_url`.
+      websiteURL ? { kind: 'website', onPress: () => openExternalLink(websiteURL) } : undefined,
       tripadvisorPhone ? { kind: 'call', onPress: () => handleCallPhone(tripadvisorPhone) } : undefined,
       { kind: 'share', onPress: openShare },
     ] as (ActionChipItem | undefined)[]

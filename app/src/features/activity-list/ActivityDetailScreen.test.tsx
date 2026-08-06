@@ -478,7 +478,7 @@ describe('ActivityDetailScreen', () => {
   });
 
   describe('design-fidelity fixes across categories (T8)', () => {
-    it('opens the external action_url for a non-directions category (Sport) and is never disabled once the URL exists', async () => {
+    it('opens the external website_url for a non-directions category (Sport) and is never disabled once the URL exists', async () => {
       const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
       const sport: Activity = {
         ...activity,
@@ -486,7 +486,7 @@ describe('ActivityDetailScreen', () => {
         details: {
           category: 'sport',
           difficulty: 2,
-          action_url: 'https://booking.example.com/kayaking-sava',
+          website_url: 'https://booking.example.com/kayaking-sava',
         },
       };
       render(
@@ -503,7 +503,7 @@ describe('ActivityDetailScreen', () => {
       openURLSpy.mockRestore();
     });
 
-    it('surfaces the generic error banner when the external action_url handoff fails', async () => {
+    it('surfaces the generic error banner when the external website_url handoff fails', async () => {
       const openURLSpy = jest
         .spyOn(Linking, 'openURL')
         .mockRejectedValue(new Error('no browser'));
@@ -512,7 +512,7 @@ describe('ActivityDetailScreen', () => {
         category: 'sport',
         details: {
           category: 'sport',
-          action_url: 'https://booking.example.com/kayaking-sava',
+          website_url: 'https://booking.example.com/kayaking-sava',
         },
       };
       render(
@@ -2554,7 +2554,7 @@ describe('ActivityDetailScreen', () => {
         hours: '9am–10pm',
         open_status: 'Open',
         popular_dishes: [{ name: 'Pasta', price: '€12' }],
-        action_url: 'https://example.com/book',
+        website_url: 'https://example.com/book',
         opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '09:00', close: '22:00' }] },
       },
       bars: {
@@ -2563,7 +2563,7 @@ describe('ActivityDetailScreen', () => {
         happy_hour_window: '5–7pm',
         opens_time: '18:00',
         signature_pours: ['Old Fashioned'],
-        action_url: 'https://example.com/menu',
+        website_url: 'https://example.com/menu',
         opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '18:00', close: '02:00' }] },
       },
       cafes: {
@@ -2581,7 +2581,7 @@ describe('ActivityDetailScreen', () => {
         opens_time: '22:00',
         open_tonight: true,
         lineup: [{ time: '23:00', act: 'DJ Ana', stage: 'Main' }],
-        action_url: 'https://example.com/guestlist',
+        website_url: 'https://example.com/guestlist',
         venue_type: 'Club',
         opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'friday', open: '22:00', close: '06:00' }] },
       },
@@ -2600,7 +2600,7 @@ describe('ActivityDetailScreen', () => {
         duration: '1 h',
         gear: 'Helmet',
         what_to_bring: ['Water bottle'],
-        action_url: 'https://example.com/book',
+        website_url: 'https://example.com/book',
         discipline: 'Climbing',
       },
       kids: { category: 'kids', age_range: '3–10', facilities: ['Restrooms'] },
@@ -2610,7 +2610,7 @@ describe('ActivityDetailScreen', () => {
         ticket_price: '€8',
         hours: '10am–6pm',
         now_showing: { title: 'New exhibit', description: 'A great show' },
-        action_url: 'https://example.com/tickets',
+        website_url: 'https://example.com/tickets',
         opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '10:00', close: '18:00' }] },
       },
       art: {
@@ -2620,7 +2620,7 @@ describe('ActivityDetailScreen', () => {
         hours: '10am–5pm',
         artwork: { artist: 'Ana', work: 'Untitled', medium: 'Oil' },
         current_exhibition: { title: 'Spring show', description: 'A colorful exhibit' },
-        action_url: 'https://example.com/tickets',
+        website_url: 'https://example.com/tickets',
         year: 2023,
         opening_hours: { timezone: 'Europe/Belgrade', periods: [{ day: 'monday', open: '10:00', close: '17:00' }] },
       },
@@ -2628,7 +2628,7 @@ describe('ActivityDetailScreen', () => {
         category: 'wellness',
         treatments: [{ item: 'Massage', duration: '60 min', price: '€40' }],
         external_booking_note: 'Book online',
-        action_url: 'https://example.com/wellness',
+        website_url: 'https://example.com/wellness',
         venue_type: 'Spa',
         typical_visit: '1 h',
         price_from: '€40',
@@ -2640,7 +2640,7 @@ describe('ActivityDetailScreen', () => {
         genre: 'Comedy',
         neighborhood: 'Dorćol',
         upcoming_shows: [{ date: '2026-09-01', title: 'Live show', time_or_price: '€15' }],
-        action_url: 'https://example.com/tickets',
+        website_url: 'https://example.com/tickets',
         typical_show_length: '2 h',
         price_from: '€8',
         good_to_know: ['Arrive early'],
@@ -2839,12 +2839,35 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText('Not specified')).toBeNull();
     });
 
-    it('renders the bottom bar as a disabled "Check availability" CTA (no backing action_url field on this category)', () => {
+    it('renders the bottom bar as a disabled "Check availability" CTA (no website_url on this category yet)', () => {
       render(<ActivityDetailScreen activity={toursFull} showDistance onBack={jest.fn()} />);
       const footer = within(screen.getByTestId('activity-detail-footer'));
       const cta = footer.getByRole('button', { name: 'Check availability' });
       expect(cta.props.accessibilityState.disabled).toBe(true);
       expect(footer.getByRole('button', { name: 'Directions' })).toBeTruthy();
+    });
+
+    // website-url-action-chip T2: Tours & Experiences was permanently
+    // disabled (no field existed at all); it enables once `website_url` is
+    // set, same as the other 7 non-directions categories always have.
+    it('enables the "Check availability" CTA once website_url is present and opens it on press', async () => {
+      const openURLSpy = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+      const toursWithWebsite: Activity = {
+        ...toursFull,
+        details: {
+          ...(toursFull.details as NonNullable<Activity['details']>),
+          website_url: 'https://example.com/book-tour',
+        },
+      };
+      render(<ActivityDetailScreen activity={toursWithWebsite} showDistance onBack={jest.fn()} />);
+      const footer = within(screen.getByTestId('activity-detail-footer'));
+      const cta = footer.getByRole('button', { name: 'Check availability' });
+      expect(cta.props.accessibilityState.disabled).toBe(false);
+      fireEvent.press(cta);
+      await waitFor(() =>
+        expect(openURLSpy).toHaveBeenCalledWith('https://example.com/book-tour'),
+      );
+      openURLSpy.mockRestore();
     });
 
     it('renders no reviews section and no attribution plate for the full-data composition either (still no provider)', () => {
@@ -2906,10 +2929,10 @@ describe('ActivityDetailScreen', () => {
   // never called from any screen composition). Sourced from the same fields
   // the bottom bar/generic actions already use.
   describe('Action chips wired into the composition (T11)', () => {
-    it('sources Directions (valid coordinates) + Website (action_url) + Share; omits Call (no Tripadvisor phone)', () => {
+    it('sources Directions (valid coordinates) + Website (website_url) + Share; omits Call (no Tripadvisor phone)', () => {
       const restaurant: Activity = {
         ...activity,
-        details: { category: 'restaurants', action_url: 'https://example.com/book' },
+        details: { category: 'restaurants', website_url: 'https://example.com/book' },
       };
       render(<ActivityDetailScreen activity={restaurant} showDistance onBack={jest.fn()} />);
       const chips = within(screen.getByTestId('activity-detail-action-chips'));
@@ -2946,6 +2969,40 @@ describe('ActivityDetailScreen', () => {
       const chips = within(screen.getByTestId('activity-detail-action-chips'));
       expect(chips.queryByRole('button', { name: 'Directions' })).toBeNull();
       expect(chips.getByRole('button', { name: 'Share' })).toBeTruthy();
+    });
+
+    // website-url-action-chip T2: the gate that used to restrict the
+    // Website chip to 8 categories is gone — `website_url` is on all 13
+    // `ActivityDetails` branches now, so it renders identically for the 5
+    // newly-covered categories (no ActionChips.tsx change, same component).
+    it.each<[Category, Activity['details']]>([
+      ['cafes', { category: 'cafes', website_url: 'https://example.com/cafe' }],
+      ['nature', { category: 'nature', website_url: 'https://example.com/park' }],
+      ['kids', { category: 'kids', website_url: 'https://example.com/playground' }],
+      ['shopping', { category: 'shopping', website_url: 'https://example.com/mall' }],
+      [
+        'tours_experiences',
+        { category: 'tours_experiences', website_url: 'https://example.com/tour' },
+      ],
+    ])('renders the Website chip for %s once website_url is present', (category, details) => {
+      const withWebsite: Activity = { ...activity, category, details };
+      render(<ActivityDetailScreen activity={withWebsite} showDistance onBack={jest.fn()} />);
+      const chips = within(screen.getByTestId('activity-detail-action-chips'));
+      expect(chips.getByRole('button', { name: 'Website' })).toBeTruthy();
+    });
+
+    // Directions-primary categories keep "Get directions" as the primary CTA
+    // regardless of website_url — the Website chip is a fully independent
+    // secondary action (design-spec.md's "both render together" rule).
+    it('keeps "Get directions" as the primary CTA for a directions-primary category even with website_url set', () => {
+      const cafe: Activity = {
+        ...activity,
+        category: 'cafes',
+        details: { category: 'cafes', website_url: 'https://example.com/cafe' },
+      };
+      render(<ActivityDetailScreen activity={cafe} showDistance onBack={jest.fn()} />);
+      const footer = within(screen.getByTestId('activity-detail-footer'));
+      expect(footer.getByRole('button', { name: 'Get directions' })).toBeTruthy();
     });
   });
 
