@@ -583,7 +583,14 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
-	t.Run("0031 renames action_url to website_url for every row, preserving the value", func(t *testing.T) {
+	t.Run("0031 leaves no action_url key on any row in the seeded catalog", func(t *testing.T) {
+		// Broad sweep across the whole catalog produced by the migration chain
+		// (a general regression net, not a precise value check — every seed
+		// row that once had action_url is gone by this point, since 0016/0022
+		// delete every non-Tripadvisor row in the categories 0009 backfilled;
+		// see TestMigration0031RenamesActionURLPreservingValue for the
+		// value-preserved / untouched-row assertions, done against
+		// hand-seeded fixtures instead).
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
 		if err != nil {
 			t.Fatalf("Query() error: %v", err)
@@ -2213,4 +2220,92 @@ func TestCanonicalSourceURLMatchesMigration(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMigration0031RenamesActionURLPreservingValue exercises 0031 directly
+// against hand-seeded fixtures (migrationsThrough pattern, see
+// TestMigration0021DedupePreservesUniqueConstraint) rather than relying on
+// the 0002/0008 seed rows: by the time 0031 runs in the full chain, every
+// action_url-bearing seed row in the restaurants/bars categories is already
+// gone (0016 deletes every non-Tripadvisor row in those two categories), so
+// asserting against them here would either find nothing or pass vacuously.
+func TestMigration0031RenamesActionURLPreservingValue(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgresPool(t)
+	if err := shareddb.Migrate(ctx, db, migrationsThrough("0030_add_google_place_id.sql")); err != nil {
+		t.Fatalf("running migrations through 0030: %v", err)
+	}
+	repo := New(db)
+
+	seed := func(t *testing.T, title, sourceURL string, cat activitiessvc.Category, details string) activitiessvc.Activity {
+		t.Helper()
+		got, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+			Title: title, Category: cat, Lat: 44.8, Lng: 20.4, Country: "Serbia",
+			Rating: 4.0, Status: activitiessvc.StatusPublished,
+			Source: "test", SourceURL: sourceURL, ExternalID: title,
+			Details: json.RawMessage(details),
+		})
+		if err != nil {
+			t.Fatalf("seeding %q: %v", title, err)
+		}
+		return got
+	}
+
+	const knownURL = "https://reservations.example.com/0031-fixture-known-value"
+	hasActionURL := seed(t, "0031 Fixture Has Action URL", "https://fixture/0031-has-action-url",
+		activitiessvc.CategorySport, `{"action_url":"`+knownURL+`"}`)
+	neitherKey := seed(t, "0031 Fixture Neither Key", "https://fixture/0031-neither-key",
+		activitiessvc.CategoryKids, `{"unrelated_field":"unchanged"}`)
+	cafeNeverHadKey := seed(t, "0031 Fixture Cafe Never Had Action URL", "https://fixture/0031-cafe",
+		activitiessvc.CategoryCafes, `{"known_for_brew":"unchanged"}`)
+
+	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
+		t.Fatalf("running remaining migrations (incl. 0031): %v", err)
+	}
+
+	t.Run("row with action_url becomes website_url, same value unchanged", func(t *testing.T) {
+		got, err := repo.GetByID(ctx, hasActionURL.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		var payload struct {
+			WebsiteURL *string `json:"website_url"`
+			ActionURL  *string `json:"action_url"`
+		}
+		if err := json.Unmarshal(got.Details, &payload); err != nil {
+			t.Fatalf("unmarshaling details: %v", err)
+		}
+		if payload.ActionURL != nil {
+			t.Errorf("action_url key still present after 0031: %s", got.Details)
+		}
+		if payload.WebsiteURL == nil || *payload.WebsiteURL != knownURL {
+			t.Errorf("website_url = %v, want %q (value must survive the rename unchanged)", payload.WebsiteURL, knownURL)
+		}
+	})
+
+	assertUntouched := func(t *testing.T, name, id, otherKey string) {
+		t.Helper()
+		got, err := repo.GetByID(ctx, id)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(got.Details, &payload); err != nil {
+			t.Fatalf("unmarshaling details: %v", err)
+		}
+		if payload["website_url"] != nil {
+			t.Errorf("0031 invented website_url on %s: %s", name, got.Details)
+		}
+		if payload[otherKey] != "unchanged" {
+			t.Errorf("0031 touched an unrelated field on %s: %s", name, got.Details)
+		}
+	}
+
+	t.Run("row with neither key is untouched", func(t *testing.T) {
+		assertUntouched(t, "a row that never had action_url", neitherKey.ID, "unrelated_field")
+	})
+
+	t.Run("café row (category never had action_url) is untouched, no website_url invented", func(t *testing.T) {
+		assertUntouched(t, "a café row that never had action_url", cafeNeverHadKey.ID, "known_for_brew")
+	})
 }

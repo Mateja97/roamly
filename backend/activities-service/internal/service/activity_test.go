@@ -521,7 +521,6 @@ func TestValidateDetails(t *testing.T) {
 			`{"website_url":"not-a-url"}`, true},
 		{"website_url on sport accepted (already-covered category)", activitiessvc.CategorySport,
 			`{"website_url":"https://example.com/gym"}`, false},
-		{"website_url absent is valid for every category", activitiessvc.CategoryNature, `{}`, false},
 		{"valid art year accepted", activitiessvc.CategoryArt,
 			`{"artwork":{"artist":"Marina Abramović"},"year":2019}`, false},
 		{"art year too low rejected", activitiessvc.CategoryArt,
@@ -551,6 +550,18 @@ func TestValidateDetails(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("ValidateDetails() unexpected error: %v", err)
+			}
+		})
+	}
+
+	// website_url is optional everywhere: an absent key must validate for
+	// every one of the 13 categories, not just one. activitiessvc.Subcategories
+	// is the existing full-category-set source of truth (also used to drive
+	// ValidSubcategory), reused here instead of hand-listing 13 categories.
+	for cat := range activitiessvc.Subcategories {
+		t.Run("website_url absent is valid for "+string(cat), func(t *testing.T) {
+			if _, err := ValidateDetails(cat, json.RawMessage(`{}`)); err != nil {
+				t.Fatalf("ValidateDetails() unexpected error for category %s: %v", cat, err)
 			}
 		})
 	}
