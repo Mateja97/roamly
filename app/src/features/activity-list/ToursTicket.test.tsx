@@ -1,11 +1,15 @@
 import { Linking } from 'react-native';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ToursTicket } from './ToursTicket';
 
 describe('ToursTicket', () => {
   const original = process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
 
   beforeEach(() => {
+    // jest-expo's Linking.openURL is itself a jest.fn(); restoreAllMocks puts
+    // it back but keeps its accumulated call counts, so a later test sees the
+    // previous one's presses. Clear before each rather than trusting restore.
+    jest.clearAllMocks();
     process.env.EXPO_PUBLIC_GYG_PARTNER_ID = 'ABC123';
   });
   afterEach(() => {
@@ -19,7 +23,7 @@ describe('ToursTicket', () => {
     render(<ToursTicket city="Belgrade" />);
 
     expect(screen.getByText('Book a guided tour in Belgrade')).toBeTruthy();
-    fireEvent.press(screen.getByRole('button', { name: /Book a guided tour in Belgrade/ }));
+    fireEvent.press(screen.getByRole('link', { name: /Book a guided tour in Belgrade/ }));
 
     await waitFor(() =>
       expect(openURL).toHaveBeenCalledWith('https://www.getyourguide.com/s/?q=Belgrade&partner_id=ABC123')
@@ -57,9 +61,41 @@ describe('ToursTicket', () => {
     jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no handler'));
     render(<ToursTicket city="Belgrade" />);
 
-    fireEvent.press(screen.getByRole('button', { name: /Book a guided tour in Belgrade/ }));
+    fireEvent.press(screen.getByRole('link', { name: /Book a guided tour in Belgrade/ }));
 
     expect(await screen.findByText(/Couldn't open your browser/)).toBeTruthy();
+    // Pressable collapses its subtree into one node, so a screen reader can
+    // only ever hear the card's own name — the failure has to live there or
+    // it is silent for VoiceOver/TalkBack users.
+    expect(
+      await screen.findByLabelText("Book a guided tour in Belgrade. Couldn't open your browser. Try again.")
+    ).toBeTruthy();
+  });
+
+  // APP_STANDARDS: a control is disabled for the duration of its own async
+  // action. Without the guard, three taps opened three browser tabs.
+  it('opens once however many times it is tapped during the handoff', async () => {
+    let release!: () => void;
+    const openURL = jest
+      .spyOn(Linking, 'openURL')
+      .mockReturnValue(new Promise<never>((_, reject) => (release = () => reject(new Error('x')))));
+    render(<ToursTicket city="Belgrade" />);
+
+    const card = screen.getByRole('link', { name: /Book a guided tour in Belgrade/ });
+    fireEvent.press(card);
+    fireEvent.press(card);
+    fireEvent.press(card);
+
+    expect(openURL).toHaveBeenCalledTimes(1);
+    await act(async () => release());
+  });
+
+  it('renders nothing tappable when no partner id is configured', () => {
+    delete process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    render(<ToursTicket city="Belgrade" />);
+    fireEvent.press(screen.getByRole('link', { name: /Book a guided tour in Belgrade/ }));
+    expect(openURL).not.toHaveBeenCalled();
   });
 
   it('tells screen readers the link leaves the app', () => {

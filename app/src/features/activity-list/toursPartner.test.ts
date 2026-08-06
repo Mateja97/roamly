@@ -69,4 +69,12 @@ describe('toursDeepLink', () => {
     process.env.EXPO_PUBLIC_GYG_PARTNER_ID = 'ABC123';
     expect(hasPartnerId()).toBe(true);
   });
+
+  // An untracked referral earns nothing, so the builder refuses to produce
+  // one even if a future caller forgets the hasPartnerId() guard.
+  it('returns null rather than an unattributed link when the partner id is unset', () => {
+    delete process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
+    expect(toursDeepLink('Belgrade')).toBeNull();
+    expect(toursDeepLink(null)).toBeNull();
+  });
 });

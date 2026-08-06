@@ -64,6 +64,8 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // ever updates on a successful fetch, so it holds the last real data
   // across any loading/error state in between.
   const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>([]);
+  // See applyResult: survives the tours query's always-empty response.
+  const [lastKnownCity, setLastKnownCity] = useState<string | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersRequestSeq = useRef(0);
@@ -91,6 +93,17 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
     if (result.status === 'success') {
       setQueryState({ status: 'loaded', activities: result.activities });
       setLastLoadedActivities(result.activities);
+      // Sticky, and deliberately never cleared by an empty success. In Nearby
+      // the only city source is the rows themselves, and the tours query
+      // *always* comes back empty (the category has no provider) — so without
+      // this, selecting Tours wipes the city and the ticket falls back to the
+      // generic copy and an un-citied link, which is precisely the case the
+      // feature exists for. Overwritten whenever a later result carries a
+      // city, so moving cities still updates it; holding a slightly stale
+      // city beats flashing the generic title (design-spec: the title must
+      // not visibly flip).
+      const city = resolveTourCity([], result.activities);
+      if (city) setLastKnownCity(city);
     } else {
       setQueryState({ status: 'error', message: result.message });
     }
@@ -346,7 +359,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // commission, so a silently unattributed referral is worse than no ticket.
   const showToursTicket = appliedFilters.categories.includes('tours_experiences') && hasPartnerId();
   const toursTicket = showToursTicket ? (
-    <ToursTicket city={resolveTourCity(appliedScopeDraft.cities, lastLoadedActivities)} />
+    <ToursTicket city={resolveTourCity(appliedScopeDraft.cities, lastLoadedActivities) ?? lastKnownCity} />
   ) : null;
   // Tours alone means the ticket *is* the answer — "No activities match"
   // below it would contradict it. Selected alongside other categories, the

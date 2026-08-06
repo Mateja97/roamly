@@ -40,13 +40,20 @@ export function resolveTourCity(cities: CitySuggestion[], activities: Activity[]
 }
 
 // ponytail: the search page, not a per-city landing URL — GYG's city URLs are
-// slugged per city ("/belgrade-l40/") and we have no slug table and no
+// slugged per city ("/belgrade-l1688/") and we have no slug table and no
 // licence to build one. `/s/?q=` resolves the same city server-side from the
 // plain name we already hold. A null city drops `q` and lands on the GYG home
 // page rather than searching for nothing.
-export function toursDeepLink(city: string | null): string {
+//
+// Returns null with no partner id rather than emitting `partner_id=`. The
+// caller already guards on hasPartnerId(), but an untracked referral is the
+// one thing this feature must never ship, so the guard belongs here too where
+// a future caller can't route around it — and null forces them to handle it.
+export function toursDeepLink(city: string | null): string | null {
+  const partnerId = process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
+  if (!partnerId) return null;
   const params = new URLSearchParams();
   if (city) params.set('q', city);
-  params.set('partner_id', process.env.EXPO_PUBLIC_GYG_PARTNER_ID ?? '');
+  params.set('partner_id', partnerId);
   return city ? `${GYG_ORIGIN}/s/?${params}` : `${GYG_ORIGIN}/?${params}`;
 }

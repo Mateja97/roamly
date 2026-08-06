@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line, Path } from 'react-native-svg';
-import { ArrowRight, Compass, ExternalLink } from 'lucide-react-native';
+import { ArrowRight, Compass, ExternalLink, TriangleAlert } from 'lucide-react-native';
 import { GetYourGuideLogo } from '../../components/GetYourGuideLogo';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
@@ -40,15 +40,36 @@ const SEAL_MARK_HEIGHT = 32;
 export function ToursTicket({ city }: { city: string | null }) {
   const focus = useFocusable();
   const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // The guard has to be a ref, not the state above: several taps in one tick
+  // all close over the same `busy === false`, so state alone lets every one
+  // of them through. State still drives `disabled` for the visual/AT state.
+  const busyRef = useRef(false);
 
   const title = city ? `Book a guided tour in ${city}` : 'Book a guided tour';
+  const url = toursDeepLink(city);
 
-  function handlePress() {
+  // Busy-gated for the duration of the handoff — APP_STANDARDS.md's
+  // "disable a control for the duration of its own async action" is a
+  // correctness rule, and without it repeat taps fire one browser handoff
+  // each. Same shape as useOSHandoff's ctaBusy, inlined rather than reused
+  // because that hook is scoped to an Activity and this card has none.
+  async function handlePress() {
+    if (busyRef.current || url === null) return;
+    busyRef.current = true;
     setFailed(false);
-    // Rejects only when no handler can open an https URL (effectively no
-    // browser present). Rare, but an unhandled branch is a bug per
-    // APP_STANDARDS.md — surface it on the card instead of failing silently.
-    Linking.openURL(toursDeepLink(city)).catch(() => setFailed(true));
+    setBusy(true);
+    try {
+      // Rejects only when no handler can open an https URL (effectively no
+      // browser present). Rare, but an unhandled branch is a bug per
+      // APP_STANDARDS.md — surface it on the card instead of failing silently.
+      await Linking.openURL(url);
+    } catch {
+      setFailed(true);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   }
 
   return (
@@ -56,8 +77,19 @@ export function ToursTicket({ city }: { city: string | null }) {
       onPress={handlePress}
       onFocus={focus.onFocus}
       onBlur={focus.onBlur}
-      accessibilityRole="button"
-      accessibilityLabel={`${title}. Opens GetYourGuide in your browser.`}
+      disabled={busy}
+      // "link", not "button" — it leaves the app, matching every other
+      // Linking.openURL control here (PhotoAttributionCaption,
+      // GoogleAttributionPlate).
+      accessibilityRole="link"
+      // Pressable groups its subtree into one node, so the failure Text below
+      // can never be focused or announced on its own. Folding it into the
+      // card's own name is what makes the failure reach a screen reader at all.
+      accessibilityLabel={
+        failed
+          ? `${title}. Couldn't open your browser. Try again.`
+          : `${title}. Opens GetYourGuide in your browser.`
+      }
       style={[styles.card, focus.focused && styles.cardFocused]}
     >
       {({ pressed }) => (
@@ -117,13 +149,23 @@ export function ToursTicket({ city }: { city: string | null }) {
                 below the attribution comes from size, never from a color that
                 fails AA. */}
             <Text style={styles.disclosure}>We may earn a commission from bookings.</Text>
-            {failed && <Text style={styles.error}>Couldn&apos;t open your browser. Try again.</Text>}
 
+            {/* The failure takes over the meta row's own slot rather than
+                adding a line: no layout shift on a rare state, and it lands
+                where the eye already is after a tap. Cream text, not coral —
+                --error is 4.16:1 on --surface-hover (the pressed background),
+                below AA, and no error-tinted token clears it. The coral icon
+                carries the error semantic instead, which only needs the 3:1
+                UI bar; relying on colour alone would fail WCAG 1.4.1 anyway. */}
             <View style={styles.metaRow}>
               <View style={styles.metaLeft}>
-                <ExternalLink size={15} color={colors.primary} strokeWidth={1.75} />
-                <Text style={styles.metaText} numberOfLines={1}>
-                  Opens in your browser
+                {failed ? (
+                  <TriangleAlert size={15} color={colors.error} strokeWidth={1.75} />
+                ) : (
+                  <ExternalLink size={15} color={colors.primary} strokeWidth={1.75} />
+                )}
+                <Text style={failed ? styles.metaError : styles.metaText} numberOfLines={1}>
+                  {failed ? "Couldn't open your browser. Try again." : 'Opens in your browser'}
                 </Text>
               </View>
               <View style={styles.goCircle}>
@@ -253,9 +295,10 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
   },
-  error: {
+  metaError: {
     fontSize: fontSize.sm,
-    color: colors.error,
+    color: colors.text,
+    flexShrink: 1,
   },
   metaRow: {
     flexDirection: 'row',

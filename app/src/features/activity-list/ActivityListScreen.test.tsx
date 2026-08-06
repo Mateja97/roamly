@@ -564,12 +564,20 @@ describe('ActivityListScreen', () => {
       expect(screen.queryByText('No activities match')).toBeNull();
     });
 
-    it('names the city carried by the loaded Nearby rows', async () => {
-      mockedQuery.mockResolvedValue(successResult([{ ...activity, city: 'Belgrade' }]));
+    // The tours query ALWAYS resolves empty in production — the category has no
+    // provider. So the city has to survive that empty response, which is the
+    // only sequence this feature ever actually sees in Nearby. An earlier
+    // version of this test left the mock resolving rows for the tours query
+    // too, and passed against a response the backend can never return.
+    it('keeps the Nearby city after the tours query returns empty', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([{ ...activity, city: 'Belgrade' }]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      mockedQuery.mockResolvedValue(successResult([]));
       fireEvent.press(screen.getByRole('button', { name: 'Tours & Experiences' }));
       await flush();
+
       expect(screen.getByText('Book a guided tour in Belgrade')).toBeTruthy();
     });
 
