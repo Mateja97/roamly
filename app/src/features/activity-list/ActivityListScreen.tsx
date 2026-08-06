@@ -309,7 +309,14 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   const hasLocationAnchor = Boolean(appliedScopeDraft.coordinates);
   const hasFilters = appliedFilters.categories.length > 0 || appliedFilters.subtypes.length > 0;
   const order = orderCategories(hourAtLastFocus, travelerMode);
-  const selectedCategoryOptions = CATEGORY_OPTIONS.filter((o) => appliedFilters.categories.includes(o.value));
+  // Tours & Experiences is excluded from the subtype rails on purpose. It has
+  // no rows and never will (BUSINESS_STANDARDS.md), so every one of its six
+  // chips renders "(0)" and disabled — a rail of dead controls promising a
+  // filter that can't exist. The category's answer is one outbound link, which
+  // subtypes cannot narrow.
+  const selectedCategoryOptions = CATEGORY_OPTIONS.filter(
+    (o) => appliedFilters.categories.includes(o.value) && o.value !== 'tours_experiences'
+  );
 
   // design-spec.md T3: "unanchored Anywhere" — no device location AND no
   // city already chosen (a city alone is a perfectly valid, anchored
