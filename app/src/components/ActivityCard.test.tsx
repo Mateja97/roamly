@@ -115,7 +115,7 @@ describe('ActivityCard', () => {
     expect(screen.getByRole('link', { name: 'Photo by Jane Doe' })).toBeTruthy();
   });
 
-  describe('Tripadvisor-branded row (T8)', () => {
+  describe('Tripadvisor-branded row (T8, gated by tripadvisor-marks-require-reviews/T2 to a quotable review)', () => {
     const tripadvisorActivity: Activity = {
       ...activity,
       details: {
@@ -125,6 +125,7 @@ describe('ActivityCard', () => {
           review_count: 1204,
           web_url: 'https://tripadvisor.example/place',
         },
+        reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
       },
     };
 
@@ -145,6 +146,53 @@ describe('ActivityCard', () => {
       render(<ActivityCard activity={activity} showDistance onPress={jest.fn()} />);
       expect(screen.getByText('4.6', { includeHiddenElements: true })).toBeTruthy();
       expect(screen.queryByText(/reviews$/)).toBeNull();
+    });
+  });
+
+  // tripadvisor-marks-require-reviews (T2): the key regression case — a
+  // Tripadvisor-sourced row with no quotable review keeps neither the plate
+  // NOR the gold rating pill (the "rating trap" this task closes: the
+  // stored rating is Tripadvisor's own, and the list query never
+  // live-merges a Google one to attribute it to — Places Terms §14.3).
+  describe('review-less Tripadvisor row (T2 gate)', () => {
+    const reviewlessTripadvisor: Activity = {
+      ...activity,
+      details: {
+        category: 'restaurants',
+        tripadvisor: {
+          rating_image_url: 'https://tripadvisor.example/bubble.png',
+          review_count: 1204,
+          web_url: 'https://tripadvisor.example/place',
+        },
+        // No `reviews` key — the gate's trigger shape.
+      },
+    };
+
+    it('renders neither the Tripadvisor plate nor the gold rating pill', () => {
+      render(<ActivityCard activity={reviewlessTripadvisor} showDistance onPress={jest.fn()} />);
+      expect(screen.queryByText(/reviews$/)).toBeNull();
+      expect(screen.queryByText('4.6', { includeHiddenElements: true })).toBeNull();
+    });
+
+    it('announces neither "Tripadvisor, N reviews" nor "rated X" in the a11y label', () => {
+      render(<ActivityCard activity={reviewlessTripadvisor} showDistance onPress={jest.fn()} />);
+      const card = screen.getByLabelText(/skadarlija food walk/i);
+      expect(card.props.accessibilityLabel).not.toMatch(/tripadvisor/i);
+      expect(card.props.accessibilityLabel).not.toMatch(/rated/i);
+      expect(card.props.accessibilityLabel).toBe('Skadarlija Food Walk, Restaurants, 0.4 km away, A tasty walk');
+    });
+
+    it('shows the rating pill once google_maps_uri proves the rating is Google\'s', () => {
+      render(
+        <ActivityCard
+          activity={{ ...reviewlessTripadvisor, google_maps_uri: 'https://maps.google.com/place/xyz' }}
+          showDistance
+          onPress={jest.fn()}
+        />,
+      );
+      expect(screen.getByText('4.6', { includeHiddenElements: true })).toBeTruthy();
+      const card = screen.getByLabelText(/skadarlija food walk/i);
+      expect(card.props.accessibilityLabel).toMatch(/rated 4.6/i);
     });
   });
 });

@@ -1074,22 +1074,27 @@ bubbles" rule.
   the lone card with **no dots and no prev/next** (a dead pager is noise); the
   section is **omitted entirely** when the place has no qualifying review.
 
-**Empty review slot → Google review cards (provider precedence).** A Tripadvisor
-row's review-cards slot resolves in exactly one order: **(1)** the Tripadvisor
-carousel above whenever the place has at least one quotable review; **(2)** else,
-when live Google reviews **and** a `googleMapsUri` exist for that same venue, the
-**Google attribution plate**'s `detail` variant (recipe below) fills that same
-slot, in place — no new surface, no second section, no heading announcing the
-swap; **(3)** else nothing renders (silent omission, never an empty state, never
-an error). The two never appear together, and each provider keeps its **own**
-attribution intact and unmodified — Tripadvisor's white plate and API-hosted
-bubbles for Tripadvisor content, Google's dark `--surface` plate with per-review
-author credit and the "View on Google Maps" link for Google content; the Google
-cards' compliance gate (no maps link → no cards, silently) applies here exactly as
-it does on a Places-live row. The row's **aggregate rating stays Tripadvisor's**
-whichever cards show: no provider's rating, star, review count, or ranking is ever
-drawn from the other's data, and borrowed Google cards never bring the generic
-Roamly score header with them (compliance rule 03). No new token.
+**No review, no mark (tripadvisor-marks-require-reviews).** A "Tripadvisor row" is
+now defined as **a row with at least one quotable Tripadvisor review** — not
+merely a row Tripadvisor sourced. A row with no quotable review renders as an
+**ordinary Google row**: no Tripadvisor logo plate, bubble rating image, review
+count, ranking, subratings, award, cuisine eyebrow, price level, deep-link CTA, or
+disclaimer anywhere on the screen or the list card — the same treatment any other
+Google-sourced venue gets, with **no Tripadvisor mark of any kind** except
+per-photo "Photo via Tripadvisor" attribution (independent of reviews, required by
+Tripadvisor's photo terms whenever that photo renders). Its stored rating is
+Tripadvisor's own and must never render unattributed — no rating shows for it
+anywhere until a live Places merge proves the number is Google's (via a present
+`googleMapsUri`), same maps-link compliance gate the rest of this section already
+uses. Once that merge lands, the row's reviews slot renders exactly like any other
+Places-sourced venue: the **Google attribution plate**'s `detail` variant (recipe
+below) with Google's own score header, in place — no new surface, no second
+section; or nothing at all when the merge brings no reviews or no maps link
+(silent omission, never an empty state, never an error). A row that *does* keep a
+quotable Tripadvisor review is unaffected by any of this — its aggregate rating,
+cards, and attribution stay Tripadvisor's own, exactly as the rest of this section
+describes; the Google attribution plate never appears alongside it (the two never
+appear together on the same row). No new token.
 
 Composes from `--attribution-plate`, `--ink`, `--border`, `--primary`, `--text`,
 `--surface-hover`, `--radius`, `--radius-full`, `--space-1`/`--space-2`/`--space-3`/
@@ -1101,9 +1106,10 @@ token.
 The required on-surface attribution whenever **live Google Places** content
 renders (the 10 Places-sourced categories — cafes, nightlife, nature, sport,
 kids, culture, art, wellness, shopping, entertainment; Restaurants/Bars are
-Tripadvisor's and use the Partner attribution plate above), except when it
-fills a Tripadvisor row's empty review slot (see the precedence rule above).
-Google's Places
+Tripadvisor's and use the Partner attribution plate above), including a
+Tripadvisor-sourced row with no quotable review — that row is an ordinary
+Google row for reviews/rating purposes and renders this plate normally, same
+as any other Places-sourced venue. Google's Places
 Terms mandate, wherever their data shows: **Google Maps branding** (the logo or
 the literal words "Google Maps" — **never a bare "Google"**), **per-review
 author attribution** (avatar + name + a link to the author's Google profile), a

@@ -79,8 +79,9 @@ export function ActivityDetailScreen({
     metaExtras, fields, foldedValue, kidsAge, unique, goodToKnow,
     toursChecklist, toursItineraryData, meetingPointText, isDirectionsPrimary,
     genericLabel, websiteURL, primaryEnabled, attribution, bookingNote,
-    googleReviewsAllowed, showRatingCluster, tripadvisor,
+    googleReviewsAllowed, showRatingCluster, ratingSkeletonShown, tripadvisor,
     reviews, address, eyebrow, showMetaRow, googleReviewsCardShown,
+    descriptionPending,
   } = useActivityDetailData(seedActivity, showDistance);
   const {
     ctaBusy, ctaError, setCtaError, openDirections, openShare,
@@ -149,8 +150,7 @@ export function ActivityDetailScreen({
             attribution={attribution}
             tripadvisor={tripadvisor}
             showRatingCluster={showRatingCluster}
-            isPlacesLive={isPlacesLive}
-            detailsPending={detailsPending}
+            ratingSkeletonShown={ratingSkeletonShown}
             eyebrow={eyebrow}
             showMetaRow={showMetaRow}
             metaText={metaText}
@@ -181,6 +181,7 @@ export function ActivityDetailScreen({
               activity={activity}
               isPlacesLive={isPlacesLive}
               detailsPending={detailsPending}
+              descriptionPending={descriptionPending}
               fields={fields}
               unique={unique}
               goodToKnow={goodToKnow}
@@ -208,7 +209,12 @@ export function ActivityDetailScreen({
               attribution plate is touched — this only owns the outer
               score/distribution/"See all" layout around them. Canonical
               spot: after good-to-know, before the map — "... →
-              good-to-know → reviews → map → bottom bar". */}
+              good-to-know → reviews → map → bottom bar".
+              tripadvisor-marks-require-reviews (T2): `tripadvisor` is
+              `tripadvisorAttribution(activity)`, gated to a quotable
+              review — a review-less row falls through to the isPlacesLive
+              branch below instead (Google score + attribution, same path
+              every other Places-sourced category takes). */}
           {tripadvisor && (
             <ReviewsSection
               attribution={
@@ -216,13 +222,6 @@ export function ActivityDetailScreen({
                   tripadvisor={tripadvisor}
                   rating={activity.rating}
                   reviews={reviews}
-                  // The empty-slot Google fallback — same MAX_REVIEW_CARDS
-                  // cap as the Places-live call site below, same maps-link
-                  // compliance gate (TripadvisorBlock itself won't render
-                  // cards without it).
-                  googleReviews={activity.google_reviews?.slice(0, MAX_REVIEW_CARDS) ?? []}
-                  googleMapsUri={activity.google_maps_uri}
-                  reviewsPending={reviews.length === 0 && detailsPending}
                   address={address}
                   ctaBusy={ctaBusy}
                   onCallPhone={handleCallPhone}
@@ -232,13 +231,16 @@ export function ActivityDetailScreen({
           )}
 
           {/* The Places-case analogue of the TripadvisorBlock spot above —
-              mutually exclusive with it (a Tripadvisor row is never
-              `isPlacesLive`). Skeletoned only while pending and genuinely
-              empty; GoogleAttributionPlate renders nothing on its own once
-              merged with no reviews/maps link (silent degrade, no error
-              UI). No generic score/distribution header for the Tripadvisor
-              case above — compliance rule 03 forbids a second, Roamly-drawn
-              aggregate rating beside Tripadvisor's own attribution plate.
+              mutually exclusive with it (a row with its own Tripadvisor
+              reviews is never `isPlacesLive`; a review-less Tripadvisor row
+              IS `isPlacesLive` post-T2 and renders here instead, same as
+              any other Places-sourced category). Skeletoned only while
+              pending and genuinely empty; GoogleAttributionPlate renders
+              nothing on its own once merged with no reviews/maps link
+              (silent degrade, no error UI). No generic score/distribution
+              header for the TripadvisorBlock case above — compliance rule
+              03 forbids a second, Roamly-drawn aggregate rating beside
+              Tripadvisor's own attribution plate.
               `googleReviewsAllowed` gates only the content branch, not the
               skeleton — a pending row that already has reviews (content
               genuinely exists) but no maps link falls through to neither

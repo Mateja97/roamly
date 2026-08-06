@@ -7,6 +7,7 @@ import {
   factStripFields,
   getWebsiteURL,
   goodToKnowSection,
+  isTripadvisorSourced,
   kidsAgeLabel,
   metaDistanceText,
   metaLineLeadItems,
@@ -163,7 +164,7 @@ describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
     expect(tripadvisorReviews(activity)).toMatchObject([{ rating: 5 }]);
   });
 
-  it('reads `tripadvisor` off a bar row too', () => {
+  it('reads `tripadvisor` off a bar row too, with a review', () => {
     const activity = baseActivity({
       category: 'bars',
       tripadvisor: {
@@ -171,6 +172,7 @@ describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
         review_count: 88,
         web_url: 'https://tripadvisor.example/place',
       },
+      reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
     });
     expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 88 });
   });
@@ -215,8 +217,57 @@ describe('tripadvisorAttribution / tripadvisorReviews (T8/T4)', () => {
   });
 });
 
+// tripadvisor-marks-require-reviews (T2): the gate itself — three states —
+// plus the ungated raw-presence helper the rating-suppression rule reads.
+describe('tripadvisorAttribution() gate + isTripadvisorSourced() (T2)', () => {
+  const tripadvisor = {
+    rating_image_url: 'https://tripadvisor.example/bubble.png',
+    review_count: 1204,
+    web_url: 'https://tripadvisor.example/place',
+  };
+
+  it('returns the attribution when reviews.length >= 1', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      tripadvisor,
+      reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
+    });
+    expect(tripadvisorAttribution(activity)).toMatchObject({ review_count: 1204 });
+  });
+
+  it('is undefined when reviews is an explicit empty array', () => {
+    const activity = baseActivity({ category: 'restaurants', tripadvisor, reviews: [] });
+    expect(tripadvisorAttribution(activity)).toBeUndefined();
+  });
+
+  it('is undefined when the reviews key is absent entirely', () => {
+    const activity = baseActivity({ category: 'restaurants', tripadvisor });
+    expect(tripadvisorAttribution(activity)).toBeUndefined();
+  });
+
+  it('isTripadvisorSourced is true regardless of reviews (present, empty, or absent) — the raw presence check', () => {
+    expect(isTripadvisorSourced(baseActivity({ category: 'restaurants', tripadvisor }))).toBe(true);
+    expect(isTripadvisorSourced(baseActivity({ category: 'restaurants', tripadvisor, reviews: [] }))).toBe(true);
+    expect(
+      isTripadvisorSourced(
+        baseActivity({
+          category: 'restaurants',
+          tripadvisor,
+          reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('isTripadvisorSourced is false for a non-Tripadvisor row and for a category that never carries the field', () => {
+    expect(isTripadvisorSourced(baseActivity({ category: 'restaurants', cuisine: 'Serbian' }))).toBe(false);
+    expect(isTripadvisorSourced(baseActivity({ category: 'nightlife', venue_type: 'Club' }))).toBe(false);
+    expect(isTripadvisorSourced(baseActivity(undefined))).toBe(false);
+  });
+});
+
 describe('factStripFields — Tripadvisor rows drop Cuisine (§5b eyebrow carries it instead)', () => {
-  it('omits the Cuisine chip for a Tripadvisor-sourced restaurant row, even when the legacy field is populated', () => {
+  it('omits the Cuisine chip for a row that keeps the Tripadvisor treatment, even when the legacy field is populated', () => {
     const activity = baseActivity({
       category: 'restaurants',
       cuisine: 'Italian',
@@ -225,6 +276,7 @@ describe('factStripFields — Tripadvisor rows drop Cuisine (§5b eyebrow carrie
         review_count: 1204,
         web_url: 'https://tripadvisor.example/place',
       },
+      reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
     });
     const labels = factStripFields(activity).map((f) => f.label);
     expect(labels).not.toContain('Cuisine');
@@ -232,6 +284,25 @@ describe('factStripFields — Tripadvisor rows drop Cuisine (§5b eyebrow carrie
 
   it('keeps the Cuisine chip for a non-Tripadvisor restaurant row, unchanged', () => {
     const activity = baseActivity({ category: 'restaurants', cuisine: 'Italian' });
+    const labels = factStripFields(activity).map((f) => f.label);
+    expect(labels).toContain('Cuisine');
+  });
+
+  // tripadvisor-marks-require-reviews (T2): routed through the gated
+  // `tripadvisorAttribution()` helper now, not the raw `d.tripadvisor`
+  // field — a de-marked (review-less) row is an ordinary row again, so the
+  // generic Cuisine chip is restored for it too.
+  it('restores the Cuisine chip for a de-marked (review-less) Tripadvisor row', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      cuisine: 'Italian',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 1204,
+        web_url: 'https://tripadvisor.example/place',
+      },
+      // No `reviews` key.
+    });
     const labels = factStripFields(activity).map((f) => f.label);
     expect(labels).toContain('Cuisine');
   });
@@ -400,6 +471,7 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
         web_url: 'https://tripadvisor.example/place',
         price_level: 'Mid Range',
       },
+      reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
     });
     expect(tripadvisorEyebrow(activity, '1.2 km away')).toBe('Restaurant · Mid Range · 1.2 km away');
   });
@@ -417,6 +489,7 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
           web_url: 'https://tripadvisor.example/place',
           price_level: 'Mid Range',
         },
+        reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
       }),
       subcategory: 'fine_dining',
     };
@@ -441,6 +514,7 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
           web_url: 'https://tripadvisor.example/place',
           price_level: 'Mid Range',
         },
+        reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
       }),
       subcategory: 'cocktail_bar',
     };
@@ -458,6 +532,7 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
           web_url: 'https://tripadvisor.example/place',
           price_level: 'Cheap Eats',
         },
+        reviews: [{ rating: 4, date: '3 May 2026', text: 'Great espresso.' }],
       }),
       subcategory: 'coffee_shop',
     };
@@ -472,6 +547,7 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
         review_count: 88,
         web_url: 'https://tripadvisor.example/place',
       },
+      reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
     });
     expect(tripadvisorEyebrow(activity, '2.4 km away')).toBe('Bar · 2.4 km away');
   });
@@ -484,8 +560,25 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
         review_count: 1204,
         web_url: 'https://tripadvisor.example/place',
       },
+      reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
     });
     expect(tripadvisorEyebrow(activity, '1.2 km away')).toBe('Restaurant · 1.2 km away');
+  });
+
+  // tripadvisor-marks-require-reviews (T2): a review-less Tripadvisor row is
+  // de-marked — the eyebrow is one of the gated surfaces, so it renders
+  // nothing for it, same as a genuinely non-Tripadvisor row.
+  it('is undefined for a de-marked (review-less) Tripadvisor row', () => {
+    const activity = baseActivity({
+      category: 'restaurants',
+      tripadvisor: {
+        rating_image_url: 'https://tripadvisor.example/bubble.png',
+        review_count: 1204,
+        web_url: 'https://tripadvisor.example/place',
+      },
+      // No `reviews` key.
+    });
+    expect(tripadvisorEyebrow(activity, '1.2 km away')).toBeUndefined();
   });
 
   it('is undefined for a non-Tripadvisor row (no eyebrow renders)', () => {
