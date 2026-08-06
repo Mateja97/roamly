@@ -75,6 +75,15 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
   const [cityQuery, setCityQuery] = useState('');
   const cityFetch = useCitySearch(cityQuery, draft.cities);
 
+  // Keyboard-open scroll fix (product-tasks.md T1): the body ScrollView's
+  // viewport collapses when the keyboard opens but its scroll offset
+  // doesn't move, so the city results panel below the input falls outside
+  // the viewport. Scroll the CITIES section (measured via AnywherePane's
+  // onSectionLayout) to the top whenever the city input is focused.
+  const bodyRef = useRef<ScrollView>(null);
+  const [citiesY, setCitiesY] = useState(0);
+  const [cityInputFocused, setCityInputFocused] = useState(false);
+
   // Open effect: move focus into the panel + entrance animation — identical
   // to FilterSheet's (see that file's comment for the reduce-motion/
   // fixed-OFFSCREEN_Y reasoning).
@@ -185,6 +194,19 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
 
   const trimmedCityQuery = cityQuery.trim();
   const isCityLoading = trimmedCityQuery.length > 0 && cityFetch.query !== trimmedCityQuery;
+  const resultsVisible = trimmedCityQuery.length > 0;
+
+  // Scrolls the CITIES section to the top whenever the city input is
+  // focused. `citiesY` and `resultsVisible` are both required deps, not
+  // just `cityInputFocused`: the keyboard-driven relayout lands after
+  // focus (a focus-only effect would scroll against a stale `citiesY`),
+  // and the results panel expanding after the scroll already ran needs
+  // its own re-trigger. Doesn't run (and doesn't fight manual scrolling)
+  // while the input isn't focused.
+  useEffect(() => {
+    if (!cityInputFocused) return;
+    bodyRef.current?.scrollTo({ y: citiesY, animated: true });
+  }, [cityInputFocused, citiesY, resultsVisible]);
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
@@ -210,7 +232,7 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
             </Pressable>
           </View>
 
-          <ScrollView style={styles.body} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <ScrollView ref={bodyRef} style={styles.body} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
             <View style={styles.tickets}>
               <ScopeTicket
                 icon={MapPin}
@@ -242,6 +264,8 @@ export function ScopeSheet({ visible, initialDraft, onQuery, onApply, onClose }:
                 onSelectCity={selectCity}
                 onRemoveCity={removeCity}
                 onDistanceChange={(maxDistanceKm) => setDraft((prev) => ({ ...prev, maxDistanceKm }))}
+                onSectionLayout={setCitiesY}
+                onCityInputFocusChange={setCityInputFocused}
               />
             )}
 
