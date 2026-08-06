@@ -38,8 +38,11 @@ use, not a workaround.
 Verified against GetYourGuide's published integration snippet:
 
 ```html
-<!-- 1. Integration Analyzer — MANDATORY for widgets, goes in <head> -->
-<script async defer src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"></script>
+<!-- 1. Integration Analyzer — MANDATORY for widgets, goes in <head>.
+     Carries the partner id itself; it is not just a loader for the div below. -->
+<script async defer
+        src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"
+        data-gyg-partner-id="Z2BLKH2"></script>
 
 <!-- 2. The widget itself, in <body> -->
 <div data-gyg-href="https://widget.getyourguide.com/default/activities.frame"
@@ -62,10 +65,17 @@ earlier draft of this spec said 6 on the reasoning that the panel is a full
 screen rather than a sidebar; their recommendation wins until we have data to
 argue otherwise. Revisit only with tap-through numbers.
 
-Their docs also note the widget "adapts to your website's font and style". Worth
-setting the shell's `font-family` and base colours to Roamly's so the widget
-inherits something closer to the app than to a default web page — a cheap win,
-but confirm rather than assume how far the adaptation goes.
+Their docs and the portal both advertise that the widget matches the host page's
+font. Set the shell's `font-family` and base colours to Roamly's so it inherits
+something closer to the app than a default web page — cheap, but verify how far
+the adaptation actually goes rather than assuming.
+
+**Open: the exact manual-widget attribute set.** The portal's *automatic* widget
+emits a minimal `<div data-gyg-widget="auto" data-gyg-partner-id="…"></div>`.
+The manual variant's full attribute list above is reconstructed from a
+third-party integration guide, not from our own portal output. Generate one
+manual widget in the portal for a named city and use whatever it emits as the
+source of truth before building.
 
 | Attribute | Value | Note |
 |---|---|---|
