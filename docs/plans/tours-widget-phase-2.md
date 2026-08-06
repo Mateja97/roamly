@@ -44,13 +44,15 @@ Verified against GetYourGuide's published integration snippet:
         src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"
         data-gyg-partner-id="Z2BLKH2"></script>
 
-<!-- 2. The widget, verbatim from our own portal (manual variant, Belgrade). -->
+<!-- 2. The widget, verbatim from our own portal (manual variant, Belgrade).
+     Every attribute below is portal-generated, none reconstructed. -->
 <div data-gyg-href="https://widget.getyourguide.com/default/activities.frame"
+     data-gyg-location-id="1688"
      data-gyg-locale-code="en-US"
      data-gyg-widget="activities"
      data-gyg-number-of-items="6"
-     data-gyg-partner-id="Z2BLKH2"
-     data-gyg-q="Belgrade"><span>Powered by <a target="_blank" rel="sponsored"
+     data-gyg-cmp="roamly-app"
+     data-gyg-partner-id="Z2BLKH2"><span>Powered by <a target="_blank" rel="sponsored"
      href="https://www.getyourguide.com/belgrade-l1688/">GetYourGuide</a></span></div>
 ```
 
@@ -107,17 +109,42 @@ font. Set the shell's `font-family` and base colours to Roamly's so it inherits
 something closer to the app than a default web page — cheap, but verify how far
 the adaptation actually goes rather than assuming.
 
-The snippet above is our portal's own manual-widget output, not a reconstruction
-— every attribute in it is confirmed. The single remaining unknown is the
-campaign attribute name (see the table).
+**The embed contract has no open questions.** Every attribute above came from
+our own portal. What remains unknown is entirely support-territory and listed
+under "Technical decisions" below: whether the widget or analyzer sets
+non-essential cookies (§4), and whether attribution survives the handoff to the
+system browser (§2/§3). Neither blocks Phase 1, which is already shipped.
 
 | Attribute | Value | Note |
 |---|---|---|
 | `data-gyg-partner-id` | `Z2BLKH2` | From `EXPO_PUBLIC_GYG_PARTNER_ID`, never inlined literally |
-| `data-gyg-q` | `"{city}"` | Bare city name — the same value `resolveTourCity` already returns. See "City format" below |
-| `data-gyg-cmp` | `roamly-app` | Campaign label — **attribute name still unconfirmed**: our portal snippet was generated without a campaign, so this name comes from a third-party guide. Regenerate with a campaign set to confirm. Set it either way: it is the only thing separating widget revenue from Phase 1 deep-link revenue, and therefore the only way to answer "did Phase 2 pay for itself" |
+| `data-gyg-location-id` **or** `data-gyg-q` | `1688` / `"Belgrade"` | Two ways to target a city. See "Location: ID or query" below |
+| `data-gyg-cmp` | `roamly-app` | Campaign label, portal-confirmed. The only thing separating widget revenue from Phase 1 deep-link revenue — and therefore the only way to answer "did Phase 2 pay for itself" |
 | `data-gyg-number-of-items` | `6` | Start here; the panel is a full screen, not a sidebar |
 | `data-gyg-locale-code` | `en-US` | App is English-only today; wire to device locale when it isn't |
+
+### Location: ID or query
+
+The portal generates either form. They are not equivalent in cost.
+
+| | `data-gyg-q="Belgrade"` | `data-gyg-location-id="1688"` |
+|---|---|---|
+| Coverage | Any city the scope resolves to | Only cities mapped by hand |
+| Accuracy | Free-text search; can misresolve ambiguous names | Exact, GetYourGuide's own identifier |
+| Maintenance | None | One portal visit per city, forever |
+| Unmapped city | Still works | Nothing renders |
+
+**Decide by launch footprint, and pick one — not both.** A handful of cities →
+`location-id`, exact and cheap to compile in one sitting. Arbitrary cities →
+`q`, the only form without a silent coverage hole, since `suggestCities` lets a
+user pick any city and Nearby resolves to wherever they are.
+
+A "location-id when mapped, `q` otherwise" fallback is two code paths for one
+job. Only build it if `q` demonstrably misresolves in practice.
+
+Keep any ID map small and hand-made. A dozen IDs for launch cities is plainly
+fine; a harvested list of every city they serve edges into §4.2.2(iii)'s
+"create a database of GYG Platform Content, in whole or in part".
 
 ### City format — no new resolver needed
 
