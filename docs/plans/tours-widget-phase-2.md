@@ -18,20 +18,54 @@ themselves.
 That is the whole value of this phase: **photos and live prices in the Tours
 surface.** If that isn't worth a dependency and the risks below, don't build it.
 
+## Which widget
+
+GetYourGuide ships the activity widget in two variants, and only one works here.
+
+- **Automatic** — "reads the content around it and the page's meta data", runs
+  NLP over the surrounding article, always renders exactly 3 activities. In a
+  WebView shell there *is* no surrounding article and no page metadata: it would
+  be reading an empty document. **Wrong for Roamly.**
+- **Manual** — takes an explicit search term, URL, or location, and lets you set
+  the item count. **This is the one.**
+
+All three widget types (activity, city, availability) are documented as
+"Available for: Blogs, **app** and websites", so app embedding is a supported
+use, not a workaround.
+
 ## The embed contract
 
 Verified against GetYourGuide's published integration snippet:
 
 ```html
-<script async src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"></script>
+<!-- 1. Integration Analyzer — MANDATORY for widgets, goes in <head> -->
+<script async defer src="https://widget.getyourguide.com/dist/pa.umd.production.min.js"></script>
+
+<!-- 2. The widget itself, in <body> -->
 <div data-gyg-href="https://widget.getyourguide.com/default/activities.frame"
      data-gyg-widget="activities"
      data-gyg-partner-id="Z2BLKH2"
      data-gyg-q="Belgrade, Serbia"
      data-gyg-locale-code="en-US"
      data-gyg-cmp="roamly-app"
-     data-gyg-number-of-items="6"></div>
+     data-gyg-number-of-items="3"></div>
 ```
+
+**The Integration Analyzer is not optional.** Widgets 101's troubleshooting
+section states it is *mandatory for widgets* — a widget that silently fails to
+render or fails to attribute is very likely a missing analyzer. On a website it
+is added once to the site header; in our WebView shell it belongs in the `<head>`
+of the generated HTML, so it ships with every panel load by construction.
+
+**Item count: 3.** GetYourGuide's own recommendation for the manual widget. The
+earlier draft of this spec said 6 on the reasoning that the panel is a full
+screen rather than a sidebar; their recommendation wins until we have data to
+argue otherwise. Revisit only with tap-through numbers.
+
+Their docs also note the widget "adapts to your website's font and style". Worth
+setting the shell's `font-family` and base colours to Roamly's so the widget
+inherits something closer to the app than to a default web page — a cheap win,
+but confirm rather than assume how far the adaptation goes.
 
 | Attribute | Value | Note |
 |---|---|---|
@@ -111,35 +145,53 @@ An `about:blank` or `data:` origin is opaque: third-party script loading and
 cookie writes behave differently, and debugging that after the fact is painful.
 Give the document a real https origin from the start.
 
-### 2. Intercept top-frame navigations only
+### 2. Whether to intercept the click-through at all — decide this first
 
-`onShouldStartLoadWithRequest` must let the widget's **own iframe** load and
-intercept only the click-through to `www.getyourguide.com`, opening it with
-`Linking.openURL`.
+The earlier draft of this spec assumed we intercept every navigation and hand it
+to the system browser. **GetYourGuide's own documentation makes that the riskier
+option, not the safer one.**
 
-**Platform divergence, and the likeliest source of a bug here:** on iOS the
-callback fires for iframe loads too; on Android it does not. An interceptor
-written and tested on Android alone will hijack the widget's own frame on iOS
-and render an empty panel. Gate on the top-frame flag *and* on the host, and
-test on both platforms before believing it works.
+Deep links 101: they generate a unique **cookie** ID per partner account; a click
+on a link *or widget* sets it; it stays valid across their whole site for **31
+days**. Attribution is cookie-based, and cookie jars do not cross process
+boundaries.
 
-### 3. Attribution must be re-verified end to end
+| | Stay in the WebView | Hand off to the system browser |
+|---|---|---|
+| Attribution | **Clean** — click and booking share one cookie jar | Depends entirely on the outbound URL carrying `partner_id` to re-establish the cookie |
+| 31-day window | Preserved for that WebView's jar only | Preserved in the user's real browser, which they'll return to |
+| User trust at payment | Chrome-less — the user cannot verify the URL while entering card details | Real URL bar on GetYourGuide's own origin |
+| Store policy | Fine — real-world services are outside IAP rules | Fine |
 
-This is the commercial risk, not a technical nicety.
+There is no free option. Staying in the WebView protects the commission and
+weakens the trust story at exactly the moment a user types a card number;
+handing off does the reverse.
 
-Phase 1's attribution is clean: the deep link opens the system browser, which
-sets GetYourGuide's cookie in the browser the user actually books in.
+**Recommendation:** hand off, but treat it as *unverified until proven* — see §3.
+The trust argument is the one that survives a bad outcome. If attribution turns
+out not to survive the handoff and GetYourGuide can't fix it, the fallback is
+staying on Phase 1 deep links, not shipping a chrome-less checkout.
 
-Phase 2 splits the context. The widget renders in a WebView; a cookie set there
-does **not** transfer to the system browser. Attribution then depends entirely
-on the click-through URL carrying `partner_id`. It should — that is how their
-widget links are built — but *should* is not *verified*, and getting this wrong
-means the feature generates traffic and no commission, silently.
+If we do intercept, `onShouldStartLoadWithRequest` must let the widget's **own
+iframe** load and catch only the top-frame click-through.
 
-**Gate on evidence:** install their Integration Analyzer, complete one real
-booking through the widget path, confirm it appears in the Integrations report
-attributed to `Z2BLKH2` with `cmp=roamly-app`. Do not ship this phase on the
-assumption.
+**Platform divergence, the likeliest bug here:** on iOS the callback fires for
+iframe loads too; on Android it does not. An interceptor written and tested on
+Android alone will hijack the widget's own frame on iOS and render an empty
+panel. Gate on the top-frame flag *and* the host, and test on both.
+
+### 3. Attribution must be proven, not assumed
+
+The commercial risk, not a technical nicety. A silent failure here means the
+feature generates traffic and earns nothing, and nothing in the UI would show it.
+
+**Gate on evidence:** with the Integration Analyzer in place (mandatory anyway),
+complete one real booking through the widget path and confirm it lands in the
+Integrations report attributed to `Z2BLKH2` with `cmp=roamly-app`. The campaign
+label is what separates this from Phase 1's deep-link revenue — without it the
+report can't answer whether Phase 2 paid for itself.
+
+Do not ship this phase on the assumption.
 
 ### 4. Third-party scripts and consent
 
@@ -176,9 +228,11 @@ bare `npm install`, so the version resolves against Expo 57.
 ## Definition of done
 
 1. Consent question answered (§4 above).
-2. Attribution verified by a real booking in the Integrations report.
-3. Widget renders on **both** iOS and Android — interceptor correct on each.
-4. Phase 1 deep link survives as the fallback on every failure path.
+2. Integration Analyzer present in the shell's `<head>` — mandatory for widgets.
+3. Attribution verified by a real booking in the Integrations report, attributed
+   to `Z2BLKH2` with `cmp=roamly-app`.
+4. Widget renders on **both** iOS and Android — interceptor correct on each.
+5. Phase 1 deep link survives as the fallback on every failure path.
 
 ## Explicitly out of scope
 
