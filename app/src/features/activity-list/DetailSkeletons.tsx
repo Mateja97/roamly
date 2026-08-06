@@ -31,8 +31,13 @@ import type { Category } from './types';
 
 // The 10 Google-Places-sourced categories T1's live mapper covers, mirrored
 // 1:1 (backend/activities-service/internal/placesmap's BuildLiveDetails).
-// Restaurants/bars are Tripadvisor-sourced and never skeletoned here —
-// their content (TripadvisorBlock) is already synchronous from seed.
+// Restaurants/bars aren't in this set — a row with its own Tripadvisor
+// review is synchronous from seed (TripadvisorBlock, no skeleton). A
+// review-less Tripadvisor row (any of the 3 TA categories) is the one
+// exception: tripadvisor-marks-require-reviews (T2) widens
+// `useActivityDetailData`'s `isPlacesLive` for it separately (via
+// `isTripadvisorSourced`, not by adding it to this set), so it *does* take
+// this same skeleton-then-merge path.
 export const PLACES_LIVE_CATEGORIES: ReadonlySet<Category> = new Set([
   'cafes',
   'nightlife',

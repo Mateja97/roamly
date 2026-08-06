@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line } from 'react-native-svg';
 import { ArrowRight, ImageOff, MapPin, Star } from 'lucide-react-native';
 import type { Activity } from '../api/activities';
-import { tripadvisorAttribution } from '../features/activity-list/activityDetailConfig';
+import { isTripadvisorSourced, tripadvisorAttribution } from '../features/activity-list/activityDetailConfig';
 import { CATEGORY_LABELS } from '../features/activity-list/filters';
 import { useFocusable } from '../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../theme/tokens';
@@ -40,20 +40,30 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
   const focus = useFocusable();
   const photo = activity.image_refs[0];
   const imageUri = photo?.uri;
-  // design-spec.md T8 (Tripadvisor initiative): presence of this field is
-  // the sole detection signal for the Tripadvisor-branded treatment below.
+  // design-spec.md T8 (Tripadvisor initiative), gated by
+  // tripadvisor-marks-require-reviews (T2): presence of this field (with a
+  // quotable review behind it) is the sole detection signal for the
+  // Tripadvisor-branded treatment below.
   const tripadvisor = tripadvisorAttribution(activity);
+  // T2 "rating trap": a Tripadvisor-sourced row's `rating` is Tripadvisor's
+  // own stale number until `google_maps_uri` proves otherwise — the list
+  // query never live-merges (Places Terms §14.3), so this is always false
+  // for a review-less Tripadvisor row here, correctly showing no pill.
+  const ratingAllowed = !isTripadvisorSourced(activity) || Boolean(activity.google_maps_uri);
 
   const metaText = showDistance ? `${activity.distance_km.toFixed(1)} km away` : activity.country;
 
+  // compliance rule 03: no Roamly rating is shown for a Tripadvisor row, so
+  // none is announced — "Tripadvisor, {N} reviews" replaces it. A
+  // Tripadvisor-sourced row with neither (de-marked, rating not yet
+  // attributable) announces no rating clause at all.
+  const ratingClause = tripadvisor
+    ? `Tripadvisor, ${tripadvisor.review_count.toLocaleString('en-US')} reviews`
+    : ratingAllowed
+      ? `rated ${activity.rating.toFixed(1)}`
+      : undefined;
   const label = [
-    `${activity.title}, ${CATEGORY_LABELS[activity.category]}, ${
-      // compliance rule 03: no Roamly rating is shown for a Tripadvisor row,
-      // so none is announced — "Tripadvisor, {N} reviews" replaces it.
-      tripadvisor
-        ? `Tripadvisor, ${tripadvisor.review_count.toLocaleString('en-US')} reviews`
-        : `rated ${activity.rating.toFixed(1)}`
-    }, ${metaText}`,
+    [activity.title, CATEGORY_LABELS[activity.category], ratingClause, metaText].filter(Boolean).join(', '),
     activity.description || null,
   ]
     .filter(Boolean)
@@ -100,8 +110,10 @@ export const ActivityCard = memo(function ActivityCard({ activity, showDistance,
               <Text style={styles.badgeLabel}>{CATEGORY_LABELS[activity.category]}</Text>
             </View>
             {/* compliance rule 03: never a Roamly star blended/adjacent with a
-                partner rating — omitted entirely for a Tripadvisor row. */}
-            {!tripadvisor && (
+                partner rating — omitted entirely for a Tripadvisor row. T2:
+                also omitted for a de-marked Tripadvisor row whose rating
+                isn't yet provably Google's (`ratingAllowed`). */}
+            {!tripadvisor && ratingAllowed && (
               <View style={styles.ratingPill} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
                 <Star size={13} color={colors.primary} strokeWidth={1.75} fill={colors.primary} />
                 <Text style={styles.ratingLabel}>{activity.rating.toFixed(1)}</Text>

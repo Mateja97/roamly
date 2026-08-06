@@ -13,8 +13,7 @@ type DetailTitleBlockProps = {
   attribution: ArtAttribution | undefined;
   tripadvisor: TripadvisorAttribution | undefined;
   showRatingCluster: boolean;
-  isPlacesLive: boolean;
-  detailsPending: boolean;
+  ratingSkeletonShown: boolean;
   eyebrow: string | undefined;
   showMetaRow: boolean;
   metaText: string;
@@ -34,8 +33,7 @@ export function DetailTitleBlock({
   attribution,
   tripadvisor,
   showRatingCluster,
-  isPlacesLive,
-  detailsPending,
+  ratingSkeletonShown,
   eyebrow,
   showMetaRow,
   metaText,
@@ -74,17 +72,19 @@ export function DetailTitleBlock({
           )}
 
           {/* "Rating value" — skeletoned only while the live fetch is
-              pending and the seed genuinely has nothing yet (rule 1:
-              never pulse over an already-good value); once settled with
-              no rating (failed/empty merge), the whole block collapses
-              (rule 3: no fabricated "0.0", no empty frame) rather than
-              falling back to a fabricated zero. Once the Reviews slot
-              below is genuinely showing this same score
-              (`reviewsScoreShown`), this cluster stays hidden — one
-              focal rating number, not two (folded into
-              `showRatingCluster` above). */}
+              pending and there's no real value we're allowed to show yet
+              (rule 1: never pulse over an already-good value; T2's rating
+              rule also withholds a Tripadvisor row's stale number until
+              `ratingSkeletonShown`'s own gate settles it); once settled
+              with no rating (failed/empty merge, or a Tripadvisor row
+              never allowed to show one), the whole block collapses (rule
+              3: no fabricated "0.0", no empty frame) rather than falling
+              back to a fabricated zero. Once the Reviews slot below is
+              genuinely showing this same score (`reviewsScoreShown`),
+              this cluster stays hidden — one focal rating number, not two
+              (folded into `showRatingCluster` above). */}
           {!tripadvisor && showRatingCluster && (
-            isPlacesLive && detailsPending && activity.rating <= 0 ? (
+            ratingSkeletonShown ? (
               <View style={styles.rating}>
                 <RatingSkeleton />
               </View>
