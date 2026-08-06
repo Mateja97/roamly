@@ -18,6 +18,10 @@ export type AnywherePaneProps = {
   onSelectCity: (city: CitySuggestion) => void;
   onRemoveCity: (city: CitySuggestion) => void;
   onDistanceChange: (maxDistanceKm: number | null) => void;
+  // Keyboard-open scroll fix (product-tasks.md T1): lets ScopeSheet scroll the
+  // CITIES section to the top of the viewport while this input is focused.
+  onSectionLayout: (y: number) => void;
+  onCityInputFocusChange: (focused: boolean) => void;
 };
 
 // City typeahead + selected-city chips copied from AnywhereSearchScreen
@@ -39,13 +43,15 @@ export function AnywherePane({
   onSelectCity,
   onRemoveCity,
   onDistanceChange,
+  onSectionLayout,
+  onCityInputFocusChange,
 }: AnywherePaneProps) {
   const trimmedCityQuery = cityQuery.trim();
   const panelState = isCityLoading ? 'loading' : cityFetch.status;
 
   return (
     <>
-      <View style={scopeSheetStyles.section}>
+      <View testID="cities-section" style={scopeSheetStyles.section} onLayout={(e) => onSectionLayout(e.nativeEvent.layout.y)}>
         <View style={scopeSheetStyles.labelRow}>
           <Text style={scopeSheetStyles.sectionLabel}>Cities</Text>
           <Text style={styles.countLabel}>{draft.cities.length} selected</Text>
@@ -55,6 +61,8 @@ export function AnywherePane({
           <TextInput
             value={cityQuery}
             onChangeText={onCityQueryChange}
+            onFocus={() => onCityInputFocusChange(true)}
+            onBlur={() => onCityInputFocusChange(false)}
             placeholder="Search cities"
             placeholderTextColor={colors.textDisabled}
             style={styles.input}

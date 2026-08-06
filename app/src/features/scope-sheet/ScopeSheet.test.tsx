@@ -1,4 +1,4 @@
-import { AccessibilityInfo, Linking } from 'react-native';
+import { AccessibilityInfo, Linking, ScrollView } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { suggestCities } from '../../api/cities';
@@ -221,6 +221,25 @@ describe('ScopeSheet', () => {
       );
       await flush();
       expect(screen.getByText('Max distance')).toBeTruthy();
+    });
+
+    it('scrolls the CITIES section to the top of the viewport when the search input is focused', async () => {
+      const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => {});
+      render(
+        <ScopeSheet
+          visible
+          initialDraft={defaultScopeDraft('anywhere')}
+          onQuery={jest.fn().mockResolvedValue({ status: 'success', activities: [] })}
+          onApply={jest.fn()}
+          onClose={jest.fn()}
+        />
+      );
+      await flush();
+
+      fireEvent(screen.getByTestId('cities-section'), 'layout', { nativeEvent: { layout: { y: 240 } } });
+      fireEvent(screen.getByLabelText('Search cities'), 'focus');
+
+      expect(scrollTo).toHaveBeenCalledWith({ y: 240, animated: true });
     });
 
     it('renders a narrowed distance value from the initial draft', async () => {
