@@ -30,6 +30,11 @@ const SEAL_MARK_HEIGHT = 32;
 // Built on the Activity card's torn-ticket anatomy (DESIGN_STANDARDS.md) with
 // the photo well replaced by a 104px stub: partner imagery may not be stored,
 // and a stock photo would imply a specific tour Roamly isn't selling.
+//
+// Hands off to the system browser rather than embedding GetYourGuide's widget:
+// payment stays on their own origin with a visible URL bar, and `Linking` is
+// React Native core, so this costs no dependency. Not an accident of scope —
+// see docs/plans/tours-widget-phase-2.md before "improving" it into a WebView.
 // `city` drives the copy, `query` drives the link — they are deliberately
 // separate. Outside cities with confirmed inventory the card stops naming a
 // place (so it promises nothing GetYourGuide can't deliver) while the link
