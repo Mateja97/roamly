@@ -25,10 +25,11 @@ import { NearbyNudgeCard } from './NearbyNudgeCard';
 import { dismissNearbyNudge, isNearbyNudgeDismissed } from './nearbyNudge';
 import { SubtypeRail } from './SubtypeRail';
 import { ToursTicket } from './ToursTicket';
-import { hasPartnerId, resolveTourCity } from './toursPartner';
+import { hasPartnerId, resolveTourLocation, tourTarget } from './toursPartner';
 import { TravelerRow } from './TravelerRow';
 import type { TravelerRowState } from './TravelerRow';
 import { recordHomeBaseSample } from './travelerMode';
+import type { TourLocation } from './toursPartner';
 import type { ActivityListScreenProps, Category, Filters } from './types';
 import { useTravelerMode } from './useTravelerMode';
 import { useNearbyLocation } from '../../hooks/useNearbyLocation';
@@ -65,7 +66,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // across any loading/error state in between.
   const [lastLoadedActivities, setLastLoadedActivities] = useState<Activity[]>([]);
   // See applyResult: survives the tours query's always-empty response.
-  const [lastKnownCity, setLastKnownCity] = useState<string | null>(null);
+  const [lastKnownLocation, setLastKnownLocation] = useState<TourLocation | null>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const filtersRequestSeq = useRef(0);
@@ -102,8 +103,8 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
       // city, so moving cities still updates it; holding a slightly stale
       // city beats flashing the generic title (design-spec: the title must
       // not visibly flip).
-      const city = resolveTourCity([], result.activities);
-      if (city) setLastKnownCity(city);
+      const location = resolveTourLocation([], result.activities);
+      if (location) setLastKnownLocation(location);
     } else {
       setQueryState({ status: 'error', message: result.message });
     }
@@ -308,7 +309,14 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   const hasLocationAnchor = Boolean(appliedScopeDraft.coordinates);
   const hasFilters = appliedFilters.categories.length > 0 || appliedFilters.subtypes.length > 0;
   const order = orderCategories(hourAtLastFocus, travelerMode);
-  const selectedCategoryOptions = CATEGORY_OPTIONS.filter((o) => appliedFilters.categories.includes(o.value));
+  // Tours & Experiences is excluded from the subtype rails on purpose. It has
+  // no rows and never will (BUSINESS_STANDARDS.md), so every one of its six
+  // chips renders "(0)" and disabled — a rail of dead controls promising a
+  // filter that can't exist. The category's answer is one outbound link, which
+  // subtypes cannot narrow.
+  const selectedCategoryOptions = CATEGORY_OPTIONS.filter(
+    (o) => appliedFilters.categories.includes(o.value) && o.value !== 'tours_experiences'
+  );
 
   // design-spec.md T3: "unanchored Anywhere" — no device location AND no
   // city already chosen (a city alone is a perfectly valid, anchored
@@ -359,7 +367,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   // commission, so a silently unattributed referral is worse than no ticket.
   const showToursTicket = appliedFilters.categories.includes('tours_experiences') && hasPartnerId();
   const toursTicket = showToursTicket ? (
-    <ToursTicket city={resolveTourCity(appliedScopeDraft.cities, lastLoadedActivities) ?? lastKnownCity} />
+    <ToursTicket {...tourTarget(resolveTourLocation(appliedScopeDraft.cities, lastLoadedActivities) ?? lastKnownLocation)} />
   ) : null;
   // Tours alone means the ticket *is* the answer — "No activities match"
   // below it would contradict it. Selected alongside other categories, the
