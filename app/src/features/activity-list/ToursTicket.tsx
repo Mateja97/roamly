@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { AccessibilityInfo, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line, Path } from 'react-native-svg';
@@ -22,21 +22,14 @@ const COMPASS_WELL = 52;
 const SEAL_SIZE = 48;
 const SEAL_MARK_HEIGHT = 32;
 
-// The Tours & Experiences entry point, built on the Activity card's
-// torn-ticket anatomy (DESIGN_STANDARDS.md) with the photo well replaced by a
-// 104px stub: partner imagery may not be stored (Partner TCs 4.2.2 iii), and
-// a stock photo would imply a specific tour Roamly isn't selling.
+// The Tours & Experiences entry point. Why the category is served by an
+// outbound referral instead of rows, and why the card carries no partner
+// content, is stated once in toursPartner.ts and BUSINESS_STANDARDS.md —
+// not repeated here.
 //
-// Carries **no** GetYourGuide content — every word is Roamly's — which is what
-// lets it sit in the feed at all (4.2.2 v forbids intermixing their content
-// with other sources; a link that quotes nothing isn't their content). What it
-// does carry is the partner's identity: the issuer stamp above, the written
-// attribution, and the commission disclosure that 3.2.2 and consumer law
-// require of an affiliate link.
-//
-// Phase 1 hands off to the system browser rather than embedding GYG's widget:
-// booking and payment happen on their real origin with its own URL bar, and
-// the app takes no new dependency to do it (`Linking` is React Native core).
+// Built on the Activity card's torn-ticket anatomy (DESIGN_STANDARDS.md) with
+// the photo well replaced by a 104px stub: partner imagery may not be stored,
+// and a stock photo would imply a specific tour Roamly isn't selling.
 // `city` drives the copy, `query` drives the link — they are deliberately
 // separate. Outside cities with confirmed inventory the card stops naming a
 // place (so it promises nothing GetYourGuide can't deliver) while the link
@@ -45,23 +38,16 @@ export function ToursTicket({ city, query }: { city: string | null; query: strin
   const focus = useFocusable();
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Defensive: `disabled={busy}` only takes effect on the next commit, so the
-  // ref closes the gap between the first press and that commit. Review note:
-  // the test suite passes with a state-only guard too (RNTL commits between
-  // events), so treat this as belt-and-braces rather than a reproduced bug.
-  const busyRef = useRef(false);
 
   const title = city ? `Book a guided tour in ${city}` : 'Book a guided tour';
   const url = toursDeepLink(query);
 
-  // Busy-gated for the duration of the handoff — APP_STANDARDS.md's
-  // "disable a control for the duration of its own async action" is a
-  // correctness rule, and without it repeat taps fire one browser handoff
-  // each. Same shape as useOSHandoff's ctaBusy, inlined rather than reused
-  // because that hook is scoped to an Activity and this card has none.
+  // Busy-gated for the duration of the handoff — APP_STANDARDS.md's "disable
+  // a control for the duration of its own async action". Without it, repeat
+  // taps fire one browser handoff each. Same shape as useOSHandoff's ctaBusy,
+  // inlined rather than reused because that hook is scoped to an Activity.
   async function handlePress() {
-    if (busyRef.current || url === null) return;
-    busyRef.current = true;
+    if (busy || url === null) return;
     setFailed(false);
     setBusy(true);
     try {
@@ -75,7 +61,6 @@ export function ToursTicket({ city, query }: { city: string | null; query: strin
       // focused element, so the moment of failure would otherwise be silent.
       AccessibilityInfo.announceForAccessibility("Couldn't open your browser. Try again.");
     } finally {
-      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -177,7 +162,7 @@ export function ToursTicket({ city, query }: { city: string | null; query: strin
                 ) : (
                   <ExternalLink size={15} color={colors.primary} strokeWidth={1.75} />
                 )}
-                <Text style={failed ? styles.metaError : styles.metaText} numberOfLines={failed ? 2 : 1}>
+                <Text style={[styles.metaText, failed && styles.metaFailed]} numberOfLines={failed ? 2 : 1}>
                   {failed ? "Couldn't open your browser. Try again." : 'Opens in your browser'}
                 </Text>
               </View>
@@ -308,10 +293,11 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
   },
-  metaError: {
-    fontSize: fontSize.sm,
+  // Cream, not --error: coral is 4.16:1 on --surface-hover (the pressed
+  // background), below AA. The coral icon carries the error semantic at the
+  // 3:1 UI bar instead.
+  metaFailed: {
     color: colors.text,
-    flexShrink: 1,
   },
   metaRow: {
     flexDirection: 'row',
