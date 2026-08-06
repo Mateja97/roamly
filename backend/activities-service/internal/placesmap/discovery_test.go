@@ -169,11 +169,19 @@ func TestPassesFloor(t *testing.T) {
 // the obvious next feature, and internal/tripadvisor sits right there as a
 // template. An autonomous pipeline run would reach for it immediately.
 //
+// Scope, stated plainly so this isn't mistaken for total coverage: it guards
+// the Google discovery table and the sync schedule. A standalone provider
+// package added the way internal/tripadvisor was — routed by the hardcoded
+// category switches in internal/service/activity.go — would bypass it
+// entirely and keep this test green. Extending the guard there would mean
+// asserting against a switch statement, which is more brittle than it is
+// worth; the backstop for that path is BUSINESS_STANDARDS.md and review.
+//
 // If this test ever fails, the fix is almost certainly to delete the new
 // discovery row — not to relax the test. Changing it means someone has decided
 // to breach the partner terms, which is a decision for a human with the
 // contract in front of them.
-func TestToursExperiences_HasNoDiscoverySource(t *testing.T) {
+func TestDiscoveryRows_NeverSourcesToursExperiences(t *testing.T) {
 	for _, r := range DiscoveryRows {
 		if r.Category == activitiessvc.CategoryToursExperiences {
 			t.Errorf("DiscoveryRows contains a tours_experiences row (subtype %q): the category is "+
