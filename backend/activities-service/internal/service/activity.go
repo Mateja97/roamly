@@ -405,8 +405,9 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 }
 
 // validateExtraFields runs semantic checks the strict decode above can't
-// express structurally: action_url (T7, 8 categories) must be an absolute
-// http(s) URL, Art's year must be a plausible 4-digit year, opening_hours
+// express structurally: website_url (T7, renamed+extended to all 13
+// categories T1 website-url-action-chip) must be an absolute http(s) URL,
+// Art's year must be a plausible 4-digit year, opening_hours
 // (T1, the 7 categories that already show an hours chip) must be a
 // well-formed weekly schedule, and (T1) every generated free-text field
 // present on any per-category detail struct — good_to_know[], vibe, Sport's
@@ -434,40 +435,45 @@ func ValidateDetails(category activitiessvc.Category, details json.RawMessage) (
 func validateExtraFields(target any) error {
 	switch t := target.(type) {
 	case *activitiessvc.RestaurantDetails:
-		if err := validateActionURL(t.ActionURL); err != nil {
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
 			return err
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.BarDetails:
 		clearDenylisted(&t.Vibe)
-		if err := validateActionURL(t.ActionURL); err != nil {
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
 			return err
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.CafeDetails:
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
+			return err
+		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.NightlifeDetails:
-		if err := validateActionURL(t.ActionURL); err != nil {
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
 			return err
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.NatureDetails:
 		dropDenylisted(&t.GoodToKnow)
-		return nil
+		return validateWebsiteURL(t.WebsiteURL)
 	case *activitiessvc.SportDetails:
 		clearDenylisted(&t.EffortLevel)
 		clearDenylisted(&t.Gear)
 		dropDenylisted(&t.WhatToBring)
-		return validateActionURL(t.ActionURL)
+		return validateWebsiteURL(t.WebsiteURL)
+	case *activitiessvc.KidsDetails:
+		return validateWebsiteURL(t.WebsiteURL)
 	case *activitiessvc.CultureDetails:
 		t.NowShowing = clearBannerDenylisted(t.NowShowing)
-		if err := validateActionURL(t.ActionURL); err != nil {
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
 			return err
 		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.ArtDetails:
 		t.CurrentExhibition = clearBannerDenylisted(t.CurrentExhibition)
-		if err := validateActionURL(t.ActionURL); err != nil {
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
 			return err
 		}
 		if err := validateYear(t.Year); err != nil {
@@ -477,12 +483,15 @@ func validateExtraFields(target any) error {
 	case *activitiessvc.WellnessDetails:
 		dropDenylisted(&t.GoodToKnow)
 		t.Treatments = clearTreatmentsDenylisted(t.Treatments)
-		return validateActionURL(t.ActionURL)
+		return validateWebsiteURL(t.WebsiteURL)
 	case *activitiessvc.EntertainmentDetails:
 		dropDenylisted(&t.GoodToKnow)
 		t.UpcomingShows = clearShowsDenylisted(t.UpcomingShows)
-		return validateActionURL(t.ActionURL)
+		return validateWebsiteURL(t.WebsiteURL)
 	case *activitiessvc.ShoppingDetails:
+		if err := validateWebsiteURL(t.WebsiteURL); err != nil {
+			return err
+		}
 		return validateOpeningHours(t.OpeningHours)
 	case *activitiessvc.ToursExperiencesDetails:
 		clearInvalidScalar(&t.Duration)
@@ -497,7 +506,7 @@ func validateExtraFields(target any) error {
 		} else {
 			clearDenylisted(&t.MeetingPoint)
 		}
-		return nil
+		return validateWebsiteURL(t.WebsiteURL)
 	default:
 		return nil
 	}
@@ -607,15 +616,15 @@ func clearShowsDenylisted(items []activitiessvc.Show) []activitiessvc.Show {
 	return kept
 }
 
-// validateActionURL rejects a non-nil action_url that isn't an absolute
+// validateWebsiteURL rejects a non-nil website_url that isn't an absolute
 // http(s) URL. A nil value (field absent) is always valid.
-func validateActionURL(raw *string) error {
+func validateWebsiteURL(raw *string) error {
 	if raw == nil {
 		return nil
 	}
 	u, err := url.Parse(*raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("%w: action_url %q is not an absolute http(s) URL", sharederrors.ErrInvalidInput, *raw)
+		return fmt.Errorf("%w: website_url %q is not an absolute http(s) URL", sharederrors.ErrInvalidInput, *raw)
 	}
 	return nil
 }
@@ -868,7 +877,7 @@ func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
 // fresh.
 //
 // Details is merged (mergeLiveDetails), not replaced outright: live-sourced
-// keys (action_url/opening_hours/venue_type/...) win, everything else
+// keys (website_url/opening_hours/venue_type/...) win, everything else
 // already on the stored row (e.g. admin-curated Treatments/GoodToKnow) is
 // passed through unchanged.
 //

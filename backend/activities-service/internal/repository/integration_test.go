@@ -542,13 +542,13 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 	})
 
-	t.Run("0009 backfills action_url onto every seed row in the 8 affected categories, and year onto Art", func(t *testing.T) {
+	t.Run("0009 backfills website_url onto every seed row in the 8 affected categories (renamed from action_url by 0031), and year onto Art", func(t *testing.T) {
 		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
 		if err != nil {
 			t.Fatalf("Query() error: %v", err)
 		}
 
-		actionURLCategories := map[activitiessvc.Category]bool{
+		websiteURLCategories := map[activitiessvc.Category]bool{
 			activitiessvc.CategoryRestaurants:   true,
 			activitiessvc.CategoryBars:          true,
 			activitiessvc.CategoryNightlife:     true,
@@ -560,25 +560,37 @@ func TestActivities_Query_Integration(t *testing.T) {
 		}
 
 		for _, a := range got {
-			if !actionURLCategories[a.Category] {
+			if !websiteURLCategories[a.Category] {
 				continue
 			}
 			var payload struct {
-				ActionURL *string `json:"action_url"`
-				Year      *int    `json:"year"`
+				WebsiteURL *string `json:"website_url"`
+				Year       *int    `json:"year"`
 			}
 			if err := json.Unmarshal(a.Details, &payload); err != nil {
 				t.Errorf("activity %q: unmarshaling details: %v", a.Title, err)
 				continue
 			}
-			if payload.ActionURL == nil || *payload.ActionURL == "" {
-				t.Errorf("activity %q (category %s) missing action_url after migration 0009", a.Title, a.Category)
+			if payload.WebsiteURL == nil || *payload.WebsiteURL == "" {
+				t.Errorf("activity %q (category %s) missing website_url after migrations 0009+0031", a.Title, a.Category)
 			}
 			if a.Category == activitiessvc.CategoryArt && (payload.Year == nil || *payload.Year == 0) {
 				t.Errorf("activity %q (Art) missing year after migration 0009", a.Title)
 			}
 			if _, err := service.ValidateDetails(a.Category, a.Details); err != nil {
 				t.Errorf("activity %q (category %s): ValidateDetails failed after 0009 backfill: %v", a.Title, a.Category, err)
+			}
+		}
+	})
+
+	t.Run("0031 renames action_url to website_url for every row, preserving the value", func(t *testing.T) {
+		got, err := repo.Query(ctx, activitiessvc.QueryFilter{Scope: activitiessvc.ScopeAnywhere})
+		if err != nil {
+			t.Fatalf("Query() error: %v", err)
+		}
+		for _, a := range got {
+			if bytes.Contains(a.Details, []byte(`"action_url"`)) {
+				t.Errorf("activity %q (category %s) still has an action_url key after migration 0031: %s", a.Title, a.Category, a.Details)
 			}
 		}
 	})

@@ -96,7 +96,7 @@ func TestWellnessDetails_RoundTripsNewFields(t *testing.T) {
 			{Item: "Aroma massage"},
 		},
 		ExternalBookingNote: "Booking is handled on the venue's own site",
-		ActionURL:           &url,
+		WebsiteURL:          &url,
 		VenueType:           "Spa",
 		GoodToKnow:          []string{"Towel, robe and slippers included"},
 		OpeningHours: &OpeningHours{
@@ -126,7 +126,7 @@ func TestEntertainmentDetails_RoundTripsNewFields(t *testing.T) {
 		UpcomingShows: []Show{
 			{Date: "2026-08-18", Title: "Jazz Night: Bilja Krstić"},
 		},
-		ActionURL:  &url,
+		WebsiteURL: &url,
 		GoodToKnow: []string{"Unnumbered seating — arrive early"},
 		OpeningHours: &OpeningHours{
 			Timezone: "Europe/Belgrade",
