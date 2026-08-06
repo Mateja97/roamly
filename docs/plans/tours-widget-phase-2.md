@@ -4,6 +4,32 @@
 **Depends on:** Phase 1 (PR #173) merged; `EXPO_PUBLIC_GYG_PARTNER_ID` set.
 **Created:** 2026-08-06.
 
+## Evidence that may retire this phase
+
+Two findings from driving Phase 1 on a real Android device (2026-08-06),
+both gathered by using the app as a user — not by scraping, which §3.1.4
+forbids.
+
+**1. Serbian coverage outside Belgrade is close to nil.** Tapping the ticket in
+Novi Pazar landed on `/s/?q=Novi+Pazar` and GetYourGuide returned **1 result** —
+a Belgrade-based 7-day tour at €1,850, i.e. not a Novi Pazar activity at all.
+
+This is the difference between the two phases in one screenshot. Phase 1 degrades
+gracefully: the user is on GetYourGuide's own page, which offers "Go beyond Novi
+Pazar" alternatives and reads as a thin catalogue. An embedded panel rendering
+that same single irrelevant item inside Roamly reads as **our feature being
+broken**. For an MVP covering every city in Serbia, most cities land in the
+second case.
+
+**2. GetYourGuide runs a cookie consent banner on their own site**, so the
+widget and Analyzer do set non-essential cookies. Embedded, that obligation
+moves onto Roamly (§4 below), and Roamly has no consent framework.
+
+**Neither finding blocks Phase 1, which is shipped.** Together they mean this
+phase should not start until the coverage question is answered for the cities
+that actually matter — and if the answer is "Belgrade and little else", the
+honest call is to keep the deep link and not build this at all.
+
 ## Why this phase exists
 
 Phase 1 ships a referral card with no partner content — no photos, no prices,
@@ -144,15 +170,14 @@ few resorts and render nothing everywhere else. `q` degrades gracefully instead.
 
 **Dependency this creates: check the actual inventory before building.** Serbia's
 city count is not the number that matters — GetYourGuide's Serbian destination
-count is. Open the portal's Link builder, type Serbian city names, and see which
-resolve to real destinations. If coverage is Belgrade-plus-a-few, an embedded
-panel will render empty across most of the country, which reads as *our* feature
-being broken rather than their catalogue being thin. Phase 1 tolerates that (the
-user lands on their search page, which suggests alternatives); Phase 2 does not.
-That check may decide this phase on its own.
+count is. One data point already exists (see "Evidence that may retire this
+phase"): Novi Pazar returns a single, irrelevant result. Sample the rest of the
+launch cities the same way, through the app or the portal's Link builder, before
+committing to this phase.
 
 Do not check this by scraping their site — §3.1.4 forbids programmatically
-extracting content from it. The Link builder is the sanctioned route.
+extracting content from it. Using the app or the Link builder as a user is the
+sanctioned route.
 
 A "location-id when mapped, `q` otherwise" fallback is two code paths for one
 job. Only build it if `q` demonstrably misresolves in practice.
@@ -335,15 +360,18 @@ report can't answer whether Phase 2 paid for itself.
 
 Do not ship this phase on the assumption.
 
-### 4. Third-party scripts and consent
+### 4. Third-party scripts and consent — now evidenced, not hypothetical
 
 Embedding their script makes Roamly the party loading it. On a deep link the
 user leaves to GetYourGuide's own site, under GetYourGuide's own consent banner;
 embedded, that boundary moves onto us.
 
-Roamly has no consent framework today. Confirm whether the widget sets
-non-essential cookies before this ships in the EU, and if it does, this phase
-needs a consent gate — which is a bigger piece of work than the panel itself.
+**GetYourGuide's own site serves a cookie consent banner** ("GetYourGuide uses
+cookies and other technologies…"), so the widget and Analyzer do set
+non-essential cookies. The open question is no longer *whether* but *who gates
+them*: does the widget render its own consent UI inside a WebView, or is the
+host app expected to gate it? Roamly has no consent framework, so if it's the
+latter this phase needs one — a bigger piece of work than the panel itself.
 
 **This is the most likely reason to not build Phase 2**, and it should be
 settled before any code is written.
