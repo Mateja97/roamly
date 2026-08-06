@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line, Path } from 'react-native-svg';
 import { ArrowRight, Compass, ExternalLink, TriangleAlert } from 'lucide-react-native';
@@ -41,9 +41,10 @@ export function ToursTicket({ city }: { city: string | null }) {
   const focus = useFocusable();
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-  // The guard has to be a ref, not the state above: several taps in one tick
-  // all close over the same `busy === false`, so state alone lets every one
-  // of them through. State still drives `disabled` for the visual/AT state.
+  // Defensive: `disabled={busy}` only takes effect on the next commit, so the
+  // ref closes the gap between the first press and that commit. Review note:
+  // the test suite passes with a state-only guard too (RNTL commits between
+  // events), so treat this as belt-and-braces rather than a reproduced bug.
   const busyRef = useRef(false);
 
   const title = city ? `Book a guided tour in ${city}` : 'Book a guided tour';
@@ -66,11 +67,19 @@ export function ToursTicket({ city }: { city: string | null }) {
       await Linking.openURL(url);
     } catch {
       setFailed(true);
+      // Swapping the label doesn't make a screen reader re-read an already
+      // focused element, so the moment of failure would otherwise be silent.
+      AccessibilityInfo.announceForAccessibility("Couldn't open your browser. Try again.");
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
   }
+
+  // No partner id means no attributable link, so render nothing rather than a
+  // control that silently no-ops. ActivityListScreen already gates on
+  // hasPartnerId(); this makes the component safe for any future caller too.
+  if (url === null) return null;
 
   return (
     <Pressable
@@ -164,7 +173,7 @@ export function ToursTicket({ city }: { city: string | null }) {
                 ) : (
                   <ExternalLink size={15} color={colors.primary} strokeWidth={1.75} />
                 )}
-                <Text style={failed ? styles.metaError : styles.metaText} numberOfLines={1}>
+                <Text style={failed ? styles.metaError : styles.metaText} numberOfLines={failed ? 2 : 1}>
                   {failed ? "Couldn't open your browser. Try again." : 'Opens in your browser'}
                 </Text>
               </View>

@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { AccessibilityInfo, Linking } from 'react-native';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ToursTicket } from './ToursTicket';
 
@@ -90,12 +90,23 @@ describe('ToursTicket', () => {
     await act(async () => release());
   });
 
-  it('renders nothing tappable when no partner id is configured', () => {
+  it('renders nothing at all when no partner id is configured', () => {
     delete process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
-    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
     render(<ToursTicket city="Belgrade" />);
+    // Not merely inert — absent. A rendered control that silently no-ops is
+    // worse than no control.
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.queryByText(/Book a guided tour/)).toBeNull();
+  });
+
+  it('announces the failure, since a changed label is not re-read', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no handler'));
+    render(<ToursTicket city="Belgrade" />);
+
     fireEvent.press(screen.getByRole('link', { name: /Book a guided tour in Belgrade/ }));
-    expect(openURL).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(announce).toHaveBeenCalledWith("Couldn't open your browser. Try again."));
   });
 
   it('tells screen readers the link leaves the app', () => {
