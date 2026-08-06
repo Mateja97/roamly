@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Line, Path } from 'react-native-svg';
 import { ArrowRight, Compass, ExternalLink } from 'lucide-react-native';
+import { GetYourGuideLogo } from '../../components/GetYourGuideLogo';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { toursDeepLink } from './toursPartner';
@@ -12,17 +13,14 @@ const NOTCH_SIZE = 16;
 const GO_BUTTON_SIZE = 38;
 const COMPASS_WELL = 52;
 
-// The issuer stamp's mark (design-spec section B). GetYourGuide's own
-// brand-kit asset, once the partner portal supplies it — `require()` it here
-// and the plate renders itself. Deliberately null until then: their mark may
-// not be redrawn or recolored (Partner TCs 4.3.1 iv), and copies from logo
-// aggregators or app screenshots are not their brand kit. The ticket is
-// designed to look finished without it — the written attribution below
-// already carries the meaning, so the plate is simply omitted (no reserved
-// gap, no fallback text).
-// ponytail: a null constant, not a config flag — there is exactly one asset
-// and it either exists or it doesn't.
-const PARTNER_MARK: number | null = null;
+// The issuer stamp is a round seal, not the pill the design-spec first drew.
+// GetYourGuide's mark is a three-line stacked lockup (382x302), so a 20px-tall
+// pill would put each line's cap height under 5px — unreadable, and showing a
+// partner's mark at an illegible size is its own kind of distortion. At 32px
+// the lockup reads, and a near-square mark sits better in a circle than in a
+// pill anyway: it lands as a wax seal on the ticket's perforation.
+const SEAL_SIZE = 48;
+const SEAL_MARK_HEIGHT = 32;
 
 // The Tours & Experiences entry point, built on the Activity card's
 // torn-ticket anatomy (DESIGN_STANDARDS.md) with the photo well replaced by a
@@ -137,11 +135,9 @@ export function ToursTicket({ city }: { city: string | null }) {
           <View style={styles.notchLeft} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
           <View style={styles.notchRight} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
 
-          {PARTNER_MARK !== null && (
-            <View style={styles.stamp} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-              <Image source={PARTNER_MARK} style={styles.stampMark} resizeMode="contain" />
-            </View>
-          )}
+          <View style={styles.stamp} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <GetYourGuideLogo height={SEAL_MARK_HEIGHT} />
+          </View>
         </>
       )}
     </Pressable>
@@ -222,23 +218,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   // Straddles the perforation, right-inset — centred would compete with the
-  // compass above it.
+  // compass above it. The white fill is the partner's own asset requirement,
+  // not decoration: their orange mark has no contrast against wine.
   stamp: {
     position: 'absolute',
-    right: space[4] + 2,
-    top: STUB_HEIGHT - 15,
-    height: 30,
-    borderRadius: radius.full,
+    right: space[4],
+    top: STUB_HEIGHT - SEAL_SIZE / 2,
+    width: SEAL_SIZE,
+    height: SEAL_SIZE,
+    borderRadius: SEAL_SIZE / 2,
     backgroundColor: colors.attributionPlate,
     borderWidth: 1,
     borderColor: colors.cardHighlight,
-    paddingHorizontal: space[3],
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  stampMark: {
-    height: 20,
-    width: 76,
   },
   body: {
     padding: space[4],
