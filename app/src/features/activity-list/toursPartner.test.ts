@@ -1,5 +1,5 @@
 import type { Activity } from '../../api/types';
-import { hasPartnerId, resolveTourCity, toursDeepLink } from './toursPartner';
+import { hasPartnerId, resolveTourLocation, tourTarget, toursDeepLink } from './toursPartner';
 
 const activity = (city?: string): Activity => ({
   id: city ?? 'none',
@@ -15,28 +15,50 @@ const activity = (city?: string): Activity => ({
   city,
 });
 
-describe('resolveTourCity', () => {
+describe('resolveTourLocation', () => {
   it('prefers the first selected city (Anywhere)', () => {
     const cities = [
       { city: 'Barcelona', country: 'Spain', centroid: { lat: 41.4, lng: 2.2 } },
       { city: 'Madrid', country: 'Spain', centroid: { lat: 40.4, lng: -3.7 } },
     ];
-    expect(resolveTourCity(cities, [activity('Belgrade')])).toBe('Barcelona');
+    expect(resolveTourLocation(cities, [activity('Belgrade')])).toEqual({ city: 'Barcelona', country: 'Spain' });
   });
 
-  it("falls back to a loaded activity's city (Nearby)", () => {
-    expect(resolveTourCity([], [activity(undefined), activity('Belgrade')])).toBe('Belgrade');
+  it("falls back to a loaded activity's city and country (Nearby)", () => {
+    expect(resolveTourLocation([], [activity(undefined), activity('Belgrade')])).toEqual({
+      city: 'Belgrade',
+      country: 'Serbia',
+    });
   });
 
   it('returns null when neither is available', () => {
-    expect(resolveTourCity([], [])).toBeNull();
-    expect(resolveTourCity([], [activity(undefined)])).toBeNull();
+    expect(resolveTourLocation([], [])).toBeNull();
+    expect(resolveTourLocation([], [activity(undefined)])).toBeNull();
   });
 
   it('treats blank strings as absent rather than naming an empty city', () => {
     const cities = [{ city: '   ', country: 'Spain', centroid: { lat: 0, lng: 0 } }];
-    expect(resolveTourCity(cities, [activity('Belgrade')])).toBe('Belgrade');
-    expect(resolveTourCity([], [activity('  ')])).toBeNull();
+    expect(resolveTourLocation(cities, [activity('Belgrade')])).toEqual({ city: 'Belgrade', country: 'Serbia' });
+    expect(resolveTourLocation([], [activity('  ')])).toBeNull();
+  });
+});
+
+describe('tourTarget', () => {
+  it('names and searches a city with confirmed inventory', () => {
+    expect(tourTarget({ city: 'Belgrade', country: 'Serbia' })).toEqual({ city: 'Belgrade', query: 'Belgrade' });
+    // Case and padding are comparison-only; the label keeps what arrived.
+    expect(tourTarget({ city: ' belgrade ', country: 'Serbia' })).toEqual({ city: ' belgrade ', query: ' belgrade ' });
+  });
+
+  // Novi Pazar returns a single Belgrade day-trip. Naming it would be a
+  // promise GetYourGuide can't keep, so the card goes generic and the search
+  // widens to where the inventory actually is.
+  it('drops the city name and widens to the country when inventory is unconfirmed', () => {
+    expect(tourTarget({ city: 'Novi Pazar', country: 'Serbia' })).toEqual({ city: null, query: 'Serbia' });
+  });
+
+  it('promises nothing with no location at all', () => {
+    expect(tourTarget(null)).toEqual({ city: null, query: null });
   });
 });
 

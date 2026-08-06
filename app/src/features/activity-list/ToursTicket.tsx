@@ -37,7 +37,11 @@ const SEAL_MARK_HEIGHT = 32;
 // Phase 1 hands off to the system browser rather than embedding GYG's widget:
 // booking and payment happen on their real origin with its own URL bar, and
 // the app takes no new dependency to do it (`Linking` is React Native core).
-export function ToursTicket({ city }: { city: string | null }) {
+// `city` drives the copy, `query` drives the link — they are deliberately
+// separate. Outside cities with confirmed inventory the card stops naming a
+// place (so it promises nothing GetYourGuide can't deliver) while the link
+// widens to the country, where the results actually are. See tourTarget().
+export function ToursTicket({ city, query }: { city: string | null; query: string | null }) {
   const focus = useFocusable();
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,7 @@ export function ToursTicket({ city }: { city: string | null }) {
   const busyRef = useRef(false);
 
   const title = city ? `Book a guided tour in ${city}` : 'Book a guided tour';
-  const url = toursDeepLink(city);
+  const url = toursDeepLink(query);
 
   // Busy-gated for the duration of the handoff — APP_STANDARDS.md's
   // "disable a control for the duration of its own async action" is a

@@ -581,6 +581,22 @@ describe('ActivityListScreen', () => {
       expect(screen.getByText('Book a guided tour in Belgrade')).toBeTruthy();
     });
 
+    // Novi Pazar has no confirmed GetYourGuide inventory — a search there
+    // returns one Belgrade day-trip — so the card must not promise tours
+    // there. It goes generic and the link widens to the country.
+    it('drops the city name for a city with no confirmed inventory', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([{ ...activity, city: 'Novi Pazar' }]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      mockedQuery.mockResolvedValue(successResult([]));
+      fireEvent.press(screen.getByRole('button', { name: 'Tours & Experiences' }));
+      await flush();
+
+      expect(screen.getByText('Book a guided tour')).toBeTruthy();
+      expect(screen.queryByText(/Novi Pazar/)).toBeNull();
+    });
+
     it('keeps the empty state when other categories are also selected', async () => {
       await selectTours();
       fireEvent.press(screen.getByRole('button', { name: 'Culture' }));
