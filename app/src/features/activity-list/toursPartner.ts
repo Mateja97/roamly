@@ -45,14 +45,21 @@ export function resolveTourLocation(cities: CitySuggestion[], activities: Activi
 }
 
 // Cities where GetYourGuide inventory has been confirmed by hand, via the
-// partner portal's Link builder. Deliberately small and hand-maintained: a
-// harvested list of their locations would be "a database of GYG Platform
-// Content" under Partner TCs 4.2.2(iii), and there is no API to derive it
-// from anyway.
+// partner portal's Link builder (2026-08-06: of Serbia's ten largest, only
+// these three resolve to a real destination page — Novi Pazar returns a
+// single Belgrade day-trip, and the rest fall through to a generic search).
 //
-// Lowercased for comparison only — the display label always uses the city
-// string as it arrived, never this key.
-const CONFIRMED_TOUR_CITIES = new Set(['belgrade']);
+// Deliberately small and hand-maintained: a harvested list of their locations
+// would be "a database of GYG Platform Content" under Partner TCs 4.2.2(iii),
+// and there is no API to derive one from anyway.
+//
+// Both spellings of a name are listed rather than normalising diacritics at
+// runtime. Reverse geocoding can hand us either the local or the anglicised
+// form ("Niš"/"Nis", "Beograd"/"Belgrade"), and two extra strings are cheaper
+// and more obvious than a normalisation step whose Unicode behaviour varies
+// by JS engine. Comparison keys only — the display label always uses the city
+// string exactly as it arrived.
+const CONFIRMED_TOUR_CITIES = new Set(['belgrade', 'beograd', 'novi sad', 'niš', 'nis']);
 
 export function isConfirmedTourCity(city: string): boolean {
   return CONFIRMED_TOUR_CITIES.has(city.trim().toLowerCase());

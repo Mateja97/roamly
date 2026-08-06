@@ -57,6 +57,14 @@ describe('tourTarget', () => {
     expect(tourTarget({ city: 'Novi Pazar', country: 'Serbia' })).toEqual({ city: null, query: 'Serbia' });
   });
 
+  it('accepts both the local and anglicised spelling of a confirmed city', () => {
+    // Reverse geocoding can hand us either form; neither should silently
+    // demote a city that does have inventory.
+    for (const name of ['Niš', 'Nis', 'niš', 'Beograd', 'Novi Sad']) {
+      expect(tourTarget({ city: name, country: 'Serbia' })).toEqual({ city: name, query: name });
+    }
+  });
+
   it('promises nothing with no location at all', () => {
     expect(tourTarget(null)).toEqual({ city: null, query: null });
   });
