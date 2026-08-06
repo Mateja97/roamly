@@ -375,23 +375,27 @@ func BuildLiveDetails(cat activitiessvc.Category, country string, d PlaceDetail)
 		set("hours", hours)
 		setOpeningHours()
 		setList("known_for", cafeKnownFor(d))
+		set("website_url", d.WebsiteURI)
 	case activitiessvc.CategoryNightlife:
 		set("venue_type", venueType)
 		setOpeningHours()
 	case activitiessvc.CategoryNature:
 		setList("good_to_know", natureGoodToKnow(d))
+		set("website_url", d.WebsiteURI)
 	case activitiessvc.CategoryKids:
 		setList("facilities", kidsFacilities(d))
+		set("website_url", d.WebsiteURI)
 	case activitiessvc.CategoryCulture, activitiessvc.CategoryArt, activitiessvc.CategoryShopping:
 		set("hours", hours)
 		set("venue_type", venueType)
 		setOpeningHours()
+		set("website_url", d.WebsiteURI)
 	case activitiessvc.CategoryWellness:
 		set("venue_type", venueType)
-		set("action_url", d.WebsiteURI)
+		set("website_url", d.WebsiteURI)
 		setOpeningHours()
 	case activitiessvc.CategoryEntertainment:
-		set("action_url", d.WebsiteURI)
+		set("website_url", d.WebsiteURI)
 		setOpeningHours()
 	}
 	// Sport: no case -> always "{}" (no sourceable Places fields for it).

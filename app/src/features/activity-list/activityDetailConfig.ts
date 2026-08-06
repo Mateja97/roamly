@@ -115,9 +115,7 @@ export const PRIMARY_CTA_LABEL: Record<Category, string> = {
   shopping: 'Get directions',
   // design-spec.md's Tours & Experiences composition (T10): "Bottom:
   // `From €18` + `Check availability`" — label is fixed regardless of
-  // `details` being present (no `action_url`-equivalent field exists on
-  // this category's schema; the CTA is disabled until one does, same as
-  // any other category with no `primaryActionURL`).
+  // `details` being present or the CTA's enabled/disabled state.
   tours_experiences: 'Check availability',
 };
 
@@ -129,25 +127,13 @@ export function genericActionLabel(category: Category): 'Directions' | 'Share' {
   return primaryCTAIsDirections(category) ? 'Share' : 'Directions';
 }
 
-// design-spec.md T8 addendum #1: the 8 non-directions categories' primary
-// CTA opens this external `action_url`. `undefined` only when the
-// field is genuinely absent — never force-disabled by category alone.
-export function primaryActionURL(activity: Activity): string | undefined {
-  const d = activity.details;
-  if (!d) return undefined;
-  switch (d.category) {
-    case 'restaurants':
-    case 'bars':
-    case 'nightlife':
-    case 'sport':
-    case 'culture':
-    case 'art':
-    case 'wellness':
-    case 'entertainment':
-      return d.action_url;
-    default:
-      return undefined;
-  }
+// website-url-action-chip T2: every category's `ActivityDetails` branch
+// carries `website_url` now, so this is a plain common-property read across
+// the discriminated union (no per-category switch needed) — feeds both the
+// non-directions categories' primary CTA and the Website action chip.
+// `undefined` only when the field is genuinely absent.
+export function getWebsiteURL(activity: Activity): string | undefined {
+  return activity.details?.website_url;
 }
 
 // design-spec.md's "Screen composition" section (T5): one fixed canonical
@@ -226,15 +212,12 @@ export function artAttribution(activity: Activity): ArtAttribution | undefined {
   return { artist, workYear, medium };
 }
 
-// design-spec.md T8 (Tripadvisor initiative): a row is Tripadvisor-treated
-// iff `details.tripadvisor` is present — the sole detection signal (no
-// `Source` field on the wire, not needed for UI detection). Restaurants/bars
-// are Tripadvisor-exclusive; cafés joined as a third, dual-sourced category
-// per fix(activities-service) #104 ("restore Google as a Café source
-// alongside Tripadvisor" — a café can genuinely come from either provider).
-// Shared by ActivityCard and the detail screen so the union-narrowing switch
-// lives in exactly one place.
-export function tripadvisorAttribution(activity: Activity): TripadvisorAttribution | undefined {
+// Restaurants/bars are Tripadvisor-exclusive; cafés joined as a third,
+// dual-sourced category per fix(activities-service) #104 ("restore Google as
+// a Café source alongside Tripadvisor" — a café can genuinely come from
+// either provider). Shared by `tripadvisorAttribution`/`isTripadvisorSourced`
+// below so the union-narrowing switch lives in exactly one place.
+function rawTripadvisorField(activity: Activity): TripadvisorAttribution | undefined {
   const d = activity.details;
   if (!d) return undefined;
   switch (d.category) {
@@ -245,6 +228,29 @@ export function tripadvisorAttribution(activity: Activity): TripadvisorAttributi
     default:
       return undefined;
   }
+}
+
+// tripadvisor-marks-require-reviews (T2): the sole gate for the Tripadvisor
+// treatment across every surface (ActivityCard, the list-screen footer
+// caption, and — via useActivityDetailData — the eyebrow, TripadvisorBlock,
+// the footer CTA, the disclaimer). A row only keeps the treatment when it
+// has a quotable Tripadvisor review — `details.tripadvisor` presence alone
+// is no longer enough (a review-less row falls back to the ordinary
+// Google-sourced rendering instead, see `isTripadvisorSourced` below for the
+// one exception that still needs the raw presence check).
+export function tripadvisorAttribution(activity: Activity): TripadvisorAttribution | undefined {
+  return tripadvisorReviews(activity).length > 0 ? rawTripadvisorField(activity) : undefined;
+}
+
+// tripadvisor-marks-require-reviews (T2) "rating trap": the raw
+// `details.tripadvisor` presence check `tripadvisorAttribution` used to be,
+// minus the review-count gate — exists ONLY to drive the rating-suppression
+// rule (a Tripadvisor-sourced row's stored `activity.rating` is always
+// Tripadvisor's own number until a live Places merge proves it's Google's,
+// via `google_maps_uri`). Must never gate a *rendered* Tripadvisor mark —
+// that's `tripadvisorAttribution`'s job alone.
+export function isTripadvisorSourced(activity: Activity): boolean {
+  return rawTripadvisorField(activity) !== undefined;
 }
 
 // Backend-gated per compliance rule 04 — only ever populated alongside a
@@ -409,12 +415,14 @@ export function factStripFields(activity: Activity): FactChip[] {
     case 'restaurants':
       // §5b: a Tripadvisor-sourced row carries its own cuisine (eyebrow
       // subtitle) via `tripadvisorEyebrow` above — the generic Cuisine chip
-      // would just repeat that, so it's dropped for Tripadvisor rows only;
-      // every other restaurant row keeps it. No `Price` chip
-      // (`price_tier`) for any restaurant row — an LLM-scraped figure, not
-      // verifiable against the venue's own site.
+      // would just repeat that, so it's dropped for a row that keeps the
+      // Tripadvisor treatment (routed through the gated helper, not the raw
+      // field, so this agrees with every other Tripadvisor surface); every
+      // other restaurant row keeps it. No `Price` chip (`price_tier`) for
+      // any restaurant row — an LLM-scraped figure, not verifiable against
+      // the venue's own site.
       return withHours(
-        d.tripadvisor ? [] : buildChips([[Utensils, 'Cuisine', d.cuisine]]),
+        tripadvisorAttribution(activity) ? [] : buildChips([[Utensils, 'Cuisine', d.cuisine]]),
         d.hours,
       );
     case 'bars':

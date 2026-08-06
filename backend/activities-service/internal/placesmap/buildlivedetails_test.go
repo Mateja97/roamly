@@ -68,16 +68,16 @@ func TestBuildLiveDetails_OneCasePerCategory(t *testing.T) {
 		cat      activitiessvc.Category
 		wantKeys []string
 	}{
-		{activitiessvc.CategoryCafes, []string{"hours", "opening_hours", "known_for"}},
+		{activitiessvc.CategoryCafes, []string{"hours", "opening_hours", "known_for", "website_url"}},
 		{activitiessvc.CategoryNightlife, []string{"venue_type", "opening_hours"}},
-		{activitiessvc.CategoryNature, []string{"good_to_know"}},
+		{activitiessvc.CategoryNature, []string{"good_to_know", "website_url"}},
 		{activitiessvc.CategorySport, nil},
-		{activitiessvc.CategoryKids, []string{"facilities"}},
-		{activitiessvc.CategoryCulture, []string{"hours", "venue_type", "opening_hours"}},
-		{activitiessvc.CategoryArt, []string{"hours", "venue_type", "opening_hours"}},
-		{activitiessvc.CategoryWellness, []string{"venue_type", "action_url", "opening_hours"}},
-		{activitiessvc.CategoryShopping, []string{"hours", "venue_type", "opening_hours"}},
-		{activitiessvc.CategoryEntertainment, []string{"action_url", "opening_hours"}},
+		{activitiessvc.CategoryKids, []string{"facilities", "website_url"}},
+		{activitiessvc.CategoryCulture, []string{"hours", "venue_type", "opening_hours", "website_url"}},
+		{activitiessvc.CategoryArt, []string{"hours", "venue_type", "opening_hours", "website_url"}},
+		{activitiessvc.CategoryWellness, []string{"venue_type", "website_url", "opening_hours"}},
+		{activitiessvc.CategoryShopping, []string{"hours", "venue_type", "opening_hours", "website_url"}},
+		{activitiessvc.CategoryEntertainment, []string{"website_url", "opening_hours"}},
 		// Not a Places-sourced category (Tripadvisor / no bespoke UI) -> always "{}".
 		{activitiessvc.CategoryRestaurants, nil},
 		{activitiessvc.CategoryBars, nil},

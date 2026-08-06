@@ -171,7 +171,7 @@ var extractionConfig = map[activitiessvc.Category]extraction{
 // scraperOwnedFields lists, per category, the `details` keys this job is
 // responsible for — the completeness check (isComplete) walks exactly this
 // list. Deliberately excludes anything Places-sourced (venue_type,
-// action_url, opening_hours) or admin-only (Art's artwork/year) — those
+// website_url, opening_hours) or admin-only (Art's artwork/year) — those
 // aren't this job's concern either way.
 var scraperOwnedFields = map[activitiessvc.Category][]string{
 	activitiessvc.CategoryWellness:      {"treatments", "good_to_know"},

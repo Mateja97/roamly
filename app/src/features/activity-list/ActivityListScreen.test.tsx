@@ -977,8 +977,8 @@ describe('ActivityListScreen', () => {
     });
   });
 
-  describe('Tripadvisor list-footer attribution (T8, unchanged)', () => {
-    it('shows the footer caption when the visible list has >=1 Tripadvisor row', async () => {
+  describe('Tripadvisor list-footer attribution (T8, gated by T2 to a quotable review)', () => {
+    it('shows the footer caption when the visible list has >=1 Tripadvisor row with a review', async () => {
       const tripadvisorActivity: Activity = {
         ...activity,
         id: '2',
@@ -990,6 +990,7 @@ describe('ActivityListScreen', () => {
             review_count: 42,
             web_url: 'https://tripadvisor.example/place',
           },
+          reviews: [{ rating: 5, date: '1 June 2026', text: 'Great spot.' }],
         },
       };
       mockedQuery.mockResolvedValue(successResult([activity, tripadvisorActivity]));
@@ -1003,6 +1004,33 @@ describe('ActivityListScreen', () => {
 
     it('omits the footer caption when no row in the visible list is Tripadvisor-sourced', async () => {
       mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+      expect(
+        screen.queryByText('Restaurant, bar and café ratings, reviews and photos provided by Tripadvisor.'),
+      ).toBeNull();
+    });
+
+    // tripadvisor-marks-require-reviews (T2): the list query never
+    // live-merges (Places Terms §14.3), so a review-less Tripadvisor row
+    // never becomes attributed here — the footer must stay silent even
+    // though the row is genuinely Tripadvisor-sourced.
+    it('omits the footer caption when every Tripadvisor row in the result set is review-less', async () => {
+      const reviewlessTripadvisor: Activity = {
+        ...activity,
+        id: '2',
+        title: 'Casa Verde Bistro',
+        details: {
+          category: 'restaurants',
+          tripadvisor: {
+            rating_image_url: 'https://tripadvisor.example/bubble.png',
+            review_count: 42,
+            web_url: 'https://tripadvisor.example/place',
+          },
+        },
+      };
+      mockedQuery.mockResolvedValue(successResult([activity, reviewlessTripadvisor]));
       render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
 
       await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());

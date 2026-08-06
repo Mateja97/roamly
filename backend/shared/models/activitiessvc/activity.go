@@ -373,9 +373,9 @@ type RestaurantDetails struct {
 	Hours         string      `json:"hours,omitempty"`
 	OpenStatus    string      `json:"open_status,omitempty"`
 	PopularDishes []ItemPrice `json:"popular_dishes,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Book a table"),
-	// validated as an absolute http(s) URL when present.
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text Hours field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
@@ -393,8 +393,9 @@ type BarDetails struct {
 	HappyHourWindow string   `json:"happy_hour_window,omitempty"`
 	OpensTime       string   `json:"opens_time,omitempty"`
 	SignaturePours  []string `json:"signature_pours,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("See menu").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text OpensTime field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
@@ -412,6 +413,9 @@ type CafeDetails struct {
 	WifiQuality  string      `json:"wifi_quality,omitempty"`
 	Hours        string      `json:"hours,omitempty"`
 	OnTheBar     []ItemPrice `json:"on_the_bar,omitempty"`
+	// WebsiteURL (T1, website-url-action-chip) is the venue's website,
+	// validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text Hours field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
@@ -445,8 +449,9 @@ type NightlifeDetails struct {
 	OpensTime   string       `json:"opens_time,omitempty"`
 	OpenTonight bool         `json:"open_tonight,omitempty"`
 	Lineup      []LineupItem `json:"lineup,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Guest list").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// VenueType (T8) is the badge subtype qualifier, e.g. "Club".
 	VenueType string `json:"venue_type,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
@@ -460,6 +465,9 @@ type NatureDetails struct {
 	BestTime    string   `json:"best_time,omitempty"`
 	Cost        string   `json:"cost,omitempty"`
 	GoodToKnow  []string `json:"good_to_know,omitempty"`
+	// WebsiteURL (T1, website-url-action-chip) is the venue's website,
+	// validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 }
 
 // SportDetails is CategorySport's detail payload.
@@ -468,8 +476,9 @@ type SportDetails struct {
 	EffortLevel string   `json:"effort_level,omitempty"`
 	Gear        string   `json:"gear,omitempty"`
 	WhatToBring []string `json:"what_to_bring,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Book session").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// Discipline (T8) is the badge subtype qualifier, e.g. "Climbing".
 	Discipline string `json:"discipline,omitempty"`
 	// DifficultyInferred marks Difficulty as a website-scrape LLM estimate
@@ -486,6 +495,9 @@ type SportDetails struct {
 type KidsDetails struct {
 	AgeRange   string   `json:"age_range,omitempty"`
 	Facilities []string `json:"facilities,omitempty"`
+	// WebsiteURL (T1, website-url-action-chip) is the venue's website,
+	// validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 }
 
 // Banner is a single-block callout: Culture's "now showing" and Art's
@@ -501,8 +513,9 @@ type CultureDetails struct {
 	TicketPrice string  `json:"ticket_price,omitempty"`
 	Hours       string  `json:"hours,omitempty"`
 	NowShowing  *Banner `json:"now_showing,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text Hours field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
@@ -522,8 +535,9 @@ type ArtDetails struct {
 	Hours             string              `json:"hours,omitempty"`
 	Artwork           *ArtworkAttribution `json:"artwork,omitempty"`
 	CurrentExhibition *Banner             `json:"current_exhibition,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// Year (T7) is the current exhibition's artwork year, e.g. 2019.
 	Year *int `json:"year,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
@@ -544,8 +558,9 @@ type Treatment struct {
 type WellnessDetails struct {
 	Treatments          []Treatment `json:"treatments,omitempty"`
 	ExternalBookingNote string      `json:"external_booking_note,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Visit website").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// VenueType (T8) is the badge subtype qualifier, e.g. "Spa".
 	VenueType string `json:"venue_type,omitempty"`
 	// GoodToKnow is website-sourced (see internal/service/websitesync.go) —
@@ -570,8 +585,9 @@ type EntertainmentDetails struct {
 	Genre         string `json:"genre,omitempty"`
 	Neighborhood  string `json:"neighborhood,omitempty"`
 	UpcomingShows []Show `json:"upcoming_shows,omitempty"`
-	// ActionURL (T7) is the primary CTA's external link ("Get tickets").
-	ActionURL *string `json:"action_url,omitempty"`
+	// WebsiteURL (T7, renamed T1 website-url-action-chip) is the venue's
+	// website, validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// GoodToKnow is website-sourced, same provenance note as WellnessDetails
 	// above. TypicalShowLength/PriceFrom (detail-price-duration-purge T1)
 	// were dropped for the same unverifiable-scraped-value reason as Show
@@ -586,6 +602,9 @@ type ShoppingDetails struct {
 	BestDay       string   `json:"best_day,omitempty"`
 	Hours         string   `json:"hours,omitempty"`
 	WhatYoullFind []string `json:"what_youll_find,omitempty"`
+	// WebsiteURL (T1, website-url-action-chip) is the venue's website,
+	// validated as an absolute http(s) URL when present.
+	WebsiteURL *string `json:"website_url,omitempty"`
 	// OpeningHours (T1) is the structured weekly-hours alternative to the
 	// free-text Hours field above; both may coexist.
 	OpeningHours *OpeningHours `json:"opening_hours,omitempty"`
@@ -610,6 +629,10 @@ type ToursExperiencesDetails struct {
 	NotIncluded     []string `json:"not_included,omitempty"`
 	MeetingPoint    string   `json:"meeting_point,omitempty"`
 	Itinerary       []string `json:"itinerary,omitempty"`
+	// WebsiteURL (T1, website-url-action-chip) is the venue's website,
+	// validated as an absolute http(s) URL when present; admin-entered only —
+	// no provider sources this category yet (BuildLiveDetails has no case).
+	WebsiteURL *string `json:"website_url,omitempty"`
 }
 
 // CitySuggestion is one typeahead result: a catalog city (T1) plus the

@@ -1,12 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MapPin, Phone } from 'lucide-react-native';
-import type { GoogleReview, TripadvisorAttribution, TripadvisorReview } from '../../api/activities';
-import { GoogleAttributionPlate } from '../../components/GoogleAttributionPlate';
+import type { TripadvisorAttribution, TripadvisorReview } from '../../api/activities';
 import { TripadvisorAttributionPlate } from '../../components/TripadvisorAttributionPlate';
 import { TripadvisorSubratingsPlate } from '../../components/TripadvisorSubratingsPlate';
 import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
-import { ReviewsSkeleton } from './DetailSkeletons';
 import { TripadvisorReviewsCarousel } from './TripadvisorReviewsCarousel';
 
 type TripadvisorBlockProps = {
@@ -15,17 +13,12 @@ type TripadvisorBlockProps = {
   // row) — the wire-level `tripadvisor` object carries no rating field of
   // its own, so the caller threads it through from the parent Activity.
   rating: number;
+  // tripadvisor-marks-require-reviews (T2): the caller only ever mounts
+  // this component for a row that has passed the gated
+  // `tripadvisorAttribution()` check, which guarantees this is non-empty —
+  // no empty-slot fallback branch needed here any more (see the caller's
+  // `isPlacesLive` path for the Google-sourced equivalent).
   reviews: TripadvisorReview[];
-  // T4 (tripadvisor-google-review-fallback): the empty-slot fallback — only
-  // ever consumed when `reviews` above is empty (see the precedence branch
-  // in the JSX below). The caller already applies the same MAX_REVIEW_CARDS
-  // cap it uses for the Places-live path, so this arrives pre-capped.
-  googleReviews: GoogleReview[];
-  googleMapsUri: string | undefined;
-  // True while the widened live-details fetch (ActivityDetailScreen) is in
-  // flight for a review-less Tripadvisor row — shows the existing reviews
-  // skeleton in this slot instead of collapsing prematurely.
-  reviewsPending: boolean;
   address: string | undefined;
   ctaBusy: boolean;
   onCallPhone: (phone: string) => void;
@@ -34,19 +27,17 @@ type TripadvisorBlockProps = {
 // design-spec.md's T8/T4 §5b: the contiguous Tripadvisor block on the detail
 // screen — aggregate rating plate, subratings grid, a traveler-reviews
 // carousel, address/phone facts rows. The caller renders this in place of
-// the screen's usual gold star + numeric rating, only for a
-// Tripadvisor-sourced row, immediately after the meta row and before the
-// per-category body sections. The "Read all reviews on Tripadvisor" deep
-// link + disclaimer are the *trailing* elements of the scrollable content
-// (design-spec.md T4's Footer CTAs + disclaimer section) — the caller
-// renders those itself, after the map, right before the pinned footer.
+// the screen's usual gold star + numeric rating, only for a row with a
+// quotable Tripadvisor review, immediately after the meta row and before
+// the per-category body sections. The "Read all reviews on Tripadvisor"
+// deep link + disclaimer are the *trailing* elements of the scrollable
+// content (design-spec.md T4's Footer CTAs + disclaimer section) — the
+// caller renders those itself, after the map, right before the pinned
+// footer.
 export function TripadvisorBlock({
   tripadvisor,
   rating,
   reviews,
-  googleReviews,
-  googleMapsUri,
-  reviewsPending,
   address,
   ctaBusy,
   onCallPhone,
@@ -61,20 +52,7 @@ export function TripadvisorBlock({
 
       <TripadvisorSubratingsPlate subratings={tripadvisor.subratings} />
 
-      {/* design-spec.md T4's "Empty review slot → Google review cards
-          (provider precedence)": (1) a Tripadvisor review wins outright,
-          unchanged; (2) else, while the widened fetch is in flight, reuse
-          the existing reviews skeleton (no new placeholder); (3) else,
-          Google reviews + a maps link fill the slot instead — same
-          no-link-no-cards compliance gate as the Places-live path; (4)
-          else nothing, matching today's silent degradation. */}
-      {reviews.length > 0 ? (
-        <TripadvisorReviewsCarousel reviews={reviews} />
-      ) : reviewsPending ? (
-        <ReviewsSkeleton />
-      ) : googleReviews.length > 0 && googleMapsUri ? (
-        <GoogleAttributionPlate variant="detail" reviews={googleReviews} googleMapsUri={googleMapsUri} />
-      ) : null}
+      <TripadvisorReviewsCarousel reviews={reviews} />
 
       {/* design-spec.md T4's Place-facts list: address (static) + phone
           (tel: link) rows, separated from the section above by a hairline —

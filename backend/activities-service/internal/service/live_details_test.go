@@ -466,7 +466,7 @@ func TestActivities_GetByID_LiveDetails_TripadvisorGoogleFallback(t *testing.T) 
 // this task exists to prevent: once a Wellness/Entertainment row carries
 // website-scraped or admin-curated content (Treatments/GoodToKnow/
 // UpcomingShows), a live-merge on detail-page view must not silently erase
-// it. Only the Places-sourced keys (action_url/opening_hours/venue_type)
+// it. Only the Places-sourced keys (website_url/opening_hours/venue_type)
 // may be overwritten by the live response; everything else on the stored
 // row must survive.
 func TestActivities_WithLiveDetails_MergesOntoStoredDetails(t *testing.T) {
@@ -495,7 +495,7 @@ func TestActivities_WithLiveDetails_MergesOntoStoredDetails(t *testing.T) {
 	if details["venue_type"] != "Spa" {
 		t.Errorf("venue_type = %v, want the live value to win (\"Spa\")", details["venue_type"])
 	}
-	if details["action_url"] != "https://example-spa.rs" {
-		t.Errorf("action_url = %v, want the live websiteUri", details["action_url"])
+	if details["website_url"] != "https://example-spa.rs" {
+		t.Errorf("website_url = %v, want the live websiteUri", details["website_url"])
 	}
 }

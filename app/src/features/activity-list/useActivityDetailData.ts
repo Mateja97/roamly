@@ -7,11 +7,12 @@ import {
   artAttribution,
   factStripFields,
   genericActionLabel,
+  getWebsiteURL,
   goodToKnowSection,
+  isTripadvisorSourced,
   kidsAgeLabel,
   metaDistanceText,
   metaRowExtras,
-  primaryActionURL,
   primaryCTAIsDirections,
   toursIncludedChecklist,
   toursItinerary,
@@ -86,25 +87,28 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   // Google-sourced (#103/#104) — a Tripadvisor-sourced café must stay
   // Tripadvisor-treated only, same as a Tripadvisor restaurant/bar, so this
   // excludes any row `tripadvisorAttribution` already claims.
+  // tripadvisor-marks-require-reviews (T2): restaurants/bars aren't in
+  // PLACES_LIVE_CATEGORIES (their content is normally synchronous from the
+  // Tripadvisor row) — but a review-less Tripadvisor row (any of the 3 TA
+  // categories, cafés included) needs the exact same live Places round trip
+  // as any Places-live category, since its content is now Google's, fetched
+  // the same way. `seedTripadvisorSourced` widens the predicate to cover it;
+  // `tripadvisorAttribution` being gated to undefined for a review-less row
+  // (and truthy for one that keeps its own reviews) still excludes the rows
+  // that don't need it. Computed once here (not inline in the effect below)
+  // so the effect's own dependency array can name it directly instead of
+  // depending on the whole `seedActivity` object.
+  const seedTripadvisorSourced = isTripadvisorSourced(seedActivity);
   const isPlacesLive =
-    PLACES_LIVE_CATEGORIES.has(seedActivity.category) && !tripadvisorAttribution(seedActivity);
-  // A Tripadvisor row with no quotable reviews of its own also needs the
-  // round trip — activitiessvc's GetByID live-merges Google reviews/maps
-  // link onto exactly that shape.
-  // Decided from the seed's own `details.reviews`, before spending the
-  // request. `isPlacesLive` itself is untouched, so every isPlacesLive-gated
-  // treatment below (score header, title-block rating, googleReviewsCardShown)
-  // stays off for a Tripadvisor row in every case.
-  const isReviewlessTripadvisor =
-    Boolean(tripadvisorAttribution(seedActivity)) && tripadvisorReviews(seedActivity).length === 0;
-  const shouldFetchDetails = isPlacesLive || isReviewlessTripadvisor;
+    (PLACES_LIVE_CATEGORIES.has(seedActivity.category) || seedTripadvisorSourced) &&
+    !tripadvisorAttribution(seedActivity);
   // A Tripadvisor row with its own reviews (or any other non-Places-live,
   // non-fallback row) is never skeletoned and the merge can't improve it, so
   // it starts (and stays) settled — the effect below skips the round trip
   // entirely for it, rather than fetch-and-discard on every open.
-  const [detailsPending, setDetailsPending] = useState(shouldFetchDetails);
+  const [detailsPending, setDetailsPending] = useState(isPlacesLive);
   useEffect(() => {
-    if (!shouldFetchDetails) return;
+    if (!isPlacesLive) return;
     let cancelled = false;
     // design-spec.md's Accessibility notes: one polite loading status for
     // the whole enriching region.
@@ -127,16 +131,16 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
         }));
         // Only announce "added" when the merge genuinely put something new
         // on screen — a merge that collapsed every block is nothing to
-        // tell an AT user arrived. On the reviewless-Tripadvisor fallback
-        // path, `hasLiveContent` is useless as that gate: every Tripadvisor
-        // row already has its own permanent `rating > 0`, so it'd read
-        // "true" even when the widened fetch found no Google reviews and
-        // TripadvisorBlock's slot stays collapsed exactly as before — check
-        // the same `googleReviews.length > 0 && googleMapsUri` condition
-        // TripadvisorBlock itself renders cards on instead.
-        const addedLiveContent = isPlacesLive
-          ? hasLiveContent(merged)
-          : (merged.google_reviews?.length ?? 0) > 0 && Boolean(merged.google_maps_uri);
+        // tell an AT user arrived. On a review-less Tripadvisor row,
+        // `hasLiveContent` is useless as that gate: `merged.details` still
+        // always carries the `tripadvisor`/`reviews` keys (the backend
+        // doesn't strip them), so `detailKeys.length > 0` would read "true"
+        // even when the widened fetch found nothing new — check the same
+        // `googleReviews.length > 0 && googleMapsUri` condition the Reviews
+        // slot itself renders cards on instead.
+        const addedLiveContent = seedTripadvisorSourced
+          ? (merged.google_reviews?.length ?? 0) > 0 && Boolean(merged.google_maps_uri)
+          : hasLiveContent(merged);
         if (addedLiveContent) AccessibilityInfo.announceForAccessibility('Place details added');
       }
       setDetailsPending(false);
@@ -144,7 +148,7 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
     return () => {
       cancelled = true;
     };
-  }, [seedActivity.id, shouldFetchDetails, isPlacesLive]);
+  }, [seedActivity.id, isPlacesLive, seedTripadvisorSourced]);
 
   const metaText = metaDistanceText(activity, showDistance);
   const status = openStatus(activity);
@@ -199,8 +203,8 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   const meetingPointText = toursMeetingPoint(activity);
   const isDirectionsPrimary = primaryCTAIsDirections(activity.category);
   const genericLabel = genericActionLabel(activity.category);
-  const actionURL = primaryActionURL(activity);
-  const primaryEnabled = isDirectionsPrimary || Boolean(actionURL);
+  const websiteURL = getWebsiteURL(activity);
+  const primaryEnabled = isDirectionsPrimary || Boolean(websiteURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
   // Compliance: a Google-sourced reviews section (score, cards, attribution)
@@ -219,14 +223,25 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   // gate above).
   const reviewsScoreShown =
     isPlacesLive && googleReviewsAllowed && activity.rating > 0 && activity.review_count !== undefined;
+  // tripadvisor-marks-require-reviews (T2) "rating trap": `activity.rating`
+  // on a Tripadvisor-sourced row is Tripadvisor's own number until
+  // `google_maps_uri` proves the live Places merge replaced it with
+  // Google's — it must never render unattributed. Non-Tripadvisor rows are
+  // unaffected (always allowed).
+  const ratingAllowed = !isTripadvisorSourced(activity) || Boolean(activity.google_maps_uri);
+  const showActualRating = ratingAllowed && activity.rating > 0;
+  // Skeleton stands in exactly when there's no real value we're allowed to
+  // show yet: the usual "seed has nothing yet" case (rule 1: never pulse
+  // over an already-good value), plus a Tripadvisor row whose stale rating
+  // isn't allowed to render until `ratingAllowed` above settles.
+  const ratingSkeletonShown = isPlacesLive && detailsPending && !showActualRating;
   // The title-block rating cluster (star + number, or its loading skeleton)
   // is the only thing left in that row now that the category pill has
   // moved into MetaLine below (see `metaLineLeadItems`) — render the row
   // at all only when this cluster itself has something to show, so a
   // non-Tripadvisor row with a settled zero rating doesn't leave an empty
   // spacer box.
-  const showRatingCluster =
-    !reviewsScoreShown && (activity.rating > 0 || (isPlacesLive && detailsPending && activity.rating <= 0));
+  const showRatingCluster = !reviewsScoreShown && (showActualRating || ratingSkeletonShown);
   // design-spec.md's Tripadvisor initiative: presence of this field is the
   // sole detection signal for the Tripadvisor-branded treatment below.
   const tripadvisor = tripadvisorAttribution(activity);
@@ -257,6 +272,15 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   // (no link) — silence, not a premature plate.
   const googleReviewsCardShown =
     isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
+  // Description skeleton must never show for a Tripadvisor-sourced row
+  // (de-marked or not): `withTripadvisorGoogleReviews` (T1) never sets
+  // `Description` on that merge path — only Rating/ReviewCount/
+  // GoogleReviews/GoogleMapsURI — so an empty stored TA description (a real
+  // case, TA sync can store one) would otherwise skeleton forever and never
+  // resolve into content, the flash-then-collapse DESIGN_STANDARDS.md
+  // forbids. Genuine Places-live categories are unaffected — their skeleton
+  // still resolves once the merge lands.
+  const descriptionPending = isPlacesLive && detailsPending && !seedTripadvisorSourced;
 
   return {
     activity,
@@ -282,18 +306,20 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
     meetingPointText,
     isDirectionsPrimary,
     genericLabel,
-    actionURL,
+    websiteURL,
     primaryEnabled,
     attribution,
     bookingNote,
     googleReviewsAllowed,
     reviewsScoreShown,
     showRatingCluster,
+    ratingSkeletonShown,
     tripadvisor,
     reviews,
     address,
     eyebrow,
     showMetaRow,
     googleReviewsCardShown,
+    descriptionPending,
   };
 }
