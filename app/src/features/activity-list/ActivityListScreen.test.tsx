@@ -29,7 +29,20 @@ const mockedSuggestCities = jest.mocked(suggestCities);
 const COORDINATES = { latitude: 44.8125, longitude: 20.4612 };
 const LOCATION = { lat: 44.8125, lng: 20.4612 };
 
+// Fake timers, file-wide: the Scope sheet reaches the assertions in this file
+// through two 300ms real-time debounces — `useCitySearch`'s city typeahead and
+// ScopeSheet's own live-count re-query (both `DEBOUNCE_MS = 300`). Under real
+// timers that put every `waitFor` past one of them on a load-dependent
+// inequality — 1000ms of budget against 300ms of debounce plus however long
+// this machine takes to render — which held on an idle machine and broke under
+// parallel CPU load ("Unable to find an element with role: button, name:
+// Lisbon, Portugal"). RNTL's `waitFor` advances Jest's fake clock itself when
+// fake timers are on, so the same wait becomes 300 *fake* ms against a 1000ms
+// fake budget: a constant, machine-speed-independent inequality. Whole file
+// rather than the six affected tests so a new debounce-gated test can't
+// silently reintroduce the flake. Same reasoning in ScopeSheet.test.tsx.
 beforeEach(() => {
+  jest.useFakeTimers();
   jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
   jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
   mockedGetActivityPhotos.mockReturnValue(new Promise(() => {}));
@@ -71,7 +84,10 @@ describe('ActivityListScreen', () => {
   // mode, nudge-persists-across-a-mount) do. `clearAllMocks()` clears call
   // history only, leaving every mock's implementation — including
   // AsyncStorage's — intact across tests.
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => {
+    jest.clearAllMocks();
+    jest.useRealTimers();
+  });
 
   it('fetches on mount using the scope + device location, and renders loaded cards under the new Feed header', async () => {
     mockedQuery.mockResolvedValue(successResult([activity]));
