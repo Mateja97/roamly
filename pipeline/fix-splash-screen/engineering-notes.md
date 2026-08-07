@@ -345,3 +345,5 @@ Still open after this fix: `ActivityDetailScreen.test.tsx` flakes under the
 same load with a *different* cause — no debounce, just heavy renders whose
 `waitFor` chain can exceed the 1000ms real budget on a saturated box. Not
 touched here.
+
+PR: https://github.com/Mateja97/roamly/pull/179
