@@ -21,6 +21,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"activities-service/internal/service"
@@ -105,6 +106,70 @@ func migrationsThrough(cutoff string) fs.FS {
 		out[e.Name()] = &fstest.MapFile{Data: data}
 	}
 	return out
+}
+
+// legacyAdminColumns is adminColumns without google_place_id — for tests
+// that freeze the schema at a cutoff before 0030_add_google_place_id.sql
+// via migrationsThrough, then seed fixture rows to verify an earlier
+// migration's behavior. Upsert and Create always select HEAD's
+// adminColumns, which grows with every schema-adding migration
+// (google_place_id at 0030, and whatever comes next); reusing them here
+// would silently break every earlier-cutoff test each time that happens —
+// exactly what broke the three tests below when 0030 landed, since seeding
+// via repo.Upsert/repo.Create failed before their target migration ever ran.
+const legacyAdminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
+	country, rating, photos, tags, details,
+	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id,
+	COALESCE(source, '') AS source, subcategory, created_at`
+
+func scanLegacyActivity(row pgx.Row) (activitiessvc.Activity, error) {
+	var a activitiessvc.Activity
+	err := row.Scan(
+		&a.ID, &a.Title, &a.Description, &a.Category,
+		&a.Location.Lat, &a.Location.Lng,
+		&a.Country, &a.Rating,
+		&a.Photos, &a.Tags, &a.Details,
+		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory, &a.CreatedAt,
+	)
+	return a, err
+}
+
+// seedLegacyActivity mirrors Upsert's INSERT, minus google_place_id — see
+// legacyAdminColumns' doc.
+func seedLegacyActivity(ctx context.Context, db *pgxpool.Pool, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
+	sourceURL := canonicalSourceURL(in.SourceURL)
+	a, err := scanLegacyActivity(db.QueryRow(ctx, `
+		INSERT INTO activities
+			(title, description, category, location, country, rating, city, address, status, details, photos, source, source_url, external_id, raw, subcategory)
+		VALUES
+			($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		RETURNING `+legacyAdminColumns,
+		in.Title, in.Description, string(in.Category), in.Lng, in.Lat,
+		in.Country, in.Rating, in.City, in.Address, string(in.Status),
+		nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos),
+		in.Source, sourceURL, in.ExternalID, nonEmptyDetailsBytes(in.Raw),
+		in.Subcategory,
+	))
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("seeding legacy activity %q: %w", sourceURL, err)
+	}
+	return a, nil
+}
+
+// seedLegacyAdminActivity mirrors Create, minus google_place_id — see
+// legacyAdminColumns' doc.
+func seedLegacyAdminActivity(ctx context.Context, db *pgxpool.Pool, in activitiessvc.NewActivity) (activitiessvc.Activity, error) {
+	a, err := scanLegacyActivity(db.QueryRow(ctx, `
+		INSERT INTO activities (title, description, category, location, country, rating, city, address, status, details, photos, subcategory)
+		VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint(0, 0), 4326)::geography, '', 0, $4, $5, $6, $7, $8, $9)
+		RETURNING `+legacyAdminColumns,
+		in.Title, in.Description, string(in.Category),
+		in.City, in.Address, string(in.Status), nonEmptyDetailsBytes(in.Details), nonNilPhotos(in.Photos), in.Subcategory,
+	))
+	if err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("seeding legacy admin activity: %w", err)
+	}
+	return a, nil
 }
 
 func TestMigration0012IngestionColumns(t *testing.T) {
@@ -327,7 +392,7 @@ func TestActivities_Query_Integration(t *testing.T) {
 			"Rome":      1,  // history_and_culture (survives 0016)
 			"Paris":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
 			"Tokyo":     0,  // was food_and_drink, recategorized to restaurants in 0006, deleted by 0016
-			"New York":  1,  // sports (survives 0016)
+			"New York":  0,  // sports, survives 0016 but deleted by 0028 (country = 'United States')
 			"Barcelona": 1,  // art_and_design (survives 0016)
 		}
 		for city, want := range wantCounts {
@@ -2022,7 +2087,6 @@ func TestMigration0021DedupePreservesUniqueConstraint(t *testing.T) {
 		t.Fatalf("running migrations through 0018: %v", err)
 	}
 
-	repo := New(db)
 	details, err := json.Marshal(map[string]any{"tripadvisor": map[string]any{"price_level": "Mid Range"}})
 	if err != nil {
 		t.Fatalf("marshaling details: %v", err)
@@ -2031,7 +2095,7 @@ func TestMigration0021DedupePreservesUniqueConstraint(t *testing.T) {
 	// what the pre-fix per-due-category upsert loop produced for a venue
 	// due for both Restaurants and Bars.
 	for _, cat := range []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars} {
-		if _, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		if _, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 			Title: "Gradska Pivnica Terazije", Category: cat,
 			Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.3, Status: activitiessvc.StatusPublished,
 			Source: "tripadvisor", SourceURL: "https://www.tripadvisor.com/Restaurant_Review-g1-d1-Reviews-dup1.html", ExternalID: "dup-1", Details: details,
@@ -2108,7 +2172,7 @@ func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
 	}
 	seedTA := func(t *testing.T, title, externalID, webURL string) activitiessvc.Activity {
 		t.Helper()
-		got, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		got, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 			Title: title, Category: activitiessvc.CategoryRestaurants, // pre-fix: everything landed here first
 			Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.3, Status: activitiessvc.StatusPublished,
 			Source: "tripadvisor", SourceURL: webURL, ExternalID: externalID, Details: seedDetails,
@@ -2147,7 +2211,7 @@ func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
 	// carry a place id — a fixture without one would spuriously trip 0025
 	// (which now also runs as part of Migrations()) and mask what this test
 	// actually checks.
-	legacyGoogleCafe, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+	legacyGoogleCafe, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 		Title: "Legacy Google Cafe", Category: activitiessvc.CategoryCafes,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
 		Source: "google_places", SourceURL: "http://google/cafe1", ExternalID: "legacy-google-cafe-1",
@@ -2155,7 +2219,7 @@ func TestMigrationChain0019Through0022_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seeding legacy google cafe: %v", err)
 	}
-	legacyGoogleOther, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+	legacyGoogleOther, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 		Title: "Legacy Google Park", Category: activitiessvc.CategoryNature,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.0, Status: activitiessvc.StatusPending,
 		Source: "google_places", SourceURL: "http://google/park1", ExternalID: "legacy-google-park-1",
@@ -2242,7 +2306,7 @@ func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
 	// external_id predicate, and real Google-sourced rows always carry a
 	// place id — a fixture without one would spuriously trip 0025 (which now
 	// also runs as part of Migrations()) before 0023 gets a chance to act.
-	googleRow, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+	googleRow, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 		Title: "Ada Ciganlija Beach", Category: activitiessvc.CategoryNature,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
 		Source: "google_places", SourceURL: "http://google/ada-ciganlija", ExternalID: "ada-ciganlija-beach",
@@ -2253,7 +2317,7 @@ func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, googleRow.ID) })
 
-	tripadvisorRow, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+	tripadvisorRow, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 		Title: "Koffein Tripadvisor Cafe", Category: activitiessvc.CategoryCafes,
 		Lat: 44.8, Lng: 20.4, Country: "Serbia", Rating: 4.5, Status: activitiessvc.StatusPublished,
 		Source: "tripadvisor", SourceURL: "https://www.tripadvisor.com/Restaurant_Review-g1-d999-Reviews-x.html",
@@ -2264,7 +2328,7 @@ func TestMigration0023ClearsGooglePlacesDetailsOnly(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, tripadvisorRow.ID) })
 
-	adminRow, err := repo.Create(ctx, activitiessvc.NewActivity{
+	adminRow, err := seedLegacyAdminActivity(ctx, db, activitiessvc.NewActivity{
 		Title: "Admin Hand-Created Sport Venue", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusDraft,
 		Details: json.RawMessage(`{"difficulty":3}`),
 	})
