@@ -44,15 +44,18 @@ type repository interface {
 	// category, decided by namemap.Category before Upsert is called.
 	Upsert(ctx context.Context, in activitiessvc.IngestActivity) (activitiessvc.Activity, error)
 	// SyncedAt reports the last successful sync time for
-	// (provider, cellKey, category, subtype), and whether one has happened.
-	SyncedAt(ctx context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error)
+	// (provider, cellKey, category, subtype) that covered at least
+	// minRadiusKM, and whether one has happened (T1, rating-and-anywhere-radius
+	// D1: a narrower prior sync must not read as fresh for a wider request).
+	SyncedAt(ctx context.Context, provider, cellKey, category, subtype string, minRadiusKM float64) (time.Time, bool, error)
 	// FreshSyncRows returns every (category, subtype) pair for (provider,
-	// cellKey) synced more recently than since, keyed category+"|"+subtype —
-	// see googleDueRows' use of it for why this replaced ~53 SyncedAt calls
-	// per cell with one query.
-	FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time) (map[string]bool, error)
-	// MarkSynced records a fresh sync for (provider, cellKey, category, subtype).
-	MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error
+	// cellKey) synced more recently than since AND covering at least
+	// minRadiusKM, keyed category+"|"+subtype — see googleDueRows' use of it
+	// for why this replaced ~53 SyncedAt calls per cell with one query.
+	FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time, minRadiusKM float64) (map[string]bool, error)
+	// MarkSynced records a fresh sync for (provider, cellKey, category,
+	// subtype), covering radiusKM.
+	MarkSynced(ctx context.Context, provider, cellKey, category, subtype string, radiusKM float64) error
 }
 
 // Sync providers, the first column of sync_regions. Adding a tours provider
@@ -1242,8 +1245,12 @@ func validCategory(c activitiessvc.Category) bool {
 // MaxDistanceKM — same reasoning as Google being seeded per-city rather
 // than swept over arbitrary radii (design doc "Sync trigger"). Capped at
 // 8 km: Terra's nearby-search endpoint rejects any radius above 8.0 KM
-// with a 400 (confirmed live) — a larger value here fails every sync
-// unconditionally.
+// with a 400 (confirmed live, not a documented API contract — Terra
+// publishes no maximum radius) — a larger value here fails every sync
+// unconditionally. Unlike Google (D2), this never widens for a larger
+// Anywhere request (D3): every sync_regions row this provider writes
+// records radius_km = tripadvisorSyncRadiusKM for schema consistency with
+// Google's per-request column, not because the covered radius varies.
 const tripadvisorSyncRadiusKM = 8
 
 // tripadvisorSubtypeRadiusKM bounds ResolveTripadvisorSubtype's Places Text
@@ -1367,7 +1374,12 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 		cell := syncCellKey(anchor.Lat, anchor.Lng)
 		var due []activitiessvc.Category
 		for _, cat := range categories {
-			syncedAt, ok, err := a.repo.SyncedAt(ctx, ProviderTripadvisor, cell, string(cat), "")
+			// tripadvisorSyncRadiusKM as the minimum: Tripadvisor's sync
+			// radius never varies by request (D3 — Terra hard-rejects any
+			// radius above 8km), so every row this provider ever writes
+			// already covers exactly that radius, or the cell was never
+			// synced at all.
+			syncedAt, ok, err := a.repo.SyncedAt(ctx, ProviderTripadvisor, cell, string(cat), "", tripadvisorSyncRadiusKM)
 			if err != nil {
 				slog.Warn("tripadvisor synced-at lookup failed", "cell", cell, "category", cat, "error", err)
 			} else if ok && time.Since(syncedAt) < tripadvisorSyncTTL {
@@ -1524,7 +1536,11 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 	}
 
 	for _, category := range categories {
-		if err := a.repo.MarkSynced(ctx, ProviderTripadvisor, syncCellKey(anchor.Lat, anchor.Lng), string(category), ""); err != nil {
+		// radiusKM is always tripadvisorSyncRadiusKM (D3): unlike Google,
+		// this provider never syncs a wider circle than that, whatever the
+		// request asked for — recorded for sync_regions' schema consistency
+		// (see tripadvisorSyncRadiusKM's own doc), not because it varies.
+		if err := a.repo.MarkSynced(ctx, ProviderTripadvisor, syncCellKey(anchor.Lat, anchor.Lng), string(category), "", tripadvisorSyncRadiusKM); err != nil {
 			slog.Warn("marking tripadvisor sync region failed", "category", category, "error", err)
 		}
 	}

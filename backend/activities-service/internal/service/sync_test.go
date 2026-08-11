@@ -71,6 +71,12 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if len(repo.markSynced) != 1 || repo.markSynced[0] != "44.8,20.5|restaurants" {
 		t.Errorf("markSynced = %v, want exactly one call for cell 44.8,20.5/restaurants", repo.markSynced)
 	}
+	// D3: Tripadvisor's covered radius never varies by request, but every
+	// sync_regions row it writes still records radius_km for schema
+	// consistency with Google's per-request column (T1, rating-and-anywhere-radius).
+	if r := repo.markSyncedRadius["44.8,20.5|restaurants"]; r != tripadvisorSyncRadiusKM {
+		t.Errorf("markSynced radius = %v, want %v (tripadvisorSyncRadiusKM, unconditionally)", r, float64(tripadvisorSyncRadiusKM))
+	}
 
 	var details activitiessvc.RestaurantDetails
 	if err := json.Unmarshal(repo.gotUpsert.Details, &details); err != nil {

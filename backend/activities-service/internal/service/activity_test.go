@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -57,7 +58,27 @@ type fakeRepo struct {
 
 	syncMu      sync.Mutex           // MarkSynced runs concurrently once Google's sweep lands
 	syncedAtOut map[string]time.Time // key: syncKey(provider, cellKey, category, subtype)
-	markSynced  []string             // syncKey(...), in call order
+	// radiusOut is each syncedAtOut entry's stored covered radius, same key.
+	// A key absent here defaults to "wide enough for any request" (see
+	// radiusFor) — legacy fixtures that only set syncedAtOut, written before
+	// T1 (rating-and-anywhere-radius) gave freshness a radius dimension,
+	// keep behaving exactly as before; a test exercising radius-narrow
+	// reclassification sets this explicitly.
+	radiusOut  map[string]float64
+	markSynced []string // syncKey(...), in call order
+	// markSyncedRadius is the radiusKM MarkSynced was called with, keyed the
+	// same way — T1's D3 assertion ("Tripadvisor still records radius_km=8")
+	// and any Google radius-write assertion read this.
+	markSyncedRadius map[string]float64
+}
+
+// radiusFor returns key's fixtured covered radius, or math.MaxFloat64 when
+// unset — see radiusOut's own doc.
+func (f *fakeRepo) radiusFor(key string) float64 {
+	if r, ok := f.radiusOut[key]; ok {
+		return r
+	}
+	return math.MaxFloat64
 }
 
 func (f *fakeRepo) Query(_ context.Context, filter activitiessvc.QueryFilter) ([]activitiessvc.Activity, error) {
@@ -104,22 +125,26 @@ func (f *fakeRepo) Upsert(_ context.Context, in activitiessvc.IngestActivity) (a
 	return f.upsertOut, f.upsertErr
 }
 
-func (f *fakeRepo) SyncedAt(_ context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
-	t, ok := f.syncedAtOut[syncKey(provider, cellKey, category, subtype)]
-	return t, ok, nil
+func (f *fakeRepo) SyncedAt(_ context.Context, provider, cellKey, category, subtype string, minRadiusKM float64) (time.Time, bool, error) {
+	key := syncKey(provider, cellKey, category, subtype)
+	t, ok := f.syncedAtOut[key]
+	if !ok || f.radiusFor(key) < minRadiusKM {
+		return time.Time{}, false, nil
+	}
+	return t, true, nil
 }
 
-// FreshSyncRows derives its answer from the same syncedAtOut fixture SyncedAt
-// already reads, rather than a second fixture field, so a test only has to
-// set up freshness once regardless of which of the two paths (or both) it
-// exercises. category/subtype are recovered from the key syncKey built, which
-// only fully round-trips for non-Tripadvisor keys (see syncKey) — fine here,
-// since Google is FreshSyncRows' only caller.
-func (f *fakeRepo) FreshSyncRows(_ context.Context, provider, cellKey string, since time.Time) (map[string]bool, error) {
+// FreshSyncRows derives its answer from the same syncedAtOut/radiusOut
+// fixtures SyncedAt already reads, rather than separate fixture fields, so a
+// test only has to set up freshness once regardless of which of the two
+// paths (or both) it exercises. category/subtype are recovered from the key
+// syncKey built, which only fully round-trips for non-Tripadvisor keys (see
+// syncKey) — fine here, since Google is FreshSyncRows' only caller.
+func (f *fakeRepo) FreshSyncRows(_ context.Context, provider, cellKey string, since time.Time, minRadiusKM float64) (map[string]bool, error) {
 	fresh := make(map[string]bool)
 	prefix := provider + "|" + cellKey + "|"
 	for key, syncedAt := range f.syncedAtOut {
-		if !strings.HasPrefix(key, prefix) || !syncedAt.After(since) {
+		if !strings.HasPrefix(key, prefix) || !syncedAt.After(since) || f.radiusFor(key) < minRadiusKM {
 			continue
 		}
 		fresh[strings.TrimPrefix(key, prefix)] = true
@@ -127,10 +152,15 @@ func (f *fakeRepo) FreshSyncRows(_ context.Context, provider, cellKey string, si
 	return fresh, nil
 }
 
-func (f *fakeRepo) MarkSynced(_ context.Context, provider, cellKey, category, subtype string) error {
+func (f *fakeRepo) MarkSynced(_ context.Context, provider, cellKey, category, subtype string, radiusKM float64) error {
 	f.syncMu.Lock()
 	defer f.syncMu.Unlock()
-	f.markSynced = append(f.markSynced, syncKey(provider, cellKey, category, subtype))
+	key := syncKey(provider, cellKey, category, subtype)
+	f.markSynced = append(f.markSynced, key)
+	if f.markSyncedRadius == nil {
+		f.markSyncedRadius = make(map[string]float64)
+	}
+	f.markSyncedRadius[key] = radiusKM
 	return nil
 }
 

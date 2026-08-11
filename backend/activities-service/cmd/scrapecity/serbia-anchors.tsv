@@ -1,8 +1,9 @@
 # Serbia pre-warm anchors: name<TAB>lat<TAB>lng
 # Coordinates resolved via the Geocoding API, all verified country=RS.
-# Each anchor sweeps a 10km circle (googleSyncRadiusKM). Coverage is
-# places-people-go, not territory: filling Serbia geographically would be
-# ~280 cells and mostly empty countryside.
+# Each anchor sweeps a 10km circle (PrewarmGoogle's fixed NearbyRadiusKM,
+# unchanged by T1 rating-and-anywhere-radius — see PrewarmGoogle's own doc).
+# Coverage is places-people-go, not territory: filling Serbia geographically
+# would be ~280 cells and mostly empty countryside.
 #
 # Usage (see README):
 #   while IFS=$'	' read -r c lat lng; do [ "${c#\#}" = "$c" ] || continue;

@@ -473,7 +473,7 @@ func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) == 0 {
 		t.Fatal("no upserts")
@@ -501,20 +501,87 @@ func TestActivities_Query_GoogleSync_PassesRadiusAndTypesToClient(t *testing.T) 
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"night_club"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if gp.nearbyCalls != 1 {
 		t.Fatalf("nearbyCalls = %d, want 1", gp.nearbyCalls)
 	}
 	got := gp.gotNearby[0]
-	if got.RadiusM != googleSyncRadiusKM*1000 {
-		t.Errorf("RadiusM = %v, want %v (googleSyncRadiusKM * 1000)", got.RadiusM, googleSyncRadiusKM*1000)
+	if got.RadiusM != NearbyRadiusKM*1000 {
+		t.Errorf("RadiusM = %v, want %v (the radiusKM param passed in, * 1000)", got.RadiusM, NearbyRadiusKM*1000)
 	}
 	if got.MaxResults != 20 {
 		t.Errorf("MaxResults = %d, want 20", got.MaxResults)
 	}
 	if !slices.Equal(got.IncludedTypes, job.row.Types) {
 		t.Errorf("IncludedTypes = %v, want the row's own types %v passed through unchanged", got.IncludedTypes, job.row.Types)
+	}
+}
+
+// TestGoogleSyncRadiusKM pins D2's resolution table directly: Nearby always
+// syncs its own fixed NearbyRadiusKM regardless of any distance value on the
+// request; Anywhere passes 5/10/25/50km straight through; Anywhere requests
+// wider than Places' 50km ceiling (100km, 200km) or with no limit at all
+// ("Any") all clamp to that ceiling.
+func TestGoogleSyncRadiusKM(t *testing.T) {
+	tests := []struct {
+		name string
+		req  Request
+		want float64
+	}{
+		{"nearby ignores a set max distance", Request{Scope: activitiessvc.ScopeNearby, MaxDistanceKM: 200}, NearbyRadiusKM},
+		{"nearby with no max distance set", Request{Scope: activitiessvc.ScopeNearby}, NearbyRadiusKM},
+		{"anywhere 5km passes through unchanged", Request{Scope: activitiessvc.ScopeAnywhere, MaxDistanceKM: 5}, 5},
+		{"anywhere 10km passes through unchanged", Request{Scope: activitiessvc.ScopeAnywhere, MaxDistanceKM: 10}, 10},
+		{"anywhere 25km passes through unchanged", Request{Scope: activitiessvc.ScopeAnywhere, MaxDistanceKM: 25}, 25},
+		{"anywhere 50km passes through, exactly at the ceiling", Request{Scope: activitiessvc.ScopeAnywhere, MaxDistanceKM: 50}, googleMaxSyncRadiusKM},
+		{"anywhere 100km clamps to the 50km ceiling", Request{Scope: activitiessvc.ScopeAnywhere, MaxDistanceKM: 100}, googleMaxSyncRadiusKM},
+		{"anywhere 200km clamps to the 50km ceiling", Request{Scope: activitiessvc.ScopeAnywhere, MaxDistanceKM: 200}, googleMaxSyncRadiusKM},
+		{"anywhere with no limit (Any) resolves to the 50km ceiling", Request{Scope: activitiessvc.ScopeAnywhere}, googleMaxSyncRadiusKM},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := googleSyncRadiusKM(tt.req); got != tt.want {
+				t.Errorf("googleSyncRadiusKM() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestActivities_Query_GoogleSync_AnywhereWidensRadiusToPlacesCall is the
+// end-to-end wiring proof for D2: an Anywhere query's resolved radius
+// actually reaches the Places call's RadiusM (not just googleSyncRadiusKM's
+// own unit test above) and the same radius is what gets written back via
+// MarkSynced.
+func TestActivities_Query_GoogleSync_AnywhereWidensRadiusToPlacesCall(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "p1", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/p1"}}}
+	svc := New(repo).WithPlaces(gp)
+	req := Request{
+		Scope:           activitiessvc.ScopeAnywhere,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		MaxDistanceKM:   50,
+	}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	if gp.nearbyCalls == 0 {
+		t.Fatal("nearbyCalls = 0, want at least one sync call")
+	}
+	for _, call := range gp.gotNearby {
+		if call.RadiusM != 50*1000 {
+			t.Errorf("RadiusM = %v, want 50000 — an Anywhere 50km request, not the old fixed 10km", call.RadiusM)
+		}
+	}
+	if len(repo.markSyncedRadius) == 0 {
+		t.Fatal("no MarkSynced calls recorded")
+	}
+	for key, r := range repo.markSyncedRadius {
+		if r != 50 {
+			t.Errorf("MarkSynced radius for %q = %v, want 50 (the resolved Anywhere sync radius written back)", key, r)
+		}
 	}
 }
 
@@ -529,7 +596,7 @@ func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a venue with no photo is still worth ingesting", len(repo.gotUpserts))
@@ -555,7 +622,7 @@ func TestActivities_SyncGoogleRow_SkipsVenueWithMismatchedPrimaryType(t *testing
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) != 0 {
 		t.Errorf("upserts = %v, want none — the venue's own primaryType belongs to Kids, not this Nature row", repo.gotUpserts)
@@ -573,7 +640,7 @@ func TestActivities_SyncGoogleRow_IngestsVenueMatchingRowCategory(t *testing.T) 
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — the venue's primaryType agrees with the row's own category", len(repo.gotUpserts))
@@ -594,7 +661,7 @@ func TestActivities_SyncGoogleRow_IngestsVenueWithUnmappablePrimaryType(t *testi
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — an unmappable primaryType must fall back to trusting the row", len(repo.gotUpserts))
@@ -620,7 +687,7 @@ func TestActivities_SyncGoogleRow_TextQueryRowIngestsDespiteMismatchedPrimaryTyp
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryEntertainment, Subtype: "escape_room", TextQuery: "escape room"},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a TextQuery row is stronger evidence than an incidental type overlap", len(repo.gotUpserts))
@@ -641,7 +708,7 @@ func TestActivities_SyncGoogleRow_AllSkippedStillMarksSynced(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{})
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
 
 	if len(repo.gotUpserts) != 0 {
 		t.Fatalf("upserts = %v, want none", repo.gotUpserts)

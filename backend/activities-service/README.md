@@ -49,7 +49,12 @@ off `QueryActivities`:
 
 Freshness for both is tracked in `sync_regions` (`provider`, `cell_key`,
 `category`, `subtype`), TTL 14 days (`googleSyncTTL` /
-`tripadvisorSyncTTL` in `internal/service/`).
+`tripadvisorSyncTTL` in `internal/service/`), plus the radius each sync
+actually covered (`radius_km`) — a row is fresh only when it's both within
+TTL and covers at least the requesting query's distance, so a prior narrow
+sync doesn't block a later wider Anywhere search. Google's covered radius
+matches the request, capped at Places' 50km ceiling; Tripadvisor's is always
+its fixed 8km (Terra rejects a wider `NearbySearch` radius).
 
 To pre-warm a city before it ships, instead of waiting for the first user
 query to trickle results in over several searches:

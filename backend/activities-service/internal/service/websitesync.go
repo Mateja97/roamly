@@ -291,7 +291,12 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		return nil
 	}
 
-	syncedAt, attemptedBefore, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "")
+	// minRadiusKM 0: this provider's cell_key is an activity ID, not a
+	// geographic cell (see websiteSyncProvider's doc) — radius_km (T1,
+	// rating-and-anywhere-radius) doesn't apply here, and 0 is always
+	// satisfied by whatever's stored, so it never affects this freshness
+	// check.
+	syncedAt, attemptedBefore, err := a.repo.SyncedAt(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "", 0)
 	if err != nil {
 		return fmt.Errorf("checking website sync freshness for %s: %w", id, err)
 	}
@@ -334,7 +339,8 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	// to the venue's site — the row should still retry next cycle, same as
 	// before this attempt-tracking existed.
 	markAttempt := func() error {
-		if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), ""); err != nil {
+		// radiusKM 0: not geographic (see the SyncedAt call above).
+		if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "", 0); err != nil {
 			return fmt.Errorf("marking website sync for %s: %w", id, err)
 		}
 		return nil

@@ -1575,16 +1575,16 @@ func TestSyncRegionsPrimaryKey(t *testing.T) {
 	ctx := context.Background()
 	pool := startTestPostgres(t)
 
-	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now())`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at, radius_km) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now(), 8)`); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now())`); err == nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at, radius_km) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now(), 8)`); err == nil {
 		t.Fatal("duplicate (provider, cell_key, category, subtype) insert succeeded, want primary-key violation")
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'bars', '', now())`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at, radius_km) VALUES ('tripadvisor', '44.8,20.5', 'bars', '', now(), 8)`); err != nil {
 		t.Fatalf("different-category insert at the same cell: %v", err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('google', '44.8,20.5', 'nature', 'beach', now())`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at, radius_km) VALUES ('google', '44.8,20.5', 'nature', 'beach', now(), 10)`); err != nil {
 		t.Fatalf("different-provider/subtype insert at the same cell: %v", err)
 	}
 	// Varies subtype ALONE (same provider and category as the first insert,
@@ -1593,8 +1593,58 @@ func TestSyncRegionsPrimaryKey(t *testing.T) {
 	// dropped it. The three inserts above each vary provider, category and
 	// subtype together, so a PK missing subtype entirely would still pass
 	// every one of them.
-	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', 'fine_dining', now())`); err != nil {
+	if _, err := pool.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at, radius_km) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', 'fine_dining', now(), 8)`); err != nil {
 		t.Fatalf("subtype-only-varying insert at the same cell/provider/category: %v", err)
+	}
+}
+
+// TestMigration0032BackfillsRadiusKM proves T1 (rating-and-anywhere-radius)
+// D1's backfill: every sync_regions row written before 0032 came from a
+// fixed-radius sweep (Google always googleSyncRadiusKM's pre-T1 fixed 10km,
+// Tripadvisor always tripadvisorSyncRadiusKM's 8km — see
+// service/googlesync.go and service/activity.go), so 0032 must assign
+// exactly those values per provider, leaving no row without a recorded
+// radius.
+func TestMigration0032BackfillsRadiusKM(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgresPool(t)
+	if err := shareddb.Migrate(ctx, db, migrationsThrough("0031_rename_action_url_to_website_url.sql")); err != nil {
+		t.Fatalf("running migrations through 0031: %v", err)
+	}
+
+	if _, err := db.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('google', '44.8,20.5', 'nature', 'beach', now())`); err != nil {
+		t.Fatalf("seeding pre-migration google row: %v", err)
+	}
+	if _, err := db.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now())`); err != nil {
+		t.Fatalf("seeding pre-migration tripadvisor row: %v", err)
+	}
+
+	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
+		t.Fatalf("running remaining migrations (incl. 0032): %v", err)
+	}
+
+	var googleRadius float64
+	if err := db.QueryRow(ctx, `SELECT radius_km FROM sync_regions WHERE provider = 'google' AND cell_key = '44.8,20.5' AND category = 'nature' AND subtype = 'beach'`).Scan(&googleRadius); err != nil {
+		t.Fatalf("querying backfilled google radius_km: %v", err)
+	}
+	if googleRadius != 10 {
+		t.Errorf("google radius_km = %v, want 10 (its historical fixed sync radius)", googleRadius)
+	}
+
+	var tripadvisorRadius float64
+	if err := db.QueryRow(ctx, `SELECT radius_km FROM sync_regions WHERE provider = 'tripadvisor' AND cell_key = '44.8,20.5' AND category = 'restaurants' AND subtype = ''`).Scan(&tripadvisorRadius); err != nil {
+		t.Fatalf("querying backfilled tripadvisor radius_km: %v", err)
+	}
+	if tripadvisorRadius != 8 {
+		t.Errorf("tripadvisor radius_km = %v, want 8 (its historical fixed sync radius)", tripadvisorRadius)
+	}
+
+	var nullCount int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM sync_regions WHERE radius_km IS NULL`).Scan(&nullCount); err != nil {
+		t.Fatalf("counting null radius_km rows: %v", err)
+	}
+	if nullCount != 0 {
+		t.Errorf("got %d sync_regions rows with no recorded radius_km, want 0 — every row must backfill", nullCount)
 	}
 }
 
@@ -1631,13 +1681,16 @@ func TestUpsertStoresSourceReadableViaGetByID(t *testing.T) {
 // read/write the lazy sync (service.Activities.syncTripadvisorIfNeeded)
 // relies on: no record reports ok=false, MarkSynced then SyncedAt reports
 // a fresh timestamp, and a different category at the same cell is tracked
-// independently.
+// independently. minRadiusKM is passed as 0 throughout (no radius floor)
+// except where a case specifically exercises the radius gate — see
+// TestSyncedAtAndMarkSynced_RadiusAware for D1's "wider request reclassifies
+// a narrow mark as due" behavior.
 func TestSyncedAtAndMarkSynced(t *testing.T) {
 	ctx := context.Background()
 	db := startTestPostgres(t)
 	repo := New(db)
 
-	_, ok, err := repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "restaurants", "")
+	_, ok, err := repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "restaurants", "", 0)
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
@@ -1651,11 +1704,11 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 	// would add no such headroom (the skew is between clocks, not time
 	// elapsed), and previously sat here doing nothing but flaking once.
 	before := time.Now().Add(-time.Second)
-	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
+	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", "", 8); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}
 
-	syncedAt, ok, err := repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "restaurants", "")
+	syncedAt, ok, err := repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "restaurants", "", 0)
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
@@ -1666,7 +1719,7 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 		t.Errorf("syncedAt = %v, want >= %v", syncedAt, before)
 	}
 
-	_, ok, err = repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "bars", "")
+	_, ok, err = repo.SyncedAt(ctx, "tripadvisor", "44.8,20.5", "bars", "", 0)
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
@@ -1676,18 +1729,65 @@ func TestSyncedAtAndMarkSynced(t *testing.T) {
 
 	// Re-marking the same cell/category updates the timestamp in place
 	// rather than erroring on a duplicate primary key.
-	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
+	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", "", 8); err != nil {
 		t.Fatalf("MarkSynced() (second call) error: %v", err)
 	}
 
 	// A Google row at the same cell but a different provider/subtype tracks
 	// freshness independently — the granularity 0024 exists for.
-	_, ok, err = repo.SyncedAt(ctx, "google", "44.8,20.5", "nature", "beach")
+	_, ok, err = repo.SyncedAt(ctx, "google", "44.8,20.5", "nature", "beach", 0)
 	if err != nil {
 		t.Fatalf("SyncedAt() error: %v", err)
 	}
 	if ok {
 		t.Fatal("SyncedAt() ok = true for google/nature/beach, want false — providers and subtypes track independently")
+	}
+}
+
+// TestSyncedAtAndMarkSynced_RadiusAware is T1 (rating-and-anywhere-radius)'s
+// acceptance criterion for the repository layer, D1: a cell marked fresh at
+// 10km within TTL is still due for sync when the request needs 50km (SyncedAt
+// reports ok=false), but the same cell once marked at 50km is not re-synced
+// by a second 50km request within TTL (ok=true).
+func TestSyncedAtAndMarkSynced_RadiusAware(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgres(t)
+	repo := New(db)
+
+	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", "beach", 10); err != nil {
+		t.Fatalf("MarkSynced(radius=10) error: %v", err)
+	}
+
+	_, ok, err := repo.SyncedAt(ctx, "google", "44.8,20.5", "nature", "beach", 50)
+	if err != nil {
+		t.Fatalf("SyncedAt(minRadiusKM=50) error: %v", err)
+	}
+	if ok {
+		t.Fatal("SyncedAt(minRadiusKM=50) ok = true, want false — a 10km mark within TTL must not satisfy a 50km request")
+	}
+
+	// The same 10km mark still satisfies a request that needs no more than
+	// what it already covers.
+	_, ok, err = repo.SyncedAt(ctx, "google", "44.8,20.5", "nature", "beach", 10)
+	if err != nil {
+		t.Fatalf("SyncedAt(minRadiusKM=10) error: %v", err)
+	}
+	if !ok {
+		t.Fatal("SyncedAt(minRadiusKM=10) ok = false, want true — a 10km mark satisfies a 10km request")
+	}
+
+	// Re-syncing at the wider 50km radius overwrites the mark in place
+	// (same upsert MarkSynced already exercises for the timestamp).
+	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", "beach", 50); err != nil {
+		t.Fatalf("MarkSynced(radius=50) error: %v", err)
+	}
+
+	_, ok, err = repo.SyncedAt(ctx, "google", "44.8,20.5", "nature", "beach", 50)
+	if err != nil {
+		t.Fatalf("SyncedAt(minRadiusKM=50) error: %v", err)
+	}
+	if !ok {
+		t.Fatal("SyncedAt(minRadiusKM=50) ok = false, want true — a second 50km request must not re-sync a cell already covered at 50km within TTL")
 	}
 }
 
@@ -1701,7 +1801,7 @@ func TestFreshSyncRows(t *testing.T) {
 
 	since := time.Now().Add(-14 * 24 * time.Hour)
 
-	fresh, err := repo.FreshSyncRows(ctx, "google", "44.8,20.5", since)
+	fresh, err := repo.FreshSyncRows(ctx, "google", "44.8,20.5", since, 0)
 	if err != nil {
 		t.Fatalf("FreshSyncRows() error: %v", err)
 	}
@@ -1709,22 +1809,22 @@ func TestFreshSyncRows(t *testing.T) {
 		t.Fatalf("fresh = %v, want empty for a never-synced cell", fresh)
 	}
 
-	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", "beach"); err != nil {
+	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", "beach", 10); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}
-	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", ""); err != nil {
+	if err := repo.MarkSynced(ctx, "google", "44.8,20.5", "nature", "", 10); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}
 	// A different cell and a different provider must not leak into this
 	// cell's result.
-	if err := repo.MarkSynced(ctx, "google", "10.0,10.0", "nature", "park"); err != nil {
+	if err := repo.MarkSynced(ctx, "google", "10.0,10.0", "nature", "park", 10); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}
-	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", ""); err != nil {
+	if err := repo.MarkSynced(ctx, "tripadvisor", "44.8,20.5", "restaurants", "", 8); err != nil {
 		t.Fatalf("MarkSynced() error: %v", err)
 	}
 
-	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", since)
+	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", since, 0)
 	if err != nil {
 		t.Fatalf("FreshSyncRows() error: %v", err)
 	}
@@ -1735,12 +1835,23 @@ func TestFreshSyncRows(t *testing.T) {
 
 	// A since cutoff after the mark must exclude it — the same TTL-expiry
 	// behavior SyncedAt's caller derives from time.Since(syncedAt) today.
-	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", time.Now().Add(time.Hour))
+	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", time.Now().Add(time.Hour), 0)
 	if err != nil {
 		t.Fatalf("FreshSyncRows() error: %v", err)
 	}
 	if len(fresh) != 0 {
 		t.Errorf("fresh = %v, want empty once since is after the mark (TTL expired)", fresh)
+	}
+
+	// D1: a minRadiusKM wider than what was actually covered (10km) excludes
+	// the row even though it's within TTL — the same reclassification
+	// TestSyncedAtAndMarkSynced_RadiusAware proves for SyncedAt.
+	fresh, err = repo.FreshSyncRows(ctx, "google", "44.8,20.5", since, 50)
+	if err != nil {
+		t.Fatalf("FreshSyncRows(minRadiusKM=50) error: %v", err)
+	}
+	if len(fresh) != 0 {
+		t.Errorf("fresh = %v, want empty — the 10km marks must not satisfy a 50km request", fresh)
 	}
 }
 
