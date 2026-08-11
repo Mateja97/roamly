@@ -23,6 +23,7 @@ import {
 } from './filters';
 import { NearbyNudgeCard } from './NearbyNudgeCard';
 import { dismissNearbyNudge, isNearbyNudgeDismissed } from './nearbyNudge';
+import { RatingRow } from './RatingRow';
 import { SubtypeRail } from './SubtypeRail';
 import { ToursTicket } from './ToursTicket';
 import { hasPartnerId, resolveTourLocation, tourTarget } from './toursPartner';
@@ -282,6 +283,28 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
     setAppliedFilters((prev) => clearCategories(prev));
   }
 
+  // design-spec.md T2: instant-apply, same shape as handleToggleCategory —
+  // writes straight into the shared ScopeDraft state the query effect above
+  // already reacts to (no new fetch path) and the Scope sheet's own
+  // "Minimum rating" group already reads via initialDraft={appliedScopeDraft}.
+  // The already-selected-chip no-op lives in RatingRow itself (same split as
+  // CategoryRow's "All" no-op guard).
+  function handleSelectRating(minRating: Filters['minRating']) {
+    setAppliedScopeDraft((prev) => ({ ...prev, minRating }));
+  }
+
+  // design-spec.md T2: the empty state's "Clear filters" action now also
+  // resets the minimum rating back to Any — an active rating with zero
+  // results and no category selected used to be a dead end (hasFilters was
+  // categories/subtypes-only). Both setState calls land in the same event
+  // handler, so React batches them into a single re-render and the query
+  // effect (which depends on both appliedScopeDraft and
+  // appliedFilters.categories) fires exactly once.
+  function handleClearFilters() {
+    setAppliedFilters((prev) => clearCategories(prev));
+    setAppliedScopeDraft((prev) => (prev.minRating === null ? prev : { ...prev, minRating: null }));
+  }
+
   // Subtypes are client-filtered (see the query effect's comment above) —
   // toggling one never re-fetches, it only changes what's shown/counted
   // from the activities already in hand.
@@ -307,7 +330,11 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
   }
 
   const hasLocationAnchor = Boolean(appliedScopeDraft.coordinates);
-  const hasFilters = appliedFilters.categories.length > 0 || appliedFilters.subtypes.length > 0;
+  // design-spec.md T2: an active (non-"Any") minimum rating now counts as a
+  // filter too — otherwise a 4.8+ tap with no category selected lands on
+  // zero results and no Clear action at all.
+  const hasFilters =
+    appliedFilters.categories.length > 0 || appliedFilters.subtypes.length > 0 || appliedScopeDraft.minRating !== null;
   const order = orderCategories(hourAtLastFocus, travelerMode);
   // Tours & Experiences is excluded from the subtype rails on purpose. It has
   // no rows and never will (BUSINESS_STANDARDS.md), so every one of its six
@@ -411,6 +438,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
             onToggle={handleToggleCategory}
             onClearAll={handleClearCategories}
           />
+          <RatingRow selected={appliedScopeDraft.minRating} onSelect={handleSelectRating} />
           {selectedCategoryOptions.map((option) => (
             <SubtypeRail
               key={option.value}
@@ -464,7 +492,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
               Array.from({ length: SKELETON_CARD_COUNT }).map((_, i) => <ActivityCardSkeleton key={i} />)}
 
             {queryState.status === 'loaded' && displayActivities.length === 0 && !toursIsOnlySelection && (
-              <EmptyState hasFilters={hasFilters} onClearFilters={handleClearCategories} />
+              <EmptyState hasFilters={hasFilters} onClearFilters={handleClearFilters} />
             )}
 
             {queryState.status === 'error' && <ErrorState message={queryState.message} onRetry={handleRetry} />}

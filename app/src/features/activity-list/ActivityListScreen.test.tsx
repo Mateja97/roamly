@@ -1,5 +1,5 @@
 import { AccessibilityInfo, BackHandler } from 'react-native';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
 import { getActivity, getActivityPhotos, queryActivities } from '../../api/activities';
@@ -56,6 +56,18 @@ function successResult(activities: Activity[]): ActivitiesQueryResult {
 
 async function flush() {
   await act(async () => {});
+}
+
+// T2: the Feed's own RatingRow and the open Scope sheet's "Minimum rating"
+// group both render a "4.5+"-labelled chip once the sheet is open — scope
+// the query to the sheet's own group (found via its accessibilityRole
+// "header" label) so these don't collide with the Feed's row behind it.
+function sheetRatingChip(name: string) {
+  // .parent once lands on the Text's own host wrapper, not its JSX sibling
+  // — .parent.parent is FilterGroup's outer View, the real ancestor of the
+  // chips row.
+  const group = screen.getByRole('header', { name: 'Minimum rating' }).parent!.parent;
+  return within(group!).getByRole('button', { name });
 }
 
 describe('ActivityListScreen', () => {
@@ -366,7 +378,7 @@ describe('ActivityListScreen', () => {
       // "has the user applied anything since" can).
       fireEvent.press(screen.getByRole('button', { name: /scope: exploring everywhere/i }));
       await flush();
-      fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
+      fireEvent.press(sheetRatingChip('4.5+'));
       await waitFor(() => expect(screen.getByRole('button', { name: /^show \d+ activit/i })).toBeTruthy());
       await act(async () => {
         fireEvent.press(screen.getByRole('button', { name: /^show \d+ activit/i }));
@@ -527,6 +539,95 @@ describe('ActivityListScreen', () => {
 
       expect(screen.getByText('Sport+Culture result')).toBeTruthy();
       expect(screen.queryByText('Sport-only result')).toBeNull();
+    });
+  });
+
+  describe('Rating pill row (T2, one-tap minimum-rating filter)', () => {
+    it('renders exactly the four rating options, Any selected by default', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      expect(screen.getByRole('button', { name: 'Any rating, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Rated 4.0 and up' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Rated 4.5 and up' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Rated 4.8 and up' })).toBeTruthy();
+    });
+
+    it('tapping a rating chip marks it active, re-queries with min_rating, and Any goes inactive', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Rated 4.5 and up' }));
+      });
+
+      expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION, min_rating: 4.5 });
+      expect(screen.getByRole('button', { name: 'Rated 4.5 and up, selected' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Any rating' })).toBeTruthy();
+    });
+
+    it('tapping the already-selected "Any" is a no-op — no extra query', async () => {
+      mockedQuery.mockResolvedValue(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      expect(mockedQuery).toHaveBeenCalledTimes(1);
+      fireEvent.press(screen.getByRole('button', { name: 'Any rating, selected' }));
+      expect(mockedQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('switching from one rating chip to another is exactly one re-query, not the already-selected one\'s no-op', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Rated 4.0 and up' }));
+      });
+      expect(mockedQuery).toHaveBeenCalledTimes(2);
+
+      // No mockResolvedValueOnce queued here — the no-op below must not
+      // consume one (and mustn't fire a query at all).
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Rated 4.0 and up, selected' }));
+      });
+      expect(mockedQuery).toHaveBeenCalledTimes(2); // still 2 — re-tapping the selected chip fired no third query
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity]));
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Rated 4.8 and up' }));
+      });
+      expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION, min_rating: 4.8 });
+      expect(mockedQuery).toHaveBeenCalledTimes(3);
+    });
+
+    it('a rating that leaves zero results, with no category selected, shows Clear filters and resets both on tap', async () => {
+      mockedQuery.mockResolvedValueOnce(successResult([activity])); // mount
+      render(<ActivityListScreen selection={{ scope: 'nearby', coordinates: COORDINATES }} onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByText('Skadarlija Food Walk')).toBeTruthy());
+
+      mockedQuery.mockResolvedValueOnce(successResult([])); // 4.8+ tap: zero results
+      await act(async () => {
+        fireEvent.press(screen.getByRole('button', { name: 'Rated 4.8 and up' }));
+      });
+      await waitFor(() => expect(screen.getByText('No activities match')).toBeTruthy());
+      // Before this task, an active rating with no category selected wasn't
+      // counted as a filter at all, so no Clear action showed here — a dead
+      // end one tap after the filter that caused it.
+      expect(screen.getByText('Try removing a filter or widening your distance.')).toBeTruthy();
+      const clearButton = screen.getByRole('button', { name: 'Clear filters' });
+
+      mockedQuery.mockResolvedValueOnce(successResult([activity])); // Clear filters re-query
+      await act(async () => {
+        fireEvent.press(clearButton);
+      });
+
+      expect(mockedQuery).toHaveBeenLastCalledWith({ scope: 'nearby', current_location: LOCATION }); // no min_rating, no categories
+      expect(screen.getByRole('button', { name: 'Any rating, selected' })).toBeTruthy();
     });
   });
 
@@ -851,7 +952,7 @@ describe('ActivityListScreen', () => {
       await flush();
       mockedQuery.mockResolvedValue(successResult([activity])); // sheet's own live-count + explicit tap query
       await act(async () => {
-        fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
+        fireEvent.press(sheetRatingChip('4.5+'));
       });
       // T5 (Minor, self-caught while building the sibling close/reopen
       // test below): the CTA stays disabled (`count === null`) until the
@@ -886,7 +987,7 @@ describe('ActivityListScreen', () => {
       fireEvent.press(screen.getByRole('button', { name: /scope: nearby/i }));
       await flush();
       await act(async () => {
-        fireEvent.press(screen.getByRole('button', { name: '4.5+' }));
+        fireEvent.press(sheetRatingChip('4.5+'));
       });
       // The CTA stays disabled (`count === null`) until the sheet's own
       // 300ms-debounced live count resolves — pressing it before that is a
@@ -913,7 +1014,7 @@ describe('ActivityListScreen', () => {
       // rendered at all (an unselected chip renders that text too).
       fireEvent.press(screen.getByRole('button', { name: /scope: nearby/i }));
       await flush();
-      expect(screen.getByRole('button', { name: '4.5+, selected' })).toBeTruthy();
+      expect(sheetRatingChip('4.5+, selected')).toBeTruthy();
     });
   });
 
