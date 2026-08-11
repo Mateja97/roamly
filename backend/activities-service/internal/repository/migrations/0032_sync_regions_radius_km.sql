@@ -17,4 +17,10 @@ ALTER TABLE sync_regions ADD COLUMN radius_km DOUBLE PRECISION;
 UPDATE sync_regions SET radius_km = 10 WHERE provider = 'google';
 UPDATE sync_regions SET radius_km = 8 WHERE provider = 'tripadvisor';
 
+-- Any other provider (e.g. "website") is non-geographic: websitesync.go
+-- already writes radius_km=0 for it going forward, so 0 is the correct
+-- backfill sentinel here too. Catches every remaining NULL, not just a
+-- named provider list, so a future provider can't reopen this gap.
+UPDATE sync_regions SET radius_km = 0 WHERE radius_km IS NULL;
+
 ALTER TABLE sync_regions ALTER COLUMN radius_km SET NOT NULL;

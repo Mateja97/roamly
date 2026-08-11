@@ -1618,6 +1618,12 @@ func TestMigration0032BackfillsRadiusKM(t *testing.T) {
 	if _, err := db.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('tripadvisor', '44.8,20.5', 'restaurants', '', now())`); err != nil {
 		t.Fatalf("seeding pre-migration tripadvisor row: %v", err)
 	}
+	// A third, non-geographic provider (websitesync.go writes radius_km=0
+	// for it going forward) must also backfill, not just the two named
+	// providers above — this is what the Critical review finding caught.
+	if _, err := db.Exec(ctx, `INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at) VALUES ('website', '44.8,20.5', 'nature', '', now())`); err != nil {
+		t.Fatalf("seeding pre-migration website row: %v", err)
+	}
 
 	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
 		t.Fatalf("running remaining migrations (incl. 0032): %v", err)
@@ -1637,6 +1643,14 @@ func TestMigration0032BackfillsRadiusKM(t *testing.T) {
 	}
 	if tripadvisorRadius != 8 {
 		t.Errorf("tripadvisor radius_km = %v, want 8 (its historical fixed sync radius)", tripadvisorRadius)
+	}
+
+	var websiteRadius float64
+	if err := db.QueryRow(ctx, `SELECT radius_km FROM sync_regions WHERE provider = 'website' AND cell_key = '44.8,20.5' AND category = 'nature' AND subtype = ''`).Scan(&websiteRadius); err != nil {
+		t.Fatalf("querying backfilled website radius_km: %v", err)
+	}
+	if websiteRadius != 0 {
+		t.Errorf("website radius_km = %v, want 0 (non-geographic sentinel, matching websitesync.go's MarkSynced)", websiteRadius)
 	}
 
 	var nullCount int
