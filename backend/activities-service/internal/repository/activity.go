@@ -625,14 +625,18 @@ func (r *Activities) SetGooglePlaceIDIfEmpty(ctx context.Context, id, placeID st
 }
 
 // SyncedAt reports the last successful sync time for
-// (provider, cellKey, category, subtype), and whether one has happened at
-// all — false, zero time when the combination has never been synced.
-func (r *Activities) SyncedAt(ctx context.Context, provider, cellKey, category, subtype string) (time.Time, bool, error) {
+// (provider, cellKey, category, subtype) that covered at least minRadiusKM,
+// and whether one has happened at all — false, zero time when the
+// combination has never been synced, or was only ever synced at a radius
+// narrower than minRadiusKM (T1, rating-and-anywhere-radius D1): a prior
+// narrow sync (e.g. Nearby's fixed 10km) must not read as fresh for a later
+// request that needs a wider radius, even if it's still within TTL.
+func (r *Activities) SyncedAt(ctx context.Context, provider, cellKey, category, subtype string, minRadiusKM float64) (time.Time, bool, error) {
 	var syncedAt time.Time
 	err := r.db.QueryRow(ctx,
 		`SELECT synced_at FROM sync_regions
-		 WHERE provider = $1 AND cell_key = $2 AND category = $3 AND subtype = $4`,
-		provider, cellKey, category, subtype,
+		 WHERE provider = $1 AND cell_key = $2 AND category = $3 AND subtype = $4 AND radius_km >= $5`,
+		provider, cellKey, category, subtype, minRadiusKM,
 	).Scan(&syncedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, false, nil
@@ -644,17 +648,18 @@ func (r *Activities) SyncedAt(ctx context.Context, provider, cellKey, category, 
 }
 
 // FreshSyncRows returns every (category, subtype) pair for (provider,
-// cellKey) synced more recently than since, keyed category+"|"+subtype —
-// one query for a whole cell instead of SyncedAt's one-row-at-a-time shape.
-// googleDueRows needs an answer for every one of DiscoveryRows' ~53 rows per
-// anchor; calling SyncedAt that many times was ~53 round-trips per query even
-// in the fully-fresh steady state. The caller checks membership in the
-// returned map instead.
-func (r *Activities) FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time) (map[string]bool, error) {
+// cellKey) synced more recently than since AND covering at least
+// minRadiusKM (T1, rating-and-anywhere-radius D1 — same radius gate as
+// SyncedAt), keyed category+"|"+subtype — one query for a whole cell instead
+// of SyncedAt's one-row-at-a-time shape. googleDueRows needs an answer for
+// every one of DiscoveryRows' ~53 rows per anchor; calling SyncedAt that many
+// times was ~53 round-trips per query even in the fully-fresh steady state.
+// The caller checks membership in the returned map instead.
+func (r *Activities) FreshSyncRows(ctx context.Context, provider, cellKey string, since time.Time, minRadiusKM float64) (map[string]bool, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT category, subtype FROM sync_regions
-		 WHERE provider = $1 AND cell_key = $2 AND synced_at > $3`,
-		provider, cellKey, since,
+		 WHERE provider = $1 AND cell_key = $2 AND synced_at > $3 AND radius_km >= $4`,
+		provider, cellKey, since, minRadiusKM,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("querying fresh sync rows %s/%s: %w", provider, cellKey, err)
@@ -676,14 +681,18 @@ func (r *Activities) FreshSyncRows(ctx context.Context, provider, cellKey string
 }
 
 // MarkSynced records a fresh sync for (provider, cellKey, category,
-// subtype), upserting the timestamp in place on a re-sync.
-func (r *Activities) MarkSynced(ctx context.Context, provider, cellKey, category, subtype string) error {
+// subtype) covering radiusKM, upserting the timestamp and radius in place on
+// a re-sync (T1, rating-and-anywhere-radius D1) — a re-sync at a narrower
+// radius than a previous one still overwrites radius_km with the new,
+// narrower value, since radiusKM is always the caller's actual resolved
+// sync radius for this call, the accurate record of what was just covered.
+func (r *Activities) MarkSynced(ctx context.Context, provider, cellKey, category, subtype string, radiusKM float64) error {
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at)
-		 VALUES ($1, $2, $3, $4, now())
+		`INSERT INTO sync_regions (provider, cell_key, category, subtype, synced_at, radius_km)
+		 VALUES ($1, $2, $3, $4, now(), $5)
 		 ON CONFLICT (provider, cell_key, category, subtype)
-		 DO UPDATE SET synced_at = EXCLUDED.synced_at`,
-		provider, cellKey, category, subtype,
+		 DO UPDATE SET synced_at = EXCLUDED.synced_at, radius_km = EXCLUDED.radius_km`,
+		provider, cellKey, category, subtype, radiusKM,
 	)
 	if err != nil {
 		return fmt.Errorf("marking sync region %s/%s/%s/%s: %w", provider, cellKey, category, subtype, err)

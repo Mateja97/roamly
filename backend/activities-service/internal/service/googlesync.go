@@ -19,10 +19,32 @@ import (
 // provider than the other.
 const googleSyncTTL = 14 * 24 * time.Hour
 
-// googleSyncRadiusKM is the circle radius one discovery call sweeps. Matches
-// NearbyRadiusKM so a Nearby-scope query syncs exactly the area it searches.
-// The API ceiling is 50.
-const googleSyncRadiusKM = 10
+// googleMaxSyncRadiusKM is Places' documented radius ceiling for a single
+// searchNearby/searchText call (D2, D4) — the widest circle one sync call
+// can ever cover, regardless of how large the request's own MaxDistanceKM
+// is. 100km/200km/no-limit Anywhere requests all sync this same 50km circle;
+// only the *query* still filters by the true requested distance against
+// whatever data exists (real coverage past this ceiling needs multi-anchor
+// tiling, deferred — see design doc D4).
+const googleMaxSyncRadiusKM = 50
+
+// googleSyncRadiusKM resolves req's actual sync radius (D2): Nearby always
+// syncs its own fixed NearbyRadiusKM regardless of req.MaxDistanceKM, so a
+// Nearby-scope query syncs exactly the area it searches. Anywhere syncs
+// min(req.MaxDistanceKM, googleMaxSyncRadiusKM) km, or the ceiling itself
+// when MaxDistanceKM is unset (the "Any" stop, which carries no numeric
+// cap). Places pricing is per-call, not per-radius, so a larger radius
+// parameter on the same single call this already makes is a correctness
+// fix with no added API cost.
+func googleSyncRadiusKM(req Request) float64 {
+	if req.Scope != activitiessvc.ScopeAnywhere {
+		return NearbyRadiusKM
+	}
+	if req.MaxDistanceKM > 0 {
+		return min(req.MaxDistanceKM, googleMaxSyncRadiusKM)
+	}
+	return googleMaxSyncRadiusKM
+}
 
 // maxGoogleRowsPerQuery caps how many discovery rows one Query call
 // schedules. There are ~53 rows per cell; running them all on one query
@@ -242,6 +264,12 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), googleSyncTimeout)
 		defer cancel()
 
+		// Resolved once for the whole sweep: every job below shares the same
+		// request, so they all sync (and are judged fresh against) the same
+		// radius — see googleSyncRadiusKM's own doc for Nearby vs Anywhere
+		// resolution (D2).
+		radiusKM := googleSyncRadiusKM(req)
+
 		// One FreshSyncRows query per cell rather than one SyncedAt call per
 		// (cell, category, subtype): googleDueRows' fresh callback runs for
 		// every one of DiscoveryRows' ~53 rows per anchor, so the per-row
@@ -253,7 +281,7 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		freshByCell := make(map[string]map[string]bool, len(cells))
 		since := time.Now().Add(-googleSyncTTL)
 		for _, cell := range cells {
-			set, err := a.repo.FreshSyncRows(syncCtx, ProviderGoogle, cell, since)
+			set, err := a.repo.FreshSyncRows(syncCtx, ProviderGoogle, cell, since, radiusKM)
 			if err != nil {
 				slog.Warn("google fresh-sync-rows lookup failed; treating cell as fully stale", "cell", cell, "error", err)
 				continue
@@ -304,7 +332,7 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 			if erroredCells[key] {
 				continue
 			}
-			a.syncGoogleRow(syncCtx, job, cellLocations[key])
+			a.syncGoogleRow(syncCtx, job, cellLocations[key], radiusKM)
 		}
 	}()
 }
@@ -339,7 +367,12 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 		if !slices.Contains(placesmap.GoogleCategories, row.Category) {
 			continue
 		}
-		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell)
+		// NearbyRadiusKM, unchanged from before this radius became
+		// per-request (D2): this manual seed tool has no Request/scope to
+		// resolve a wider radius from, and widening it is outside this
+		// task's scope — a seed run stays exactly as comprehensive as it
+		// was.
+		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell, NearbyRadiusKM)
 	}
 }
 
@@ -365,13 +398,13 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 // trading the stale-data bug for an unbounded quota-spend one. A single
 // Upsert failure is logged and skipped without abandoning the rest of the
 // row.
-func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation) {
+func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation, radiusKM float64) {
 	var found []placesmap.Place
 	var err error
 	if len(job.row.Types) > 0 {
 		found, err = a.places.SearchNearby(ctx, places.NearbyRequest{
 			Lat: job.anchor.Lat, Lng: job.anchor.Lng,
-			RadiusM:       googleSyncRadiusKM * 1000,
+			RadiusM:       radiusKM * 1000,
 			IncludedTypes: job.row.Types,
 			MaxResults:    20,
 		}, places.NearbyFieldMask)
@@ -379,7 +412,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 		// The ~5 subtypes Table A cannot express. Area-bounded so a phrase
 		// like "escape room" can't pull in results from the next country.
 		found, err = a.places.SearchTextInArea(ctx, job.row.TextQuery,
-			job.anchor.Lat, job.anchor.Lng, googleSyncRadiusKM, places.NearbyFieldMask)
+			job.anchor.Lat, job.anchor.Lng, radiusKM, places.NearbyFieldMask)
 	}
 	if err != nil {
 		slog.Warn("google discovery row failed",
@@ -430,7 +463,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 	}
 
 	cellKey := syncCellKey(job.anchor.Lat, job.anchor.Lng)
-	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cellKey, string(job.row.Category), job.row.Subtype); err != nil {
+	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cellKey, string(job.row.Category), job.row.Subtype, radiusKM); err != nil {
 		slog.Warn("google mark-synced failed", "cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype, "error", err)
 		return
 	}

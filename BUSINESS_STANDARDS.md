@@ -140,6 +140,31 @@ would be exactly the kind of guess this taxonomy refuses to make.
 | Category filter | Applies on top; same 13-category options in both scopes. Every selected category gets its own subtype chips (above, one group per category), OR'd within each category, AND-ed with the category filter overall | Same |
 | Sort order | By distance (nearest first) | By distance (nearest first, per-anchor) |
 
+### Anywhere sync coverage limits (data underneath the slider, not the query)
+
+The Anywhere distance filter itself is always exact — it's a real `ST_DWithin`
+query against whatever is stored. What varies by provider is how far the lazy
+sync that *populates* that data actually reaches for a given anchor
+(`backend/activities-service/internal/service/googlesync.go`'s
+`googleSyncRadiusKM`, `activity.go`'s `tripadvisorSyncRadiusKM` — see
+`docs/superpowers/specs/2026-08-11-rating-and-anywhere-radius-design.md` D1-D4):
+
+- **Google-sourced categories** (Cafés, Nightlife, Nature, Sport, Kids,
+  Culture, Art, Wellness, Shopping, Entertainment) — exact coverage up to
+  50km: the sync radius matches the request's own distance stop (5/10/25/50)
+  one-for-one, since a wider `searchNearby`/`searchText` radius costs no more
+  than a narrower one (Places pricing is per-call).
+- **Tripadvisor-sourced categories** (Restaurants, Bars, and the Tripadvisor
+  side of Cafés) — permanently capped at ~8km at every Anywhere distance
+  stop, including 200km and "Any". This is observed live behaviour (Terra's
+  `NearbySearch` endpoint rejects any radius above 8.0km with a 400), not a
+  published API contract — Terra documents no maximum radius, so the ceiling
+  could change without notice.
+- **Every category, 100km/200km/"Any"** — best-effort: the sync itself never
+  fetches past Google's 50km ceiling, so these three stops sync the same
+  50km circle the 50km stop does. Genuine coverage beyond 50km needs
+  multi-anchor tiling, a materially larger piece of work, deferred.
+
 ## Known gaps vs. current implementation
 
 - **Anywhere without an anchor**: `app/src/features/activity-list/filters.ts`'s
