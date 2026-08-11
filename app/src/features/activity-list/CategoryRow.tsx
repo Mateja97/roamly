@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Animated, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { EdgeFade } from '../../components/EdgeFade';
-import { FilterChip } from '../../components/FilterChip';
-import { usePressScale } from '../../hooks/usePressScale';
 import { space } from '../../theme/tokens';
 import { CATEGORY_LABELS } from './filters';
+import { SegmentChip } from './SegmentChip';
 import type { Category } from './types';
 
 type CategoryRowProps = {
@@ -34,7 +33,7 @@ export function CategoryRow({ order, selected, onToggle, onClearAll }: CategoryR
   return (
     <View style={styles.container}>
       <ScrollView ref={scrollRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-        <PressScaleChip
+        <SegmentChip
           label="All"
           accessibilityLabel="All categories"
           selected={selected.length === 0}
@@ -44,7 +43,7 @@ export function CategoryRow({ order, selected, onToggle, onClearAll }: CategoryR
           }}
         />
         {order.map((category) => (
-          <PressScaleChip
+          <SegmentChip
             key={category}
             label={CATEGORY_LABELS[category]}
             selected={selected.includes(category)}
@@ -54,36 +53,6 @@ export function CategoryRow({ order, selected, onToggle, onClearAll }: CategoryR
       </ScrollView>
       <EdgeFade />
     </View>
-  );
-}
-
-// design-spec.md T3: "press scale(.97) at 120ms, suppressed under
-// prefers-reduced-motion" layered on top of FilterChip's own color
-// feedback — shared with SubtypeRail's chips.
-function PressScaleChip({
-  label,
-  accessibilityLabel,
-  selected,
-  onPress,
-}: {
-  label: string;
-  accessibilityLabel?: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  const press = usePressScale();
-  return (
-    <Animated.View style={{ transform: [{ scale: press.scale }] }}>
-      <FilterChip
-        variant="segment"
-        label={label}
-        accessibilityLabel={accessibilityLabel}
-        selected={selected}
-        onPress={onPress}
-        onPressIn={press.onPressIn}
-        onPressOut={press.onPressOut}
-      />
-    </Animated.View>
   );
 }
 
