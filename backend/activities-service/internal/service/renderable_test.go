@@ -48,10 +48,22 @@ func TestRenderability(t *testing.T) {
 			wantScore: 2,
 		},
 		{
-			name:      "a quotable Tripadvisor reviews array clears the bar",
-			activity:  activitiessvc.Activity{Photos: onePhoto, ExternalID: "ta-1", Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"},"reviews":[{"text":"Great"}]}`)},
+			// Reviews are furniture: a carousel under an empty body is not
+			// a page worth publishing, however many reviews it carries.
+			name:       "quotable Tripadvisor reviews alone do not clear the bar",
+			activity:   activitiessvc.Activity{Photos: onePhoto, ExternalID: "ta-1", Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"},"reviews":[{"text":"Great"}]}`)},
+			wantOK:     false,
+			wantReason: service.ReasonNoContent,
+			wantScore:  1, // reviews and the tripadvisor chip share one presentational point
+		},
+		{
+			name: "Tripadvisor reviews plus a real body block do clear it",
+			activity: activitiessvc.Activity{
+				Photos: onePhoto, ExternalID: "ta-1",
+				Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"},"reviews":[{"text":"Great"}],"popular_dishes":[{"name":"Pljeskavica","price":"800"}]}`),
+			},
 			wantOK:    true,
-			wantScore: 3, // reviews 2 + the tripadvisor chip 1
+			wantScore: 3, // body block 2 + one shared presentational point
 		},
 		{
 			name:       "a review-less Tripadvisor row with no Google reviews drafts for no_content",
@@ -61,14 +73,27 @@ func TestRenderability(t *testing.T) {
 			wantScore:  1,
 		},
 		{
-			name: "the same row clears the bar once the Google review fallback fills it",
+			// The Google review fallback fills the reviews slot but adds no
+			// body — measured 2026-08-17, this is how 51% of a broad sample
+			// was passing a bar it should never have cleared.
+			name: "the Google review fallback does not rescue a bodyless row",
 			activity: activitiessvc.Activity{
 				Photos: onePhoto, ExternalID: "ta-1", GooglePlaceID: "place-9",
 				Details:       json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"}}`),
 				GoogleReviews: []activitiessvc.GoogleReview{{Text: "Great"}},
 			},
+			wantOK:     false,
+			wantReason: service.ReasonNoContent,
+			wantScore:  1, // google reviews and the tripadvisor chip share one point
+		},
+		{
+			name: "a live description plus Google reviews clears it",
+			activity: activitiessvc.Activity{
+				Photos: onePhoto, ExternalID: "place-1", Description: "A live editorial summary.",
+				GoogleReviews: []activitiessvc.GoogleReview{{Text: "Great"}},
+			},
 			wantOK:    true,
-			wantScore: 3, // google reviews 2 + the tripadvisor chip 1
+			wantScore: 3, // description 2 + one shared presentational point
 		},
 		{
 			name:       "chips and opening hours together are still not content",

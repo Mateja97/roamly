@@ -128,9 +128,7 @@ merely present in the JSON:
 | --- | --- |
 | non-empty `Description` | 2 |
 | a body block — `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup`, `difficulty` | 2 |
-| a quotable Tripadvisor `reviews` array | 2 |
-| a non-empty merged `GoogleReviews` | 2 |
-| presentational only — `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear` | 1 total, however many are present |
+| presentational only — reviews (`reviews`, merged `GoogleReviews`), `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear` | 1 total, however many are present |
 
 Each signal scores once, not per key: three chips are still one chip row, and
 two body blocks are still one screenful of substance.
@@ -145,22 +143,34 @@ combination of furniture can ever reach 2.
 quotable reviews; chips alone are not enough." It is a constant with a CLI flag
 override, so a single dry-run can report the outcome at several thresholds.
 
-Crediting `GoogleReviews` matters more than it looks: it is what keeps a
-review-less Tripadvisor restaurant with no description from drafting, since the
-T2 fallback fills that slot from Google and the page genuinely renders a reviews
-section as a result.
+**Reviews score presentationally, and that is the correction the first
+measurements forced.** This spec originally scored reviews as content worth
+2, reasoning that a reviews carousel genuinely renders. It does render — but
+it renders under an empty body, and Google returns reviews for very nearly
+every Google-sourced venue, so crediting them 2 made a bar of 2 almost
+unconditional across 7,768 rows. The runs recorded below found 92% of Sport
+and 51% of a broad sample clearing the bar on reviews alone. Reviews now
+share the single presentational point with the chips and the hours row, so
+no row can pass on them.
 
 **Two traps this scoring deliberately avoids:**
 
 - *Tripadvisor rows.* Their content lives under a `tripadvisor` key (attribution,
   subratings, phone, `web_url`) and, for only 45 of 262 restaurants, a `reviews`
-  array. Scoring `tripadvisor` as a body block would keep every restaurant;
-  ignoring `reviews` would draft every restaurant. Both are wrong. `reviews`
-  scores 2 because the reviews carousel genuinely renders; the bare `tripadvisor`
-  key scores 1 as a chip. A review-less Tripadvisor row is judged on its Google
-  content instead, which is exactly the path
-  `withTripadvisorGoogleReviews` already puts it on post
-  `tripadvisor-marks-require-reviews` T2.
+  array. Scoring `tripadvisor` as a body block would keep every restaurant on
+  attribution metadata alone. Both `reviews` and the bare `tripadvisor` key are
+  presentational and share one point, so a Tripadvisor row passes only on a
+  description or a real body block (`popular_dishes`) — the same test every
+  other category faces.
+
+  **This is the sharpest consequence of scoring reviews presentationally, and
+  it is deliberate.** Most Tripadvisor rows will now draft: 175 of 262
+  restaurants have no stored description, and only one carries
+  `popular_dishes`. Their pages are a rating, a reviews carousel and an
+  attribution plate — genuinely thin by the standard this bar sets. Whether
+  that standard should apply to a category whose entire value proposition is
+  traveller reviews is a product question the measurement can inform but not
+  answer.
 - *Drift.* The app decides what renders in
   `app/src/features/activity-list/activityDetailConfig.ts`; this scoring is a
   second, Go-side statement of the same thing. Rather than re-derive it, the key

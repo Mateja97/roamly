@@ -147,14 +147,34 @@ func contentScore(a activitiessvc.Activity) (int, []string) {
 	if anyKeyHasValue(fields, bodyBlockKeys) {
 		fired(scoreContent, SignalBodyBlock)
 	}
+
+	// Reviews are furniture, not something to read. They score with the
+	// chips and the hours row, sharing that group's single point, so no
+	// row can clear a bar of 2 on reviews alone.
+	//
+	// This was measured, not assumed. Scoring reviews as content (2 points)
+	// made a bar of 2 nearly unconditional: Google returns reviews for very
+	// nearly every Google-sourced venue, and the first audit runs found 92%
+	// of Sport and 51% of a broad sample clearing the bar on reviews alone,
+	// while rendering a carousel under an otherwise empty body — the exact
+	// bare page the audit exists to find. See the spec's "Measured outcome".
+	//
+	// Each member is still named in Signals even though they share one
+	// point, because which kind of furniture a row has is the thing the
+	// report has to stay able to show.
+	var presentational []string
+	if anyKeyHasValue(fields, presentationalKeys) {
+		presentational = append(presentational, SignalPresentational)
+	}
 	if hasValue(fields[reviewsKey]) {
-		fired(scoreContent, SignalTripadvisorReviews)
+		presentational = append(presentational, SignalTripadvisorReviews)
 	}
 	if len(a.GoogleReviews) > 0 {
-		fired(scoreContent, SignalGoogleReviews)
+		presentational = append(presentational, SignalGoogleReviews)
 	}
-	if anyKeyHasValue(fields, presentationalKeys) {
-		fired(scorePresentational, SignalPresentational)
+	if len(presentational) > 0 {
+		score += scorePresentational
+		signals = append(signals, presentational...)
 	}
 	return score, signals
 }
