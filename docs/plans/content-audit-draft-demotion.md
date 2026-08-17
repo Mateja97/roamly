@@ -465,3 +465,84 @@ cannot serve. Those five are where the bare pages actually are.
 `byCategory` counts only failures, so a run cannot show how many rows per
 category it scanned. That makes per-category pass rates uncomputable from
 the report alone — worth adding before the next measurement round.
+
+## Broad sample, re-run with reviews scored presentationally
+
+Same 300 rows, same day, only the scoring changed.
+
+```
+content audit — 300 rows scanned at min-content=2
+  would stay published: 126
+  would be drafted:     174
+
+by reason        no_photo 19 · no_place_id 1 · no_content 154
+
+by category        no_photo   no_place_id   no_content
+  art                     0             0            6
+  cafes                   3             0            0
+  culture                 0             0           12
+  entertainment           0             0            5
+  kids                    4             0            8
+  nature                  1             0            3
+  nightlife               0             0           22
+  restaurants             1             0            3
+  shopping                7             1           40
+  sport                   3             0           43
+  wellness                0             0           12
+
+score distribution   1: 168 · 3: 123 · 5: 9
+
+how the passing rows cleared the bar
+  body_block+presentational+google_reviews              86
+  body_block+google_reviews                             21
+  description+body_block+presentational+google_reviews   9
+  description+presentational+google_reviews              7
+  description+presentational                             2
+  description+google_reviews                             1
+```
+
+### The bar now sits in an empty region, which makes it robust
+
+**No row scores 2 or 4.** Nearly every row carries some furniture, so the
+distribution is bimodal: 168 rows at 1 (furniture only, no body) and 132 at
+3 or 5 (a body, plus furniture). The threshold is not balanced on a knife
+edge — any bar in the range (1, 3] produces exactly the same verdict on
+every row in the sample. That is a much stronger property than picking 2 and
+hoping, and it is only visible because reviews stopped inflating the middle.
+
+The pass count, 126, is exactly what the previous run's signal breakdown
+predicted for a reviews-excluded bar. The two runs agree.
+
+### The failures land where the mapper does not reach
+
+| Category | `no_content` | Has a live body field? |
+| --- | --- | --- |
+| sport | 43 | no case in the mapper at all |
+| shopping | 40 | no |
+| nightlife | 22 | no |
+| culture | 12 | no |
+| wellness | 12 | partial — `websitesync` only |
+| kids | 8 | yes — `facilities` |
+| art | 6 | no |
+| entertainment | 5 | partial — `websitesync` only |
+| nature | 3 | yes — `good_to_know` |
+| restaurants | 3 | no |
+| **cafes** | **0** | yes — `known_for` |
+
+Cafés fail zero content checks across 300 rows. Nature fails 3, Kids 8. The
+three categories `BuildLiveDetails` serves are the three that pass. Every
+heavy failure is a category it skips. This is the spec's opening hypothesis,
+now measured rather than inferred from the schema.
+
+### Verdict
+
+174 of 300 draft, 58%, extrapolating to roughly 4,750 of 8,183 published
+rows. **Do not enforce.** The bar is now honest and the catalog cannot meet
+it, which is the correct finding, not a reason to loosen the bar again — the
+last time the bar was loosened it passed 51% of rows that render nothing.
+
+The work that closes the gap is extending `websitesync` to the five
+categories with no live body field: **sport, shopping, nightlife, culture,
+art**. Those five account for 123 of the 154 content failures in this
+sample. Cafés, Nature and Kids demonstrate that a single well-chosen body
+field per category is enough to move a category from failing to passing.
