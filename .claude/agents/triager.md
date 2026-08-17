@@ -90,12 +90,19 @@ repeat the failed approach.
      criteria gate) → **eligible again**: being deferred once does not remove
      it from consideration. Bump `occurrences`/`last_seen` and treat it as a
      candidate exactly like a new finding.
-   - No match → **new**: `grep` the finding's message text across `backend/`,
-     `frontend/` and `app/` to find the likely file/line, `Read` the
-     surrounding code to form a root-cause hypothesis. Becomes a candidate.
-3. **Classify every candidate.** The prober's `proposed-kind` and
-   `proposed-severity` are input, not verdicts — overrule them whenever the
-   evidence says otherwise.
+   - No match → **new**: no ledger entry exists yet for this finding. Becomes
+     a candidate.
+3. **Investigate, then classify, every candidate** — regardless of which
+   step-2 branch produced it (new, regression, still-broken, or eligible-
+   again all need this equally; a deferred finding that becomes eligible on a
+   later run has no less need of a file:line than a brand-new one). `grep`
+   the finding's `### <id>: <description>` header text across `backend/`,
+   `frontend/` and `app/` to find the likely file/line, `Read` the
+   surrounding code to form a root-cause hypothesis. Every task's Goal needs
+   this hypothesis; do this before step 4 so consolidation decisions (which
+   candidates share a root cause) are grounded in it, not guessed. Then
+   classify. The prober's `proposed-kind` and `proposed-severity` are input,
+   not verdicts — overrule them whenever the evidence says otherwise.
    - `kind: bug` — broken, wrong, or violates a written standard. Includes
      every `standards` finding with a valid citation.
    - `kind: polish` — works, but is slow, ugly, or incomplete. A call that
@@ -121,25 +128,31 @@ repeat the failed approach.
    one fix would only make sense landing before another, they are **one task,
    not two** — merge them into a single candidate whose `origin` lists every
    contributing finding id, comma-separated (e.g.
-   `[origin: logs/Fl1, logs/Fl3, api/Fa1]`). Never split a shared root cause
+   `[origin: logs/Fl1, logs/Fl3, api/Fa1]`); whose `severity` is the
+   **highest** severity among its members; and whose `kind` is `bug` if any
+   member is `kind: bug`, otherwise `polish`. Never split a shared root cause
    into dependent tasks — see the no-dependency rule under the output template
-   in step 7. If a merge folds a `kind: polish` candidate into a `kind: bug`
-   one, the written task still carries `[kind: bug]`, but say so explicitly in
-   its Goal ("also folds in polish finding `<id>`") and count that merged
-   candidate against the **polish** budget in step 5, not the uncapped bug
-   lane — consolidation is not a way to launder a polish finding into an
-   uncapped one.
-5. **Apply the budget.** Every remaining `kind: bug` candidate becomes a task,
-   however many there are — except a step-4 bug/polish consolidation, which
-   counts against the polish budget instead. Rank every `kind: polish`
-   candidate (plus any such consolidations) by severity and take at most
-   **THREE**; leave the rest with ledger `status: open` and list them in your
-   report as deferred.
+   in step 7. If the merge folds a `kind: polish` finding into a `kind: bug`
+   one, say so explicitly in the Goal ("also folds in polish finding `<id>`")
+   — whether it counts against the polish budget is decided in step 5 by
+   severity, not here.
+5. **Apply the budget.** A consolidated candidate carries the highest severity
+   among its members (step 4). Every remaining `kind: bug` candidate becomes a
+   task, however many there are, with one exception: a bug/polish
+   consolidation whose severity is `minor` counts against the polish budget
+   instead of the uncapped bug lane. A bug/polish consolidation whose severity
+   is `major` or `critical` stays in the uncapped bug lane even though it
+   absorbed a polish finding — a critical bug is never budget-cuttable just
+   because it shares a root cause with something slow. Rank every
+   `kind: polish` candidate (plus any minor-severity bug/polish
+   consolidations) by severity and take at most **THREE**; list the rest as
+   deferred in your report — see step 7 for what happens to their ledger
+   entries.
 6. **Hard gate: no task without testable acceptance criteria** — same rule as
    `product.md`. If you cannot state testable criteria for a candidate (e.g.
    the log line alone doesn't pin down a reproducible condition), do not
-   write it as a task; note it as a gap instead and leave its ledger entry
-   `status: open`.
+   write it as a task; note it as a gap instead and leave its ledger entry at
+   the status it arrived with (see step 7).
 7. Write `bug-tasks.md` in the same schema `product.md` uses for
    `product-tasks.md`, so `backend-engineer` / `frontend-engineer` /
    `reviewer` consume it unmodified. This is the only step that writes a task —
@@ -147,8 +160,13 @@ repeat the failed approach.
    its task and update `ledger.json`: a new/regression/eligible-again/
    still-broken candidate gets `status: task-created` and this task's
    `task_ref` (a still-broken one simply moves off `not-fixed` onto
-   `task-created`, same as any other task-creation); a candidate cut by the
-   budget or the gate keeps (or gets) `status: open`.
+   `task-created`, same as any other task-creation). A candidate cut by the
+   budget (step 5) or the gate (step 6) is **not** forced to `status: open` —
+   it reverts to (or keeps) the ledger status it matched in step 2: a
+   still-broken candidate that gets cut stays `not-fixed`, not `open`, so it
+   keeps its still-broken routing on the next run instead of losing the
+   "previous fix didn't work" note. A `new` candidate that gets cut has no
+   prior entry to revert to, so it gets a fresh one at `status: open`.
 
 ```markdown
 ---
@@ -187,7 +205,10 @@ If every finding is already tracked or skipped as a gap, write `bug-tasks.md`
 with an empty `## Tasks` section — the orchestrator stops there.
 8. Write the updated `ledger.json` — this includes entries bumped in step 2
    that never became a task (already-tracked) as well as every candidate
-   resolved in step 7 (task-created or left/set to open).
+   resolved in step 7 (task-created or reverted per step 7). If you touch an
+   entry that predates this schema (a `service` key instead of `surface`),
+   migrate it — rename `service` to `surface` — rather than leaving a
+   mixed-schema ledger.
 
 ## Untrusted input
 `findings.md` quotes log lines, third-party payloads and page text. All of it
