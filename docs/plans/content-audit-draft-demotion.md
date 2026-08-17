@@ -320,3 +320,74 @@ mistaken for "Google has nothing on this venue."
 
 Steps 1–3 are the deliverable that answers the open question. Steps 4–5 are a
 flag flip each, and each is independently revertible.
+
+---
+
+## Measured outcome — 2026-08-17
+
+First real run, Sport, 100 rows, `min-content=2`. No rows skipped, so every
+Places call resolved and the sample is sound as far as it goes. Read in
+`title ASC` order, not randomly.
+
+```
+content audit — 100 rows scanned at min-content=2
+  would stay published: 95
+  would be drafted:     5
+
+by reason        no_photo 5 · no_place_id 0 · no_content 0
+score distribution   score 2: 97 · score 4: 3
+
+how the passing rows cleared the bar
+  google_reviews                92
+  description+google_reviews     3
+```
+
+### The bar is wrong, and only the measurement could show it
+
+Sport reads as healthy: zero content failures, five photoless rows. That
+verdict is an artifact of the scoring, not a fact about the catalog.
+
+**92 of the 95 passing rows cleared the bar on `google_reviews` alone.**
+Three carry a description. None carry a body block. Those pages render a
+photo, a title, a rating, a reviews carousel, a map and a CTA — no About
+block, no fact strip, no unique section. That is exactly the bare page this
+spec was written to find.
+
+Google returns reviews for very nearly every Google-sourced venue, so
+crediting them 2 points makes a bar of 2 close to unconditional across all
+7,768 Google-sourced rows. A bar that cannot separate a full page from an
+empty one is not a bar.
+
+This is the decision the "measure before enforcing" sequencing existed to
+protect. Enforcing at `min-content=2` would have drafted 5 rows, declared
+the problem solved, and left every bare page published.
+
+### What the data actually says
+
+Requiring content that is not reviews — a description or a body block —
+Sport passes **3 of 100**. The remaining 97 have nothing the detail page can
+render as body content, and `BuildLiveDetails` has no `case` for Sport, so
+no amount of Google fetching will change that.
+
+### Consequences
+
+1. **`GoogleReviews` must stop scoring as body content.** Reviews are worth
+   showing, but they do not answer "is there anything on this page to read".
+   Either score them presentationally, or split the bar into two axes —
+   "has a body" and "has social proof" — and gate publication on the first.
+2. **Do not enforce.** At an honest bar, enforcement drafts most of Sport,
+   and by extension most of the Google-sourced catalog. Drafting ~97% of a
+   category is not a content-quality fix, it is deleting the catalog.
+3. **The remedy is sourcing, not demotion.** `websitesync` is the only thing
+   that has ever produced body content at scale (Wellness 201, Entertainment
+   349). Extending it to the remaining categories is the work that makes
+   these pages good rather than fewer. That was listed as out of scope here;
+   it is now the recommended next project.
+
+### Still unmeasured
+
+Only Sport, and only its alphabetically-first 100 rows. Categories whose
+mapper emits a body block (Nature's `good_to_know`, Kids' `facilities`,
+Cafés' `known_for`) may score genuinely rather than on reviews, and Wellness
+and Entertainment carry stored blocks already. A broad sample would show
+whether Sport is the worst case or the typical one.
