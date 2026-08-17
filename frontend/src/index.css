@@ -15,6 +15,15 @@ body {
   color: var(--text);
 }
 
+/* Admin panel never renders on --bg (DESIGN_STANDARDS.md's "Admin surface
+   (light)"); .admin-shell only paints its own box, so overscroll exposed
+   the wine body beneath it. ponytail: :has() scopes body to --admin-bg only
+   while an admin route is mounted — no JS/lifecycle, non-admin routes keep
+   the default wine --bg above. */
+body:has(.admin-shell) {
+  background: var(--admin-bg);
+}
+
 /* Visually-hidden but screen-reader-accessible label text.
    ponytail: no `position: absolute` — without a positioned ancestor it
    would use the document root as its containing block and could paint
