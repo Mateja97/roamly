@@ -749,3 +749,42 @@ bar drafted 58% of the catalog; that figure is now materially better in every
 enriched category, and the remaining failures are concentrated in rows with
 no website at all — a population small enough to consider drafting on its
 merits rather than as a catalog-wide cull.
+
+## Operational note: the first full run hit a Firecrawl credit ceiling
+
+Run of 2026-08-17, four categories, in order:
+
+| Category | Rows | Credit (402) failures | Other failures |
+| --- | --- | --- | --- |
+| art | 278 | 0 | 21 |
+| culture | 867 | 0 | 25 |
+| sport | 1148 | 300 | 60 |
+| shopping | 1444 | 843 | 6 |
+
+Art and culture completed on available credit. Sport ran out partway;
+shopping was almost entirely starved. **1,143 distinct rows failed with
+`HTTP 402: Insufficient credits`** — a billing condition, not a content one.
+
+That matters because `SyncWebsiteContent` marks the attempt on an extraction
+error, and every non-perishable category is then skipped permanently. A
+credit outage was therefore recorded as "we tried, there is nothing there",
+and topping up credit alone would not have recovered a single row. The 1,143
+marks were deleted so a later run re-attempts them.
+
+**So shopping's measured 26% is not shopping's ceiling.** Its pilot extracted
+content from 13 of 13 rows that had a website — the best rate of any
+category. Treat the post-enrichment numbers for shopping, and to a lesser
+extent sport, as floors.
+
+### A repeat-cost bug this exposed
+
+A row whose venue has no website returns at `websitesync.go`'s
+`detail.WebsiteURI == ""` guard **without** marking an attempt. It is
+therefore re-attempted on every run forever, costing one billed Places call
+each time to rediscover that it still has no website. Across these four
+categories that is roughly 1,800 rows, so about $36 of Places calls per run,
+permanently, for rows that can never yield content.
+
+Marking the attempt in that branch would fix it, and matches the
+one-attempt-and-give-up semantics every non-perishable category already has.
+Not done here — it changes sync semantics and belongs in its own change.
