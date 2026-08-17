@@ -919,3 +919,18 @@ that fits them keeps that check working.
 The asymmetry is deliberately narrow: a Tripadvisor row with no reviews of
 any kind still fails `no_content`, and the photo check applies to every
 source unchanged.
+
+### Measured
+
+100 restaurants, same sample as the pre-change run:
+
+```
+category          scanned  passed   rate   no_photo   no_place_id   no_content
+restaurants           100      44    44%         33             0           23
+```
+
+**24% → 44%.** More useful than the pass rate: `no_photo` is now the largest
+single failure reason for the category, at 33 of 100. That is the gap the
+exclusion was suppressing, and it needs no product decision to act on. The
+remaining 23 `no_content` rows have neither a review nor a description — they
+are genuinely thin by any bar.
