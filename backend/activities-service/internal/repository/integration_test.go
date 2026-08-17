@@ -972,6 +972,19 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 		}
 	})
 
+	// T2 (audit-2026-08-17-2306, resolve round 1): pgtype.UUID's local
+	// pre-check is more lenient than Postgres's own uuid_in — it doesn't
+	// verify the separator positions in a 36-char string are actually '-',
+	// so a shape like this one slips past it. This must still come back as
+	// ErrInvalidInput via the SQLSTATE 22P02 fallback in GetByID, not the
+	// raw pgconn.PgError.
+	t.Run("GetByID on a shape that slips past the local UUID pre-check still returns ErrInvalidInput", func(t *testing.T) {
+		_, err := repo.GetByID(ctx, "00000000X0000X0000X0000X000000000000")
+		if !errors.Is(err, sharederrors.ErrInvalidInput) {
+			t.Errorf("GetByID() error = %v, want ErrInvalidInput", err)
+		}
+	})
+
 	t.Run("Update on a missing id returns ErrNotFound", func(t *testing.T) {
 		title := "X"
 		_, err := repo.Update(ctx, "00000000-0000-0000-0000-000000000000", activitiessvc.UpdatePatch{Title: &title})

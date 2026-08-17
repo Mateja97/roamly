@@ -13,12 +13,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
 )
+
+// pgInvalidTextRepresentation is Postgres's SQLSTATE for "invalid input
+// syntax", e.g. a malformed UUID literal — the backstop GetByID falls back
+// to when a value survives the local pgtype.UUID pre-check but Postgres's
+// own (stricter) uuid_in still rejects it.
+const pgInvalidTextRepresentation = "22P02"
 
 type Activities struct {
 	db *pgxpool.Pool
@@ -400,9 +407,12 @@ func (r *Activities) AdminDistinctCities(ctx context.Context) ([]string, error) 
 // GetByID returns a single activity regardless of lifecycle state (T2's
 // admin surface has no published-only restriction, unlike Query).
 // sharederrors.ErrNotFound when the id doesn't exist,
-// sharederrors.ErrInvalidInput when id isn't a well-formed UUID — caught
-// here before it reaches Postgres so callers (GetByID, GetPhotos) never see
-// the raw driver "invalid input syntax for type uuid" error.
+// sharederrors.ErrInvalidInput when id isn't a well-formed UUID. The
+// pgtype.UUID pre-check below is a fast path, not the only guard — it's
+// more lenient than Postgres's own uuid_in (e.g. it doesn't verify dash
+// positions in a 36-char string), so anything that slips past it and still
+// gets rejected by Postgres (SQLSTATE 22P02) is caught below too, and
+// callers (GetByID, GetPhotos) never see that raw driver error either way.
 func (r *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Activity, error) {
 	if err := (&pgtype.UUID{}).Scan(id); err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("%w: invalid activity id %q", sharederrors.ErrInvalidInput, id)
@@ -411,6 +421,10 @@ func (r *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Acti
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return activitiessvc.Activity{}, sharederrors.ErrNotFound
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgInvalidTextRepresentation {
+			return activitiessvc.Activity{}, fmt.Errorf("%w: invalid activity id %q", sharederrors.ErrInvalidInput, id)
 		}
 		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, err)
 	}
