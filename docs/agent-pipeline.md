@@ -1,7 +1,9 @@
 # Agent Pipeline
 
-A document-driven pipeline of four Claude Code subagents that carries an idea
-from web research to a merged pull request:
+A document-driven pipeline of Claude Code subagents, covering two flows: a
+feature pipeline that carries an idea from web research to a merged pull
+request, and an audit pipeline that probes the running stack and fixes what
+it finds:
 
 ```mermaid
 flowchart LR
@@ -18,8 +20,9 @@ flowchart LR
         PR1["prober ×4\nlogs · api · ui · standards"] --> TR[triager]
         TR -- "kind: polish" --> PG[product]
         TR -- "kind: bug" --> EBUG["engineer\ntask-type: bug, no brainstorm/plan"]
-        PG --> EBUG
+        PG --> EPOL["engineer\ntask-type: feature, full brainstorm/plan"]
         EBUG --> RV
+        EPOL --> RV
         RV --> RP["re-probe\nrebuild stack, verify fix"]
     end
 ```
@@ -34,7 +37,7 @@ engineer↔reviewer review loop.
 | Agent             | Model  | Reads              | Writes                 | Can't do         |
 |-------------------|--------|--------------------|------------------------|------------------|
 | researcher        | sonnet | the topic          | `research.md`          | run code / shell |
-| prober            | sonnet | the running stack (logs, HTTP, browser, standards docs) | `findings.md` + screenshots | read source to fix / edit code |
+| prober            | sonnet | the running stack (logs, HTTP, browser, standards docs) | `findings.md` + evidence files (log/curl excerpts) | edit code / mutate any surface it probes (read-only: GET plus the single safe `POST /activities/query`, never a write to the running stack) |
 | triager           | sonnet | `findings.md` + `ledger.json` | `bug-tasks.md` + `ledger.json` | write code |
 | product           | opus   | `research.md`      | `product-tasks.md`     | touch code / web |
 | designer          | opus   | `product-tasks.md` (frontend tasks) + `DESIGN_STANDARDS.md` | `design-spec.md` + `DESIGN_STANDARDS.md` additions | touch code beyond DESIGN_STANDARDS.md / web |
