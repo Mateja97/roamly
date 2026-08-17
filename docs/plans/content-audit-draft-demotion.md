@@ -391,3 +391,67 @@ mapper emits a body block (Nature's `good_to_know`, Kids' `facilities`,
 Cafés' `known_for`) may score genuinely rather than on reviews, and Wellness
 and Entertainment carry stored blocks already. A broad sample would show
 whether Sport is the worst case or the typical one.
+
+## Broad sample — 300 rows, all categories, same day
+
+```
+content audit — 300 rows scanned at min-content=2
+  would stay published: 279
+  would be drafted:     21
+
+by reason        no_photo 19 · no_place_id 1 · no_content 1
+
+by category        no_photo   no_place_id   no_content
+  cafes                   3             0            0
+  kids                    4             0            0
+  nature                  1             0            0
+  restaurants             1             0            1
+  shopping                7             1            0
+  sport                   3             0            0
+
+score distribution   1: 2 · 2: 54 · 3: 115 · 4: 23 · 5: 97 · 7: 9
+
+how the passing rows cleared the bar
+  google_reviews+presentational                        102
+  body_block+google_reviews+presentational              86
+  google_reviews                                        50
+  body_block+google_reviews                             21
+  description+body_block+google_reviews+presentational   9
+  description+google_reviews+presentational              7
+  description+presentational                             2
+  description+google_reviews                             1
+  tripadvisor_reviews+presentational                     1
+```
+
+### Sport is the worst case, not the typical one
+
+| | Sport (100) | Broad (300) |
+| --- | --- | --- |
+| Has a body block | 0% | 39% |
+| Has a description | 3% | 6% |
+| **Genuine body content (either)** | **3%** | **42%** |
+| Passed on reviews alone | 92% | 51% |
+
+The difference is entirely whether `BuildLiveDetails` serves the category.
+107 of the 116 body-block rows come from the mapper's three live fields —
+Nature's `good_to_know`, Kids' `facilities`, Cafés' `known_for`. The
+categories with no case in the mapper (Sport, Culture, Art, Shopping,
+Nightlife) are the bare ones, which is the same split the spec's opening
+table predicted from the schema alone.
+
+### What an honest bar costs
+
+Requiring content that is not reviews: **126 of 300 pass, 174 draft (58%)**.
+Extrapolated across 8,183 published rows that is roughly 4,750 demotions.
+Better than Sport's 97%, still far too many to enforce.
+
+The confirmed recommendation is unchanged and now has a second data point
+behind it: fix the scoring so reviews stop counting as body content, do not
+enforce, and extend `websitesync` to the five categories the live mapper
+cannot serve. Those five are where the bare pages actually are.
+
+### Reporting gap noticed during this run
+
+`byCategory` counts only failures, so a run cannot show how many rows per
+category it scanned. That makes per-category pass rates uncomputable from
+the report alone — worth adding before the next measurement round.
