@@ -139,9 +139,11 @@ which summed to 2 and cleared a `minScore` of 2 on page furniture alone —
 precisely the outcome the bar exists to prevent. With them sharing a point, no
 combination of furniture can ever reach 2.
 
-`minScore` defaults to **2** — "one real body block, or a description, or
-quotable reviews; chips alone are not enough." It is a constant with a CLI flag
-override, so a single dry-run can report the outcome at several thresholds.
+`minScore` defaults to **2** — "one real body block or a description; furniture
+is not enough." It is a constant with a CLI flag override, so a single run can
+report the outcome at several thresholds. Measured on 300 rows, no row scores 2
+or 4, so any threshold in (1, 3] is equivalent — the default does not sit on a
+knife edge.
 
 **Reviews score presentationally, and that is the correction the first
 measurements forced.** This spec originally scored reviews as content worth
