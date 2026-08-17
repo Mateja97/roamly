@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	sharederrors "backend/shared/errors"
@@ -398,8 +399,14 @@ func (r *Activities) AdminDistinctCities(ctx context.Context) ([]string, error) 
 
 // GetByID returns a single activity regardless of lifecycle state (T2's
 // admin surface has no published-only restriction, unlike Query).
-// sharederrors.ErrNotFound when the id doesn't exist.
+// sharederrors.ErrNotFound when the id doesn't exist,
+// sharederrors.ErrInvalidInput when id isn't a well-formed UUID — caught
+// here before it reaches Postgres so callers (GetByID, GetPhotos) never see
+// the raw driver "invalid input syntax for type uuid" error.
 func (r *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Activity, error) {
+	if err := (&pgtype.UUID{}).Scan(id); err != nil {
+		return activitiessvc.Activity{}, fmt.Errorf("%w: invalid activity id %q", sharederrors.ErrInvalidInput, id)
+	}
 	a, err := scanAdminActivity(r.db.QueryRow(ctx, "SELECT "+adminColumns+" FROM activities WHERE id = $1", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

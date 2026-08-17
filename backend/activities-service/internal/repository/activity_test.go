@@ -1,9 +1,12 @@
 package repository
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	sharederrors "backend/shared/errors"
 	"backend/shared/models/activitiessvc"
 )
 
@@ -316,6 +319,30 @@ func TestCanonicalSourceURL(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := canonicalSourceURL(tt.in); got != tt.want {
 				t.Errorf("canonicalSourceURL(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestGetByID_MalformedUUIDRejectedBeforeQuery covers T2: a non-UUID id
+// must fail with sharederrors.ErrInvalidInput before ever reaching the db
+// (so this needs no live Postgres — an invalid id never gets past the
+// pgtype.UUID.Scan guard at the top of GetByID, which runs before r.db is
+// touched). The well-formed-id/happy-path/ErrNotFound cases that do reach
+// Postgres live in integration_test.go.
+func TestGetByID_MalformedUUIDRejectedBeforeQuery(t *testing.T) {
+	tests := []string{
+		"",
+		"not-a-uuid",
+		"00000000-0000-0000-0000-00000000000", // one hex digit short
+		"'; DROP TABLE activities; --",
+	}
+	for _, id := range tests {
+		t.Run(id, func(t *testing.T) {
+			r := &Activities{}
+			_, err := r.GetByID(context.Background(), id)
+			if !errors.Is(err, sharederrors.ErrInvalidInput) {
+				t.Errorf("GetByID(%q) error = %v, want sharederrors.ErrInvalidInput", id, err)
 			}
 		})
 	}
