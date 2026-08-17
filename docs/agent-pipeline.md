@@ -14,10 +14,13 @@ flowchart LR
         EF --> RV
     end
 
-    subgraph BP["Bug pipeline — /run-bug-pipeline (draft, not wired up)"]
-        BR[bug-reporter] --> TR[triager]
-        TR --> EBUG["engineer\nwork only, no brainstorm/plan"]
+    subgraph AP["Audit pipeline — /run-audit-auto"]
+        PR1["prober ×4\nlogs · api · ui · standards"] --> TR[triager]
+        TR -- "kind: polish" --> PG[product]
+        TR -- "kind: bug" --> EBUG["engineer\ntask-type: bug, no brainstorm/plan"]
+        PG --> EBUG
         EBUG --> RV
+        RV --> RP["re-probe\nrebuild stack, verify fix"]
     end
 ```
 
@@ -31,6 +34,8 @@ engineer↔reviewer review loop.
 | Agent             | Model  | Reads              | Writes                 | Can't do         |
 |-------------------|--------|--------------------|------------------------|------------------|
 | researcher        | sonnet | the topic          | `research.md`          | run code / shell |
+| prober            | sonnet | the running stack (logs, HTTP, browser, standards docs) | `findings.md` + screenshots | read source to fix / edit code |
+| triager           | sonnet | `findings.md` + `ledger.json` | `bug-tasks.md` + `ledger.json` | write code |
 | product           | opus   | `research.md`      | `product-tasks.md`     | touch code / web |
 | designer          | opus   | `product-tasks.md` (frontend tasks) + `DESIGN_STANDARDS.md` | `design-spec.md` + `DESIGN_STANDARDS.md` additions | touch code beyond DESIGN_STANDARDS.md / web |
 | backend-engineer  | sonnet | `product-tasks.md` (+ brainstorms/plans into `task-plan.md` first, feature tasks only) | Go code + draft PR + `task-plan.md` + `engineering-notes.md` | — |
@@ -69,17 +74,36 @@ The orchestrator:
 The two gates that matter are after research and after the product decision —
 nothing is built until you have seen what will be built and why.
 
+### Auditing the running stack
+
+```
+/run-audit-auto [logs|api|ui|standards]
+```
+
+Requires the stack up (`docker compose up`) and a clean working tree — the
+run's final phase moves the primary checkout to `audit-verify-<slug>` at
+`origin/main` to rebuild and verify the merged fixes.
+
+Unlike `/run-pipeline`, this one has no checkpoints: it probes, triages,
+builds, merges and verifies on its own, then reports. `pipeline/bugs/ledger.json`
+persists across runs, so a second run against an unchanged stack costs one
+probe and stops.
+
 ## Feature vs. bug tasks
 
 `/run-pipeline` only ever produces feature tasks — the orchestrator passes
 `task-type: feature` to the engineer, which runs an internal Brainstorm
 (consider 2-3 approaches, pick one) and Plan (an ordered step list) before
 Build, writing both to `task-plan.md`. This is autonomous, not a new
-checkpoint. The separate bug pipeline (`bug-reporter → triager → engineer →
-reviewer`, `/run-bug-pipeline`) is still draft/not wired up; once it is, its
-tasks will carry `task-type: bug` and skip Brainstorm/Plan entirely — a bug
-already has a known root cause and fix shape by the time it reaches the
-engineer.
+checkpoint.
+
+`/run-audit-auto` produces both. Its triager tags each task `kind: bug` or
+`kind: polish`, and the orchestrator maps that to `task-type`: bugs are
+dispatched `task-type: bug` and skip Brainstorm/Plan entirely — a triaged bug
+arrives with a root-cause hypothesis and a known fix shape — while polish
+tasks run the full feature path. Polish tasks also pass the `product` go/no-go
+gate first, and are capped at three per run; bug tasks are uncapped and
+ungated.
 
 ## Getting started — your first run
 
