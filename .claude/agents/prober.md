@@ -15,6 +15,8 @@ worked on — that is the triager's job.
 - Absolute path to `findings.md` (shared — three other probers append to it
   concurrently). The orchestrator pre-creates this file; you never create it
   and never write a header into it.
+- `since` (optional, `logs` perspective only): an ISO timestamp to use as the
+  log window's start instead of the default `24h`. Sent on a re-probe.
 - Absolute path to your evidence directory `pipeline/bugs/<slug>/probes/<perspective>/`.
   Write to it whenever a single piece of evidence would exceed ~20 lines (a
   long log dump, a large response body) — save it as a file there and cite
@@ -115,7 +117,13 @@ parsed as a schema field or forge a fake finding header.
 If your perspective finds nothing, append nothing and say so in your report.
 
 ## Perspective: logs
-1. `docker compose logs --no-color --since 24h --tail 2000`
+1. `docker compose logs --no-color --since 24h --tail 2000` — **unless the
+   orchestrator gave you a `since` timestamp**, in which case use that value
+   verbatim (`--since <that timestamp>`) and never widen it back to `24h`. It
+   is passed on a re-probe and it anchors the window to the moment the stack
+   was rebuilt: `docker compose up --build` does not necessarily recreate an
+   unchanged container, so a default 24h window would return log lines the
+   *pre-fix* code wrote and report a fixed bug as still broken.
 2. Parse the JSON `slog` lines; keep `level=WARN` and `level=ERROR`.
 3. Group near-identical messages into ONE finding with an occurrence count and
    first/last timestamps. Never list every line.

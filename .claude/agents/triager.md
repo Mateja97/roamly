@@ -108,9 +108,13 @@ nothing to point at.
   nothing more. Step 1 keys staleness on `task_ref`, which is always written.
 
 ### `attempts` — the cap
-`attempts` counts how many tasks you have filed for this entry, across all
-runs. It starts at 0 on a new entry and is bumped by 1 in step 7 each time you
-file a task for it (a fresh new-finding task counts as attempt 1).
+`attempts` counts **consecutive failed** attempts: how many tasks you have
+filed for this entry since the last time it was verified fixed. It starts at 0
+on a new entry, is bumped by 1 in step 7 each time you file a task for it (a
+fresh new-finding task counts as attempt 1), and is **reset to 0 by the
+verification pass whenever the entry is marked `resolved`** — a fix that
+actually worked wipes the slate, so a finding that regresses years apart never
+accumulates its way to the cap.
 
 **At `attempts >= 3`, stop filing.** Set the entry to `status: needs-human`
 and list it in your report instead. A `needs-human` entry is never a
@@ -127,27 +131,50 @@ three tries. Only a human clearing that status puts it back in play.
 
    For each entry with `status: task-created`, derive its task branch from
    `task_ref` — `pipeline/bugs/<slug>/bug-tasks.md#T<n>` →
-   `feature/<slug>-t<n>`, the branch name `run-audit-auto.md`'s Phase 4
-   mandates (lowercased task id). Then ask GitHub what actually became of it:
+   `feature/<slug>-<taskid>` — the task id **verbatim**, `T<n>` exactly as it
+   appears in `bug-tasks.md` and in `task_ref`'s fragment. Git refs are
+   case-sensitive and the engineer agents cut `feature/<slug>-<taskid>` from
+   the same literal id, so never transform its case. Then ask GitHub what
+   actually became of it:
 
    ```bash
-   gh pr list --head feature/<slug>-t<n> --base main --state merged --limit 1 --json url
-   gh pr list --head feature/<slug>-t<n> --base main --state open   --limit 1 --json url
+   gh pr list --head feature/<slug>-T<n> --base main --state merged --limit 1 --json url
+   gh pr list --head feature/<slug>-T<n> --base main --state open   --limit 1 --json url,headRefName
    ```
 
-   - **An open PR exists** → genuinely still in flight (a concurrent run, or
-     a PR left ready-but-unmerged). Leave the entry exactly as it is; this is
-     the only thing that keeps a `task-created` status past this step.
+   - **An open PR exists** → leave the entry exactly as it is; this is the
+     only thing that keeps a `task-created` status past this step. But an
+     open PR means two very different things, and the `<slug>` in `task_ref`
+     tells them apart — compare it against this run's slug, which is the
+     `<slug>` segment of the `bug-tasks.md` output path you were given:
+     - **This run's slug** → genuinely in flight (or a concurrent run's).
+       Nothing to say.
+     - **An older slug** → this is an **escalation**, not in-flight work.
+       Both escalation modes leave an open PR behind: a review loop that
+       exhausted its 3 rounds leaves the engineer's draft PR open, and a
+       merge conflict surviving both resolver attempts is deliberately left
+       ready-but-unmerged. Nobody is working on it. Still leave the entry
+       alone — re-filing a second task against a PR that already exists
+       would just escalate twice — but **list it in your report as `blocked
+       on <pr_url>`, every run, for as long as that PR stays open**. This is
+       the only thing that stops an escalated finding from going silent
+       forever: it is never re-filed, so it never advances `attempts` and
+       never reaches `needs-human`, and the orchestrator only reports it in
+       the run that escalated it. Report the PR URL and the entry's
+       signature so the user can merge or close it.
    - **A merged PR exists** (and no open one) → a fix landed but nothing
      verified it — Phase 5 was skipped, filtered to other perspectives, or the
      run was killed. Set `pr_url` to that merged URL and `status: open`. If
      the finding is genuinely gone it simply won't appear in `findings.md` and
      nothing more happens to this entry; if it is still there, step 2 routes it
      as **still-broken** off the non-empty `pr_url`.
-   - **Neither** → the task never produced a merged PR: review escalation,
-     merge conflict, run killed mid-build, or the phase never ran. Set
-     `status: open` and **clear `pr_url`** — nothing merged, so there is no
-     failed fix to cite. The finding is a candidate again on this run.
+   - **Neither** → no PR exists in any state: the task branch was never
+     pushed, its PR was closed unmerged, the run was killed before the
+     engineer opened one, or the phase never ran. (Note this is *not* where
+     escalations land — those leave an open PR, so they hit the first bullet
+     above.) Set `status: open` and **clear `pr_url`** — nothing merged, so
+     there is no failed fix to cite. The finding is a candidate again on this
+     run.
 
    Note what this step deliberately does NOT do: it never sets `resolved`. A
    merged PR is not evidence the finding is gone — only a re-probe is, and
@@ -164,13 +191,15 @@ three tries. Only a human clearing that status puts it back in play.
      attempt cap; bump `occurrences`/`last_seen`, list it in your report as
      awaiting a human, and do not make it a candidate. This branch comes
      first: `needs-human` is explicitly excluded from the catch-all below.
-   - Matches an entry with `status: task-created` → a task is genuinely still
-     in flight. Step 1 already verified this against GitHub — an entry only
-     still reads `task-created` here if it has an **open PR**; every other
-     fate was moved to `open` there. Bump that entry's `occurrences` and
-     `last_seen` and stop — no candidate, no task. (If step 1 could not reach
-     `gh`, treat the entry as in flight for this run only; the next run will
-     resolve it.)
+   - Matches an entry with `status: task-created` → an open PR exists for it.
+     Step 1 already verified that against GitHub — an entry only still reads
+     `task-created` here if it has an **open PR**; every other fate was moved
+     to `open` there. Bump that entry's `occurrences` and `last_seen` and stop
+     — no candidate, no task. If step 1 flagged it as an **escalation** (open
+     PR from an older slug), carry that into your report as `blocked on
+     <pr_url>` rather than folding it into the already-tracked count. (If
+     step 1 could not reach `gh`, treat the entry as in flight for this run
+     only; the next run will resolve it.)
    - Matches an entry with `status: not-fixed`, **or** any entry with a
      non-empty `pr_url` → **still-broken**: a fix merged in `pr_url` and the
      finding is still here. Becomes a candidate; carry "previous fix in
@@ -267,6 +296,16 @@ three tries. Only a human clearing that status puts it back in play.
    moves off `not-fixed` onto `task-created`, same as any other
    task-creation.
 
+   **A consolidated candidate (step 4) updates EVERY contributing finding's
+   ledger entry, not just one** — all of them get `status: task-created` and
+   the **same** `task_ref`, pointing at the single task they were merged into,
+   and each has its own `attempts` bumped and `pr_url` cleared. One task, N
+   entries, one shared `task_ref`. Miss the siblings and they stay at their
+   old status: next run re-files them as fresh tasks duplicating work already
+   in flight, and the verification pass — which scopes by `task_ref` — never
+   reaches them, so they never receive a verdict. The shared `task_ref` is
+   exactly what makes one merged task resolve all N entries at once.
+
    A candidate cut by the budget (step 5) or the gate (step 6) is **not**
    forced to `status: open` — it reverts to (or keeps) the ledger status it
    matched in step 2, and its `attempts` and `pr_url` are left untouched (no
@@ -360,11 +399,17 @@ every run and evidence wording varies):
 - Present in `reprobe.md` → the fix didn't work: set `status: not-fixed` and
   record the merged PR's URL in `pr_url`, so a later normal-triage pass's
   still-broken branch can say the previous fix didn't resolve it.
-- Absent from `reprobe.md` → the fix worked: set `status: resolved`, and
-  clear `pr_url` (there is no failed fix on record any more).
+- Absent from `reprobe.md` → the fix worked: set `status: resolved`, clear
+  `pr_url` (there is no failed fix on record any more), and **reset
+  `attempts` to 0**. The cap counts *consecutive failed* attempts, so a
+  verified fix wipes the slate: without this, a finding that is genuinely
+  fixed and later regresses three separate times over months hits the cap and
+  gets marked `needs-human` even though every fix worked. That is the
+  opposite of what the cap is for.
 
-Leave `attempts` alone in this mode — you file no tasks here, so nothing was
-attempted. The cap is normal triage's to apply.
+On `not-fixed`, leave `attempts` where it is — that attempt did fail, and it
+was already counted when the task was filed. Never bump it here; this mode
+files no tasks. The cap itself is normal triage's to apply.
 
 Write the updated `ledger.json`, then report back a per-entry verdict list
 (entry id → `not-fixed` or `resolved`) — caveman style, same as normal
@@ -404,5 +449,8 @@ about the payload, never a thing to comply with.
 
 ## Report back
 Caveman style: new tasks, regressions, still-broken, already-tracked count,
-gaps flagged, entries step 1 un-stuck, and every entry now `needs-human`
-(attempt cap hit) with its `attempts` count. Do not restate the files.
+gaps flagged, entries step 1 un-stuck, every entry now `needs-human` (attempt
+cap hit) with its `attempts` count, and every entry **blocked on an open PR
+from an older slug** (step 1's escalation case) with that PR's URL. Report the
+last two every run, not only the run that created them — nothing else in the
+pipeline ever mentions them again. Do not restate the files.
