@@ -9,19 +9,19 @@
     sans-serif;
 }
 
+/* Admin panel never renders on --bg (DESIGN_STANDARDS.md's "Admin surface
+   (light)"); .admin-shell only paints its own box, so overscroll or the
+   pre-hydration flash exposed the wine body beneath it.
+   ponytail: unconditional --admin-bg because every route this client
+   serves today is admin (App.tsx has no non-admin route) — that's also
+   why it's correct at first paint, before React/`.admin-shell` exist,
+   unlike a `body:has(.admin-shell)` scope that only kicks in after
+   hydration. Ceiling: the day a real non-admin route lands, this needs to
+   go back to conditional (scope by route, not globally). */
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--text);
-}
-
-/* Admin panel never renders on --bg (DESIGN_STANDARDS.md's "Admin surface
-   (light)"); .admin-shell only paints its own box, so overscroll exposed
-   the wine body beneath it. ponytail: :has() scopes body to --admin-bg only
-   while an admin route is mounted — no JS/lifecycle, non-admin routes keep
-   the default wine --bg above. */
-body:has(.admin-shell) {
   background: var(--admin-bg);
+  color: var(--text);
 }
 
 /* Visually-hidden but screen-reader-accessible label text.
