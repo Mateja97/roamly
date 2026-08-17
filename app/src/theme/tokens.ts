@@ -96,10 +96,14 @@ export const radius = {
 // within it), DESIGN_STANDARDS.md's "Marcellus header sizes" list is the
 // single source of the exact set + sizes — don't duplicate that list here,
 // it goes stale. Marcellus is also used more narrowly as a decorative
-// accent on a few supporting lines that list deliberately excludes (the
-// Feed's context line, a reviews score number, the traveler row's
-// heading) — those aren't screen identity, so they're not "Marcellus
-// header sizes" entries. Loaded once, globally, gated by App.tsx's
+// accent on a few supporting lines that list deliberately excludes (a
+// reviews score number, the traveler row's heading) — those aren't screen
+// identity, so they're not "Marcellus header sizes" entries. (The Feed's
+// context line used to be a third such use at 20px — removed per the T5
+// audit fix: DESIGN_STANDARDS.md never sanctioned it and 20px falls under
+// the documented set's own "every size ≥24px" contrast invariant, so this
+// was a code/spec divergence, not a deliberate exception.) Loaded once,
+// globally, gated by App.tsx's
 // font-load gate (moved there from ScopePickerScreen in T1 so every screen
 // rides on one gate, Marcellus loads once). Every other surface stays on
 // RN's system font stack (the default when no fontFamily is set).

@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { CitySuggestion } from '../../api/cities';
 import { Wordmark } from '../../components/Wordmark';
 import { useFocusable } from '../../hooks/useFocusable';
-import { colors, fontFamily, fontSize, radius, space } from '../../theme/tokens';
+import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { contextLine, scopePillInfo } from './feedContext';
 import type { Scope } from '../../types/scope';
 
@@ -15,7 +15,11 @@ type FeedHeaderProps = {
 };
 
 // design-spec.md T3: "small Wordmark left; scope pill right" replacing the
-// old icon+title row, plus the Marcellus context line beneath it.
+// old icon+title row, plus a context line beneath it. T5 fix: the context
+// line was on Marcellus at 20px, a third screen/size DESIGN_STANDARDS.md's
+// Typography section never documented (it reserves Marcellus for the two
+// screen-identity headers, never utility-bar/subtitle text) — system font
+// stack now, matching the documented set instead of expanding it.
 export function FeedHeader({ scope, cities, hour, travelerMode, onOpenScope }: FeedHeaderProps) {
   const pill = scopePillInfo(scope, cities);
   const Icon = pill.icon;
@@ -80,7 +84,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   contextLine: {
-    fontFamily: fontFamily.display,
     fontSize: fontSize.lg,
     color: colors.text,
     lineHeight: fontSize.lg * 1.2,
