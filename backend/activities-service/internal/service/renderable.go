@@ -103,6 +103,11 @@ const (
 	difficultyInferredKey = "difficulty_inferred"
 )
 
+// SourceTripadvisor is the Activity.Source value marking a row whose
+// content comes from Tripadvisor rather than Google — the same string
+// internal/service switches on to route a row's photo and detail resolves.
+const SourceTripadvisor = "tripadvisor"
+
 const (
 	scoreContent        = 2
 	scorePresentational = 1
@@ -175,30 +180,49 @@ func contentScore(a activitiessvc.Activity) (int, []string) {
 		}
 	}
 
-	// Reviews are furniture, not something to read. They score with the
-	// chips and the hours row, sharing that group's single point, so no
-	// row can clear a bar of 2 on reviews alone.
+	// Reviews are furniture for a Google-sourced row, and content for a
+	// Tripadvisor-sourced one. That asymmetry is measured, not assumed, and
+	// it is the only place this scorer looks at where a row came from.
 	//
-	// This was measured, not assumed. Scoring reviews as content (2 points)
-	// made a bar of 2 nearly unconditional: Google returns reviews for very
-	// nearly every Google-sourced venue, and the first audit runs found 92%
-	// of Sport and 51% of a broad sample clearing the bar on reviews alone,
-	// while rendering a carousel under an otherwise empty body — the exact
-	// bare page the audit exists to find. See the spec's "Measured outcome".
+	// For a Google-sourced row, scoring reviews as content made a bar of 2
+	// nearly unconditional: Google returns reviews for very nearly every
+	// venue, and the first audit runs found 92% of Sport and 51% of a broad
+	// sample clearing the bar on reviews alone while rendering a carousel
+	// under an otherwise empty body — the exact bare page the audit exists
+	// to find.
 	//
-	// Each member is still named in Signals even though they share one
-	// point, because which kind of furniture a row has is the thing the
-	// report has to stay able to show.
+	// For a Tripadvisor-sourced row the same carousel IS the page's
+	// proposition, and no body content is reachable for it: Tripadvisor
+	// supplies a description for about a third of venues, `attributes` came
+	// back empty for all 83 venues sampled, and only ~37% carry a
+	// google_place_id, so websitesync cannot resolve their website either.
+	// Holding them to a body-content bar drafted 76% of restaurants for
+	// lacking something they can never source. See the spec's "Follow-up 4".
+	//
+	// Each member is still named in Signals even where they share a point,
+	// because which kind of evidence a row has is the thing the report has
+	// to stay able to show.
+	reviewsAreContent := a.Source == SourceTripadvisor
+
+	var reviewSignals []string
+	if hasValue(fields[reviewsKey]) {
+		reviewSignals = append(reviewSignals, SignalTripadvisorReviews)
+	}
+	if len(a.GoogleReviews) > 0 {
+		reviewSignals = append(reviewSignals, SignalGoogleReviews)
+	}
+
+	if reviewsAreContent && len(reviewSignals) > 0 {
+		fired(scoreContent, reviewSignals[0])
+		signals = append(signals, reviewSignals[1:]...)
+		reviewSignals = nil
+	}
+
 	var presentational []string
 	if anyKeyHasValue(fields, presentationalKeys) {
 		presentational = append(presentational, SignalPresentational)
 	}
-	if hasValue(fields[reviewsKey]) {
-		presentational = append(presentational, SignalTripadvisorReviews)
-	}
-	if len(a.GoogleReviews) > 0 {
-		presentational = append(presentational, SignalGoogleReviews)
-	}
+	presentational = append(presentational, reviewSignals...)
 	if len(presentational) > 0 {
 		score += scorePresentational
 		signals = append(signals, presentational...)

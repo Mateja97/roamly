@@ -644,6 +644,11 @@ the one reason in this audit that is unambiguous across every category.
 
 ## Decision: the Tripadvisor categories are out of scope
 
+> **Superseded — see "Follow-up 4, resolved" below.** The blanket exclusion
+> is gone. Tripadvisor-sourced rows are measured again, against a bar where
+> reviews count as content for them alone.
+
+
 Rows with `source = "tripadvisor"` are excluded from the audit, the same way
 `pending` rows are — someone else's workflow, not this bar's business. The
 restaurants run above is the justification: the bar drafts 76% of them, which
@@ -850,11 +855,7 @@ judgement: a published row with no photo is a broken list card in every
 category. All 438 have an `external_id`, so `GetPhotos` re-attempts a live
 resolve on every detail open and keeps getting nothing.
 
-**4. The Tripadvisor categories.** Excluded from the audit entirely (see the
-decision above). They need either a body-content source of their own, or a
-per-category bar that accepts traveller reviews as content for restaurants,
-bars and cafés. Measured cost of the current bar on them: it drafts 76% of
-restaurants.
+**4. The Tripadvisor categories.** ✅ **Resolved — see below.**
 
 **5. Language validation on the write path.** Every extraction prompt now
 instructs "Answer in English throughout", but the pilot returned a Serbian
@@ -876,3 +877,45 @@ re-scraping ~323 rows.
 fabricating lineups. Its only body field is inherently perishable and its
 venues publish schedules on social media rather than their own sites, so
 recovering it means a different source, not a different prompt.
+
+
+## Follow-up 4, resolved: reviews are content for a Tripadvisor row
+
+The blanket exclusion is removed. `Renderability` now scores reviews as
+content (2 points) for a row whose `Source` is `tripadvisor`, and as
+furniture (sharing the single presentational point) for every other row.
+This is the only place the scorer looks at where a row came from.
+
+### Why not a body-content source instead
+
+Checked before choosing, because sourcing beats scoring wherever it is
+available — it is what took art from 0% to 66%. For these categories it is
+not available:
+
+| Candidate | Coverage |
+| --- | --- |
+| Tripadvisor `Description` | already stored, ~33% of venues |
+| Tripadvisor `attributes` | empty for all 83 venues sampled |
+| `popular_dishes` | 1 row of 306 |
+| `websitesync` | needs a Google place id to resolve the website; only 112/306 restaurants, 15/34 bars, 7/27 cafés carry one |
+
+Best case, extending `websitesync` reaches ~65 of 367 rows. Promoting the
+cuisine `Categories` list to a body block would have "fixed" the number
+without changing a single page — the same metric-gaming the reviews
+correction removed.
+
+So the finding stands: for these venues the reviews carousel genuinely is
+the page's proposition, and holding them to a body-content bar drafted 76%
+of restaurants for lacking something they cannot source.
+
+### Why measured rather than excluded
+
+Excluding them left 367 rows unmeasured, and among them **the worst photo gap
+in the catalog — 67 of 200 sampled restaurants have no photo, 34% against a
+~5% average.** `no_photo` needs no product judgement in any category, and the
+exclusion was the only thing hiding it. Measuring these rows against a bar
+that fits them keeps that check working.
+
+The asymmetry is deliberately narrow: a Tripadvisor row with no reviews of
+any kind still fails `no_content`, and the photo check applies to every
+source unchanged.
