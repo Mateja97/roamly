@@ -703,3 +703,49 @@ field and it is not a special case.
    scope for the content bar.
 4. **Re-run this audit after each sourcing change.** The tool is report-only
    and the per-category rate is now the metric to move.
+
+## Outcome: websitesync moves the metric
+
+Audited 100 rows per category after the full `websitesync` run, same bar
+(`min-content=2`), same title-order sample as the baseline.
+
+| Category | Pass rate before | Pass rate after |
+| --- | --- | --- |
+| art | 0% | **54%** |
+| culture | 25% | **43%** |
+| sport | 2% | **61%** |
+
+The cause is unambiguous. Counting body blocks directly in the first 100 rows
+of each category: art 52, culture 39, sport 61 — within two points of each
+category's pass count. Essentially the entire improvement is scraper-written
+body content, not descriptions Google happened to supply.
+
+Sport is the sharpest result: the category with no `case` in
+`placesmap.BuildLiveDetails`, written up at the top of this spec as
+structurally unable to pass at any threshold, now passes 61% — above the
+broad sample's 42% average and second only to Cafés.
+
+### What the residual failures are
+
+`no_content` after enrichment: art 41, culture 55, sport 34. These are the
+website-coverage ceiling identified in the pilot — a row whose venue has no
+website, or whose site had nothing extractable, gets one attempt and is then
+permanently skipped. No prompt change reaches them; they need a different
+source, or acceptance.
+
+Photos remain a separate, untouched problem: art 1, culture 1, sport 5 in
+these samples, and 67 of 200 for restaurants.
+
+### Status
+
+Shopping is not measured here — its sync had not started when these ran, so
+its 13 enriched rows are the pilot's alone. Audit it once the run completes.
+
+### The bar is now worth revisiting
+
+Three of the five previously-unsourced categories moved from 0–25% to 43–61%
+on one sourcing change. Enforcement was rejected earlier because an honest
+bar drafted 58% of the catalog; that figure is now materially better in every
+enriched category, and the remaining failures are concentrated in rows with
+no website at all — a population small enough to consider drafting on its
+merits rather than as a catalog-wide cull.
