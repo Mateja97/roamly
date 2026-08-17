@@ -4,16 +4,14 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import {
-  useSafeAreaFrame,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, ImageOff, Images } from 'lucide-react-native';
 import type { ActivityPhoto } from '../../api/activities';
 import { Skeleton } from '../../components/Skeleton';
@@ -41,7 +39,15 @@ type HeroCarouselProps = {
 // the one place the detail screen's back navigation and gallery entry live.
 export function HeroCarousel({ photos, onBack, onOpenViewer, onIndexChange }: HeroCarouselProps) {
   const insets = useSafeAreaInsets();
-  const { width } = useSafeAreaFrame();
+  // T3: useSafeAreaFrame() measures document.documentElement.offsetWidth
+  // exactly once, at SafeAreaProvider mount, with no resize listener (only
+  // a safe-area-inset transitionend) — react-native-safe-area-context web's
+  // NativeSafeAreaProvider.web.tsx. If the document isn't laid out yet at
+  // that moment (background-tab restore, a 0-size webview, prerender), the
+  // frame latches to width 0 forever, and pages never re-measure on resize
+  // either. useWindowDimensions() reads window.innerWidth and subscribes to
+  // the browser's resize event, so it neither latches at 0 nor goes stale.
+  const { width } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const backFocus = useFocusable();
   const pillFocus = useFocusable();

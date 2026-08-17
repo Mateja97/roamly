@@ -1,5 +1,13 @@
 /* global jest */
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Dimensions } from 'react-native';
+
+// T3: useWindowDimensions() is now the app's only source of pager width
+// (react-native-safe-area-context's frame latches its width once at mount
+// and never re-measures on web — see HeroCarousel.tsx's comment). Set it
+// explicitly rather than trust RN's own jest-preset default, so it's the
+// same 320 the swipe/momentum-scroll tests below were already written
+// against (contentOffset.x: 320 assuming one page over at width 320).
+Dimensions.set({ window: { width: 320, height: 640, scale: 2, fontScale: 1 } });
 
 // react-native-safe-area-context needs a real on-screen layout pass to
 // measure insets, which the Jest environment never performs — mock it with
@@ -15,7 +23,13 @@ jest.mock('react-native-safe-area-context', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- see comment above
   const { View } = require('react-native');
   const insets = { top: 0, right: 0, bottom: 0, left: 0 };
-  const frame = { x: 0, y: 0, width: 320, height: 640 };
+  // T3: deliberately 0, not a plausible screen width — nothing in
+  // production code reads this frame's width anymore (only insets), and
+  // 0 mirrors the real bug's latched-at-mount value. If a page's width
+  // ever regresses to reading this frame again, HeroCarousel.test.tsx's
+  // "sizes each page..." test catches it (page would render at 0, not the
+  // 320 that Dimensions.set above provides via useWindowDimensions).
+  const frame = { x: 0, y: 0, width: 0, height: 640 };
 
   return {
     SafeAreaProvider: ({ children }) => children,

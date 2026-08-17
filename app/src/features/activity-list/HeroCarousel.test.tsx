@@ -75,12 +75,15 @@ describe('HeroCarousel', () => {
     expect(screen.getByLabelText('Back')).toBeTruthy();
   });
 
-  // T3: guards the fix's invariant — each page's width must stay an explicit
-  // number (mirroring HERO_HEIGHT's own explicit-pixel treatment), never a
-  // percentage resolved through the FlatList's own unstyled per-row wrapper
-  // divs (which default to width:auto and can collapse a percentage). The
-  // mocked useSafeAreaFrame (jest.setup.js) returns width: 320.
-  it('sizes each page to an explicit pixel width, not a percentage', () => {
+  // T3: guards the real fix — pages must size from useWindowDimensions()
+  // (live, resizes), not react-native-safe-area-context's frame (latches
+  // its width once at SafeAreaProvider mount on web and never re-measures,
+  // the actual root cause of the reported zero-width collapse). jest.setup.js
+  // mocks these to two deliberately different values — useWindowDimensions
+  // to 320 (via Dimensions.set), the safe-area frame to 0 — so this
+  // assertion only passes when the component reads the live source: a
+  // regression back to useSafeAreaFrame would render width 0, not 320.
+  it('sizes each page from useWindowDimensions, not the latched safe-area frame', () => {
     render(<HeroCarousel photos={photos} onBack={jest.fn()} onOpenViewer={jest.fn()} />);
     const page0 = screen.getByTestId('activity-detail-hero-page-0');
     expect(StyleSheet.flatten(page0.props.style)).toMatchObject({ width: 320 });

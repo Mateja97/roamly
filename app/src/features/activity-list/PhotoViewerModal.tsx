@@ -6,15 +6,13 @@ import {
   Share,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
-import {
-  useSafeAreaFrame,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft,
   ChevronRight,
@@ -69,7 +67,10 @@ export function PhotoViewerModal({
   onClose,
 }: PhotoViewerModalProps) {
   const insets = useSafeAreaInsets();
-  const { width } = useSafeAreaFrame();
+  // T3: same fix as HeroCarousel — useSafeAreaFrame() latches its width at
+  // SafeAreaProvider mount and never re-measures on resize (see the comment
+  // there). useWindowDimensions() stays live.
+  const { width } = useWindowDimensions();
   const [index, setIndex] = useState(initialIndex ?? 0);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
