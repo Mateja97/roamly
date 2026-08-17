@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import type { ActivityPhoto } from '../../api/activities';
 import { HeroCarousel } from './HeroCarousel';
@@ -72,6 +73,20 @@ describe('HeroCarousel', () => {
     expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
     expect(screen.queryByTestId(/activity-detail-hero-image-/)).toBeNull();
     expect(screen.getByLabelText('Back')).toBeTruthy();
+  });
+
+  // T3: guards the real fix — pages must size from useWindowDimensions()
+  // (live, resizes), not react-native-safe-area-context's frame (latches
+  // its width once at SafeAreaProvider mount on web and never re-measures,
+  // the actual root cause of the reported zero-width collapse). jest.setup.js
+  // mocks these to two deliberately different values — useWindowDimensions
+  // to 320 (via Dimensions.set), the safe-area frame to 0 — so this
+  // assertion only passes when the component reads the live source: a
+  // regression back to useSafeAreaFrame would render width 0, not 320.
+  it('sizes each page from useWindowDimensions, not the latched safe-area frame', () => {
+    render(<HeroCarousel photos={photos} onBack={jest.fn()} onOpenViewer={jest.fn()} />);
+    const page0 = screen.getByTestId('activity-detail-hero-page-0');
+    expect(StyleSheet.flatten(page0.props.style)).toMatchObject({ width: 320 });
   });
 
   it('falls back to the missing-image state when the current photo fails to load', () => {
