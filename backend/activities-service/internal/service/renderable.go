@@ -1,0 +1,142 @@
+package service
+
+import (
+	"encoding/json"
+	"strings"
+
+	"backend/shared/models/activitiessvc"
+)
+
+// Reason values recorded in the activities.draft_reason column
+// (migration 0033). Stored verbatim, so these strings are a persisted
+// vocabulary — renaming one needs a data migration, not just a constant
+// edit.
+const (
+	ReasonNoPhoto   = "no_photo"
+	ReasonNoPlaceID = "no_place_id"
+	ReasonNoContent = "no_content"
+)
+
+// DefaultMinContentScore is the publish bar: "one real body block, or a
+// description, or quotable reviews". Presentational signals share a single
+// point (see contentScore), so no combination of chips and opening hours
+// can reach it — which is the whole reason the bar is 2 and not 1.
+const DefaultMinContentScore = 2
+
+// Verdict is one activity's renderability judgement. Reason is "" exactly
+// when OK is true. Score is always populated, including on a no_photo
+// verdict, so cmd/auditcontent can report the score distribution across the
+// whole catalog rather than only across the rows that got as far as the
+// content check.
+type Verdict struct {
+	OK     bool
+	Reason string
+	Score  int
+}
+
+// bodyBlockKeys are the details keys that render a labelled section in the
+// detail page's body. Any one of them is real content.
+var bodyBlockKeys = []string{
+	"good_to_know", "facilities", "known_for",
+	"treatments", "upcoming_shows", "popular_dishes",
+}
+
+// presentationalKeys are the details keys that render a chip, an hours row,
+// or an attribution plate — page furniture, not something a user came to
+// read. They share one point between them (see contentScore).
+var presentationalKeys = []string{
+	"opening_hours", "venue_type", "hours", "website_url", "tripadvisor",
+}
+
+// reviewsKey is the Tripadvisor quoted-review array. Scored like a body
+// block, not like the `tripadvisor` attribution key beside it: the reviews
+// carousel is content a user reads, the attribution plate is furniture.
+const reviewsKey = "reviews"
+
+const (
+	scoreContent        = 2
+	scorePresentational = 1
+)
+
+// Renderability judges whether activity has enough to be worth publishing:
+// a photo, and content scoring at least minScore. It is pure — no I/O, no
+// clients — and expects an activity that has already been through the live
+// merge (see Activities.WithLiveDetails), so the judgement is made against
+// exactly what a detail-page request would render, not against the sparser
+// stored row.
+//
+// Reasons are ordered most-specific-first. A row with no place id and no
+// content reports no_place_id rather than no_content, because the two need
+// different remedies: no_content might resolve on Google's next update,
+// while no_place_id never resolves until something matches the venue.
+//
+// Nothing here writes. Persisting a verdict is the caller's decision, and
+// deliberately a separate one.
+func Renderability(a activitiessvc.Activity, minScore int) Verdict {
+	score := contentScore(a)
+	switch {
+	case len(a.Photos) == 0:
+		return Verdict{Reason: ReasonNoPhoto, Score: score}
+	case score >= minScore:
+		return Verdict{OK: true, Score: score}
+	case a.ExternalID == "" && a.GooglePlaceID == "":
+		return Verdict{Reason: ReasonNoPlaceID, Score: score}
+	default:
+		return Verdict{Reason: ReasonNoContent, Score: score}
+	}
+}
+
+// contentScore counts what renders a block on the detail page, not what is
+// merely present in the JSON. Each signal scores once however many of its
+// keys are present — three chips are still one chip row, and two body
+// blocks are still one screenful of substance rather than two.
+//
+// Malformed stored details score zero for every details-derived signal
+// rather than erroring, the same best-effort decode hasTripadvisorReviews
+// and mergeLiveDetails already use: a stored-data problem this function
+// cannot repair must not become a demotion it can't justify either — and it
+// won't, since a row scoring zero on a corrupt blob still needs the photo
+// and place-id checks to fall its way before any reason is reported.
+func contentScore(a activitiessvc.Activity) int {
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(a.Details, &fields) // best-effort; nil map on failure
+
+	score := 0
+	if strings.TrimSpace(a.Description) != "" {
+		score += scoreContent
+	}
+	if anyKeyHasValue(fields, bodyBlockKeys) {
+		score += scoreContent
+	}
+	if hasValue(fields[reviewsKey]) {
+		score += scoreContent
+	}
+	if len(a.GoogleReviews) > 0 {
+		score += scoreContent
+	}
+	if anyKeyHasValue(fields, presentationalKeys) {
+		score += scorePresentational
+	}
+	return score
+}
+
+func anyKeyHasValue(fields map[string]json.RawMessage, keys []string) bool {
+	for _, k := range keys {
+		if hasValue(fields[k]) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasValue reports whether a decoded details value is worth rendering.
+// Absent, null, "", [] and {} all read as absent — the app's own slots omit
+// themselves for every one of these, so scoring them would credit a row for
+// a section the user never sees.
+func hasValue(raw json.RawMessage) bool {
+	switch strings.TrimSpace(string(raw)) {
+	case "", "null", `""`, "[]", "{}":
+		return false
+	}
+	return true
+}
