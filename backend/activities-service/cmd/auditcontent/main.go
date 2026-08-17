@@ -29,6 +29,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"activities-service/internal/places"
@@ -186,6 +187,14 @@ type auditReport struct {
 	byReason   map[string]int
 	byCategory map[string]map[string]int
 	byScore    map[int]int
+	// byPassingSignals counts passing rows by the exact set of signals that
+	// carried them over the bar, joined with "+". A score alone cannot
+	// answer the question this report exists to answer — "description" and
+	// "google_reviews" both score 2, but the first is an About block and
+	// the second is a reviews carousel under an empty body. Without this
+	// split, a category can look healthy while every one of its pages is
+	// still bare.
+	byPassingSignals map[string]int
 }
 
 // runAudit merges and judges rows in place, one at a time, in the order
@@ -194,9 +203,10 @@ type auditReport struct {
 // nothing.
 func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activity, minScore int, pace func()) auditReport {
 	report := auditReport{
-		byReason:   map[string]int{},
-		byCategory: map[string]map[string]int{},
-		byScore:    map[int]int{},
+		byReason:         map[string]int{},
+		byCategory:       map[string]map[string]int{},
+		byScore:          map[int]int{},
+		byPassingSignals: map[string]int{},
 	}
 
 	for _, stored := range rows {
@@ -212,6 +222,7 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 		report.byScore[verdict.Score]++
 		if verdict.OK {
 			report.ok++
+			report.byPassingSignals[strings.Join(verdict.Signals, "+")]++
 			continue
 		}
 
@@ -263,6 +274,19 @@ func (r auditReport) render(minScore int) string {
 	sort.Ints(scores)
 	for _, score := range scores {
 		out += fmt.Sprintf("  score %d: %d\n", score, r.byScore[score])
+	}
+
+	out += "\nhow the passing rows cleared the bar\n"
+	out += "  (a row passing on google_reviews alone still renders an empty body — a reviews carousel under a bare title, not a full page)\n"
+	combos := make([]string, 0, len(r.byPassingSignals))
+	for combo := range r.byPassingSignals {
+		combos = append(combos, combo)
+	}
+	sort.Slice(combos, func(i, j int) bool {
+		return r.byPassingSignals[combos[i]] > r.byPassingSignals[combos[j]]
+	})
+	for _, combo := range combos {
+		out += fmt.Sprintf("  %-45s %d\n", combo, r.byPassingSignals[combo])
 	}
 	return out
 }

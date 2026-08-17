@@ -32,7 +32,23 @@ type Verdict struct {
 	OK     bool
 	Reason string
 	Score  int
+	// Signals names each scoring signal that fired, in the fixed order
+	// below. A bare Score hides the thing the audit most needs to show:
+	// SignalDescription and SignalGoogleReviews both score 2, but one is a
+	// real "About" block and the other is a reviews carousel under an
+	// otherwise empty body. Nil when nothing scored.
+	Signals []string
 }
+
+// Scoring signal names, reported per row by cmd/auditcontent so a passing
+// row's reason for passing is visible rather than collapsed into a number.
+const (
+	SignalDescription        = "description"
+	SignalBodyBlock          = "body_block"
+	SignalTripadvisorReviews = "tripadvisor_reviews"
+	SignalGoogleReviews      = "google_reviews"
+	SignalPresentational     = "presentational"
+)
 
 // bodyBlockKeys are the details keys that render a labelled section in the
 // detail page's body. Any one of them is real content. Matched 1:1 against
@@ -90,16 +106,16 @@ const (
 // Nothing here writes. Persisting a verdict is the caller's decision, and
 // deliberately a separate one.
 func Renderability(a activitiessvc.Activity, minScore int) Verdict {
-	score := contentScore(a)
+	score, signals := contentScore(a)
 	switch {
 	case len(a.Photos) == 0:
-		return Verdict{Reason: ReasonNoPhoto, Score: score}
+		return Verdict{Reason: ReasonNoPhoto, Score: score, Signals: signals}
 	case score >= minScore:
-		return Verdict{OK: true, Score: score}
+		return Verdict{OK: true, Score: score, Signals: signals}
 	case a.ExternalID == "" && a.GooglePlaceID == "":
-		return Verdict{Reason: ReasonNoPlaceID, Score: score}
+		return Verdict{Reason: ReasonNoPlaceID, Score: score, Signals: signals}
 	default:
-		return Verdict{Reason: ReasonNoContent, Score: score}
+		return Verdict{Reason: ReasonNoContent, Score: score, Signals: signals}
 	}
 }
 
@@ -114,27 +130,33 @@ func Renderability(a activitiessvc.Activity, minScore int) Verdict {
 // cannot repair must not become a demotion it can't justify either — and it
 // won't, since a row scoring zero on a corrupt blob still needs the photo
 // and place-id checks to fall its way before any reason is reported.
-func contentScore(a activitiessvc.Activity) int {
+func contentScore(a activitiessvc.Activity) (int, []string) {
 	var fields map[string]json.RawMessage
 	_ = json.Unmarshal(a.Details, &fields) // best-effort; nil map on failure
 
 	score := 0
+	var signals []string
+	fired := func(points int, name string) {
+		score += points
+		signals = append(signals, name)
+	}
+
 	if strings.TrimSpace(a.Description) != "" {
-		score += scoreContent
+		fired(scoreContent, SignalDescription)
 	}
 	if anyKeyHasValue(fields, bodyBlockKeys) {
-		score += scoreContent
+		fired(scoreContent, SignalBodyBlock)
 	}
 	if hasValue(fields[reviewsKey]) {
-		score += scoreContent
+		fired(scoreContent, SignalTripadvisorReviews)
 	}
 	if len(a.GoogleReviews) > 0 {
-		score += scoreContent
+		fired(scoreContent, SignalGoogleReviews)
 	}
 	if anyKeyHasValue(fields, presentationalKeys) {
-		score += scorePresentational
+		fired(scorePresentational, SignalPresentational)
 	}
-	return score
+	return score, signals
 }
 
 func anyKeyHasValue(fields map[string]json.RawMessage, keys []string) bool {
