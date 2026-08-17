@@ -289,8 +289,32 @@ the Token discipline exception above does not cover it. It does so on its
 own branch, never on `main`. It never touches `ledger.json` — that stays the
 triager's, written during Phase 5.
 
-1. From `audit-verify-<slug>` (Phase 5 already put you there, on the merged
-   code), branch: `git checkout -b audit-changelog-<slug>`.
+**Deliberate exception to the cut-fresh-from-`origin/main` rule.** Every
+other branch in this pipeline — the worktree, task branches,
+`audit-verify-<slug>` — is cut fresh from `origin/main` and never stacked on
+another branch (`CLAUDE.md`: "Never branch off another feature branch").
+`audit-changelog` is the one deliberate carve-out: it is long-lived and
+shared **across runs**, not cut per-run, because the changelog PR is meant
+to sit open until the user merges it — a fresh per-run branch would leave
+two open PRs racing to edit the same `[Unreleased]` section the moment a
+week goes by unmerged, exactly the conflict "entries accumulate under
+`[Unreleased]` across runs" is meant to avoid. It's sound specifically
+because `audit-changelog` carries no code (only `CHANGELOG.md`), nothing
+else is ever branched off it, and it is recreated from `origin/main` the
+instant its PR is merged or closed — it never goes stale the way a real
+feature branch would. Do not "fix" this back to a per-run branch.
+
+1. `git fetch origin`, then decide whether `audit-changelog` is **live**:
+   `origin/audit-changelog` exists AND `gh pr list --head audit-changelog
+   --state open` returns an open PR.
+   - **Live** → `git checkout -B audit-changelog origin/audit-changelog`.
+     This run's entries land in the `[Unreleased]` section already sitting
+     on that branch; the existing PR updates itself on push. Do not open a
+     second PR.
+   - **Not live** — no `origin/audit-changelog` branch, or one exists but its
+     PR was merged or closed — → `git checkout -B audit-changelog
+     origin/main`, cut fresh exactly like every other branch in this
+     pipeline. A new PR follows once entries are committed.
 2. Read `CHANGELOG.md` if it exists. If it does not, create it with a Keep a
    Changelog header and an empty `## [Unreleased]` section.
 3. Under `## [Unreleased]`, add one bullet per MERGED task from this run —
@@ -309,12 +333,24 @@ triager's, written during Phase 5.
    `app/app.json`, not `frontend/package.json`, and never rename
    `[Unreleased]` to a version number. The user decides semver and cuts the
    release; entries accumulate under `[Unreleased]` across runs until they do.
-5. Commit and open a PR that stays open, and **not as a draft** — unlike
-   every task PR from Phase 4, which is opened `--draft`, this one must be
-   immediately mergeable by the user with no extra step to un-draft it:
-   `gh pr create --title "changelog: audit <slug>" --body "<the run's merged
-   tasks>"`. Do NOT mark it ready-and-merge it the way Phase 4 merges task
-   PRs — this is the one PR the pipeline deliberately leaves for the user.
+5. Commit, then push and open/update the PR per the live/not-live branch
+   from step 1:
+   - **Live** → `git push origin audit-changelog` (fast-forward — this
+     branch started at `origin/audit-changelog`). The existing open PR now
+     carries this run's commit; report **that PR's URL** in Phase 7. Do not
+     open a new PR.
+   - **Not live** → `git push --force-with-lease origin audit-changelog`
+     (force only here: the branch was cut fresh from `origin/main` and may
+     be overwriting a stale `audit-changelog` ref left on the remote from an
+     already-merged-or-closed PR), then open a fresh PR that stays open and
+     is **not a draft** — unlike every task PR from Phase 4, which is opened
+     `--draft`, this one must be immediately mergeable by the user with no
+     extra step to un-draft it: `gh pr create --title "changelog: audit
+     <slug>" --body "<the run's merged tasks>" --head audit-changelog`.
+     Report **that new PR's URL** in Phase 7.
+   Either way, do NOT mark it ready-and-merge it the way Phase 4 merges task
+   PRs, and never open a second concurrent changelog PR — this is the one PR
+   the pipeline deliberately leaves for the user.
 6. Report the PR URL in Phase 7. A failure here is non-fatal: report the
    changelog as unwritten and move on. The fixes are already merged; a
    missing changelog entry is not worth failing a green run over.
@@ -329,8 +365,9 @@ triager's, written during Phase 5.
 ## Phase 7 — Report
 One summary:
 - the HEAD sha the stack was probed at, and the branch the primary checkout
-  is actually left on: `audit-changelog-<slug>` if Phase 6 ran (it switches
-  off `audit-verify-<slug>` in its step 1 and never switches back),
+  is actually left on: `audit-changelog` if Phase 6 ran (it switches off
+  `audit-verify-<slug>` in its step 1 and never switches back — note this
+  branch is shared across runs, not slug-scoped like the others),
   `audit-verify-<slug>` if Phase 5 ran but Phase 6 did not, or whatever
   branch it started the run on if neither ran (unchanged since Phase 0,
   since nothing moved it)
