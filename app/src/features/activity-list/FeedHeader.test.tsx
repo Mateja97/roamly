@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { FeedHeader } from './FeedHeader';
 
@@ -42,5 +43,15 @@ describe('FeedHeader', () => {
   it('traveler mode + a known city renders the "New in town?" context line', () => {
     render(<FeedHeader scope="anywhere" cities={[city('Lisbon')]} hour={13} travelerMode onOpenScope={jest.fn()} />);
     expect(screen.getByText('New in town? The best of Lisbon')).toBeTruthy();
+  });
+
+  // T5 regression: DESIGN_STANDARDS.md's Typography section reserves
+  // Marcellus for exactly two screen-identity headers (Welcome hero 36px,
+  // Activity detail title 28px) — the Feed context line must stay off it.
+  it('renders the context line on the system font stack, not Marcellus', () => {
+    render(<FeedHeader scope="nearby" cities={[]} hour={7} travelerMode={false} onOpenScope={jest.fn()} />);
+    const contextLine = screen.getByText('This morning near you');
+    const flatStyle = StyleSheet.flatten(contextLine.props.style);
+    expect(flatStyle.fontFamily).not.toBe('Marcellus_400Regular');
   });
 });
