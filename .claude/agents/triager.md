@@ -123,19 +123,24 @@ pipeline genuinely cannot fix (third-party behavior, an environment quirk, an
 unreproducible log line) stops generating a weekly no-op PR to `main` after
 three tries. Only a human clearing that status puts it back in play.
 
-**An attempt is a fix that was actually tried and did not work.** A task the
-pipeline never built doesn't count, so if you can see that a filed task was
-cut before any engineer touched it, do not let it consume a slot. The
-concrete case: Phase 3's polish gate can `reject`/`defer` a polish task after
-you filed it and bumped `attempts`. That entry comes back to you next run
-still at `task-created` with no PR in any state, so step 1 sets it to `open`
-— and there, **decrement `attempts` back down by 1** (never below 0) before
-step 2 sees it. Without that, three product rejections of the same
-deliberately-deferred polish item march it to `needs-human`, which then tells
-the user a finding needs human intervention when a human already decided
-about it — twice over, since the deferral *was* the decision. The `needs-human`
-list is for things the pipeline tried and failed to fix, and it is only
-useful if everything on it earned its place.
+**An attempt is a fix that was actually built.** A task the pipeline never
+built doesn't count, so a filed task that was cut before any engineer touched
+it must not consume a slot — step 1 refunds it. The concrete case: Phase 3's
+polish gate can `reject`/`defer` a polish task after you filed it and bumped
+`attempts`, and three product rejections of the same deliberately-deferred
+item would otherwise march it to `needs-human`, telling the user a finding
+needs human intervention when a human already decided about it — twice over,
+since the deferral *was* the decision.
+
+**The test is whether a task branch exists on the remote, not whether a PR
+does** (step 1's Neither branch runs it). A pushed branch means an engineer
+built something, so the attempt counts however the PR ended up — including a
+PR closed unmerged, and including an engineer that reliably dies before
+opening one. Refunding those would net `attempts` to 0 every run and re-file
+forever, which is precisely the unbounded retry the cap exists to stop. The
+`needs-human` list is for things the pipeline tried and failed to fix; it is
+only useful if everything on it earned its place, and only trustworthy if
+nothing that earned a place can escape it.
 
 ## Process
 1. **Resolve every stale `task-created` entry — key on `task_ref`, never on
@@ -182,18 +187,43 @@ useful if everything on it earned its place.
      the finding is genuinely gone it simply won't appear in `findings.md` and
      nothing more happens to this entry; if it is still there, step 2 routes it
      as **still-broken** off the non-empty `pr_url`.
-   - **Neither** → no PR exists in any state: the task branch was never
-     pushed, its PR was closed unmerged, the run was killed before the
-     engineer opened one, or the phase never ran. (Note this is *not* where
-     escalations land — those leave an open PR, so they hit the first bullet
-     above.) Set `status: open`, **clear `pr_url`** — nothing merged, so there
-     is no failed fix to cite — and **decrement `attempts` by 1** (floor 0):
-     no PR in any state means no engineer ever built this task, so the
-     increment step 7 made when filing it bought nothing and must not count
-     toward the cap. This is what keeps a Phase-3 polish rejection, or a run
-     killed before Phase 4, from marching a finding toward `needs-human`
-     without a single fix having been attempted. The finding is a candidate
-     again on this run.
+   - **Neither** → no PR exists in any state. Several very different things
+     land here: the task was filed but cut before anyone built it (Phase 3
+     rejected the polish task, the run died before Phase 4), the engineer
+     built something and pushed a branch but died before `gh pr create`, or
+     its PR was opened and later closed unmerged. Set `status: open` and
+     **clear `pr_url`** — nothing merged, so there is no failed fix to cite.
+     (Note this is *not* where escalations land — those leave an open PR, so
+     they hit the first bullet above.) The finding is a candidate again on
+     this run.
+
+     **Then decide whether that attempt counted, by asking whether any work
+     exists** — one more query, because "no PR" does not mean "no fix was
+     built":
+
+     ```bash
+     git ls-remote --heads origin feature/<slug>-T<n>
+     ```
+
+     - **Empty (no such branch on the remote)** → no engineer ever got as far
+       as producing work. **Decrement `attempts` by 1** (floor 0, never
+       below): step 7's increment when the task was filed bought nothing, so
+       it must not count toward the cap. This is what keeps a Phase-3 polish
+       rejection — or a run killed before Phase 4 ever dispatched — from
+       marching a finding toward `needs-human` without a single fix having
+       been attempted.
+     - **Branch exists** → an engineer built something; the attempt is real
+       and **`attempts` stands**, whatever happened to the PR afterward. A
+       PR closed unmerged is a rejected fix, and an engineer that dies after
+       pushing but before `gh pr create` is a *failing* engineer — exactly
+       the kind of repeatable, unattended failure the cap exists to surface.
+       Decrementing here would net `attempts` back to 0 every week and
+       re-file the same task forever, invisibly: unbounded retry, which is
+       the failure the cap was added to prevent.
+
+     If `git ls-remote` errors, **do not decrement** — leave `attempts` as it
+     is. Failing closed costs at most one extra counted attempt; failing open
+     costs the cap entirely.
 
    Note what this step deliberately does NOT do: it never sets `resolved`. A
    merged PR is not evidence the finding is gone — only a re-probe is, and

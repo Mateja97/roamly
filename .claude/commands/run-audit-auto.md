@@ -355,7 +355,7 @@ overnight weekly cron. Wall-clock is not the constraint; correctness is.
 
   | Artifact | Lives in | Absolute path you pass |
   | --- | --- | --- |
-  | `findings.md`, `reprobe.md`, `probes/**`, `bug-tasks.md`, `polish-gate.md`, `ledger.json` | **primary checkout** | `<repo-root>/pipeline/bugs/<slug>/…` |
+  | `findings.md`, `reprobe.md`, `reprobe-traffic.md`, `probes/**`, `bug-tasks.md`, `polish-gate.md`, `ledger.json` | **primary checkout** | `<repo-root>/pipeline/bugs/<slug>/…` |
   | `task-plan.md`, `engineering-notes.md`, `review-log.md`, `design-spec.md` | **primary checkout** | `<repo-root>/pipeline/bugs/<slug>/…` |
   | **`screenshots/<Tn>/`** | **the worktree** | `<repo-root>/.claude/worktrees/<slug>/pipeline/bugs/<slug>/screenshots/<Tn>/` |
 
@@ -457,7 +457,7 @@ evidence the fix works. Every such dispatch must say:
 `designer`, the engineer AND the reviewer, whenever the task's `origin`
 includes a `standards/F…` finding.** The `standards` prober files only findings that cite
 `DESIGN_STANDARDS.md` or `BUSINESS_STANDARDS.md`, and the triager marks those
-`kind: bug`. **Both agents need this, by different routes:**
+`kind: bug`. **All three need this, by different routes:**
 - The **design**-conformance half lands on `area: frontend | app` tasks, which
   route through `designer` — otherwise instructed to amend
   `DESIGN_STANDARDS.md` when a task needs something the standard lacks,
@@ -467,6 +467,10 @@ includes a `standards/F…` finding.** The `standards` prober files only finding
   route-by-cause rule, **skips the designer entirely**, and lands straight on
   `backend-engineer` — which can edit any file in the repo, `BUSINESS_STANDARDS.md`
   included. Sending this only to the designer leaves that whole half open.
+- The **reviewer** sits on neither half and on both: it is the last gate
+  before an unattended merge, so it is the only agent positioned to catch
+  either of the other two doing it anyway. It needs the rule as something to
+  check, not to obey — see its own wording below.
 
 Left unsaid to either, "the code violates the standard" gets closed by
 rewriting the standard, and next week's probe passes. Such a dispatch must say:

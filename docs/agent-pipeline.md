@@ -57,8 +57,12 @@ React Native/Expo, `tsc`/`npm test`). `area: frontend` and `area: app` tasks
 go through the **designer** first. The reviewer uses the tag to pick which
 standards to check against.
 
-Definitions live in `.claude/agents/`. The orchestrator is
-`.claude/commands/run-pipeline.md`.
+Definitions live in `.claude/agents/`. There are three orchestrators, each a
+slash command in `.claude/commands/`: `run-pipeline.md` (the feature pipeline,
+with checkpoints), `run-pipeline-auto.md` (the same chain unattended, merging
+as it goes), and `run-audit-auto.md` (the audit pipeline). The paragraphs
+above describe the feature pipeline; the audit pipeline has its own section
+below.
 
 ## How to run
 
