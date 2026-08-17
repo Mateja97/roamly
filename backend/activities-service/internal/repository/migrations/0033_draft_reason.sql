@@ -1,0 +1,14 @@
+-- content-audit-draft-demotion T1: draft_reason records why a row is
+-- drafted, and therefore who may undraft it. NULL means a human decided —
+-- either the row was never auto-drafted, or an admin drafted it
+-- deliberately — and cmd/auditcontent must never touch such a row in
+-- either direction. A non-NULL value ("no_photo" | "no_place_id" |
+-- "no_content") means the audit drafted it and may republish it once the
+-- gap fills.
+--
+-- Deliberately nullable, with no DEFAULT and no CHECK. NULL carries the
+-- meaning above, so a default would erase the very distinction the column
+-- exists for; and the reason vocabulary is owned by
+-- internal/service/renderable.go, so a CHECK would force a migration every
+-- time a reason is added or renamed.
+ALTER TABLE activities ADD COLUMN draft_reason text;

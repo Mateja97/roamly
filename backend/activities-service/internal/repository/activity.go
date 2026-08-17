@@ -250,7 +250,8 @@ func (r *Activities) Query(ctx context.Context, filter activitiessvc.QueryFilter
 const adminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 	country, rating, photos, tags, details,
 	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id,
-	COALESCE(source, '') AS source, subcategory, COALESCE(google_place_id, '') AS google_place_id, created_at`
+	COALESCE(source, '') AS source, subcategory, COALESCE(google_place_id, '') AS google_place_id,
+	COALESCE(draft_reason, '') AS draft_reason, created_at`
 
 func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 	var a activitiessvc.Activity
@@ -259,7 +260,8 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 		&a.Location.Lat, &a.Location.Lng,
 		&a.Country, &a.Rating,
 		&a.Photos, &a.Tags, &a.Details,
-		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory, &a.GooglePlaceID, &a.CreatedAt,
+		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory, &a.GooglePlaceID,
+		&a.DraftReason, &a.CreatedAt,
 	)
 	return a, err
 }
@@ -440,6 +442,19 @@ func nonEmptyDetailsBytes(details []byte) []byte {
 		return []byte("{}")
 	}
 	return details
+}
+
+// nullIfEmpty maps the empty string to a SQL NULL bind arg. Only
+// draft_reason needs this: it is the one nullable text column where NULL
+// is a distinct, meaningful value ("no machine reason" — see migration
+// 0033), unlike city/address/external_id, which COALESCE NULL and the
+// empty string to the same thing on read and would gain nothing from the
+// distinction.
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // Create inserts a new activity (T2). location/country/rating aren't part
@@ -738,6 +753,9 @@ func (r *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 	}
 	if patch.Subcategory != nil {
 		sets = append(sets, "subcategory = "+arg(*patch.Subcategory))
+	}
+	if patch.DraftReason != nil {
+		sets = append(sets, "draft_reason = "+arg(nullIfEmpty(*patch.DraftReason)))
 	}
 
 	if len(sets) == 0 {
