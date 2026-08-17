@@ -357,6 +357,23 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		}
 	}
 
+	// markAttempt records the attempt for every outcome that means "this
+	// row's source is the problem" — no website on file, an extraction
+	// error, malformed JSON, or a validation failure all produce the exact
+	// same result next cycle, so retrying spends another billed call for
+	// nothing (see the doc comment above). Deliberately NOT called on a
+	// repo.Update failure below: that's an infra blip on already-good,
+	// already-validated content, unrelated to the venue's site — the row
+	// should still retry next cycle, same as before this attempt-tracking
+	// existed.
+	markAttempt := func() error {
+		// radiusKM 0: not geographic (see the SyncedAt call above).
+		if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "", 0); err != nil {
+			return fmt.Errorf("marking website sync for %s: %w", id, err)
+		}
+		return nil
+	}
+
 	resolveCtx, cancel := context.WithTimeout(ctx, websiteResolveTimeout)
 	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID)
 	cancel()
@@ -364,25 +381,19 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		return fmt.Errorf("resolving website for %s: %w", id, err)
 	}
 	if detail.WebsiteURI == "" {
+		// Marked, not merely skipped. Without this the row is re-resolved on
+		// every single run, spending a billed Places call each time to
+		// rediscover that the venue still has no website — measured at
+		// ~1,800 such rows across art/culture/sport/shopping, about $36 per
+		// run, forever. Marking moves the skip to the attemptedBefore branch
+		// above, which returns before the Places call rather than after it.
+		//
+		// A venue that gains a website later is picked up by the perishable
+		// categories' periodic re-scan, and elsewhere by an explicit
+		// -retry-id run — the same recovery path every other one-attempt
+		// outcome already relies on.
 		slog.Info("website sync skipped, no website on file", "activity_id", id)
-		return nil
-	}
-
-	// markAttempt records the attempt the moment Firecrawl was actually
-	// called, for every outcome that means "this row's content is the
-	// problem" — an extraction error, malformed JSON, or a validation
-	// failure will produce the exact same result next cycle, so retrying
-	// spends another Firecrawl call for nothing (see the doc comment
-	// above). Deliberately NOT called on a repo.Update failure below: that's
-	// an infra blip on already-good, already-validated content, unrelated
-	// to the venue's site — the row should still retry next cycle, same as
-	// before this attempt-tracking existed.
-	markAttempt := func() error {
-		// radiusKM 0: not geographic (see the SyncedAt call above).
-		if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "", 0); err != nil {
-			return fmt.Errorf("marking website sync for %s: %w", id, err)
-		}
-		return nil
+		return markAttempt()
 	}
 
 	extractCtx, cancel := context.WithTimeout(ctx, firecrawlTimeout)

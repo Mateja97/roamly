@@ -1059,3 +1059,74 @@ func TestSyncWebsiteContent_CompleteCultureRow_RefreshesAfter30Days(t *testing.T
 		}
 	})
 }
+
+// TestSyncWebsiteContent_NoWebsite_MarksTheAttempt is the repeat-cost fix.
+// Before it, a venue with no website on file returned without marking, so
+// every subsequent run re-resolved it through a billed Places call to
+// rediscover the same absence — measured at ~1,800 such rows across
+// art/culture/sport/shopping, roughly $36 per run, forever.
+//
+// The second half is the half that actually saves the money: the skip has to
+// land in the attemptedBefore branch, which returns BEFORE the Places call.
+// A mark that still let the row reach PlaceDetails would fix nothing.
+func TestSyncWebsiteContent_NoWebsite_MarksTheAttempt(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryShopping, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{}} // no WebsiteURI
+	firecrawl := &fakeFirecrawl{}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+
+	wantKey := syncKey("website", "1", "shopping", "")
+	if !slices.Contains(repo.markSynced, wantKey) {
+		t.Fatalf("markSynced = %v, want it to contain %q — an unmarked row is re-resolved every run", repo.markSynced, wantKey)
+	}
+	if places.detailCalls != 1 {
+		t.Errorf("places.detailCalls = %d, want 1 on the first run", places.detailCalls)
+	}
+	if firecrawl.calls != 0 {
+		t.Errorf("firecrawl.calls = %d, want 0 — no website to scrape", firecrawl.calls)
+	}
+
+	t.Run("a second run skips before the Places call, not after it", func(t *testing.T) {
+		places.detailCalls = 0
+		repo.syncedAtOut = map[string]time.Time{wantKey: time.Now()}
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if places.detailCalls != 0 {
+			t.Errorf("places.detailCalls = %d, want 0 — the whole point is to stop paying to rediscover a missing website", places.detailCalls)
+		}
+	})
+}
+
+// TestSyncWebsiteContent_NoWebsite_PerishableStillRecovers guards the
+// escape hatch: marking a no-website row must not strand a venue that
+// later publishes a site. A perishable category re-checks on its own
+// cadence; everything else needs an explicit -retry-id run.
+func TestSyncWebsiteContent_NoWebsite_PerishableStillRecovers(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"Autumn programme","description":"Opens in October."}}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+		syncKey("website", "1", "culture", ""): time.Now().Add(-31 * 24 * time.Hour),
+	}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if firecrawl.calls != 1 {
+		t.Errorf("firecrawl.calls = %d, want 1 — a perishable row marked 31 days ago is re-attempted, so a venue that gained a website is picked up", firecrawl.calls)
+	}
+}

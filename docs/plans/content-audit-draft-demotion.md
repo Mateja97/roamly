@@ -785,6 +785,9 @@ each time to rediscover that it still has no website. Across these four
 categories that is roughly 1,800 rows, so about $36 of Places calls per run,
 permanently, for rows that can never yield content.
 
-Marking the attempt in that branch would fix it, and matches the
-one-attempt-and-give-up semantics every non-perishable category already has.
-Not done here — it changes sync semantics and belongs in its own change.
+Fixed: the branch now marks the attempt, which moves the skip up to the
+`attemptedBefore` check — and that one returns *before* the Places call
+rather than after it, which is where the saving actually comes from. A
+venue that later publishes a site is still picked up by a perishable
+category's periodic re-scan, or by an explicit `-retry-id` run elsewhere,
+the same recovery path every other one-attempt outcome relies on.
