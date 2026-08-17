@@ -123,6 +123,14 @@ If your perspective finds nothing, append nothing and say so in your report.
    being unset, a legitimate not-found) is not a finding. A WARN naming a
    condition the code did not expect is.
 5. `surface` = the service name.
+6. **If the log stream is essentially empty** — no request-serving lines at
+   all, only startup output — say so explicitly in your report as
+   `skipped: no traffic in log window`, not "found nothing". Those are
+   different claims and the orchestrator acts on them differently: "found
+   nothing" against a container that has served zero requests (a re-probe
+   right after a rebuild) is a verification that cannot fail, which is worth
+   nothing. Append no findings either way; just report which of the two it
+   was.
 
 ## Perspective: api
 1. Read-only — see "Read-only, against every surface" above; GET plus
