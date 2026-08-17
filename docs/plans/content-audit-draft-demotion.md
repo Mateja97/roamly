@@ -823,3 +823,56 @@ rather than after it, which is where the saving actually comes from. A
 venue that later publishes a site is still picked up by a perishable
 category's periodic re-scan, or by an explicit `-retry-id` run elsewhere,
 the same recovery path every other one-attempt outcome relies on.
+
+---
+
+## Follow-ups
+
+Everything below is deliberately NOT in the branch that shipped this spec.
+None of it blocks that merge — the branch measures and sources content, and
+enforces nothing.
+
+**1. Top up Firecrawl and re-run the enrichment.** 1,143 `sync_regions` marks
+were cleared after the credit outage and are queued for a re-attempt. Until
+that runs, shopping's 26% and sport's 57% are floors, not ceilings — shopping
+in particular extracted content from 13 of 13 rows that had a website, the
+best rate of any category.
+
+**2. The enforcement decision.** §3's read-time verdict and §2's photo-fill
+and demote steps are designed but unbuilt. Worth deciding only after (1),
+since the numbers it turns on are still moving. `draft_reason` and
+`Renderability` are already in place for it.
+
+**3. Photos, independently of any of that.** 438 photoless published rows
+catalog-wide, and 67 of 200 sampled restaurants — 34% against a ~5% catalog
+average. `no_photo` is the one verdict in this audit that needs no product
+judgement: a published row with no photo is a broken list card in every
+category. All 438 have an `external_id`, so `GetPhotos` re-attempts a live
+resolve on every detail open and keeps getting nothing.
+
+**4. The Tripadvisor categories.** Excluded from the audit entirely (see the
+decision above). They need either a body-content source of their own, or a
+per-category bar that accepts traveller reviews as content for restaurants,
+bars and cafés. Measured cost of the current bar on them: it drafts 76% of
+restaurants.
+
+**5. Language validation on the write path.** Every extraction prompt now
+instructs "Answer in English throughout", but the pilot returned a Serbian
+`what_youll_find` despite it. `internal/contentkind` has no
+confidently-wrong-language check, so nothing rejects it server-side — the
+long-standing follow-up noted in `websitesync.go`'s own comment, now with
+evidence behind it.
+
+**6. Surface `draft_reason` in the admin UI.** The column ships and the
+repository exposes it; no screen reads it yet.
+
+**7. Culture's first refresh is a month out.** The rows enriched on
+2026-08-17 are marked synced that day, so their dated August programmes sit
+until roughly mid-September before the perishable re-scan replaces them.
+Clearing those `sync_regions` rows would force it sooner, at the cost of
+re-scraping ~323 rows.
+
+**8. Nightlife has no path.** 11% pass rate, removed from `websitesync` for
+fabricating lineups. Its only body field is inherently perishable and its
+venues publish schedules on social media rather than their own sites, so
+recovering it means a different source, not a different prompt.
