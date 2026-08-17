@@ -838,6 +838,20 @@ func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (act
 	return a.withLiveDetails(ctx, activity), nil
 }
 
+// WithLiveDetails applies the same live Google merge the public detail path
+// applies (see withLiveDetails), for a caller that already holds the stored
+// row. Exported for cmd/auditcontent, which must judge a row on what the
+// detail page would render rather than on the sparser stored version, and
+// which cannot go through GetByIDWithLiveDetails because that deliberately
+// refuses any row that isn't published — correct for a public read, wrong
+// for an audit whose whole job includes re-checking the rows it drafted.
+//
+// Same fallback contract as withLiveDetails itself: an unconfigured client,
+// a resolve error, or a timeout all return the bare stored row, no error.
+func (a *Activities) WithLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
+	return a.withLiveDetails(ctx, activity)
+}
+
 // detailResolveTimeout bounds GetByIDWithLiveDetails' live Place Details
 // lookup (T2, places-live-details): request-scoped and deliberately short,
 // same reasoning as photoResolveTimeout — a detail-page load can't block on
