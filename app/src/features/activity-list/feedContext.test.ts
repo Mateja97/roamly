@@ -7,22 +7,37 @@ function city(city: string, country = 'X') {
 
 describe('scopePillInfo', () => {
   it('nearby -> "Nearby" + MapPin', () => {
-    expect(scopePillInfo('nearby', [])).toEqual({ label: 'Nearby', icon: MapPin });
+    expect(scopePillInfo('nearby', [], null)).toEqual({ label: 'Nearby', icon: MapPin });
   });
 
   it('anywhere with one city -> "Anywhere · City" + Globe, no +N', () => {
-    expect(scopePillInfo('anywhere', [city('Barcelona')])).toEqual({ label: 'Anywhere · Barcelona', icon: Globe });
+    expect(scopePillInfo('anywhere', [city('Barcelona')], null)).toEqual({ label: 'Anywhere · Barcelona', icon: Globe });
   });
 
   it('anywhere with 2+ cities -> "Anywhere · City +N"', () => {
-    expect(scopePillInfo('anywhere', [city('Barcelona'), city('Lisbon')])).toEqual({
+    expect(scopePillInfo('anywhere', [city('Barcelona'), city('Lisbon')], null)).toEqual({
       label: 'Anywhere · Barcelona +1',
       icon: Globe,
     });
   });
 
   it('anywhere with no cities -> "Exploring everywhere" (cold start)', () => {
-    expect(scopePillInfo('anywhere', [])).toEqual({ label: 'Exploring everywhere', icon: Globe });
+    expect(scopePillInfo('anywhere', [], null)).toEqual({ label: 'Exploring everywhere', icon: Globe });
+  });
+
+  // T6: an active minRating appends " · {rating}+" to every scope shape's
+  // label; clearing it (back to null) returns the exact unfiltered label.
+  it('an active minRating appends " · {rating}+" regardless of scope shape', () => {
+    expect(scopePillInfo('nearby', [], 4.5)).toEqual({ label: 'Nearby · 4.5+', icon: MapPin });
+    expect(scopePillInfo('anywhere', [city('Barcelona')], 4.0)).toEqual({
+      label: 'Anywhere · Barcelona · 4.0+',
+      icon: Globe,
+    });
+    expect(scopePillInfo('anywhere', [], 4.8)).toEqual({ label: 'Exploring everywhere · 4.8+', icon: Globe });
+  });
+
+  it('clearing minRating (null) returns the pill to its unfiltered label', () => {
+    expect(scopePillInfo('nearby', [], null)).toEqual({ label: 'Nearby', icon: MapPin });
   });
 });
 

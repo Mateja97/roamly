@@ -428,6 +428,7 @@ export function ActivityListScreen({ selection, onBack }: ActivityListScreenProp
           <FeedHeader
             scope={appliedScopeDraft.scope}
             cities={appliedScopeDraft.cities}
+            minRating={appliedScopeDraft.minRating}
             hour={hourAtLastFocus}
             travelerMode={travelerMode}
             onOpenScope={() => setSheetVisible(true)}

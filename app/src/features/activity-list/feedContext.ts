@@ -4,18 +4,26 @@ import type { CitySuggestion } from '../../api/cities';
 import { citiesJoinLabel } from './filters';
 import { timeBucket } from './categoryOrder';
 import type { Scope } from '../../types/scope';
+import type { RatingOption } from './types';
 
 export type ScopePillInfo = { label: string; icon: LucideIcon };
 
 // design-spec.md T3's three scope-pill labels: `Nearby` (MapPin) /
 // `Anywhere · {city} +N` (Globe) / `Exploring everywhere` (Globe, cold
 // start — also covers the "Anywhere, no city chosen yet" case, which reads
-// the same as cold start to a user: broad, unanchored-by-place).
-export function scopePillInfo(scope: Scope, cities: CitySuggestion[]): ScopePillInfo {
-  if (scope === 'nearby') return { label: 'Nearby', icon: MapPin };
-  if (cities.length === 0) return { label: 'Exploring everywhere', icon: Globe };
+// the same as cold start to a user: broad, unanchored-by-place). T6 adds a
+// fourth, orthogonal segment: an active minimum-rating filter appends
+// ` · {rating}+` (same `·` separator RATING_OPTIONS' own chip labels use,
+// e.g. "4.5+") so the pill's one visible/accessible string always reflects
+// every scope+rating combination — no separate badge, no sheet reopen
+// needed to see it's active.
+export function scopePillInfo(scope: Scope, cities: CitySuggestion[], minRating: RatingOption | null): ScopePillInfo {
+  const ratingSuffix = minRating === null ? '' : ` · ${minRating.toFixed(1)}+`;
+  if (scope === 'nearby') return { label: `Nearby${ratingSuffix}`, icon: MapPin };
+  if (cities.length === 0) return { label: `Exploring everywhere${ratingSuffix}`, icon: Globe };
   const extra = cities.length - 1;
-  return { label: extra > 0 ? `Anywhere · ${cities[0].city} +${extra}` : `Anywhere · ${cities[0].city}`, icon: Globe };
+  const base = extra > 0 ? `Anywhere · ${cities[0].city} +${extra}` : `Anywhere · ${cities[0].city}`;
+  return { label: `${base}${ratingSuffix}`, icon: Globe };
 }
 
 // ponytail: design-spec.md T3's context-line examples name four cases

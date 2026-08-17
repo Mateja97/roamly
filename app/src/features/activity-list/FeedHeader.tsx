@@ -5,10 +5,12 @@ import { useFocusable } from '../../hooks/useFocusable';
 import { colors, fontSize, radius, space } from '../../theme/tokens';
 import { contextLine, scopePillInfo } from './feedContext';
 import type { Scope } from '../../types/scope';
+import type { RatingOption } from './types';
 
 type FeedHeaderProps = {
   scope: Scope;
   cities: CitySuggestion[];
+  minRating: RatingOption | null;
   hour: number;
   travelerMode: boolean;
   onOpenScope: () => void;
@@ -19,9 +21,11 @@ type FeedHeaderProps = {
 // line was on Marcellus at 20px, a third screen/size DESIGN_STANDARDS.md's
 // Typography section never documented (it reserves Marcellus for the two
 // screen-identity headers, never utility-bar/subtitle text) — system font
-// stack now, matching the documented set instead of expanding it.
-export function FeedHeader({ scope, cities, hour, travelerMode, onOpenScope }: FeedHeaderProps) {
-  const pill = scopePillInfo(scope, cities);
+// stack now, matching the documented set instead of expanding it. T6: the
+// pill's label/accessibilityLabel also carry the active minimum-rating
+// filter (see scopePillInfo) — no separate indicator element.
+export function FeedHeader({ scope, cities, minRating, hour, travelerMode, onOpenScope }: FeedHeaderProps) {
+  const pill = scopePillInfo(scope, cities, minRating);
   const Icon = pill.icon;
   const focus = useFocusable();
 
