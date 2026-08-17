@@ -56,13 +56,21 @@ machine's baseline changed.
 ## 0. Isolate (worktree)
 Autopilot builds must never share a working tree with another session — parallel
 sessions collide (`git add -A` in one sweeps another's uncommitted edits).
-Before anything else, compute `<slug>` (see Setup).
+Before anything else, compute `<slug>` (see Setup) and `<repo-root>`: `git
+worktree list --porcelain | head -1`, the path after `worktree `. That's
+always absolute regardless of git version or which worktree the session is
+in — unlike `git rev-parse --show-toplevel`, which returns whichever
+worktree's own root the session happens to be sitting in, not the repo root.
+Every worktree path anywhere in this file from this point on —
+this step, Build, Merge-on-approval, Done — is `<repo-root>`-prefixed; treat
+every `.claude/worktrees/...` mention as shorthand for that absolute path,
+never as a literal relative one to type.
 
-**Cleanup first:** group everything under `.claude/worktrees/` other than
-`<slug>` itself (this run's own worktree — see below) by the base slug before
-its optional `-c<n>` suffix. Never touch `<slug>` or any of `<slug>`'s own
-chain worktrees (`<slug>-c<n>`, created by Build step 3) here — only ever
-another run's. For each other base slug `<other-slug>`, read
+**Cleanup first:** group everything under `<repo-root>/.claude/worktrees/`
+other than `<slug>` itself (this run's own worktree — see below) by the base
+slug before its optional `-c<n>` suffix. Never touch `<slug>` or any of
+`<slug>`'s own chain worktrees (`<slug>-c<n>`, created by Build step 3) here
+— only ever another run's. For each other base slug `<other-slug>`, read
 `pipeline/<other-slug>/product-tasks.md` once (if it doesn't exist, leave
 every worktree under that slug alone — it may be another session's
 in-progress work, or too old to still have this file, and you can't classify
@@ -70,7 +78,7 @@ either without it) and check each task ID with `gh pr list --state merged
 --search "T<n>" --base main` (or `git log main --oneline --grep "T<n>"`), the
 same check Build step 0 below already uses per-task.
 - **Every task merged →** the whole run is done: remove the primary
-  (`git worktree remove .claude/worktrees/<other-slug>`) AND every
+  (`git worktree remove <repo-root>/.claude/worktrees/<other-slug>`) AND every
   `<other-slug>-c<n>` directory present on disk, in the same pass, plus every
   `feature/<other-slug>-*` branch (`git for-each-ref
   --format='%(refname:short)' "refs/heads/feature/<other-slug>-*"`, `git
@@ -89,19 +97,23 @@ same check Build step 0 below already uses per-task.
   merged, remove that chain worktree and its `feature/<other-slug>-*`
   branches for those task IDs — it doesn't wait on sibling chains or on the
   primary.
+- **Any `*-merge-<tn>` directory, anywhere, including under `<slug>`
+  itself:** always safe to remove regardless of which run created it or
+  whether it's this run's own — nothing legitimate keeps a throwaway merge
+  worktree (Merge-on-approval step 2) alive past the one pass that created
+  it, so any that still exists is leftover from a crash. Remove it the same
+  way, no task-merge check needed. Worth sweeping even for `<slug>`: a
+  leftover one left behind by an earlier crashed run of this same slug is
+  exactly the kind of stale state a resume shouldn't have to work around.
 
 If `git worktree remove` refuses because the worktree is dirty, leave it and
 note it in the report — never reach for `--force`; that's real uncommitted
 work you'd be destroying unattended. This whole step is opportunistic: skip
-anything you can't confidently classify rather than guessing. (A
-`<other-slug>-merge-<tn>` directory is neither shape above — those are
-throwaway, created and removed within a single Merge-on-approval pass; this
-sweep doesn't touch them. One surviving past its own run means that run's
-report already flagged it as stuck on a dirty tree.)
+anything you can't confidently classify rather than guessing.
 
 Then isolate:
-- If `.claude/worktrees/<slug>` already exists (resuming a prior run), call
-  `EnterWorktree` with `path: .claude/worktrees/<slug>`.
+- If `<repo-root>/.claude/worktrees/<slug>` already exists (resuming a prior
+  run), call `EnterWorktree` with `path: .claude/worktrees/<slug>`.
 - Otherwise call `EnterWorktree` with `name: <slug>` to create a fresh worktree
   and switch into it.
 
@@ -221,28 +233,13 @@ into A's PR, and a `git rebase` in one chain aborts or corrupts because
 another chain's tree is dirty. Real isolation is a **separate worktree per
 chain** — not the single worktree step 0 created for the orchestrator itself.
 
-**Compute `<repo-root>` once, before creating any chain worktree:**
-`git worktree list --porcelain | head -1` and take the path after `worktree
-` — that first line is always the main worktree, and `git worktree list`
-always prints absolute paths, so this is unambiguous regardless of git
-version or which worktree the session happens to be sitting in. Do NOT use
-`git rev-parse --show-toplevel` — from inside the step-0 `<slug>` worktree
-(where the orchestrator's session already is) that returns *that worktree's*
-root, not the repo root. Every chain worktree lives at
-`<repo-root>/.claude/worktrees/<slug>-c<n>`, an absolute path. This matters
-because `.claude/worktrees/` is a tracked directory in every worktree (it has
-a checked-in `README.md`) — running `git worktree add
-.claude/worktrees/<slug>-c<n> origin/main` from inside the step-0 worktree's
-own cwd resolves that path *relative to the step-0 worktree*, so it silently
-succeeds and nests a chain worktree inside the step-0 worktree instead of
-beside it. Nothing errors: the `cd` into the (wrong, non-existent-at-the-
-expected-path) absolute path just fails later in whatever subagent was
-dispatched there, which then falls back to its inherited cwd — the step-0
-worktree — and every chain ends up back in one shared directory, silently
-recreating the exact collision this fix exists to prevent. Always use the
-full `<repo-root>`-prefixed path, in the `git worktree add` command and in
-every dispatch below; treat `.claude/worktrees/<slug>-c<n>` anywhere in this
-file as shorthand for it, never as a literal relative path to type.
+Every chain worktree lives at `<repo-root>/.claude/worktrees/<slug>-c<n>`
+(`<repo-root>` computed once in step 0). Use that absolute path, not a bare
+`.claude/worktrees/<slug>-c<n>` — run relative to the step-0 worktree's own
+cwd, that path resolves *inside* the step-0 worktree instead of beside it
+(it's a tracked directory there too, so the mistake succeeds silently), and
+every chain quietly falls back to sharing the step-0 worktree, recreating the
+exact collision this fix exists to prevent.
 
 Before dispatching a chain's first task, get its worktree ready: if
 `<repo-root>/.claude/worktrees/<slug>-c<n>` already exists (resuming a prior
@@ -264,9 +261,7 @@ fresh worktree with no `node_modules` fails the build gate for a reason that
 has nothing to do with the task.
 
 Most pipeline bookkeeping stays where it's always been, under
-`pipeline/<slug>/` in the step-0 `<slug>` worktree — but not all of it, and
-not staying-in-place uniformly is exactly the kind of detail worth being
-explicit about:
+`pipeline/<slug>/` in the step-0 `<slug>` worktree — but not all of it:
 - `product-tasks.md` is read-only during Build and stays a single shared
   file in the step-0 worktree.
 - `design-spec-c<n>.md`, `task-plan-c<n>.md`, `engineering-notes-c<n>.md`,
@@ -295,20 +290,30 @@ explicit about:
   and file work there — subagents don't inherit the orchestrator's working
   directory, so this has to be stated in the dispatch itself, not implied by
   "the worktree."
-- **The docker-compose stack is not isolated by any of this.** Compose
-  derives its project name from the current directory's basename, so
-  `<slug>-c1` and `<slug>-c2` would run it as two separate projects
-  colliding on the same hard-pinned host ports — and `frontend-engineer.md` /
-  `app-engineer.md` are instructed to reuse a healthy stack they find already
-  running rather than start a second one, which means chain 2's visual check
-  can happily screenshot chain 1's in-progress code and the reviewer approves
-  chain 2 against evidence that was never chain 2's. The worktree split
-  isolates git and files; it does nothing for the one stack every chain
-  shares. So serialize the piece that touches it: never have more than one
-  `frontend-engineer` or `app-engineer` dispatch in flight at a time, across
-  *all* chains — queue a second one if one is already running. Everything
-  else about a chain (design, code edits, git, review, merge) stays fully
-  concurrent; only that one dispatch type is a global bottleneck.
+- **The docker-compose stack is not isolated by any of this, in two
+  different ways.** Compose derives its project name from the current
+  directory's basename, so `<slug>-c1` and `<slug>-c2` run it as two
+  separate projects — meaning `docker compose ps` from chain 2 finds
+  *nothing* (chain 1's stack is a different project as far as Compose is
+  concerned), so `frontend-engineer.md`'s "reuse a healthy running stack"
+  path never triggers there; it falls through to `docker compose up
+  -d --build` instead, which collides on the same hard-pinned host ports
+  chain 1's stack still holds (`app-engineer.md` has a fallback for this,
+  `frontend-engineer.md` does not — a hard failure, not a silent one). And
+  if a chain's compose *does* end up pointed at another chain's already-running
+  stack (a healthy stack `docker compose ps` actually finds — e.g. `app-engineer.md`
+  reusing one), its visual check screenshots that other chain's in-progress
+  code, and the reviewer approves against evidence that was never this
+  chain's. So serializing the visual-gate dispatch has to fix both: never
+  have more than one `frontend-engineer` or `app-engineer` dispatch in
+  flight at a time, across *all* chains (queue a second one if one is
+  already running) — **and** before handing the gate to the next chain in
+  the queue, tear down the previous one's stack from its own worktree
+  (`docker compose -p <slug>-c<prev> down`), so the next chain's `docker
+  compose ps` finds nothing left to either collide with or wrongly reuse.
+  Everything else about a chain (design, code edits, git, review, merge)
+  stays fully concurrent; only that one dispatch type is a global
+  bottleneck, and only for as long as its own stack needs to be up.
 - Escalation stays per-chain: a task that fails its review loop skips only the
   tasks that depend on it (its own chain's tail); other chains are unaffected.
 
@@ -385,28 +390,47 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    it ready and revisit when its parent merges — approvals often land out of
    dependency order across parallel chains.
 2. **Rebase before merge — never in a chain worktree.** Before merging an
-   eligible PR, make sure its branch sits on the current `main` tip: `git
-   fetch origin`, and if `main` has moved since the branch was cut, the
-   branch needs a rebase (drops an already-merged parent's commits, and
-   surfaces cross-chain conflicts on shared files). By the time a PR is
-   eligible, its chain has very likely already moved on to the next stacked
-   task in that same worktree — so rebasing there means checking an older
-   branch out over an in-progress one (a branch carries no working directory
-   with it; whichever worktree currently has it checked out is the only
-   place it actually lives), the identical HEAD-flip/dirty-tree collision
-   described above, just intra-chain instead of inter-chain — and it also
-   rewrites commits a not-yet-merged stacked child is sitting on, with
-   nothing to restack that child afterward. So do it in a **throwaway
-   per-PR worktree** instead, created fresh and removed when done: `git
-   worktree add <repo-root>/.claude/worktrees/<slug>-merge-<tn>
-   feature/<slug>-<tn>`, then `git rebase origin/main` there. If that
-   `worktree add` is refused because the branch is currently checked out in
-   its own chain worktree (the chain hasn't advanced past this task yet),
-   treat it like an ineligible PR — skip it this pass, revisit later. Clean
-   rebase → push, then `git worktree remove` the throwaway worktree (if
-   that's refused because it's dirty, leave it and note it in the report —
-   never `--force`). Conflicts → leave the worktree exactly as it is and go
-   to step 4.
+   eligible PR, make sure its branch sits on the current `main` tip: if
+   `main` has moved since the branch was cut, it needs a rebase (drops an
+   already-merged parent's commits, surfaces cross-chain conflicts on shared
+   files). By the time a PR is eligible, its chain has very likely already
+   moved on to the next stacked task in that same worktree, so rebasing
+   there means checking an older branch out over an in-progress one — the
+   identical HEAD-flip/dirty-tree collision described above, just
+   intra-chain. Do it instead in a **throwaway per-PR worktree**, checked
+   out **detached**, never as the branch itself: `git fetch origin`, then
+   `git worktree add --detach <repo-root>/.claude/worktrees/<slug>-merge-<tn>
+   feature/<slug>-<tn>`. Detached matters beyond isolation — a *non*-detached
+   checkout is refused whenever that branch is still checked out in its own
+   chain worktree, which is permanently true for a chain's last task (nothing
+   ever advances past it to release the branch), so a plain checkout there
+   would deadlock the rest of the run: that PR would sit "not yet eligible"
+   forever, merged nowhere and never flagged as escalated. `--detach`
+   sidesteps that exclusivity check entirely. Then `git rebase origin/main`
+   there. Clean rebase → `git push --force-with-lease origin
+   HEAD:feature/<slug>-<tn>` — plain `git push` is a non-fast-forward and
+   gets rejected, since the rebase rewrote this branch's commits — then `git
+   worktree remove` the throwaway worktree (if that's refused because it's
+   dirty, leave it and note it in the report — never `--force`). Conflicts →
+   leave the worktree exactly as it is and go to step 4. The chain
+   worktree's own copy of that branch is now stale; that's harmless — the
+   chain never touches an already-approved task's branch again, it only
+   ever branched a stacked child off it once, before this rebase ran.
+
+   **Stacked children re-parent through this same step, not automatically.**
+   A rebase here moves only this one branch, not any child already stacked
+   on top of it. A child gets re-parented the next time *its own* turn
+   reaches this step: the dependency gate (step 1) only makes it eligible
+   after its parent has actually merged, and its rebase then runs against
+   the current `origin/main`, which by then includes the parent. That, plus
+   the engineer's own pre-PR `git rebase origin/<base>`, is the whole
+   re-parenting mechanism — there is no separate restack step. Known gap:
+   after a **squash** merge with the parent's remote branch deleted, the
+   child's rebase isn't guaranteed clean (the squash commit has no
+   patch-id match to the parent commits already baked into the child's
+   history), so it can throw a rebase conflict instead of fast-forwarding.
+   That's not silently lost — it surfaces as an ordinary conflict and goes
+   through step 4 like any other.
 3. **Merge.** When `gh pr view <n> --json mergeable,mergeStateStatus` reports
    `MERGEABLE`/`CLEAN`, merge in dependency order (`gh pr merge <n> --squash`
    unless the repo's merged-PR history shows another style). After each merge,
@@ -418,9 +442,13 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    **throwaway merge worktree from step 2** (absolute path, stated explicitly
    in the dispatch — never the chain worktree, same reasoning as step 2) with
    the conflict details; it resolves, re-runs the task's gates
-   (tsc/tests/lint or build/vet/test), pushes, and reports back. Then
-   re-check mergeability and merge. Cap this at **2** resolve attempts per
-   PR; if still unmergeable, record a merge escalation and leave that PR
+   (tsc/tests/lint or build/vet/test), and pushes. Tell it explicitly that
+   the worktree is in **detached HEAD** (step 2 checked it out that way on
+   purpose), so a plain `git push` has no upstream to go to — it must push
+   with `git push --force-with-lease origin HEAD:feature/<slug>-<tn>`, same
+   as step 2's own push, then report back. Then re-check mergeability and
+   merge. Cap this at **2** resolve attempts per PR; if still unmergeable,
+   record a merge escalation and leave that PR
    (and its unmerged dependents) ready-but-unmerged for the user, continuing
    with independent PRs. Either way — merged or escalated — remove the
    throwaway worktree once you're done with it (leave it and note it in the
