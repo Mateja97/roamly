@@ -115,8 +115,13 @@ func main() {
 			"excluded", excluded, "remaining", len(rows))
 	}
 	if len(rows) == 0 {
-		logger.Error("nothing left to audit: every enumerated row was Tripadvisor-sourced and therefore out of scope",
-			"category", *category, "excluded", excluded)
+		if excluded > 0 {
+			logger.Error("nothing left to audit: every enumerated row was Tripadvisor-sourced and therefore out of scope",
+				"category", *category, "excluded", excluded)
+		} else {
+			logger.Error("nothing to audit: enumeration returned zero published rows",
+				"category", *category)
+		}
 		os.Exit(1)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -20,6 +21,14 @@ import (
 
 	"backend/shared/config"
 )
+
+// ErrInsufficientCredits marks a Firecrawl 402 (insufficient credits) — the
+// one non-transient status that is not the target site's fault. Every other
+// status ExtractJSON returns reproduces identically on retry (a dead site
+// stays dead); a 402 instead starts succeeding again the moment the account
+// is topped up, so callers must not treat it as a per-row content failure.
+// See internal/service/websitesync.go's SyncWebsiteContent.
+var ErrInsufficientCredits = errors.New("firecrawl: insufficient credits")
 
 // defaultBase is the production Firecrawl API host.
 const defaultBase = "https://api.firecrawl.dev"
@@ -157,6 +166,9 @@ func (c *Client) ExtractJSON(ctx context.Context, url, prompt string, schema map
 		}
 
 		statusErr := fmt.Errorf("firecrawl scrape %s status %d: %s", url, resp.StatusCode, truncate(raw, 800))
+		if resp.StatusCode == http.StatusPaymentRequired {
+			return nil, fmt.Errorf("%w: %w", ErrInsufficientCredits, statusErr)
+		}
 		if resp.StatusCode != http.StatusTooManyRequests && resp.StatusCode < 500 {
 			return nil, statusErr // non-transient: fail without retrying
 		}

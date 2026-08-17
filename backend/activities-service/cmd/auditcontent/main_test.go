@@ -261,6 +261,43 @@ func TestRender_OmitsSkippedLineWhenNothingWasSkipped(t *testing.T) {
 	}
 }
 
+// TestRunAudit_TracksByPassingSignalsAndPerCategoryRates is finding 9's fix:
+// no prior test asserted byPassingSignals' content, and both TestRender_*
+// cases built a report with scannedByCategory nil, so the per-category
+// scanned/passed/rate row — the table the publish bar actually gets read
+// from — was never exercised by render(). One case covering both.
+func TestRunAudit_TracksByPassingSignalsAndPerCategoryRates(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		row("passes-on-body", "nature", 1, `{"good_to_know":["Dogs ok"]}`),
+		row("fails-no-content", "nature", 1, `{}`),
+	}
+	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}
+
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, func() {})
+
+	wantCombo := service.SignalBodyBlock
+	if got := report.byPassingSignals[wantCombo]; got != 1 {
+		t.Errorf("byPassingSignals[%q] = %d, want 1 (the good_to_know row)", wantCombo, got)
+	}
+	if report.scannedByCategory["nature"] != 2 {
+		t.Errorf("scannedByCategory[nature] = %d, want 2", report.scannedByCategory["nature"])
+	}
+	if report.okByCategory["nature"] != 1 {
+		t.Errorf("okByCategory[nature] = %d, want 1", report.okByCategory["nature"])
+	}
+
+	out := report.render(service.DefaultMinContentScore)
+	if !strings.Contains(out, wantCombo) {
+		t.Errorf("render() = %q, want it to list the passing signal combo %q", out, wantCombo)
+	}
+	// The per-category table: "nature" scanned 2, passed 1, rate 50%.
+	for _, want := range []string{"nature", "2", "1", "50%"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("render() = %q, want the per-category row to contain %q", out, want)
+		}
+	}
+}
+
 func TestExcludeTripadvisorSourced(t *testing.T) {
 	tripadvisorCafe := row("ta-cafe", "cafes", 1, `{}`)
 	tripadvisorCafe.Source = "tripadvisor"

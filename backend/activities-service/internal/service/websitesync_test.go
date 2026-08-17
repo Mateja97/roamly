@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	firecrawlpkg "activities-service/internal/firecrawl"
 	"activities-service/internal/placesmap"
 
 	"backend/shared/models/activitiessvc"
@@ -185,6 +187,34 @@ func TestSyncWebsiteContent_ExtractionError_StillMarksAttempted(t *testing.T) {
 	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
 	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
 		t.Errorf("repo.markSynced = %v, want exactly [%q] — an extraction failure must still count toward the give-up policy", repo.markSynced, wantKey)
+	}
+}
+
+// TestSyncWebsiteContent_InsufficientCredits_DoesNotMarkAttempted is finding
+// 1's fix: this already happened once for real (see the operational note in
+// docs/plans/content-audit-draft-demotion.md) — a Firecrawl 402 was being
+// recorded as a content failure, which permanently skipped every
+// non-perishable row it touched (1,143 of them on the incident run) even
+// though the row's own site was never the problem. A 402 must be treated
+// like a repo.Update failure, not like a genuine extraction error: the row
+// stays eligible for a normal retry once the account is topped up.
+func TestSyncWebsiteContent_InsufficientCredits_DoesNotMarkAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{err: fmt.Errorf("firecrawl scrape https://example-spa.rs status 402: %w", firecrawlpkg.ErrInsufficientCredits)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the credit-exhausted error surfaced")
+	} else if !errors.Is(err, firecrawlpkg.ErrInsufficientCredits) {
+		t.Errorf("error = %v, want it to wrap firecrawl.ErrInsufficientCredits", err)
+	}
+	if len(repo.markSynced) != 0 {
+		t.Errorf("repo.markSynced = %v, want empty — a credit-exhausted row must stay eligible for a normal retry, not get permanently skipped like a genuine content failure", repo.markSynced)
 	}
 }
 
@@ -384,7 +414,7 @@ func TestIsComplete_PerCategory(t *testing.T) {
 }
 
 // TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently proves a
-// non-Entertainment category with every scraper-owned field already filled
+// non-perishable category with every scraper-owned field already filled
 // is skipped before any Places or Firecrawl call — regardless of how long
 // ago (or whether ever) it was synced.
 func TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently(t *testing.T) {
@@ -695,7 +725,7 @@ func TestSyncWebsiteContent_Culture_DenylistedBanner_NotTreatedAsFilled(t *testi
 }
 
 // TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt proves a
-// non-Entertainment row that already had one automatic attempt (however
+// non-perishable row that already had one automatic attempt (however
 // long ago) is skipped forever afterward, not retried on any timer — the
 // credit-cost fix: an unbounded 7-day retry loop on a row that will never
 // complete (a missing field on the venue's site, permanently) was never

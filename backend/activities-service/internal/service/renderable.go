@@ -17,10 +17,10 @@ const (
 	ReasonNoContent = "no_content"
 )
 
-// DefaultMinContentScore is the publish bar: "one real body block, or a
-// description, or quotable reviews". Presentational signals share a single
-// point (see contentScore), so no combination of chips and opening hours
-// can reach it — which is the whole reason the bar is 2 and not 1.
+// DefaultMinContentScore is the publish bar: "one real body block or a
+// description; furniture is not enough". Presentational signals share a
+// single point (see contentScore), so no combination of chips and opening
+// hours can reach it — which is the whole reason the bar is 2 and not 1.
 const DefaultMinContentScore = 2
 
 // Verdict is one activity's renderability judgement. Reason is "" exactly
@@ -48,6 +48,15 @@ const (
 	SignalTripadvisorReviews = "tripadvisor_reviews"
 	SignalGoogleReviews      = "google_reviews"
 	SignalPresentational     = "presentational"
+	// SignalInferredDifficulty fires instead of SignalBodyBlock when
+	// difficulty is the ONLY bodyBlockKey carrying a row and websitesync's
+	// markDifficultyInferred flagged it as its own estimate rather than the
+	// venue's own stated content — see contentScore. Same score as
+	// SignalBodyBlock (this is about visibility, not scoring): a Sport row
+	// passing on an inferred meter alone must not read identically to one
+	// with real prose in the report, since Sport is the category the
+	// enforce-versus-extend decision turns on.
+	SignalInferredDifficulty = "inferred_difficulty"
 )
 
 // bodyBlockKeys are the details keys that render a labelled section in the
@@ -85,6 +94,14 @@ var presentationalKeys = []string{
 // block, not like the `tripadvisor` attribution key beside it: the reviews
 // carousel is content a user reads, the attribution plate is furniture.
 const reviewsKey = "reviews"
+
+// difficultyKey and difficultyInferredKey name the two details keys
+// SignalInferredDifficulty distinguishes between — see markDifficultyInferred
+// in websitesync.go, the only writer of difficultyInferredKey.
+const (
+	difficultyKey         = "difficulty"
+	difficultyInferredKey = "difficulty_inferred"
+)
 
 const (
 	scoreContent        = 2
@@ -144,8 +161,18 @@ func contentScore(a activitiessvc.Activity) (int, []string) {
 	if strings.TrimSpace(a.Description) != "" {
 		fired(scoreContent, SignalDescription)
 	}
-	if anyKeyHasValue(fields, bodyBlockKeys) {
-		fired(scoreContent, SignalBodyBlock)
+	if matched := matchedBodyBlockKeys(fields); len(matched) > 0 {
+		// A row carried by difficulty alone, and only when websitesync
+		// inferred that value rather than reading it off the venue's own
+		// page, gets its own signal name — see SignalInferredDifficulty.
+		// Every other combination (including an admin-set difficulty, which
+		// is real curated content like any other body block) still reports
+		// plain SignalBodyBlock. The score is identical either way.
+		if len(matched) == 1 && matched[0] == difficultyKey && boolValue(fields[difficultyInferredKey]) {
+			fired(scoreContent, SignalInferredDifficulty)
+		} else {
+			fired(scoreContent, SignalBodyBlock)
+		}
 	}
 
 	// Reviews are furniture, not something to read. They score with the
@@ -186,6 +213,29 @@ func anyKeyHasValue(fields map[string]json.RawMessage, keys []string) bool {
 		}
 	}
 	return false
+}
+
+// matchedBodyBlockKeys returns which of bodyBlockKeys actually carry a
+// renderable value on fields — contentScore needs to know which key(s), not
+// just whether any did, to tell an inferred-difficulty-only row apart from
+// one with a real body block (see SignalInferredDifficulty).
+func matchedBodyBlockKeys(fields map[string]json.RawMessage) []string {
+	var matched []string
+	for _, k := range bodyBlockKeys {
+		if hasValue(fields[k]) {
+			matched = append(matched, k)
+		}
+	}
+	return matched
+}
+
+// boolValue decodes raw as a JSON bool, false for anything absent or
+// unparseable — used only for difficultyInferredKey, a flag websitesync
+// itself writes as a literal `true`/`false`, never anything else shaped.
+func boolValue(raw json.RawMessage) bool {
+	var b bool
+	_ = json.Unmarshal(raw, &b)
+	return b
 }
 
 // hasValue reports whether a decoded details value is worth rendering.

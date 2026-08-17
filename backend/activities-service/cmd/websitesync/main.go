@@ -19,7 +19,7 @@
 // (a cap PER CATEGORY) and -category exist to pilot a category before
 // committing to it unbounded.
 //
-// A non-Entertainment row that stays incomplete only ever gets one
+// A non-perishable row that stays incomplete only ever gets one
 // automatic attempt (see internal/service/websitesync.go's
 // SyncWebsiteContent) — to force a specific row to be re-attempted anyway:
 // DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync -retry-id=<activity-id>
@@ -27,9 +27,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
+	"slices"
 
 	"activities-service/internal/firecrawl"
 	"activities-service/internal/places"
@@ -74,7 +76,7 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "list what would be synced without calling Places, Firecrawl, or writing")
 	limit := flag.Int("limit", 0, "stop after this many rows PER CATEGORY (0 = no cap); every row costs a Firecrawl extract plus a Places call, so pilot a new category before running it unbounded")
 	category := flag.String("category", "", "restrict the run to one category slug (default: every category in syncCategories)")
-	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except Entertainment")
+	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except the perishable categories (see perishableFields)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -113,11 +115,19 @@ func main() {
 
 	categories := syncCategories
 	if *category != "" {
-		if !activitiessvc.Category(*category).Valid() {
-			logger.Error("startup failed: unknown -category", "category", *category)
+		requested := activitiessvc.Category(*category)
+		// Valid() alone accepts a category this job doesn't cover (e.g.
+		// restaurants) — that would enumerate and GetByID hundreds of rows
+		// only to skip each one as unsupported in SyncWebsiteContent, one
+		// wasted admin List query and no other cost, but a confusing "0
+		// synced" report all the same. Membership in syncCategories is the
+		// real bound.
+		if !requested.Valid() || !slices.Contains(syncCategories, requested) {
+			logger.Error("startup failed: unknown or unsupported -category, this job only covers syncCategories",
+				"category", *category, "supported", syncCategories)
 			os.Exit(1)
 		}
-		categories = []activitiessvc.Category{activitiessvc.Category(*category)}
+		categories = []activitiessvc.Category{requested}
 	}
 
 	rows, err := publishedRows(ctx, repo, categories, listPageSize, *limit)
@@ -146,16 +156,44 @@ func main() {
 	}
 	svc := service.New(repo).WithPlaces(placesClient).WithFirecrawl(fc)
 
-	var synced, skippedOrFailed int
+	synced, skippedOrFailed, aborted := runSync(ctx, svc, rows, logger)
+	if aborted {
+		logger.Error("website sync aborted: firecrawl credits exhausted, no rows were retired for lack of credit",
+			"total", len(rows), "synced", synced, "skipped_or_failed", skippedOrFailed)
+		os.Exit(1)
+	}
+	logger.Info("website sync complete", "total", len(rows), "synced", synced, "skipped_or_failed", skippedOrFailed)
+}
+
+// websiteSyncer is (*service.Activities).SyncWebsiteContent's shape,
+// narrowed so runSync is testable without a real Places/Firecrawl client.
+type websiteSyncer interface {
+	SyncWebsiteContent(ctx context.Context, id string, force bool) error
+}
+
+// runSync syncs each row in order and stops immediately — without
+// attempting any remaining row — the moment SyncWebsiteContent returns
+// firecrawl.ErrInsufficientCredits. Every remaining row would otherwise
+// still burn a billed Places call to reach a Firecrawl call that cannot
+// succeed either, on an account that is already out of credit. aborted
+// reports whether that happened, so the caller can exit non-zero and make
+// the operator top up credit before re-running, rather than reading a
+// misleadingly complete-looking "sync complete" summary.
+func runSync(ctx context.Context, svc websiteSyncer, rows []activitiessvc.Activity, logger *slog.Logger) (synced, skippedOrFailed int, aborted bool) {
 	for _, r := range rows {
 		if err := svc.SyncWebsiteContent(ctx, r.ID, false); err != nil {
+			if errors.Is(err, firecrawl.ErrInsufficientCredits) {
+				logger.Error("aborting run: firecrawl account is out of credit",
+					"title", r.Title, "id", r.ID, "error", err)
+				return synced, skippedOrFailed, true
+			}
 			logger.Warn("sync failed", "title", r.Title, "id", r.ID, "error", err)
 			skippedOrFailed++
 			continue
 		}
 		synced++
 	}
-	logger.Info("website sync complete", "total", len(rows), "synced", synced, "skipped_or_failed", skippedOrFailed)
+	return synced, skippedOrFailed, false
 }
 
 // activityLister is the one repository capability this tool's enumeration

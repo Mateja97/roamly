@@ -3,7 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
+	"slices"
 	"testing"
+
+	"activities-service/internal/firecrawl"
 
 	"backend/shared/models/activitiessvc"
 )
@@ -178,5 +183,71 @@ func TestSyncCategories_IncludesEveryEnrichedCategory(t *testing.T) {
 	if len(syncCategories) != len(want) {
 		t.Errorf("syncCategories has %d entries, want %d — a category added here also needs extractionConfig and scraperOwnedFields entries in internal/service/websitesync.go",
 			len(syncCategories), len(want))
+	}
+}
+
+// fakeSyncer stands in for (*service.Activities).SyncWebsiteContent: errs
+// maps a row ID to the error it should fail with — so runSync's abort
+// behavior is testable without a real Places/Firecrawl client.
+type fakeSyncer struct {
+	errs      map[string]error
+	calledIDs []string
+}
+
+func (f *fakeSyncer) SyncWebsiteContent(_ context.Context, id string, _ bool) error {
+	f.calledIDs = append(f.calledIDs, id)
+	return f.errs[id]
+}
+
+var discardLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// TestRunSync_AbortsOnInsufficientCredits is finding 1's second half: the
+// run loop must not grind through the remaining catalog once the account is
+// out of credit — every remaining row would otherwise still cost a billed
+// Places call to reach a Firecrawl call that cannot succeed either.
+func TestRunSync_AbortsOnInsufficientCredits(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		{ID: "a", Title: "A"}, {ID: "b", Title: "B"}, {ID: "c", Title: "C"}, {ID: "d", Title: "D"},
+	}
+	syncer := &fakeSyncer{errs: map[string]error{
+		"b": fmt.Errorf("extracting website content for b: %w", firecrawl.ErrInsufficientCredits),
+	}}
+
+	synced, skippedOrFailed, aborted := runSync(context.Background(), syncer, rows, discardLogger)
+
+	if !aborted {
+		t.Fatal("aborted = false, want true — a credit-exhausted row must stop the run")
+	}
+	if got := []string{"a", "b"}; !slices.Equal(syncer.calledIDs, got) {
+		t.Errorf("calledIDs = %v, want %v — rows c and d must never be attempted once credit is exhausted", syncer.calledIDs, got)
+	}
+	if synced != 1 {
+		t.Errorf("synced = %d, want 1 (row a, before the abort)", synced)
+	}
+	if skippedOrFailed != 0 {
+		t.Errorf("skippedOrFailed = %d, want 0 — the aborting row is not a per-row failure to tally, it stopped the whole run", skippedOrFailed)
+	}
+}
+
+// TestRunSync_OrdinaryFailuresContinue proves a normal (non-credit) failure
+// is still just a per-row skip, not an abort — only the credit sentinel
+// stops the run.
+func TestRunSync_OrdinaryFailuresContinue(t *testing.T) {
+	rows := []activitiessvc.Activity{{ID: "a"}, {ID: "b"}, {ID: "c"}}
+	syncer := &fakeSyncer{errs: map[string]error{"b": fmt.Errorf("boom")}}
+
+	synced, skippedOrFailed, aborted := runSync(context.Background(), syncer, rows, discardLogger)
+
+	if aborted {
+		t.Error("aborted = true, want false — an ordinary failure must not stop the run")
+	}
+	if synced != 2 {
+		t.Errorf("synced = %d, want 2 (a and c)", synced)
+	}
+	if skippedOrFailed != 1 {
+		t.Errorf("skippedOrFailed = %d, want 1 (b)", skippedOrFailed)
+	}
+	if len(syncer.calledIDs) != 3 {
+		t.Errorf("calledIDs = %v, want all 3 rows attempted", syncer.calledIDs)
 	}
 }

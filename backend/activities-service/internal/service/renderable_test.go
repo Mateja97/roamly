@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"activities-service/internal/service"
@@ -209,6 +210,85 @@ func TestRenderability_MinScoreIsHonoured(t *testing.T) {
 	rich := activitiessvc.Activity{Photos: onePhoto, ExternalID: "place-1", Description: "Words."}
 	if got := service.Renderability(rich, 4); got.OK {
 		t.Errorf("at minScore=4 a description-only row (score 2) should fail, got %+v", got)
+	}
+}
+
+// TestRenderability_InferredDifficultySignal is finding 5's fix: a Sport row
+// passing on websitesync's *inferred* difficulty meter alone must be
+// visibly distinguishable, in Signals, from one with a real body block —
+// the score is identical (2) either way, only the signal name differs.
+func TestRenderability_InferredDifficultySignal(t *testing.T) {
+	tests := []struct {
+		name        string
+		details     string
+		wantSignal  string
+		wantAbsence string
+	}{
+		{
+			name:        "difficulty alone, inferred by websitesync, gets its own signal",
+			details:     `{"difficulty":3,"difficulty_inferred":true}`,
+			wantSignal:  service.SignalInferredDifficulty,
+			wantAbsence: service.SignalBodyBlock,
+		},
+		{
+			name:        "difficulty alone, admin-set (no inferred flag), is a plain body block",
+			details:     `{"difficulty":3}`,
+			wantSignal:  service.SignalBodyBlock,
+			wantAbsence: service.SignalInferredDifficulty,
+		},
+		{
+			name:        "inferred difficulty alongside a real body block is a plain body block, not inferred-only",
+			details:     `{"difficulty":3,"difficulty_inferred":true,"good_to_know":["Bring water"]}`,
+			wantSignal:  service.SignalBodyBlock,
+			wantAbsence: service.SignalInferredDifficulty,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			activity := activitiessvc.Activity{
+				Photos: onePhoto, ExternalID: "place-1", Category: activitiessvc.CategorySport,
+				Details: json.RawMessage(tt.details),
+			}
+			got := service.Renderability(activity, service.DefaultMinContentScore)
+			if !got.OK || got.Score != 2 {
+				t.Fatalf("Renderability() = %+v, want OK with score 2 (visibility must not change scoring)", got)
+			}
+			if !slices.Contains(got.Signals, tt.wantSignal) {
+				t.Errorf("Signals = %v, want it to contain %q", got.Signals, tt.wantSignal)
+			}
+			if slices.Contains(got.Signals, tt.wantAbsence) {
+				t.Errorf("Signals = %v, want it to NOT contain %q", got.Signals, tt.wantAbsence)
+			}
+		})
+	}
+}
+
+// TestRenderability_SignalsContentAndOrder is finding 9's fix for this
+// package: nothing previously asserted Verdict.Signals' content or fixed
+// order — the exact string cmd/auditcontent's byPassingSignals report is
+// built from, and whose order already changed once between runs. Fires
+// every signal at once so the order is fully exercised: description, body
+// block, then the presentational group in the order contentScore checks it
+// (chip, Tripadvisor reviews, Google reviews).
+func TestRenderability_SignalsContentAndOrder(t *testing.T) {
+	activity := activitiessvc.Activity{
+		Photos: onePhoto, ExternalID: "place-1", Description: "A fine museum.",
+		Details:       json.RawMessage(`{"good_to_know":["Free entry"],"venue_type":"Museum","reviews":[{"text":"Great"}]}`),
+		GoogleReviews: []activitiessvc.GoogleReview{{Text: "Also great"}},
+	}
+
+	got := service.Renderability(activity, service.DefaultMinContentScore)
+
+	want := []string{
+		service.SignalDescription,
+		service.SignalBodyBlock,
+		service.SignalPresentational,
+		service.SignalTripadvisorReviews,
+		service.SignalGoogleReviews,
+	}
+	if !slices.Equal(got.Signals, want) {
+		t.Errorf("Signals = %v, want %v in this exact order", got.Signals, want)
 	}
 }
 
