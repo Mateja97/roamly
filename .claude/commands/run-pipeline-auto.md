@@ -99,23 +99,26 @@ same check Build step 0 below already uses per-task.
   branches for those task IDs — it doesn't wait on sibling chains or on the
   primary.
 - **Any `*-merge-<tn>` directory, anywhere, including under `<slug>`
-  itself, older than 60 minutes:** nothing legitimate keeps a throwaway
-  merge worktree (Merge-on-approval step 2) alive past the one pass that
-  created it, and that pass — rebase, push, poll for mergeability, merge —
-  normally finishes in well under an hour, so anything crossing that age is
-  either a crashed leftover or stuck badly enough that treating it as one is
-  the right call regardless. The age check is the real protection here, not
-  the dirty-tree check: after a *clean* rebase the worktree stays clean all
-  the way through push and merge, which is minutes, not seconds — so on a
-  clean tree alone, a concurrent same-repo run could be legitimately
-  mid-merge in that exact worktree and `git worktree remove` has no in-use
-  lock to stop you deleting it out from under it. Skip anything younger than
-  60 minutes outright, no removal attempt at all. For whatever clears the
-  age bar, the dirty-tree check below is still the last-resort guard on top
-  (a crashed pass can leave real uncommitted state). Worth sweeping even for
-  `<slug>`: a leftover one left behind by an earlier crashed run of this
-  same slug is exactly the kind of stale state a resume shouldn't have to
-  work around.
+  itself, older than 60 minutes:** Merge-on-approval step 2 creates these
+  with `git worktree add --detach --lock`, precisely so a sweep like this
+  one can't pull a live one out from under an active merge attempt — locked,
+  `git worktree remove` exits 128 and needs `-f -f`, which the never-`--force`
+  rule below already forbids everywhere, so a still-locked one just fails
+  the removal attempt harmlessly and gets left alone, same as a dirty one.
+  The age threshold is a separate, secondary check for a *crashed* pass,
+  which never reached its own completion (unlock-then-remove, see
+  Merge-on-approval step 3) and so is stuck locked forever otherwise: a
+  normal pass — rebase, push, poll for mergeability, merge, unlock, remove —
+  finishes in well under an hour, so anything crossing that age is
+  presumptively a crash regardless of whether it's still locked or clean.
+  For those: `git worktree unlock` it (harmless no-op if it isn't actually
+  locked) then `git worktree remove` it; if that still fails (genuinely
+  dirty, not just locked), leave it and note it in the report, same as
+  everywhere else — never `--force`/`-f -f`. Skip anything younger than 60
+  minutes outright, no unlock or removal attempt at all — it may be a
+  legitimate in-progress merge. Worth sweeping even for `<slug>`: a leftover
+  one left behind by an earlier crashed run of this same slug is exactly the
+  kind of stale state a resume shouldn't have to work around.
 
 If `git worktree remove` refuses because the worktree is dirty, leave it and
 note it in the report — never reach for `--force`; that's real uncommitted
@@ -278,11 +281,14 @@ a linked worktree that is `fatal: 'main' is already used by worktree at
 <repo-root>`, exit 128 — not theoretical, this repo's own merge step hits
 the same class of error on a plain `git checkout main`. The step 3 dispatch
 below must override that flow explicitly: the engineer creates its branch
-directly, `git checkout -b feature/<slug>-<tn>`, from whatever HEAD already
-is — detached at `origin/main` for a chain's root task, or already sitting
-on the parent's branch for a stacked child (the chain worktree is never
-detached again once its first task creates a branch) — and must never run
-`git checkout main` first.
+directly from the base step 1 already computed —
+`git checkout -b feature/<slug>-<tn> <base>`, where `<base>` is `origin/main`
+for a chain's root task or `feature/<slug>-<tm>` for a stacked child, always
+passed explicitly — and must never run `git checkout main` first. Explicit,
+not "whatever HEAD happens to be": in a chain that forks (two tasks
+depending on the same parent), HEAD is sitting on whichever sibling branched
+last when the next one starts, which is not reliably this task's actual
+dependency.
 
 It's also a fresh checkout missing two things a build needs and nothing
 installs by default: dependencies, and the gitignored env files. Both are
@@ -405,13 +411,15 @@ task, and run inside that chain's worktree,
    `engineering-notes-c<n>.md` path, the base branch to use, the chain
    worktree's absolute path with an explicit instruction to do all git and
    file work there — dependency install and `.env`/`app/.env` copy first,
-   per the note above, **and** for a chain's first task specifically: the
-   worktree starts in detached HEAD, so create the branch directly with
-   `git checkout -b feature/<slug>-<tn>` and do NOT run `git checkout main`
-   first (that fails inside a linked worktree — `main` is already checked
-   out in the primary worktree — overriding `CLAUDE.md`'s general branch-off
-   flow for this pipeline context only) — AND, for `area: frontend` or
-   `area: app` — this chain's `design-spec-c<n>.md` path and the screenshots
+   per the note above, **and** always: create the branch with
+   `git checkout -b feature/<slug>-<tn> <base>` using exactly the base
+   handed to it (never inferred from whatever HEAD happens to be — a
+   forking chain can leave HEAD on a sibling's branch), and do NOT run
+   `git checkout main` first (that fails inside a linked worktree — `main`
+   is already checked out in the primary worktree — overriding
+   `CLAUDE.md`'s general branch-off flow for this pipeline context only) —
+   AND, for `area: frontend` or `area: app` — this chain's
+   `design-spec-c<n>.md` path and the screenshots
    directory `<chain-worktree>/pipeline/<slug>/screenshots/<Tn>/` (inside the
    chain worktree, not the step-0 one — that's what `git add -f` can
    actually reach).
@@ -453,40 +461,70 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    on is already merged into `main`. If an approved PR isn't yet eligible, leave
    it ready and revisit when its parent merges — approvals often land out of
    dependency order across parallel chains.
-2. **Rebase before merge — never in a chain worktree.** Always stage this in
-   a **throwaway per-PR worktree** — unconditionally, whether or not `main`
-   looks like it's moved, so step 4 always has somewhere to work if a
-   conflict turns up there instead (a PR can flip to `CONFLICTING` at step 3
-   from a sibling's merge without ever failing this step's own check first).
-   The worktree is cheap and the rebase is a safe no-op when there's
-   genuinely nothing to replay, so there's no real cost to always creating
-   it. Checked out **detached**, never as the branch itself: `git fetch
-   origin`, then `git worktree add --detach
+2. **Rebase before merge — never in a chain worktree.** A PR's merge
+   worktree lives for the **whole merge attempt**, not just this step:
+   create it (or reuse it) here, on this PR's first pass through this step,
+   and keep it alive through this rebase, step 3's merge and mergeability
+   polling, and any conflict resolution in step 4, all the way to one of two
+   outcomes — merged, or abandoned after step 4's 2-attempt cap. Getting
+   this lifetime wrong is exactly the bug this whole design exists to
+   prevent, one layer up: remove the worktree any earlier — say, right after
+   a clean rebase — and the case this step already has to account for (a
+   sibling's merge flipping this PR to `CONFLICTING` at step 3, with no
+   rebase of its own involved) sends step 4's resolver at a path that's
+   gone; its `cd` fails, it falls back to the orchestrator's own step-0
+   worktree, and it force-pushes the wrong HEAD onto the task branch,
+   unattended. So: create it once per PR, don't remove it until one of the
+   two outcomes above, and don't remove it anywhere else in this file.
+
+   **Creating it, or reusing what's there.** `git worktree prune` first —
+   clears a stale registration a crashed run can leave even after its
+   directory itself is gone. Then, if
+   `<repo-root>/.claude/worktrees/<slug>-merge-<tn>` already exists on disk,
+   it's either this same PR's own worktree from an earlier pass through this
+   step (reuse it as-is — it may already carry a rebase from a previous
+   pass, don't recreate it out from under that) or a crashed run's leftover.
+   Tell them apart the only way that matters operationally: `git worktree
+   unlock` it (harmless no-op if it isn't locked) then try `git worktree
+   remove` it. Succeeds → it was stale; create fresh as below. Still fails →
+   it's either genuinely in use or genuinely dirty either way, don't force
+   it: skip this PR's merge for this pass, report it, and move on to other
+   eligible PRs. If the path didn't exist at all, create fresh: `git fetch
+   origin`, then `git worktree add --detach --lock
    <repo-root>/.claude/worktrees/<slug>-merge-<tn> feature/<slug>-<tn>`.
-   Detached matters beyond isolation — a *non*-detached checkout is refused
-   whenever that branch is still checked out in its own chain worktree,
-   which is permanently true for a chain's last task (nothing ever advances
-   past it to release the branch), so a plain checkout there would deadlock
-   the rest of the run: that PR would sit "not yet eligible" forever, merged
-   nowhere and never flagged as escalated. `--detach` sidesteps that
-   exclusivity check entirely. Then `git rebase origin/main` there (drops an
-   already-merged parent's commits when there are any, surfaces cross-chain
-   conflicts on shared files, and does nothing at all if the branch is
-   already caught up — by the time a PR is eligible its chain has very
-   likely moved on to the next stacked task in that same worktree, so this
-   rebase must never run there: checking an older branch out over an
-   in-progress one is the identical HEAD-flip/dirty-tree collision described
-   above, just intra-chain). If the rebase actually moved anything, push
-   with `git push --force-with-lease origin HEAD:feature/<slug>-<tn>` — plain
-   `git push` is a non-fast-forward and gets rejected, since the rebase
-   rewrote this branch's commits (skip the push if the rebase was a genuine
-   no-op; nothing changed, nothing to push) — then `git worktree remove` the
-   throwaway worktree (if that's refused because it's dirty, leave it and
-   note it in the report — never `--force`). Conflicts → leave the worktree
-   exactly as it is and go to step 4. The chain worktree's own copy of that
-   branch is now stale; that's harmless — the chain never touches an
-   already-approved task's branch again, it only ever branched a stacked
-   child off it once, before this rebase ran.
+
+   `--lock` matters as much as `--detach` — it's the actual in-use
+   protection against step 0's own crash-recovery sweep (or a concurrent
+   run's) pulling this worktree out from under an active merge attempt:
+   `git worktree remove` on a locked tree exits 128 and needs `-f -f` to
+   override, which the never-`--force` rule everywhere in this file already
+   forbids. `--detach` is separately required: a *non*-detached checkout is
+   refused whenever that branch is still checked out in its own chain
+   worktree, which is permanently true for a chain's last task (nothing
+   ever advances past it to release the branch), so a plain checkout there
+   would deadlock the rest of the run — that PR would sit "not yet
+   eligible" forever, merged nowhere and never flagged as escalated.
+
+   **The rebase.** `git rebase origin/main` in it — safe to run
+   unconditionally, every pass through this step, not just the worktree's
+   first: it drops an already-merged parent's commits when there are any,
+   surfaces cross-chain conflicts on shared files, and does nothing at all
+   if the branch is already caught up. This must never run in the chain
+   worktree instead — by the time a PR is eligible its chain has very
+   likely moved on to the next stacked task there, so checking an older
+   branch out over an in-progress one is the identical HEAD-flip/dirty-tree
+   collision described above, just intra-chain. If the rebase actually
+   moved anything, push with `git push --force-with-lease origin
+   HEAD:feature/<slug>-<tn>` — plain `git push` is a non-fast-forward and
+   gets rejected, since the rebase rewrote this branch's commits (skip the
+   push if the rebase was a genuine no-op; nothing changed, nothing to
+   push). Conflicts → go to step 4, leave the worktree exactly as it is,
+   still locked. Clean (or a no-op) → go to step 3 — **do not remove or
+   unlock the worktree here**; its lifetime isn't over, see above. The
+   chain worktree's own copy of that branch is now stale regardless; that's
+   harmless — the chain never touches an already-approved task's branch
+   again, it only ever branched a stacked child off it once, before this
+   rebase ever ran.
 
    **Stacked children re-parent through this same step, not automatically.**
    A rebase here moves only this one branch, not any child already stacked
@@ -504,32 +542,45 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    through step 4 like any other.
 3. **Merge.** When `gh pr view <n> --json mergeable,mergeStateStatus` reports
    `MERGEABLE`/`CLEAN`, merge in dependency order (`gh pr merge <n> --squash`
-   unless the repo's merged-PR history shows another style). `mergeable:
-   UNKNOWN` right after step 2's force-push is GitHub still recomputing, not
-   a verdict — poll the same check a few times with a short wait between
-   (a few seconds each) instead of treating it as blocked; only `CONFLICTING`
-   is an actual conflict, worth going to step 4 for. After each merge,
-   re-check the remaining open approved PRs — a merge to `main` can flip a
-   sibling to `CONFLICTING`.
+   unless the repo's merged-PR history shows another style) — then the merge
+   attempt is over: `git worktree unlock` this PR's merge worktree, then
+   `git worktree remove` it (if removal still fails somehow, leave it and
+   note it in the report — never `--force`/`-f -f`). `mergeable: UNKNOWN`
+   right after step 2's force-push is GitHub still recomputing, not a
+   verdict — poll the same check a few times with a short wait between (a
+   few seconds each) instead of treating it as blocked; only `CONFLICTING`
+   is an actual conflict, worth going to step 4 for (that PR's merge
+   worktree from step 2 is still there and still locked, waiting). After
+   each merge, re-check the remaining open approved PRs — a merge to `main`
+   can flip a sibling to `CONFLICTING`; if that sibling already has its own
+   merge worktree from an earlier pass through step 2, step 4 below uses it
+   as-is rather than creating a new one.
 4. **Conflicts → resolver subagent.** If a rebase/merge hits conflicts, do NOT
    resolve them inline (orchestrator token-discipline). Dispatch the task's
    area engineer in resolve mode (or `general-purpose`) into that PR's
-   **throwaway merge worktree from step 2** (absolute path, stated explicitly
-   in the dispatch — never the chain worktree, same reasoning as step 2) with
-   the conflict details; it resolves, re-runs the task's gates
-   (tsc/tests/lint or build/vet/test), and pushes. Tell it explicitly that
-   the worktree is in **detached HEAD** (step 2 checked it out that way on
-   purpose), so a plain `git push` has no upstream to go to — it must push
-   with `git push --force-with-lease origin HEAD:feature/<slug>-<tn>`, same
-   as step 2's own push, then report back. Then re-check mergeability and
-   merge. Cap this at **2** resolve attempts per PR; if still unmergeable,
-   record a merge escalation and leave that PR
-   (and its unmerged dependents) ready-but-unmerged for the user, continuing
-   with independent PRs. Either way — merged or escalated — remove the
-   throwaway worktree once you're done with it (leave it and note it in the
-   report if `git worktree remove` refuses on a dirty tree — never
-   `--force`); there's nothing more to gain from keeping it around, the
-   escalation report already names the conflicting files.
+   **merge worktree from step 2** (absolute path, stated explicitly in the
+   dispatch — never the chain worktree, same reasoning as step 2; it's
+   guaranteed to exist and still be locked, since step 2 always creates one
+   and nothing removes it before a terminal outcome) with the conflict
+   details. If the worktree's current state doesn't already show the
+   conflict — e.g. this PR was flipped to `CONFLICTING` by a sibling's merge
+   sometime after step 2's last rebase, rather than by step 2's own rebase
+   just now — tell the engineer its first move is `git fetch origin && git
+   rebase origin/main` there itself, to reproduce the conflict before
+   resolving it. It resolves, re-runs the task's gates (tsc/tests/lint or
+   build/vet/test), and pushes. Tell it explicitly that the worktree is in
+   **detached HEAD** (step 2 checked it out that way on purpose), so a plain
+   `git push` has no upstream to go to — it must push with `git push
+   --force-with-lease origin HEAD:feature/<slug>-<tn>`, same as step 2's own
+   push, then report back. Then re-check mergeability and merge — which
+   also unlocks and removes the worktree, per step 3. Cap this at **2**
+   resolve attempts per PR; if still unmergeable, record a merge escalation,
+   leave that PR (and its unmerged dependents) ready-but-unmerged for the
+   user, continuing with independent PRs — and unlock and remove the
+   worktree now too (same refusal handling as step 3: leave it and note it
+   in the report if removal fails, never force); the escalation report
+   already names the conflicting files, so there's nothing more to gain
+   from keeping it around.
 5. **Merging is one command for you** (`gh pr merge`); the hands-on conflict
    work is always a subagent's. This keeps the merge gate automated without the
    orchestrator editing source.
@@ -589,8 +640,9 @@ worktree (`.claude/worktrees/<slug>-c<n>`) yourself either — that happens
 opportunistically via a later run's step-0 cleanup, once all of a chain's
 tasks are merged. Mention the step-0 worktree's path and every chain
 worktree's path in the report so the user can resume or clean any of them up
-by hand in the meantime. Throwaway merge worktrees
+by hand in the meantime. Per-PR merge worktrees
 (`.claude/worktrees/<slug>-merge-<tn>`) are different — they're meant to be
-gone by the time you get here; if any survived because a removal was refused
-on a dirty tree (Merge-on-approval steps 2/4), name them too so the user
-knows they're sitting on disk for a reason, not by design.
+gone by the time you get here (unlocked and removed in Merge-on-approval
+step 3 on a merge, or step 4 on an escalation); if any survived because a
+removal was refused, name them too so the user knows they're sitting on disk
+for a reason, not by design.
