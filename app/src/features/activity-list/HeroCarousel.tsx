@@ -172,7 +172,7 @@ const HeroPage = memo(function HeroPage({
     'loading',
   );
   return (
-    <View style={[styles.page, { width }]}>
+    <View testID={`activity-detail-hero-page-${index}`} style={[styles.page, { width }]}>
       {state !== 'broken' ? (
         <Image
           testID={`activity-detail-hero-image-${index}`}

@@ -1,3 +1,4 @@
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import type { ActivityPhoto } from '../../api/activities';
 import { HeroCarousel } from './HeroCarousel';
@@ -72,6 +73,17 @@ describe('HeroCarousel', () => {
     expect(screen.queryByLabelText(/view \d+ photos/i)).toBeNull();
     expect(screen.queryByTestId(/activity-detail-hero-image-/)).toBeNull();
     expect(screen.getByLabelText('Back')).toBeTruthy();
+  });
+
+  // T3: guards the fix's invariant — each page's width must stay an explicit
+  // number (mirroring HERO_HEIGHT's own explicit-pixel treatment), never a
+  // percentage resolved through the FlatList's own unstyled per-row wrapper
+  // divs (which default to width:auto and can collapse a percentage). The
+  // mocked useSafeAreaFrame (jest.setup.js) returns width: 320.
+  it('sizes each page to an explicit pixel width, not a percentage', () => {
+    render(<HeroCarousel photos={photos} onBack={jest.fn()} onOpenViewer={jest.fn()} />);
+    const page0 = screen.getByTestId('activity-detail-hero-page-0');
+    expect(StyleSheet.flatten(page0.props.style)).toMatchObject({ width: 320 });
   });
 
   it('falls back to the missing-image state when the current photo fails to load', () => {
