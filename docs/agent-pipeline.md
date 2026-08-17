@@ -28,9 +28,9 @@ flowchart LR
 ```
 
 Each stage reads the previous stage's markdown artifact and writes its own. An
-orchestrator slash command, run from your main session, dispatches the four
-subagents in sequence and enforces the human checkpoints and the
-engineer↔reviewer review loop.
+orchestrator slash command, run from your main session, dispatches the
+subagents for its pipeline and enforces that pipeline's checkpoints and
+review loop.
 
 ## The agents
 
