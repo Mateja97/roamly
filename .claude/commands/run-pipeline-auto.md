@@ -59,18 +59,36 @@ sessions collide (`git add -A` in one sweeps another's uncommitted edits).
 Before anything else, compute `<slug>` (see Setup).
 
 **Cleanup first:** for every directory under `.claude/worktrees/` other than
-`<slug>`, check whether it's fully shipped: read its
-`pipeline/<other-slug>/product-tasks.md` for task IDs and run `gh pr list
---state merged --search "T<n>" --base main` (or `git log main --oneline
---grep "T<n>"`) for each — the same check Build step 0 below already uses
-per-task. If every task is merged, remove it: `git worktree remove
-.claude/worktrees/<other-slug>`, then delete its feature branches (`git
-for-each-ref --format='%(refname:short)' "refs/heads/feature/<other-slug>-*"`,
-`git branch -D` each). If `product-tasks.md` doesn't exist yet or any task is
-unmerged, leave that worktree alone — it may be another session's
-in-progress work. This is opportunistic: skip a worktree you can't
-confidently classify rather than guessing, and never touch `<slug>`'s own
-worktree here.
+`<slug>` (this run's own worktree — see below), classify it and sweep
+accordingly. Never touch `<slug>` or any of `<slug>`'s own chain worktrees
+(`<slug>-c<n>`, created by Build step 3) here — only ever another run's
+worktrees.
+- **Another run's primary worktree, `<other-slug>`** (no `-c<n>` suffix):
+  check whether it's fully shipped — read its
+  `pipeline/<other-slug>/product-tasks.md` for task IDs and run `gh pr list
+  --state merged --search "T<n>" --base main` (or `git log main --oneline
+  --grep "T<n>"`) for each, the same check Build step 0 below already uses
+  per-task. If every task is merged, remove it: `git worktree remove
+  .claude/worktrees/<other-slug>`, then delete its feature branches (`git
+  for-each-ref --format='%(refname:short)'
+  "refs/heads/feature/<other-slug>-*"`, `git branch -D` each). If
+  `product-tasks.md` doesn't exist yet or any task is unmerged, leave that
+  worktree alone — it may be another session's in-progress work.
+- **Another run's chain worktree, `<other-slug>-c<n>`:** its tasks are a
+  subset of `<other-slug>`'s. If `<other-slug>`'s own
+  `pipeline/<other-slug>/product-tasks.md` doesn't exist (or that primary
+  worktree is already gone), you can't recompute which tasks belonged to
+  this chain — leave it alone. Otherwise recompute chain `n` exactly as
+  Build step 3 numbers it (the `n`-th root task, in the order roots appear
+  in `product-tasks.md`, plus everything transitively depending on it), and
+  run the same merged-PR check on just that chain's task IDs. If every one
+  is merged, `git worktree remove .claude/worktrees/<other-slug>-c<n>` and
+  delete its `feature/<other-slug>-*` branches for those task IDs. A chain
+  can be swept as soon as its own PRs are all merged — it doesn't wait on
+  sibling chains.
+
+This is opportunistic throughout: skip anything you can't confidently
+classify rather than guessing.
 
 Then isolate:
 - If `.claude/worktrees/<slug>` already exists (resuming a prior run), call
@@ -78,7 +96,12 @@ Then isolate:
 - Otherwise call `EnterWorktree` with `name: <slug>` to create a fresh worktree
   and switch into it.
 
-Everything below — Setup, Research, Product, Build — runs inside this worktree.
+Setup, Research, and Product run inside this worktree, and it stays the home
+for every `pipeline/<slug>/` bookkeeping file for the whole run — including
+Build's, once Build starts. Build's actual source-code work does **not**
+happen here: each dependency chain gets its own worktree (Build step 3
+below) so concurrent chains get real, not imagined, isolation. Keep that
+distinction explicit in every dispatch from Build onward — see step 3.
 
 ## Setup
 1. **Resolve `<slug>`:**
@@ -163,22 +186,69 @@ Dispatch `product` → `product-tasks.md`.
 - `reject` / `defer` → **STOP**, report the rationale.
 - `proceed` → continue to Build immediately.
 
-## 3. Build (parallel chains, stacked within a chain)
+## 3. Build (parallel chains, stacked within a chain — one worktree per chain)
 Partition tasks into independent dependency **chains**: a chain is a task with
-base `main` plus everything that (transitively) depends on it. Chains share no
-tasks and no branches, so they run **concurrently** — this is the pipeline's
-main speedup, turning an N-task build from N× serial into ~max-chain-length.
+base `main` plus everything that (transitively) depends on it. Number chains
+`c1`, `c2`, … in the order their root task (the one based on `main`) appears
+in `product-tasks.md` — deterministic, so step 0's cleanup can recompute it
+later without extra bookkeeping. Chains share no tasks and no branches, so
+they run **concurrently** — this is the pipeline's main speedup, turning an
+N-task build from N× serial into ~max-chain-length.
+
+**Branches do not isolate a working directory — they only name a commit.** A
+git branch is a pointer; the working directory (HEAD, index, files on disk)
+is a separate, single, shared thing per worktree. Two engineers in the same
+worktree, even on different branches, share that one HEAD, one index, one set
+of files: engineer B's `git checkout -b` flips HEAD out from under engineer A
+mid-edit, A's `git add -A` sweeps B's uncommitted files onto A's branch and
+into A's PR, and a `git rebase` in one chain aborts or corrupts because
+another chain's tree is dirty. Real isolation is a **separate worktree per
+chain** — not the single worktree step 0 created for the orchestrator itself.
+
+Before dispatching a chain's first task, get its worktree ready: if
+`.claude/worktrees/<slug>-c<n>` already exists (resuming a prior run that got
+partway through this chain), reuse it as-is — don't recreate it out from
+under whatever it's mid-way through. Otherwise create it fresh with a plain
+`git worktree add .claude/worktrees/<slug>-c<n> origin/main` — a raw Bash
+command, not the `EnterWorktree` tool. The orchestrator's own session stays
+put in the step-0 `<slug>` worktree for the whole run; `EnterWorktree` only
+tracks one active worktree per session, and Build needs up to N running at
+once. That worktree's absolute path, `.claude/worktrees/<slug>-c<n>`, is
+where **all** of that chain's git work happens — every `git checkout -b`,
+`add`, `commit`, `push`, `gh pr create`, and rebase for its tasks. The
+pipeline bookkeeping files (`product-tasks.md`, `task-plan.md`,
+`engineering-notes.md`, `review-log.md`, `design-spec.md`, screenshots) stay
+where they've always been, under `pipeline/<slug>/` in the step-0 `<slug>`
+worktree — keep passing their absolute paths there as usual; only
+source-code edits and git commands move into the chain worktree. (One
+exception: `DESIGN_STANDARDS.md` is a repo file, not bookkeeping — the
+designer must edit the copy *inside the chain's worktree* so the change ships
+with that chain's PR; see step 2 below.)
 
 - Dispatch the chains in parallel (see `superpowers:dispatching-parallel-agents`).
   Track each chain's current task independently.
 - **Within** a chain, run its tasks strictly serially in dependency order — a
-  stacked child can't branch off a parent that isn't built yet.
-- Each chain only touches its own `feature/<slug>-<tn>` branches, so the step 0
-  worktree keeps concurrent chains from colliding.
+  stacked child can't branch off a parent that isn't built yet. That rule is
+  unchanged by the per-chain worktree: the tasks were always serialized
+  within a chain, they just now stack inside one dedicated directory instead
+  of a shared one.
+- Every designer, engineer, and reviewer dispatched for a chain must be given
+  that chain's worktree **absolute path** (`.claude/worktrees/<slug>-c<n>`)
+  and told explicitly to do its git and file work there — subagents don't
+  inherit the orchestrator's working directory, so this has to be stated in
+  the dispatch itself, not implied by "the worktree."
 - Escalation stays per-chain: a task that fails its review loop skips only the
   tasks that depend on it (its own chain's tail); other chains are unaffected.
 
-For each task `Tn` in a chain (chains advance in parallel; steps below are per task):
+**Cost of this:** N chains means N worktrees on disk at once, and each one
+needs its own dependency install (`npm ci` / `go mod download` / etc.) before
+its engineer can build — slower to spin up and heavier on disk than the one
+shared tree this used to be. That's the price of chains that genuinely don't
+collide; pay it rather than serializing the build or leaning on branch-level
+isolation that was never real.
+
+For each task `Tn` in a chain (chains advance in parallel; steps below are per
+task, and run inside that chain's worktree, `.claude/worktrees/<slug>-c<n>`):
 0. **Skip already-shipped tasks:** check `gh pr list --state merged --search "T<n>" --base main`
    (or `git log main --oneline --grep "T<n>"`) for a PR/commit that already
    shipped `Tn` into `main`. If found, skip straight to the next task — do not
@@ -186,35 +256,41 @@ For each task `Tn` in a chain (chains advance in parallel; steps below are per t
    if this check finds nothing.
 1. **Base branch:** if `Tn` depends on `Tm`, base = `Tm`'s branch
    (`feature/<slug>-<tm>`); otherwise base = `main`. This **stacks** dependent
-   PRs so the whole chain builds before any merge.
+   PRs so the whole chain builds before any merge — all inside the same chain
+   worktree, so each stacked branch checks out cleanly on top of the last.
 2. **`area: frontend` or `area: app` — design (no pause):** dispatch the
-   `designer` agent with the `product-tasks.md` path, the task id `Tn`,
-   `DESIGN_STANDARDS.md`, and the `design-spec.md` path (append its
-   section). Standard additions auto-apply — the designer edits
-   `DESIGN_STANDARDS.md` itself; there is no checkpoint. Record every
-   addition it reports for the final run report (standard additions ship with
-   the task's PR when it merges). `area: backend` tasks skip this step.
+   `designer` agent with the `product-tasks.md` path, the task id `Tn`, the
+   chain worktree's `DESIGN_STANDARDS.md`
+   (`.claude/worktrees/<slug>-c<n>/DESIGN_STANDARDS.md` — that's the copy to
+   edit, so the change ships with this chain's PR), and the `design-spec.md`
+   path (in the step-0 worktree; append its section). Standard additions
+   auto-apply — the designer edits `DESIGN_STANDARDS.md` itself; there is no
+   checkpoint. Record every addition it reports for the final run report
+   (standard additions ship with the task's PR when it merges). `area:
+   backend` tasks skip this step.
 3. Dispatch the area's engineer (`backend-engineer` | `frontend-engineer` |
    `app-engineer`) with the `product-tasks.md` path, the task id,
    `task-type: feature`, the `task-plan.md` path, the `engineering-notes.md`
-   path, the base branch to use, AND — for `area: frontend` or `area: app`
-   — the `design-spec.md` path and the screenshots directory
-   `pipeline/<slug>/screenshots/<Tn>/`.
+   path, the base branch to use, the chain worktree's absolute path with an
+   explicit instruction to do all git and file work there, AND — for `area:
+   frontend` or `area: app` — the `design-spec.md` path and the screenshots
+   directory `pipeline/<slug>/screenshots/<Tn>/`.
    - **`area: frontend` or `area: app` only (no pause):** if the engineer
      reports `NEEDS_DESIGN`, re-dispatch `designer` with the task id, the
-     `design-spec.md` path, and the reported gap to append an addendum.
-     Standard additions auto-apply, same as step 2 above. Record the
-     addendum in the final run report. Then re-dispatch the same engineer
-     to resume the same task. This does not count toward the review loop's
-     3-round cap below.
+     `design-spec.md` path, the reported gap, and the same chain worktree's
+     `DESIGN_STANDARDS.md` path to append an addendum. Standard additions
+     auto-apply, same as step 2 above. Record the addendum in the final run
+     report. Then re-dispatch the same engineer, with the same chain
+     worktree path, to resume the same task. This does not count toward the
+     review loop's 3-round cap below.
 4. Review loop (max **3** rounds):
    - Dispatch `reviewer` with the PR, `product-tasks.md`, the task id,
      `task-type: feature`, the `task-plan.md` path, `engineering-notes.md`,
-     `review-log.md`, and — for `area: frontend` or `area: app` — the
-     `design-spec.md` path and the screenshots directory
-     `pipeline/<slug>/screenshots/<Tn>/`.
+     `review-log.md`, the chain worktree's absolute path, and — for `area:
+     frontend` or `area: app` — the `design-spec.md` path and the
+     screenshots directory `pipeline/<slug>/screenshots/<Tn>/`.
    - `changes-requested` → re-dispatch the same area engineer (resolve mode,
-     `review-log.md` path) → re-review.
+     `review-log.md` path, same chain worktree path) → re-review.
    - `approved` → `gh pr ready` (mark ready), then hand the PR to the
      **Merge-on-approval** step below. A newly-approved PR does not sit waiting
      for the user — it merges as soon as its dependencies are satisfied.
@@ -233,8 +309,12 @@ merge it into `main` — respecting dependency order and integrating conflicts:
 2. **Rebase before merge.** Before merging an eligible PR, make sure its branch
    sits on the current `main` tip: `git fetch origin`, and if `main` has moved
    since the branch was cut, the branch needs a rebase (drops an already-merged
-   parent's commits, and surfaces cross-chain conflicts on shared files). Do the
-   rebase in the PR's **own** branch — never in the shared primary checkout.
+   parent's commits, and surfaces cross-chain conflicts on shared files). Do
+   the rebase in that PR's own **chain worktree**
+   (`.claude/worktrees/<slug>-c<n>`) — never in the step-0 `<slug>` worktree,
+   and never in another chain's worktree. A branch name doesn't carry a
+   working directory with it; the worktree it was built in is the only place
+   its checkout, index, and files actually live.
 3. **Merge.** When `gh pr view <n> --json mergeable,mergeStateStatus` reports
    `MERGEABLE`/`CLEAN`, merge in dependency order (`gh pr merge <n> --squash`
    unless the repo's merged-PR history shows another style). After each merge,
@@ -242,12 +322,14 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    sibling to `CONFLICTING`.
 4. **Conflicts → resolver subagent.** If a rebase/merge hits conflicts, do NOT
    resolve them inline (orchestrator token-discipline). Dispatch the task's area
-   engineer in resolve mode (or `general-purpose`) into that PR's branch/worktree
-   with the conflict details; it resolves, re-runs the task's gates
-   (tsc/tests/lint or build/vet/test), pushes, and reports back. Then re-check
-   mergeability and merge. Cap this at **2** resolve attempts per PR; if still
-   unmergeable, record a merge escalation and leave that PR (and its unmerged
-   dependents) ready-but-unmerged for the user, continuing with independent PRs.
+   engineer in resolve mode (or `general-purpose`) into that PR's **chain
+   worktree** (`.claude/worktrees/<slug>-c<n>`, absolute path, stated
+   explicitly in the dispatch) with the conflict details; it resolves,
+   re-runs the task's gates (tsc/tests/lint or build/vet/test), pushes, and
+   reports back. Then re-check mergeability and merge. Cap this at **2**
+   resolve attempts per PR; if still unmergeable, record a merge escalation
+   and leave that PR (and its unmerged dependents) ready-but-unmerged for the
+   user, continuing with independent PRs.
 5. **Merging is one command for you** (`gh pr merge`); the hands-on conflict
    work is always a subagent's. This keeps the merge gate automated without the
    orchestrator editing source.
@@ -278,6 +360,10 @@ the reason and a note that the design project's mirror is stale). If everything 
 green. For any `merge-escalated` PR, name the conflicting files and what the
 user needs to decide.
 
-Leave the worktree in place — do not call `ExitWorktree` unless the user asks.
-Mention its path (`.claude/worktrees/<slug>`) so the user can resume or clean it
-up themselves once everything is merged.
+Leave every worktree in place. Do not call `ExitWorktree` on the step-0
+`<slug>` worktree unless the user asks, and don't remove any chain worktree
+(`.claude/worktrees/<slug>-c<n>`) yourself either — that happens
+opportunistically via a later run's step-0 cleanup, once all of a chain's
+tasks are merged. Mention the step-0 worktree's path and every chain
+worktree's path in the report so the user can resume or clean any of them up
+by hand in the meantime.
