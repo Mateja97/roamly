@@ -3,16 +3,16 @@
 **Date:** 2026-08-17
 **Slug:** `content-audit-draft-demotion`
 **Status:** Brainstorming complete, decisions locked. Ready for planning.
-**Relates to:**
-[2026-08-02-activity-detail-system-design.md](2026-08-02-activity-detail-system-design.md)
-— that spec built the typed-slot detail page and made every slot omit itself
-when its data is absent. This spec is the consequence: a row with no data now
-renders a page made almost entirely of correct absences, which reads to a user
-as the old, pre-redesign layout. Also
-[2026-07-30-places-live-details-design.md](2026-07-30-places-live-details-design.md)
+**Relates to:** `2026-08-02-activity-detail-system-design.md` — that spec
+built the typed-slot detail page and made every slot omit itself when its
+data is absent. This spec is the consequence: a row with no data now renders
+a page made almost entirely of correct absences, which reads to a user as
+the old, pre-redesign layout. Also `2026-07-30-places-live-details-design.md`
 (the read-time Places merge this audit reuses) and
-[2026-08-01-wellness-entertainment-detail-page-design.md](2026-08-01-wellness-entertainment-detail-page-design.md)
-(`websitesync`, the only thing that has ever produced body content at scale).
+`2026-08-01-wellness-entertainment-detail-page-design.md` (`websitesync`, the
+only thing that has ever produced body content at scale). None of the three
+are in this repo — they live under `docs/superpowers/`, which `.gitignore`
+excludes — so these are names for context, not links.
 
 ---
 
@@ -227,6 +227,15 @@ scores. The publish bar gets chosen by reading that table, not by argument.
 
 ### 3. Read-time verdict
 
+> **Not shipped.** This whole section describes the write-on-read demotion
+> behind `CONTENT_AUDIT_ENFORCE`. Steps 1–3 of the sequencing below (schema,
+> `Renderability`, and the report-only `cmd/auditcontent` sweep) are what
+> landed; this section is not — `withLiveDetails` issues no
+> `repo.Update(status=draft, ...)` and no `CONTENT_AUDIT_ENFORCE` env var
+> exists anywhere in the codebase. Read the rest of this section as the
+> design for a step that has not been built, not as a description of current
+> behaviour.
+
 `withLiveDetails` already holds the merged activity and has already paid for the
 Places call. After the merge it runs `renderability()`; on failure it issues a
 best-effort `repo.Update(status=draft, draft_reason=…)`, ignores any error, and
@@ -251,7 +260,11 @@ sweeps.
 > moved on by the time this landed. Other shipped deviations from this spec
 > are tracked in
 > [content-audit-draft-demotion-plan.md](content-audit-draft-demotion-plan.md)'s
-> "Deviation from the spec, and why".
+> "Deviation from the spec, and why". Also superseded: the last sentence
+> below, "expose it on the admin `ListFilter` so a follow-up admin screen can
+> query by reason" — `draft_reason` is on `Activity` and `UpdatePatch`, but
+> `activitiessvc.ListFilter` has no `DraftReason` field. That follow-up has
+> not landed.
 
 `0033_draft_reason.sql`:
 
@@ -269,6 +282,17 @@ Repository changes: include `draft_reason` in the row scan, add it to
 screen can query by reason.
 
 ### 5. Required refactor
+
+> **Superseded on one detail:** "without its 4-second request-scoped
+> timeout" below did not ship that way. The shipped `WithLiveDetails`
+> deliberately reuses `detailResolveTimeout` (4s) rather than dropping it —
+> see that constant's doc comment in `internal/service/activity.go`. It is
+> still a real bound on a real third-party call, and pairs with
+> `WithLiveDetails`' `resolved` return: a timeout now surfaces to the audit
+> as a skipped row rather than a false `no_content` verdict, so a slow
+> Places response costs a retry on the next run instead of corrupting the
+> count. Everything else in this section (the published-only-gate split,
+> `GetByIDWithLiveDetails` staying a thin wrapper) shipped as described.
 
 Step 2 of the sweep needs the Places merge without
 `GetByIDWithLiveDetails`' published-only gate and without its 4-second
