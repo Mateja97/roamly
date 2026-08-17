@@ -30,7 +30,8 @@ models multiply their quota cost.
   subagent: the area engineer in resolve mode for fixes, `general-purpose`
   for one-off verification or investigation. The only exceptions are the
   one-command checks this flow already requires (e.g. `gh pr list`,
-  `gh pr ready`).
+  `gh pr ready`, `docker compose -p <slug>-c<n> down` to tear down a
+  chain's visual-gate stack once nothing needs it — see Done).
 
 ## Environment failures (fix globally, not per-worktree)
 If a task, its verification, or its review fails because a **tool** is
@@ -98,10 +99,16 @@ same check Build step 0 below already uses per-task.
   branches for those task IDs — it doesn't wait on sibling chains or on the
   primary.
 - **Any `*-merge-<tn>` directory, anywhere, including under `<slug>`
-  itself:** always safe to remove regardless of which run created it or
-  whether it's this run's own — nothing legitimate keeps a throwaway merge
+  itself:** no merge-status check needed regardless of which run created it
+  or whether it's this run's own — nothing legitimate keeps a throwaway merge
   worktree (Merge-on-approval step 2) alive past the one pass that created
-  it, so any that still exists is leftover from a crash. Remove it the same
+  it, so any that still exists is leftover from a crash. This isn't
+  unconditionally safe, though: `git worktree remove` has no in-use lock on a
+  clean tree, so in principle another session's own Merge-on-approval could
+  be mid-rebase in that exact worktree right now, in the seconds-wide window
+  before it's dirtied by that rebase's changes. The dirty-tree check below is
+  the only guard — it's just usually enough, since a mid-rebase worktree is
+  dirty almost immediately. Remove it the same
   way, no task-merge check needed. Worth sweeping even for `<slug>`: a
   leftover one left behind by an earlier crashed run of this same slug is
   exactly the kind of stale state a resume shouldn't have to work around.
@@ -113,7 +120,9 @@ anything you can't confidently classify rather than guessing.
 
 Then isolate:
 - If `<repo-root>/.claude/worktrees/<slug>` already exists (resuming a prior
-  run), call `EnterWorktree` with `path: .claude/worktrees/<slug>`.
+  run), call `EnterWorktree` with `path: <repo-root>/.claude/worktrees/<slug>`
+  — `EnterWorktree` wants a path as it appears in `git worktree list`, which
+  is always absolute, same as everywhere else in this file.
 - Otherwise call `EnterWorktree` with `name: <slug>` to create a fresh worktree
   and switch into it.
 
@@ -460,6 +469,22 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    orchestrator editing source.
 
 ## Done
+**Tear down the last visual-gate holder's stack.** Build's queue teardown
+(see the docker-compose bullet above) brings down every chain's stack as
+soon as the *next* chain takes the gate — but nothing ever hands the gate
+away after the last `frontend-engineer`/`app-engineer` dispatch of the run,
+so that one chain's stack is still up under project name `<slug>-c<n>` when
+the run ends. Left alone, it sits on the pinned host ports indefinitely: the
+next run's chain worktree has a different directory basename, so its own
+`docker compose ps` can't see this leftover stack either, falls through to
+`docker compose up -d --build` the same way a second chain would have, and
+hard-fails on the same ports — the identical hazard, just moved from
+inter-chain to inter-run. If this run ever dispatched a `frontend-engineer`
+or `app-engineer`, run `docker compose -p <slug>-c<n> down` for whichever
+chain held the gate last. This is a one-command orchestrator action, not a
+subagent dispatch — it's in the Token discipline exception list above,
+alongside `gh pr list`/`gh pr ready`.
+
 **Standards push-back (design-import runs only):** if any merged PR changed
 `DESIGN_STANDARDS.md` and `pipeline/<slug>/design-import/SOURCE.md` exists,
 push the post-merge copy back to the design project so its mirror stays
