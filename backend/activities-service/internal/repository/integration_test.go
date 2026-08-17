@@ -114,9 +114,10 @@ func migrationsThrough(cutoff string) fs.FS {
 // migration's behavior. Upsert and Create always select HEAD's
 // adminColumns, which grows with every schema-adding migration
 // (google_place_id at 0030, and whatever comes next); reusing them here
-// would silently break every earlier-cutoff test each time that happens —
-// exactly what broke the three tests below when 0030 landed, since seeding
-// via repo.Upsert/repo.Create failed before their target migration ever ran.
+// would break every earlier-cutoff test each time that happens — exactly
+// what broke the tests below when 0030 landed, since seeding via
+// repo.Upsert/repo.Create failed loudly (missing-column error) before
+// their target migration ever ran.
 const legacyAdminColumns = `id, title, description, category, ST_Y(location::geometry), ST_X(location::geometry),
 	country, rating, photos, tags, details,
 	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id,
@@ -135,7 +136,10 @@ func scanLegacyActivity(row pgx.Row) (activitiessvc.Activity, error) {
 }
 
 // seedLegacyActivity mirrors Upsert's INSERT, minus google_place_id — see
-// legacyAdminColumns' doc.
+// legacyAdminColumns' doc. Plain INSERT, no ON CONFLICT: none of these
+// tests re-seed the same (source_url, category) pair, so there's no update
+// path to mirror; a future test that does would get a unique-violation
+// instead of an update and should extend this rather than assume one.
 func seedLegacyActivity(ctx context.Context, db *pgxpool.Pool, in activitiessvc.IngestActivity) (activitiessvc.Activity, error) {
 	sourceURL := canonicalSourceURL(in.SourceURL)
 	a, err := scanLegacyActivity(db.QueryRow(ctx, `
@@ -2428,7 +2432,7 @@ func TestMigration0031RenamesActionURLPreservingValue(t *testing.T) {
 
 	seed := func(t *testing.T, title, sourceURL string, cat activitiessvc.Category, details string) activitiessvc.Activity {
 		t.Helper()
-		got, err := repo.Upsert(ctx, activitiessvc.IngestActivity{
+		got, err := seedLegacyActivity(ctx, db, activitiessvc.IngestActivity{
 			Title: title, Category: cat, Lat: 44.8, Lng: 20.4, Country: "Serbia",
 			Rating: 4.0, Status: activitiessvc.StatusPublished,
 			Source: "test", SourceURL: sourceURL, ExternalID: title,
