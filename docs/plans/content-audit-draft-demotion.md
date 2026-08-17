@@ -130,11 +130,16 @@ merely present in the JSON:
 | a body block — `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes` | 2 |
 | a quotable Tripadvisor `reviews` array | 2 |
 | a non-empty merged `GoogleReviews` | 2 |
-| usable `opening_hours` | 1 |
-| chips only — `venue_type`, `hours`, `website_url`, `tripadvisor` | 1 total, however many are present |
+| presentational only — `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor` | 1 total, however many are present |
 
-Body-block and chip keys each score once, not per key: three chips are still
-one chip row.
+Each signal scores once, not per key: three chips are still one chip row, and
+two body blocks are still one screenful of substance.
+
+The presentational row is deliberately **one point for the whole group**, not
+one point each. An earlier draft scored `opening_hours` and chips separately,
+which summed to 2 and cleared a `minScore` of 2 on page furniture alone —
+precisely the outcome the bar exists to prevent. With them sharing a point, no
+combination of furniture can ever reach 2.
 
 `minScore` defaults to **2** — "one real body block, or a description, or
 quotable reviews; chips alone are not enough." It is a constant with a CLI flag
