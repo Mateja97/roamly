@@ -19,28 +19,48 @@ Pipeline orchestration runs on **Sonnet**. If this session is on an Opus or
 Fable model, stop and ask the user to switch (`/model`) before continuing.
 
 ## Token discipline
-**Dispatch and track; don't do.** You never Read/Edit source, never debug,
-never drive the browser yourself. Hands-on work goes to a subagent. Your only
-inline commands are the ones this flow requires: directory/file scaffolding
-for your own run artifacts (`mkdir`, writing `findings.md`'s header),
-`docker compose ps|up|logs`, `git`, and `gh pr list|ready|merge|view`.
+**Dispatch and track; don't do.** You never Read/Edit **source code**, never
+debug, never drive the browser yourself. Hands-on work goes to a subagent.
+Your inline commands are the ones this flow requires: `docker compose
+ps|up|logs`, `git`, `gh pr list|ready|merge|view`, and reading/editing your
+own run artifacts under `pipeline/bugs/**` — that tree is gitignored
+bookkeeping (not source), so `mkdir`, writing `findings.md`'s and
+`reprobe.md`'s headers, and pruning rejected polish tasks out of
+`bug-tasks.md` in Phase 3 are all inline, not delegated. The prohibition that
+matters is unchanged: never source code, never debugging, never the browser.
 
 ## Phase 0 — Preflight (primary checkout)
 1. Compute `<slug>` = `audit-<YYYY-MM-DD-HHMM>`. Create
    `pipeline/bugs/<slug>/` and `pipeline/bugs/<slug>/probes/{logs,api,ui,standards}/`.
-2. **Pre-create `findings.md`** at `pipeline/bugs/<slug>/findings.md` with a
+2. **Clean up stale worktrees.** For every directory under
+   `.claude/worktrees/` matching `audit-*` other than `<slug>`, check whether
+   it's fully shipped: read its `pipeline/bugs/<other-slug>/bug-tasks.md` for
+   task IDs, and for each check `gh pr list --state merged --head
+   feature/<other-slug>-T<n> --base main` — a branch-scoped search, never the
+   bare task-id substring form (see Phase 4's Branching section for why: a
+   substring search matches unrelated merged PRs since every audit run
+   restarts numbering at `T1`). If every task's branch shows merged, remove
+   it (`git worktree remove .claude/worktrees/<other-slug>`) and delete its
+   feature branches (`git for-each-ref --format='%(refname:short)'
+   "refs/heads/feature/<other-slug>-*"`, `git branch -D` each). If
+   `bug-tasks.md` doesn't exist yet or any task is unmerged, leave that
+   worktree alone — it may be another session's in-progress run. Opportunistic,
+   same posture as `run-pipeline-auto.md`'s §0 Isolate: skip a worktree you
+   can't confidently classify rather than guessing, and never touch `<slug>`
+   itself here.
+3. **Pre-create `findings.md`** at `pipeline/bugs/<slug>/findings.md` with a
    `# Audit findings` header (and nothing else) before dispatching any
    prober. `prober.md` is written to never create this file and never write
    a header itself — it only ever appends finding blocks. If the file isn't
    there with its header before Phase 1 starts, the first prober to run has
    nothing safe to append to.
-3. `git status --porcelain` — if non-empty, **STOP**. Phase 5 moves this
+4. `git status --porcelain` — if non-empty, **STOP**. Phase 5 moves this
    checkout's branch, so an unattended run must never be able to lose
    uncommitted work. Tell the user to commit or stash.
-4. `docker compose ps`. If services are missing or unhealthy, run
+5. `docker compose ps`. If services are missing or unhealthy, run
    `docker compose up -d --build` and wait for health.
-5. Stack cannot reach healthy → **STOP**. Every later phase needs a live stack.
-6. Record `git rev-parse --short HEAD` — the commit the probed stack is built
+6. Stack cannot reach healthy → **STOP**. Every later phase needs a live stack.
+7. Record `git rev-parse --short HEAD` — the commit the probed stack is built
    from. It goes in the final report.
 
 ## Phase 1 — Probe (primary checkout, four dispatches IN PARALLEL, FOREGROUND)
@@ -59,10 +79,20 @@ concurrent Agent calls issued in a single message run in parallel regardless
 of foreground/background. Do not "optimize" this back to background dispatch.
 
 A perspective that fails (browser unavailable, tool missing, service down) is
-recorded as `skipped: <reason>` and the run continues on the others. **All
-four failing → STOP.**
+recorded as `skipped: <reason>` and the run continues on the others. **Every
+dispatched perspective failing → STOP.** This is relative to what you
+actually dispatched, not a hardcoded four: a filtered run
+(`/run-audit-auto logs`) dispatches one perspective, and that one failing IS
+"every dispatched perspective failed" — don't wait for three more that were
+never sent.
 
-Zero findings across every perspective → **STOP** and report a clean audit.
+Zero findings is a **clean audit** only when at least one dispatched
+perspective actually completed (wasn't skipped). If every dispatched
+perspective was skipped, you probed nothing — **STOP** and report it as
+exactly that ("probed nothing: <perspectives> all skipped, <reasons>"), never
+as a clean audit. If at least one completed and found nothing (regardless of
+whether others were skipped), **STOP** and report a clean audit for the
+perspectives that actually ran.
 
 ## Phase 2 — Triage
 Dispatch `triager` with the `findings.md` path, `pipeline/bugs/ledger.json`,
@@ -76,55 +106,93 @@ healthy repo.
 If `bug-tasks.md` contains no `kind: polish` tasks, skip this phase entirely.
 
 Otherwise dispatch `product` with the `findings.md` path in place of its usual
-`research.md`, scoped explicitly to the polish candidates only, and the
-`bug-tasks.md` path. Bug tasks NEVER go through this gate — they are already
-justified by being broken.
-- `proceed` → its tasks stay in `bug-tasks.md`.
-- `reject` / `defer` → remove those polish tasks from `bug-tasks.md`, set their
-  ledger entries back to `status: open`, and carry the rationale to the report.
-  A reject here does not stop the run — the bug tasks still build.
+`research.md` (scoped explicitly, in the dispatch prompt, to only the finding
+ids named in the polish tasks' `origin` fields — not the whole file), and its
+**own** output path `pipeline/bugs/<slug>/polish-gate.md`. **Never point
+`product` at `bug-tasks.md`, as an input or an output.** `product.md`'s
+contract is to `Write` its output file wholesale: on `reject`/`defer` it
+writes only the decision (no tasks at all), and on `proceed` it rewrites the
+whole file in its own schema, which has no `kind:`/`origin:` field. Handing
+it `bug-tasks.md` as the output would erase every `kind: bug` task the
+triager already produced on a reject, and silently drop `kind:`/`origin:`
+from the surviving tasks on a proceed — both of which later phases depend on
+(Phase 4's `task-type` binding needs `kind`; Phase 5's re-probe scoping needs
+`origin`). Bug tasks are NEVER passed to `product` and are never touched by
+this phase — they are already justified by being broken.
 
-Zero tasks left after the gate → **STOP**, report.
+Apply `product`'s verdict to `bug-tasks.md` yourself (a `pipeline/bugs/**`
+edit, allowed inline per Token discipline):
+- `proceed` → leave those polish tasks exactly as they are in `bug-tasks.md`.
+- `reject` / `defer` → edit `bug-tasks.md` to remove exactly those polish
+  task entries, set their ledger entries back to `status: open`, and carry
+  `product`'s rationale to the report. A reject here does not stop the run —
+  the bug tasks (untouched by this phase) still build.
+
+Zero tasks left in `bug-tasks.md` after applying the verdict → **STOP**, report.
 
 ## Phase 4 — Build (worktree)
-`EnterWorktree` with `name: <slug>` (or `path: .claude/worktrees/<slug>` when
-resuming an existing one), then follow **`run-pipeline-auto.md`'s Build and
-Merge-on-approval sections by reference**, reading `bug-tasks.md` in place of
-`product-tasks.md`. That inherits the `designer` step for
-`area: frontend | app` tasks, the 3-round review loop (escalate on exhaustion
-— "skip dependents" never fires here, since no task ever has a dependent, see
-below), rebase-before-merge, and the 2-attempt conflict resolver. Also
-inherited: the **Environment failures** rule — a missing machine-level tool
-gets fixed machine-wide, never patched inside one worktree, and the changed
-baseline goes in the report.
+`git fetch origin` FIRST — `EnterWorktree`'s default (`fresh`) base-ref mode
+branches from `origin/<default-branch>` as of the last fetch, so fetching
+after entering the worktree would be too late to affect where it was cut
+from. Then `EnterWorktree` with `name: <slug>` (or
+`path: .claude/worktrees/<slug>` when resuming an existing one), then follow
+**`run-pipeline-auto.md`'s Build and Merge-on-approval sections by
+reference**, reading `bug-tasks.md` in place of `product-tasks.md`. That
+inherits the `designer` step for `area: frontend | app` tasks, the 3-round
+review loop (escalate on exhaustion — "skip dependents" never fires here,
+since no task ever has a dependent, see below), rebase-before-merge, and the
+2-attempt conflict resolver. Also inherited: the **Environment failures**
+rule — a missing machine-level tool gets fixed machine-wide, never patched
+inside one worktree, and the changed baseline goes in the report.
+
+**Not inherited: Build step 0's already-shipped check.**
+`run-pipeline-auto.md`'s `gh pr list --search "T<n>" --base main` is
+unscoped by slug — every audit run restarts task numbering at `T1`, so after
+the very first audit run (or any unrelated product-pipeline run) a merged PR
+mentioning "T1" already exists, and this check would wrongly skip a real new
+`T1`, silently no-oping the whole build phase. Do not dispatch this check.
+This pipeline doesn't need it anyway: the ledger already provides dedupe —
+`triager.md` will not re-file a finding whose ledger entry is already
+`status: task-created`. If a resume/skip check is ever wanted here, scope it
+to this run's own branch naming (`gh pr list --state merged --head
+feature/<slug>-T<n> --base main`), never a bare task-id substring search.
 
 ### Branching — do NOT inherit `run-pipeline-auto.md`'s chain/stacking rule
 This is a deliberate override of that file's Build section, not an omission.
-- `git fetch origin` before any branch is cut, in this phase and every phase
-  after it.
 - The worktree, and **every** feature branch inside it, are cut explicitly
   from **`origin/main`** — never from the primary checkout's current HEAD,
   and never from another feature branch (`CLAUDE.md`: "Never branch off
   another feature branch"). `EnterWorktree`'s default (`fresh`) base-ref mode
-  already does this for the worktree itself; if this environment is
-  configured for `head` mode instead, **STOP** and tell the user — proceeding
-  would silently branch off the wrong ref.
+  already does this for the worktree itself. **Verify it landed correctly**
+  right after `EnterWorktree`, with one check: `git merge-base HEAD
+  origin/main` must equal `git rev-parse origin/main` (the worktree's branch
+  point IS the current `origin/main` tip). If it doesn't — e.g. this
+  environment's worktree base-ref setting was changed to `head` mode —
+  **STOP** and tell the user; do not try to fix it by rebasing the worktree
+  yourself.
 - **There are no dependent tasks.** The triager now consolidates every set of
   findings that must be fixed together into a single task, so `bug-tasks.md`
   tasks always carry `[depends: none]`. Verify this for every task before
   building: if ANY task ever arrives with a `depends` value other than
-  `none`, that is a **triager bug** — **STOP** this phase, do not attempt to
-  stack a branch off another task's branch, and report it plainly so the
-  triager gets fixed.
+  `none`, that is a **triager bug** — **STOP the run** (not just this phase —
+  don't build any task from this batch), do not attempt to stack a branch off
+  another task's branch, and report it plainly so the triager gets fixed.
 - Because nothing stacks, every task is its own independent chain of length
   one: dispatch and build **all** tasks fully concurrently. There is no
   "within a chain, serially" ordering to carry over from
   `run-pipeline-auto.md` — that rule existed only for dependent chains, which
   don't exist in this pipeline.
-- Each task `Tn`'s branch is `feature/<slug>-<tn>`, based on `origin/main`
-  directly (per the `git fetch origin` above), same as `run-pipeline-auto.md`
-  step 0's already-shipped check and step 1's base-branch logic reduce to
-  when `depends` is always `none`.
+- Each task `Tn`'s branch is `feature/<slug>-<tn>`. When dispatching the
+  engineer, pass **`main`** as the base *name* — that's what makes the
+  engineer's own `git rebase origin/<base>` and `gh pr create --base <base>`
+  resolve to `origin/main` and a valid PR base of `main`. Separately,
+  **explicitly instruct the engineer to create its branch from
+  `origin/main`**, not local `main`
+  (`git checkout -b feature/<slug>-<tn> origin/main`) — local `main` inside
+  the worktree can be stale from the first merge onward, since `gh pr merge`
+  never advances it. These are two distinct instructions in the same
+  dispatch: the base *name* the engineer operates relative to (`main`), and
+  the exact ref its branch must start from (`origin/main`).
 - Merging still serializes one PR at a time with a mergeability re-check
   after each merge (`run-pipeline-auto.md`'s Merge-on-approval step 3) —
   independent PRs can still collide on shared files even without a
@@ -142,22 +210,55 @@ This is a deliberate override of that file's Build section, not an omission.
 ## Phase 5 — Re-probe (primary checkout)
 Skip this phase entirely if nothing merged.
 
-1. Return to the primary checkout and move it to the merged code:
+0. **Leave the worktree first — do not skip this.** `ExitWorktree` with
+   `action: "keep"` before doing anything else in this phase. Every remaining
+   step below runs in the **primary checkout**, never the worktree. Why this
+   matters: `docker-compose.yaml` has no top-level `name:` and no
+   `COMPOSE_PROJECT_NAME`, so Compose derives its project name from the
+   current directory's basename. Staying in the worktree would start a
+   *second* compose project (`audit-<ts>` vs the primary checkout's own
+   basename) on the same hard-pinned host ports as the already-running
+   stack — the rebuild fails on port conflicts, or worse, the probers
+   silently hit the still-running **pre-fix** stack while `git checkout -B`
+   moves the *worktree's* HEAD, not the primary checkout's, corrupting the
+   ledger with verdicts from code that was never actually re-probed.
+   `action: "keep"` leaves the worktree directory and its branches on disk
+   exactly as Phase 6 already requires ("leave the worktree in place") — this
+   is not in tension with that, don't re-optimize the `ExitWorktree` call away.
+1. Move the primary checkout to the merged code:
    `git fetch origin && git checkout -B audit-verify-<slug> origin/main`.
    A fresh branch, NOT `main` — `main` is frequently checked out in another
    worktree, where `git checkout main` fails outright. Phase 0's clean-tree
    gate is what makes this safe.
 2. `docker compose up -d --build` from the primary checkout, so the rebuilt
    stack keeps the same compose project and host ports as the probed one.
-3. Collect the `origin` field of every task that MERGED — a task's `origin`
-   may list several findings across different perspectives when the triager
-   consolidated by root cause, so union the perspectives named across ALL
-   merged tasks' `origin` fields, not just the first task or the first
-   finding per task. Re-dispatch `prober` for exactly that set of
-   perspectives (in parallel, same foreground-dispatch rule as Phase 1),
-   writing to `pipeline/bugs/<slug>/reprobe.md`.
-4. Per original finding: absent from the re-probe → set its ledger entry
-   `status: resolved`. Still present → set `status: not-fixed` and report it.
+3. **Pre-create `reprobe.md`** at `pipeline/bugs/<slug>/reprobe.md` with a
+   `# Re-probe findings` header (and nothing else) before dispatching any
+   prober — mirrors Phase 0's `findings.md` rule; `prober.md` never creates
+   this file or writes its own header. Collect the `origin` field of every
+   task that MERGED — a task's `origin` may list several findings across
+   different perspectives when the triager consolidated by root cause, so
+   union the perspectives named across ALL merged tasks' `origin` fields, not
+   just the first task or the first finding per task. Re-dispatch `prober`
+   for exactly that set of perspectives (in parallel, same **foreground**
+   `run_in_background: false` rule as Phase 1 — do not background these
+   either), each with `reprobe.md`'s path and its own evidence dir
+   `pipeline/bugs/<slug>/probes/reprobe-<perspective>/`.
+4. **Verification is the triager's call, not yours.** Prober ids reset every
+   run (`Fl1`, `Fa1`, …) and evidence wording varies run to run, so you
+   cannot tell by string matching whether a `reprobe.md` finding is "the
+   same" as an original one — that's exactly the semantic signature logic
+   `triager.md` already owns for its ledger lookups. Dispatch `triager` in a
+   **verification** pass: give it the `reprobe.md` path, `ledger.json`, and
+   the exact in-scope set — every ledger entry whose `task_ref` points at a
+   task that MERGED, restricted to the perspectives you actually re-probed in
+   step 3. It matches each in-scope entry's signature against `reprobe.md`:
+   absent → `status: resolved`; still present → `status: not-fixed`. It
+   writes `ledger.json` itself; you only relay the verdicts it reports back
+   to you in Phase 6. Every ledger entry OUTSIDE that in-scope set —
+   budget-deferred, gated out, escalated, or belonging to a perspective you
+   didn't re-probe — is left exactly as it was; it was never looked for, so
+   it is not "absent from the re-probe" in any meaningful sense.
    **Never retry a not-fixed finding in this run** — a fix/verify/refix loop is
    how an unattended run burns a night of quota.
 
@@ -184,10 +285,11 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 | Dirty working tree at phase 0 | STOP |
 | Stack won't reach healthy | STOP |
 | One perspective fails | record `skipped`, continue |
-| All four perspectives fail | STOP |
-| Zero findings / zero tasks | STOP, report |
-| A `bug-tasks.md` task has `depends` != `none` | STOP phase 4, report as a triager bug |
-| Worktree base-ref isn't `origin/main` (`fresh` mode) | STOP, tell the user |
+| Every dispatched perspective fails | STOP |
+| Every dispatched perspective was skipped (nothing actually probed) | STOP, report "probed nothing", not clean |
+| Zero findings (at least one perspective completed) / zero tasks | STOP, report clean audit |
+| A `bug-tasks.md` task has `depends` != `none` | STOP the run, report as a triager bug |
+| Worktree's branch point isn't the `origin/main` tip (`git merge-base` check fails) | STOP, tell the user |
 | Review loop exhausts 3 rounds | inherited: escalate, continue other tasks |
 | Merge conflict survives 2 resolver attempts | inherited: leave PR ready-but-unmerged, escalate |
 | Re-probe still shows the finding | report as not-fixed, never retry |
