@@ -869,10 +869,14 @@ feature branch would. Do not "fix" this back to a per-run branch.
    "modified" — and `git restore CHANGELOG.md` alone does not clear a
    *staged* modification, it exits 0 and changes nothing) — before
    reporting, always run this sequence:
-   1. `git merge --abort 2>/dev/null` — a no-op if there's no merge in
-      progress, and the only thing that clears a conflicted `UU
-      CHANGELOG.md` left by step 1 (it also unwinds the merge's other
-      bookkeeping, which no per-path command can).
+   1. `git merge --abort 2>/dev/null` — the only thing that clears a
+      conflicted `UU CHANGELOG.md` left by step 1 (it also unwinds the
+      merge's other bookkeeping, which no per-path command can). If there's
+      no merge in progress this is `fatal: There is no merge to abort
+      (MERGE_HEAD missing.)`, exit 128, **not** a no-op — that non-zero exit
+      means exactly "there was no merge to abort," not "this step failed."
+      Ignore it and continue to step 2 regardless of this command's exit
+      code.
    2. `git status --porcelain` — if non-empty, clean **only `CHANGELOG.md`**:
       `git restore --staged --worktree CHANGELOG.md` for a
       modified-or-staged one, `git clean -f CHANGELOG.md` for an untracked

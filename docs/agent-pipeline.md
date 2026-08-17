@@ -196,7 +196,7 @@ reaches the repo, via feature branches and PRs.
 - `research.md` — readable prose (you review it).
 - `product-tasks.md` — readable prose (you review it).
 - `design-spec.md` — readable prose (you review it), sectioned by task,
-  `area: frontend` tasks only.
+  `area: frontend` and `area: app` tasks only.
 - `screenshots/<taskid>/` — Playwright captures of every designed
   screen/state, committed on the task branch (force-added with `git add -f`
   — `pipeline/` is otherwise gitignored); the engineer self-checks them,
@@ -224,7 +224,8 @@ gh auth login          # interactive browser flow — you must do this yourself
 - The engineers apply `ponytail:ponytail` for the laziest working code:
   backend-engineer follows `GO_STANDARDS.md` (+ `cc-skills-golang`),
   frontend-engineer follows `FRONTEND_STANDARDS.md` (+ jeffallan
-  `react-expert`/`typescript-pro`).
+  `react-expert`/`typescript-pro`), app-engineer follows `APP_STANDARDS.md`
+  (+ `react-native-expert`).
 - The reviewer never edits code — it reviews and comments; the engineer fixes.
 - Agents report back to the orchestrator in caveman style to keep the main
   session's context lean.
