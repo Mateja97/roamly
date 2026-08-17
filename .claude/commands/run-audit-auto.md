@@ -124,9 +124,12 @@ Apply `product`'s verdict to `bug-tasks.md` yourself (a `pipeline/bugs/**`
 edit, allowed inline per Token discipline):
 - `proceed` → leave those polish tasks exactly as they are in `bug-tasks.md`.
 - `reject` / `defer` → edit `bug-tasks.md` to remove exactly those polish
-  task entries, set their ledger entries back to `status: open`, and carry
-  `product`'s rationale to the report. A reject here does not stop the run —
-  the bug tasks (untouched by this phase) still build.
+  task entries, and set their ledger entries' `status` field back to `open`
+  — write **only** `status`; every other field on that entry (`signature`,
+  `occurrences`, `task_ref`, etc.) is the triager's, so leave it exactly as
+  it is rather than reconstructing it by hand. Carry `product`'s rationale to
+  the report. A reject here does not stop the run — the bug tasks (untouched
+  by this phase) still build.
 
 Zero tasks left in `bug-tasks.md` after applying the verdict → **STOP**, report.
 
@@ -207,24 +210,30 @@ This is a deliberate override of that file's Build section, not an omission.
   `task-plan.md`, `engineering-notes.md`, `review-log.md`, `design-spec.md`
   and `screenshots/<Tn>/`.
 
-## Phase 5 — Re-probe (primary checkout)
-Skip this phase entirely if nothing merged.
+### Leaving the worktree — unconditional, every path out of Phase 4
+Once Phase 4 is over — every task merged, some escalated, or **all**
+escalated (3-round review exhaustion, or a merge conflict surviving both
+resolver attempts) — call `ExitWorktree` with `action: "keep"` before moving
+on. This is cleanup, not part of verification, so it runs on every path out
+of this phase, not only the one where something merged: this command is
+destined for a weekly cron with nobody there to answer a keep/remove prompt,
+and a session left parked inside the worktree at exit produces exactly that
+prompt. `action: "keep"` leaves the worktree and its branches on disk exactly
+as the report below still requires — do not remove it here. Also, staying in
+the worktree would corrupt Phase 5 if it does run: `docker-compose.yaml` has
+no top-level `name:`/`COMPOSE_PROJECT_NAME`, so Compose derives its project
+name from the current directory's basename — a second compose project
+(`audit-<ts>` vs the primary checkout's own basename) on the same
+hard-pinned host ports as the already-running stack means the rebuild fails
+on port conflicts, or worse, probers silently hit the still-running pre-fix
+stack while a `git checkout -B` in the worktree moves the *worktree's* HEAD,
+not the primary checkout's. Phase 5 below assumes this already happened and
+never calls `ExitWorktree` itself.
 
-0. **Leave the worktree first — do not skip this.** `ExitWorktree` with
-   `action: "keep"` before doing anything else in this phase. Every remaining
-   step below runs in the **primary checkout**, never the worktree. Why this
-   matters: `docker-compose.yaml` has no top-level `name:` and no
-   `COMPOSE_PROJECT_NAME`, so Compose derives its project name from the
-   current directory's basename. Staying in the worktree would start a
-   *second* compose project (`audit-<ts>` vs the primary checkout's own
-   basename) on the same hard-pinned host ports as the already-running
-   stack — the rebuild fails on port conflicts, or worse, the probers
-   silently hit the still-running **pre-fix** stack while `git checkout -B`
-   moves the *worktree's* HEAD, not the primary checkout's, corrupting the
-   ledger with verdicts from code that was never actually re-probed.
-   `action: "keep"` leaves the worktree directory and its branches on disk
-   exactly as Phase 6 already requires ("leave the worktree in place") — this
-   is not in tension with that, don't re-optimize the `ExitWorktree` call away.
+## Phase 5 — Re-probe (primary checkout)
+Skip this phase entirely if nothing merged. (The worktree was already exited
+unconditionally at the end of Phase 4, whether or not this phase runs.)
+
 1. Move the primary checkout to the merged code:
    `git fetch origin && git checkout -B audit-verify-<slug> origin/main`.
    A fresh branch, NOT `main` — `main` is frequently checked out in another
@@ -239,11 +248,14 @@ Skip this phase entirely if nothing merged.
    task that MERGED — a task's `origin` may list several findings across
    different perspectives when the triager consolidated by root cause, so
    union the perspectives named across ALL merged tasks' `origin` fields, not
-   just the first task or the first finding per task. Re-dispatch `prober`
-   for exactly that set of perspectives (in parallel, same **foreground**
-   `run_in_background: false` rule as Phase 1 — do not background these
-   either), each with `reprobe.md`'s path and its own evidence dir
-   `pipeline/bugs/<slug>/probes/reprobe-<perspective>/`.
+   just the first task or the first finding per task. Create the evidence
+   dir for each of those perspectives, same as Phase 0 pre-creates
+   `probes/{logs,api,ui,standards}/`:
+   `mkdir -p pipeline/bugs/<slug>/probes/reprobe-<perspective>/` for each.
+   Re-dispatch `prober` for exactly that set of perspectives (in parallel,
+   same **foreground** `run_in_background: false` rule as Phase 1 — do not
+   background these either), each with `reprobe.md`'s path and its own
+   evidence dir `pipeline/bugs/<slug>/probes/reprobe-<perspective>/`.
 4. **Verification is the triager's call, not yours.** Prober ids reset every
    run (`Fl1`, `Fa1`, …) and evidence wording varies run to run, so you
    cannot tell by string matching whether a `reprobe.md` finding is "the
@@ -264,8 +276,10 @@ Skip this phase entirely if nothing merged.
 
 ## Phase 6 — Report
 One summary:
-- the HEAD sha the stack was probed at, and the `audit-verify-<slug>` branch
-  the primary checkout now sits on
+- the HEAD sha the stack was probed at. Only claim the `audit-verify-<slug>`
+  branch if Phase 5 actually ran (i.e. something merged) — if it was skipped,
+  say plainly which branch the primary checkout is on instead (unchanged
+  since Phase 0, since nothing moved it)
 - findings per perspective, plus any perspective `skipped` and why
 - tasks shipped, in merge order, each with its PR link
 - polish accepted vs rejected, with the product agent's rationale
@@ -287,7 +301,8 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 | One perspective fails | record `skipped`, continue |
 | Every dispatched perspective fails | STOP |
 | Every dispatched perspective was skipped (nothing actually probed) | STOP, report "probed nothing", not clean |
-| Zero findings (at least one perspective completed) / zero tasks | STOP, report clean audit |
+| Zero findings, at least one dispatched perspective completed | STOP, report clean audit |
+| Zero tasks (phase 2: all findings already tracked; phase 3: all polish rejected) | STOP, report the known/deferred counts — NOT a clean audit |
 | A `bug-tasks.md` task has `depends` != `none` | STOP the run, report as a triager bug |
 | Worktree's branch point isn't the `origin/main` tip (`git merge-base` check fails) | STOP, tell the user |
 | Review loop exhausts 3 rounds | inherited: escalate, continue other tasks |
