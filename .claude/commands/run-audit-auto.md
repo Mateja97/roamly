@@ -328,30 +328,50 @@ else is ever branched off it, and it is recreated from `origin/main` the
 instant its PR is merged or closed — it never goes stale the way a real
 feature branch would. Do not "fix" this back to a per-run branch.
 
-1. `git fetch origin`, then classify `audit-changelog` with two checks, in
-   order — never infer state from *why* a prior run ended, always check
-   what's actually on the remote:
+1. `git fetch --prune origin` — the `--prune` matters: GitHub auto-deletes
+   a PR's head branch on merge by default, and without pruning, a fetch
+   never removes the resulting stale `origin/audit-changelog` remote-tracking
+   ref from this checkout, so a merged-and-deleted branch would keep
+   resolving as if it still existed, indefinitely. Then classify
+   `audit-changelog` with checks in a strict order — never infer state from
+   *why* a prior run ended, always check what's actually on the remote, and
+   never let a non-zero exit code default to "a difference" without reading
+   what it actually means:
    1. `gh pr list --head audit-changelog --state open` → an open PR exists?
       → **live**.
-   2. Otherwise, does `origin/audit-changelog` even exist? If not →
-      **fresh**. If it exists, compare *content*, not ancestry — `git diff
-      --quiet origin/main origin/audit-changelog -- CHANGELOG.md`. This
-      repo's PRs merge via `gh pr merge --squash` (see Phase 4), so after a
-      merge the branch's commits are never ancestors of `origin/main` and
-      an ancestry check (`git rev-list --count origin/main
-      ..origin/audit-changelog`) would stay above zero forever — the branch
-      would never reclassify as `fresh` again and would accumulate
-      indefinitely. A content diff is correct under squash, rebase, and
-      merge-commit alike. No diff → **fresh** (identical to `origin/main`;
-      recreating loses nothing real). A diff → **resume** (real entries
-      sitting on the branch with no PR watching them — the previous run's
-      `git push` succeeded but its `gh pr create` failed, or its PR was
-      closed without merging).
+   2. `gh pr list --head audit-changelog --state merged --limit 1` → a
+      merged PR exists for this head? → **fresh**, full stop — this is the
+      authoritative case, checked *before* looking at content, and it must
+      win even when content still differs. A merged PR means this branch's
+      entries are on `origin/main` by construction; the alternative (a
+      content-diff check alone) breaks the moment the user does the very
+      next thing this phase exists to enable — cut a release, which renames
+      `[Unreleased]` to a version and reintroduces a content diff against a
+      branch that has nothing left to contribute. Without this check first,
+      that branch would classify `resume` forever: every future run would
+      check it out, hit a real merge conflict against the release, abort,
+      and fail the phase — silently, permanently, every single week.
+   3. No open or merged PR — does `origin/audit-changelog` exist at all?
+      `git rev-parse --verify origin/audit-changelog`. Ref not found →
+      **fresh**. (This is the "no branch yet" and "pruned-away merged
+      branch" case.)
+   4. Ref exists, and it has neither an open nor a merged PR — compare
+      *content*: `git diff --quiet origin/main
+      origin/audit-changelog -- CHANGELOG.md`. Exit 0 → **fresh** (identical
+      to `origin/main`; recreating loses nothing real). Exit 1 → **resume**
+      (real entries sitting on the branch with no PR watching them — the
+      previous run's `git push` succeeded but its `gh pr create` failed).
+      Exit 128 (or anything else) → that's an error comparing the refs, not
+      a difference — do not guess **fresh** or **resume** from it; fail the
+      phase and report the classification itself as broken.
 
    This covers every state a prior run can leave behind: no branch (fresh),
-   branch with an open PR (live), branch whose PR merged (fresh — content
-   now matches `origin/main`), branch whose PR was closed unmerged
-   (resume), and branch pushed but never PR'd (resume).
+   branch with an open PR (live), branch whose PR merged — whether or not
+   GitHub has since deleted it (fresh, checked authoritatively before
+   content, so a later release on `main` can never flip it back), branch
+   whose PR was closed unmerged (resume via the content fallback, since it's
+   neither open nor merged), and branch pushed but never PR'd (also resume
+   via the content fallback).
 
    - **Live or resume** → `git checkout -B audit-changelog
      origin/audit-changelog`. This run's entries land in the `[Unreleased]`
@@ -436,7 +456,13 @@ feature branch would. Do not "fix" this back to a per-run branch.
    1. `git merge --abort 2>/dev/null; git reset --hard HEAD` first, always
       — harmless no-ops if there's no conflict or nothing to reset, but the
       only thing that reliably clears a conflicted `UU CHANGELOG.md` left
-      by step 1.
+      by step 1. This repo-wide hard reset is a deliberate asymmetry with
+      Phase 0's stash-don't-discard posture — it's safe here only because
+      Phase 0 already gated this checkout clean before Phase 6 touched
+      anything, and nothing between then and here writes any other tracked
+      file (`pipeline/bugs/**` is gitignored). If a future change ever has
+      Phase 5 or 6 write some other tracked file, this line would silently
+      discard it too and needs to become path-scoped.
    2. `git status --porcelain` — if non-empty, `git restore --staged
       --worktree CHANGELOG.md` for anything modified/staged, `git clean -f
       CHANGELOG.md` for anything untracked.
@@ -479,7 +505,7 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 ## Failure handling
 | Failure | Behavior |
 | --- | --- |
-| Dirty working tree at phase 0 | STOP, unless the only dirt is a plain (non-conflicted) `CHANGELOG.md` modification left by a crashed Phase 6 — self-heal via `git stash push -u -- CHANGELOG.md`, re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc.) or dirt elsewhere still STOPs |
+| Dirty working tree at phase 0 | STOP, unless `CHANGELOG.md` is the *only* dirty path and it's non-conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via `git stash push -u -- CHANGELOG.md`, re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt elsewhere still STOPs |
 | Stack won't reach healthy | STOP |
 | One perspective fails | record `skipped`, continue |
 | Every dispatched perspective fails | STOP |
