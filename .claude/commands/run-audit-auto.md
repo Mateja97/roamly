@@ -54,9 +54,17 @@ matters is unchanged: never source code, never debugging, never the browser.
    a header itself — it only ever appends finding blocks. If the file isn't
    there with its header before Phase 1 starts, the first prober to run has
    nothing safe to append to.
-4. `git status --porcelain` — if non-empty, **STOP**. Phase 5 moves this
-   checkout's branch, so an unattended run must never be able to lose
-   uncommitted work. Tell the user to commit or stash.
+4. `git status --porcelain` — if non-empty, self-heal the one kind of dirt
+   this pipeline itself can leave behind: if `CHANGELOG.md` is the *only*
+   modified/untracked path in the output, that's Phase 6 having crashed
+   before it could clean up after itself (see Phase 6 step 6) — `git
+   restore CHANGELOG.md` (or `git clean -f CHANGELOG.md` if it was
+   untracked), note the recovery in the report, and continue. Any other
+   dirt, or dirt alongside `CHANGELOG.md`, is someone's real work —
+   **STOP**. Phase 5 moves this checkout's branch, so an unattended run must
+   never be able to lose uncommitted work. Tell the user to commit or stash.
+   Without this self-heal, one bad Phase-6 crash (a kill, a timeout) would
+   silently STOP every future scheduled run until a human notices.
 5. `docker compose ps`. If services are missing or unhealthy, run
    `docker compose up -d --build` and wait for health.
 6. Stack cannot reach healthy → **STOP**. Every later phase needs a live stack.
@@ -304,17 +312,39 @@ else is ever branched off it, and it is recreated from `origin/main` the
 instant its PR is merged or closed — it never goes stale the way a real
 feature branch would. Do not "fix" this back to a per-run branch.
 
-1. `git fetch origin`, then decide whether `audit-changelog` is **live**:
-   `origin/audit-changelog` exists AND `gh pr list --head audit-changelog
-   --state open` returns an open PR.
-   - **Live** → `git checkout -B audit-changelog origin/audit-changelog`.
-     This run's entries land in the `[Unreleased]` section already sitting
-     on that branch; the existing PR updates itself on push. Do not open a
-     second PR.
-   - **Not live** — no `origin/audit-changelog` branch, or one exists but its
-     PR was merged or closed — → `git checkout -B audit-changelog
-     origin/main`, cut fresh exactly like every other branch in this
-     pipeline. A new PR follows once entries are committed.
+1. `git fetch origin`, then classify `audit-changelog` with two checks, in
+   order — never infer state from *why* a prior run ended, always check
+   what's actually on the remote:
+   1. `gh pr list --head audit-changelog --state open` → an open PR exists?
+      → **live**.
+   2. Otherwise, does the branch still carry commits `origin/main` doesn't
+      have? `git rev-list --count origin/main..origin/audit-changelog`
+      (treat a missing `origin/audit-changelog` as `0`) → **>0** → **resume**
+      (real entries sitting on the branch with no PR watching them — the
+      previous run's `git push` succeeded but its `gh pr create` failed, or
+      its PR was closed without merging). **0** → **fresh** (no branch, or
+      one that's fully merged and empty).
+
+   This covers every state a prior run can leave behind: no branch (fresh),
+   branch with an open PR (live), branch whose PR merged (fresh, since a
+   merged branch carries nothing `origin/main` doesn't already have), branch
+   whose PR was closed unmerged (resume), and branch pushed but never PR'd
+   (resume).
+
+   - **Live or resume** → `git checkout -B audit-changelog
+     origin/audit-changelog`. This run's entries land in the `[Unreleased]`
+     section already sitting on that branch. If the branch is behind
+     `origin/main` (the user may have cut a release on `main` while this PR
+     sat open, renaming `[Unreleased]` to a version), merge or rebase
+     `origin/main` into it *before* editing, so entries never pile up under
+     a stale `[Unreleased]` heading.
+   - **Fresh** → `git checkout -B audit-changelog origin/main`, cut exactly
+     like every other branch in this pipeline.
+
+   The point of checking real branch content instead of guessing from which
+   step a prior run failed at: a `fresh` classification is about to
+   force-push over whatever is on `origin/audit-changelog`, so it must never
+   fire on a branch that still holds real, unrecoverable entries.
 2. Read `CHANGELOG.md` if it exists. If it does not, create it with a Keep a
    Changelog header and an empty `## [Unreleased]` section.
 3. Under `## [Unreleased]`, add one bullet per MERGED task from this run —
@@ -333,44 +363,52 @@ feature branch would. Do not "fix" this back to a per-run branch.
    `app/app.json`, not `frontend/package.json`, and never rename
    `[Unreleased]` to a version number. The user decides semver and cuts the
    release; entries accumulate under `[Unreleased]` across runs until they do.
-5. Commit, then push and open/update the PR per the live/not-live branch
-   from step 1:
-   - **Live** → `git push origin audit-changelog` (fast-forward — this
-     branch started at `origin/audit-changelog`). The existing open PR now
-     carries this run's commit; report **that PR's URL** in Phase 7. Do not
-     open a new PR.
-   - **Not live** → `git push --force-with-lease origin audit-changelog`
-     (force only here: the branch was cut fresh from `origin/main` and may
-     be overwriting a stale `audit-changelog` ref left on the remote from an
-     already-merged-or-closed PR), then open a fresh PR that stays open and
-     is **not a draft** — unlike every task PR from Phase 4, which is opened
-     `--draft`, this one must be immediately mergeable by the user with no
-     extra step to un-draft it: `gh pr create --title "changelog: audit
-     <slug>" --body "<the run's merged tasks>" --head audit-changelog`.
-     Report **that new PR's URL** in Phase 7.
-   Either way, do NOT mark it ready-and-merge it the way Phase 4 merges task
-   PRs, and never open a second concurrent changelog PR — this is the one PR
-   the pipeline deliberately leaves for the user.
+5. Commit, then push and open/update the PR per the classification from
+   step 1:
+   - **Live** → `git push origin audit-changelog` (plain push — no force
+     needed; the branch started at `origin/audit-changelog` and only grew a
+     commit). The existing open PR now carries this run's commit. Do not
+     open a new PR; report its URL via `gh pr view audit-changelog --json
+     url` in Phase 7.
+   - **Resume** → same plain `git push origin audit-changelog` (this branch
+     also started at `origin/audit-changelog`, so no force here either —
+     force is `fresh`-only, see below), then open a fresh PR — there is no
+     open PR to update — with the same non-draft rule as `fresh` below.
+     Report the new PR's URL.
+   - **Fresh** → `git push --force-with-lease origin audit-changelog` (force
+     only here: the branch was cut from `origin/main`, discarding whatever
+     was on the remote — safe *only* because step 1 already confirmed that
+     ref carries nothing unmerged), then open a fresh PR.
+   - Opening a fresh PR (`resume` and `fresh`) means a PR that stays open
+     and is **not a draft** — unlike every task PR from Phase 4, which is
+     opened `--draft`, this one must be immediately mergeable by the user
+     with no extra step to un-draft it: `gh pr create --title "changelog:
+     audit <slug>" --body "<the run's merged tasks>" --head audit-changelog
+     --base main`. Report the new PR's URL.
+   In every case: do NOT mark it ready-and-merge it the way Phase 4 merges
+   task PRs, and never open a second concurrent changelog PR — this is the
+   one PR the pipeline deliberately leaves for the user.
 6. Report the PR URL in Phase 7. A failure here is non-fatal: report the
    changelog as unwritten and move on. The fixes are already merged; a
    missing changelog entry is not worth failing a green run over.
-   **But first, if `CHANGELOG.md` was modified (steps 2–3 ran) and not yet
-   committed (step 5 didn't complete), clean it up before reporting** — `git
-   restore CHANGELOG.md` if the file already existed before this run, or `rm
-   CHANGELOG.md` if step 2 created it fresh (it'll show as untracked). A
-   dirty working tree here would trip Phase 0's clean-tree STOP on the
-   *next* scheduled run, which has nothing to do with this failure and
-   shouldn't be blocked by it.
+   **This phase must never return with a dirty working tree** — a leftover
+   modified or untracked `CHANGELOG.md` would trip Phase 0's clean-tree STOP
+   on the *next* scheduled run, which has nothing to do with this failure
+   and shouldn't be blocked by it. Don't infer whether cleanup is needed
+   from which step failed (a push can fail *after* a commit already
+   succeeded, which still leaves the file tracked-and-committed, not merely
+   "modified") — before reporting, always run `git status --porcelain` and
+   restore reality to clean: `git restore CHANGELOG.md` for anything
+   modified-or-staged, `git clean -f CHANGELOG.md` for anything untracked.
+   Repeat until the checkout is clean, then report the changelog as
+   unwritten.
 
 ## Phase 7 — Report
 One summary:
 - the HEAD sha the stack was probed at, and the branch the primary checkout
-  is actually left on: `audit-changelog` if Phase 6 ran (it switches off
-  `audit-verify-<slug>` in its step 1 and never switches back — note this
-  branch is shared across runs, not slug-scoped like the others),
-  `audit-verify-<slug>` if Phase 5 ran but Phase 6 did not, or whatever
-  branch it started the run on if neither ran (unchanged since Phase 0,
-  since nothing moved it)
+  is actually left on — just report `git rev-parse --abbrev-ref HEAD`
+  rather than reasoning about which phases ran; that's correct in every
+  case, including a Phase 6 failure that stops partway through step 1
 - findings per perspective, plus any perspective `skipped` and why
 - tasks shipped, in merge order, each with its PR link
 - the changelog PR URL (left open for you), or why it was not written
