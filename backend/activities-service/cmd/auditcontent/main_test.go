@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
@@ -297,56 +296,5 @@ func TestRunAudit_TracksByPassingSignalsAndPerCategoryRates(t *testing.T) {
 	wantRow := fmt.Sprintf("  %-16s %8d %7d %6s", "nature", 2, 1, "50%")
 	if !strings.Contains(out, wantRow) {
 		t.Errorf("render() = %q, want the per-category row %q (scanned 2, passed 1, rate 50%%)", out, wantRow)
-	}
-}
-
-func TestExcludeTripadvisorSourced(t *testing.T) {
-	tripadvisorCafe := row("ta-cafe", "cafes", 1, `{}`)
-	tripadvisorCafe.Source = "tripadvisor"
-	googleCafe := row("g-cafe", "cafes", 1, `{}`)
-	googleCafe.Source = "google_places"
-	restaurant := row("rest", "restaurants", 1, `{}`)
-	restaurant.Source = "tripadvisor"
-	sport := row("sport", "sport", 1, `{}`)
-	sport.Source = "google_places"
-	firecrawl := row("fc", "wellness", 1, `{}`)
-	firecrawl.Source = "firecrawl"
-
-	kept, excluded := excludeTripadvisorSourced([]activitiessvc.Activity{
-		tripadvisorCafe, googleCafe, restaurant, sport, firecrawl,
-	})
-
-	if excluded != 2 {
-		t.Errorf("excluded = %d, want 2 (the Tripadvisor cafe and the restaurant)", excluded)
-	}
-	gotIDs := make([]string, 0, len(kept))
-	for _, a := range kept {
-		gotIDs = append(gotIDs, a.ID)
-	}
-	want := []string{"g-cafe", "sport", "fc"}
-	if !slices.Equal(gotIDs, want) {
-		t.Errorf("kept = %v, want %v", gotIDs, want)
-	}
-}
-
-// TestExcludeTripadvisorSourced_KeepsGoogleCafes pins the reason the filter
-// is on Source rather than Category: Cafes are a mixed category, and
-// dropping it wholesale would also drop the Google-sourced cafes, which are
-// the best-performing category measured.
-func TestExcludeTripadvisorSourced_KeepsGoogleCafes(t *testing.T) {
-	googleCafe := row("g-cafe", "cafes", 1, `{"known_for":["Coffee"]}`)
-	googleCafe.Source = "google_places"
-
-	kept, excluded := excludeTripadvisorSourced([]activitiessvc.Activity{googleCafe})
-
-	if excluded != 0 || len(kept) != 1 {
-		t.Errorf("excluded = %d, kept = %d — a Google-sourced cafe must stay in the audit", excluded, len(kept))
-	}
-}
-
-func TestExcludeTripadvisorSourced_EmptyInputIsNotAnError(t *testing.T) {
-	kept, excluded := excludeTripadvisorSourced(nil)
-	if len(kept) != 0 || excluded != 0 {
-		t.Errorf("kept = %d, excluded = %d, want 0 and 0", len(kept), excluded)
 	}
 }

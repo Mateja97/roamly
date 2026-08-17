@@ -51,7 +51,7 @@ func TestRenderability(t *testing.T) {
 		{
 			// Reviews are furniture: a carousel under an empty body is not
 			// a page worth publishing, however many reviews it carries.
-			name:       "quotable Tripadvisor reviews alone do not clear the bar",
+			name:       "reviews alone do not clear the bar for a Google-sourced row",
 			activity:   activitiessvc.Activity{Photos: onePhoto, ExternalID: "ta-1", Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"},"reviews":[{"text":"Great"}]}`)},
 			wantOK:     false,
 			wantReason: service.ReasonNoContent,
@@ -77,7 +77,7 @@ func TestRenderability(t *testing.T) {
 			// The Google review fallback fills the reviews slot but adds no
 			// body — measured 2026-08-17, this is how 51% of a broad sample
 			// was passing a bar it should never have cleared.
-			name: "the Google review fallback does not rescue a bodyless row",
+			name: "the Google review fallback does not rescue a bodyless Google-sourced row",
 			activity: activitiessvc.Activity{
 				Photos: onePhoto, ExternalID: "ta-1", GooglePlaceID: "place-9",
 				Details:       json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"}}`),
@@ -158,6 +158,53 @@ func TestRenderability(t *testing.T) {
 			activity:  activitiessvc.Activity{Photos: onePhoto, ExternalID: "place-1", Details: json.RawMessage(`{"treatments":[{"name":"Massage","price":"2000"}]}`)},
 			wantOK:    true,
 			wantScore: 2,
+		},
+		{
+			// Follow-up 4: for a Tripadvisor-sourced row the reviews carousel
+			// IS the page's proposition, and no body content is reachable —
+			// ~33% have a Tripadvisor description, `attributes` came back
+			// empty for all 83 venues sampled, and only ~37% carry a
+			// google_place_id, so websitesync cannot reach them either.
+			name: "quotable Tripadvisor reviews DO clear the bar for a Tripadvisor-sourced row",
+			activity: activitiessvc.Activity{
+				Photos: onePhoto, ExternalID: "ta-1", Source: "tripadvisor",
+				Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"},"reviews":[{"text":"Great"}]}`),
+			},
+			wantOK:    true,
+			wantScore: 3, // reviews as content 2 + the tripadvisor chip 1
+		},
+		{
+			name: "the Google review fallback also carries a Tripadvisor-sourced row",
+			activity: activitiessvc.Activity{
+				Photos: onePhoto, ExternalID: "ta-1", GooglePlaceID: "place-9", Source: "tripadvisor",
+				Details:       json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"}}`),
+				GoogleReviews: []activitiessvc.GoogleReview{{Text: "Great"}},
+			},
+			wantOK:    true,
+			wantScore: 3,
+		},
+		{
+			// The asymmetry must not become a blanket pass: a Tripadvisor row
+			// with no reviews of any kind still has nothing to read, and the
+			// photo check still applies to every source.
+			name: "a Tripadvisor-sourced row with no reviews at all still fails",
+			activity: activitiessvc.Activity{
+				Photos: onePhoto, ExternalID: "ta-1", Source: "tripadvisor",
+				Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"}}`),
+			},
+			wantOK:     false,
+			wantReason: service.ReasonNoContent,
+			wantScore:  1,
+		},
+		{
+			name: "a photoless Tripadvisor row still drafts for no_photo",
+			activity: activitiessvc.Activity{
+				ExternalID: "ta-1", Source: "tripadvisor",
+				Details: json.RawMessage(`{"tripadvisor":{"web_url":"https://ta/x"},"reviews":[{"text":"Great"}]}`),
+			},
+			wantOK:     false,
+			wantReason: service.ReasonNoPhoto,
+			wantScore:  3,
 		},
 		{
 			name:       "a whitespace-only description is not a description",
