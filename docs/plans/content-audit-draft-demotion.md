@@ -127,10 +127,10 @@ merely present in the JSON:
 | Signal | Score |
 | --- | --- |
 | non-empty `Description` | 2 |
-| a body block — `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes` | 2 |
+| a body block — `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup` | 2 |
 | a quotable Tripadvisor `reviews` array | 2 |
 | a non-empty merged `GoogleReviews` | 2 |
-| presentational only — `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor` | 1 total, however many are present |
+| presentational only — `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear`, `difficulty` | 1 total, however many are present |
 
 Each signal scores once, not per key: three chips are still one chip row, and
 two body blocks are still one screenful of substance.
@@ -197,6 +197,11 @@ not touch.
 
 **Flags:**
 
+> As shipped, this table is superseded — see
+> [content-audit-draft-demotion-plan.md](content-audit-draft-demotion-plan.md)'s
+> "Deviation from the spec, and why": `cmd/auditcontent` shipped report-only
+> with no `-dry-run` flag at all, and `-limit` defaults to 200, not 0.
+
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `-dry-run` | **true** | Report only. No writes of any kind, including step 1's photo fill. |
@@ -230,7 +235,13 @@ sweeps.
 
 ### 4. Schema
 
-`0032_draft_reason.sql`:
+> Shipped as `0033_draft_reason.sql`, not `0032` — the migration sequence had
+> moved on by the time this landed. Other shipped deviations from this spec
+> are tracked in
+> [content-audit-draft-demotion-plan.md](content-audit-draft-demotion-plan.md)'s
+> "Deviation from the spec, and why".
+
+`0033_draft_reason.sql`:
 
 ```sql
 ALTER TABLE activities ADD COLUMN draft_reason text;

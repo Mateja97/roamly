@@ -835,7 +835,12 @@ func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (act
 	if activity.Status != activitiessvc.StatusPublished {
 		return activitiessvc.Activity{}, fmt.Errorf("getting activity %s: %w", id, sharederrors.ErrNotFound)
 	}
-	return a.withLiveDetails(ctx, activity), nil
+	// Resolve outcome discarded on purpose: the public detail path's
+	// contract is unconditional silent fallback (see withLiveDetails' doc) —
+	// only WithLiveDetails' caller (cmd/auditcontent) needs to know a resolve
+	// failed.
+	merged, _ := a.withLiveDetails(ctx, activity)
+	return merged, nil
 }
 
 // WithLiveDetails applies the same live Google merge the public detail path
@@ -846,9 +851,17 @@ func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (act
 // refuses any row that isn't published — correct for a public read, wrong
 // for an audit whose whole job includes re-checking the rows it drafted.
 //
-// Same fallback contract as withLiveDetails itself: an unconfigured client,
-// a resolve error, or a timeout all return the bare stored row, no error.
-func (a *Activities) WithLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
+// Unlike GetByIDWithLiveDetails, which discards the resolve outcome (the
+// public path's contract is unconditional silent fallback), this wrapper
+// hands it back: resolved is false only when a Places resolve was actually
+// attempted for this row and failed or timed out. resolved is true whenever
+// no resolve was needed at all — an unconfigured client, an admin-created
+// row, or a Tripadvisor row that already has a quotable review — since
+// those aren't a resolve failure and the caller has enough to judge. The
+// audit uses resolved=false to skip the row rather than tally a false
+// no_content: a quota-exhausted run must read as "N rows skipped", not as
+// "N rows have no content".
+func (a *Activities) WithLiveDetails(ctx context.Context, activity activitiessvc.Activity) (merged activitiessvc.Activity, resolved bool) {
 	return a.withLiveDetails(ctx, activity)
 }
 
@@ -856,6 +869,14 @@ func (a *Activities) WithLiveDetails(ctx context.Context, activity activitiessvc
 // lookup (T2, places-live-details): request-scoped and deliberately short,
 // same reasoning as photoResolveTimeout — a detail-page load can't block on
 // a third-party call.
+//
+// WithLiveDetails (cmd/auditcontent's batch caller) reuses this same bound
+// rather than shedding it for a longer batch-sized timeout — a deliberate
+// choice, not an oversight: it is still a real bound on a real third-party
+// call, and with WithLiveDetails' resolved=false now surfacing a timeout to
+// the audit as a skip rather than a no_content verdict (see its doc), a slow
+// Places response no longer corrupts the count, it just costs a retry on
+// the next run.
 const detailResolveTimeout = 4 * time.Second
 
 // mergeLiveDetails overlays live's keys onto stored, preserving every key
@@ -900,17 +921,21 @@ func mergeLiveDetails(stored, live json.RawMessage) json.RawMessage {
 //
 // Tripadvisor-sourced rows (source == "tripadvisor") never take this path —
 // see withTripadvisorGoogleReviews for their own, narrower fallback.
-func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
+//
+// The bool return is the resolve outcome (see WithLiveDetails' doc): true
+// unless a resolve was actually attempted and failed. GetByIDWithLiveDetails
+// discards it; WithLiveDetails hands it to the audit.
+func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc.Activity) (activitiessvc.Activity, bool) {
 	if activity.Source == "tripadvisor" {
 		return a.withTripadvisorGoogleReviews(ctx, activity)
 	}
 	if activity.Source == "" || activity.ExternalID == "" || a.places == nil {
-		return activity
+		return activity, true
 	}
 
 	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID)
 	if !ok {
-		return activity
+		return activity, false
 	}
 
 	activity.Details = mergeLiveDetails(activity.Details, placesmap.BuildLiveDetails(activity.Category, activity.Country, detail))
@@ -929,7 +954,7 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 	}
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
 	activity.GoogleMapsURI = detail.GoogleMapsURI
-	return activity
+	return activity, true
 }
 
 // withTripadvisorGoogleReviews fills a Tripadvisor row's empty review-cards
@@ -961,21 +986,24 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 // the bare stored row, one warn log, no error surfaced. Reuses
 // detailResolveTimeout — same per-request, third-party Place Details call
 // shape as withLiveDetails' own, no reason for a different bound.
-func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity {
+//
+// The bool return is the same resolve-outcome signal withLiveDetails
+// returns — see its doc.
+func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity activitiessvc.Activity) (activitiessvc.Activity, bool) {
 	if activity.GooglePlaceID == "" || a.places == nil || hasTripadvisorReviews(activity.Details) {
-		return activity
+		return activity, true
 	}
 
 	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.GooglePlaceID)
 	if !ok {
-		return activity
+		return activity, false
 	}
 
 	activity.Rating = detail.Rating
 	activity.ReviewCount = detail.UserRatingCount
 	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
 	activity.GoogleMapsURI = detail.GoogleMapsURI
-	return activity
+	return activity, true
 }
 
 // resolvePlaceDetails calls PlaceDetails for placeID within

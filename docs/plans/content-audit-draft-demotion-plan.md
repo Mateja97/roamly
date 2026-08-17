@@ -28,7 +28,7 @@ Second deviation, in the same spirit: `-limit` defaults to **200**, not 0. Every
 
 | File | Responsibility |
 | --- | --- |
-| `internal/repository/migrations/0032_draft_reason.sql` | Create: adds the nullable column. |
+| `internal/repository/migrations/0033_draft_reason.sql` | Create: adds the nullable column. |
 | `backend/shared/models/activitiessvc/activity.go` | Modify: `Activity.DraftReason`, `UpdatePatch.DraftReason`. |
 | `internal/repository/activity.go` | Modify: `adminColumns`, `scanAdminActivity`, `Update`'s SET list, `nullIfEmpty` helper. |
 | `internal/repository/integration_test.go` | Modify: round-trip and NULL-semantics coverage. |
@@ -44,7 +44,7 @@ Second deviation, in the same spirit: `-limit` defaults to **200**, not 0. Every
 ### Task 1: `draft_reason` column, model field, and repository wiring
 
 **Files:**
-- Create: `backend/activities-service/internal/repository/migrations/0032_draft_reason.sql`
+- Create: `backend/activities-service/internal/repository/migrations/0033_draft_reason.sql`
 - Modify: `backend/shared/models/activitiessvc/activity.go` (`Activity` struct ~line 143–220, `UpdatePatch` struct ~line 753–767)
 - Modify: `backend/activities-service/internal/repository/activity.go` (`adminColumns` line 250, `scanAdminActivity` line 255, `Update` line 707)
 - Test: `backend/activities-service/internal/repository/integration_test.go`
@@ -53,7 +53,7 @@ Second deviation, in the same spirit: `-limit` defaults to **200**, not 0. Every
 - Consumes: nothing from earlier tasks.
 - Produces: `activitiessvc.Activity.DraftReason string` (empty string when the column is NULL) and `activitiessvc.UpdatePatch.DraftReason *string` (nil = untouched; pointer to `""` writes SQL NULL; pointer to a non-empty string writes that value).
 
-- [ ] **Step 1: Write the failing integration test**
+- [x] **Step 1: Write the failing integration test**
 
 Add to `backend/activities-service/internal/repository/integration_test.go`, inside `TestActivities_AdminCRUD_Integration` (after the existing `t.Run("Update with an empty-string field sets it, distinct from omitting it", ...)` block):
 
@@ -129,7 +129,7 @@ Add to `backend/activities-service/internal/repository/integration_test.go`, ins
 	})
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd backend/activities-service && go test -tags=integration ./internal/repository/ -run TestActivities_AdminCRUD_Integration -v`
 
@@ -137,9 +137,9 @@ Expected: FAIL to compile — `created.DraftReason undefined` and `unknown field
 
 Note: this test needs a running docker daemon; it starts a throwaway Postgres container.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
-Create `backend/activities-service/internal/repository/migrations/0032_draft_reason.sql`:
+Create `backend/activities-service/internal/repository/migrations/0033_draft_reason.sql`:
 
 ```sql
 -- content-audit-draft-demotion T1: draft_reason records why a row is
@@ -158,7 +158,7 @@ Create `backend/activities-service/internal/repository/migrations/0032_draft_rea
 ALTER TABLE activities ADD COLUMN draft_reason text;
 ```
 
-- [ ] **Step 4: Add the model fields**
+- [x] **Step 4: Add the model fields**
 
 In `backend/shared/models/activitiessvc/activity.go`, add to the `Activity` struct immediately after the `GooglePlaceID` field (before `CreatedAt`):
 
@@ -167,7 +167,7 @@ In `backend/shared/models/activitiessvc/activity.go`, add to the `Activity` stru
 	// drafted this row: "no_photo", "no_place_id", or "no_content". Empty
 	// for every row the audit didn't draft — including a row an admin
 	// drafted by hand, which is exactly the distinction the audit's
-	// republish step keys on (see migration 0032). Read from the
+	// republish step keys on (see migration 0033). Read from the
 	// `draft_reason` column via COALESCE, so a NULL column and an empty
 	// string are indistinguishable here on purpose: "no machine reason".
 	DraftReason string
@@ -180,12 +180,12 @@ And add to the `UpdatePatch` struct, after `Subcategory`:
 	// nil-untouched/non-nil-set convention as the other fields, with one
 	// addition — a pointer to the empty string writes SQL NULL, not an
 	// empty string, since NULL is the meaningful "no machine reason" value
-	// (see Activity.DraftReason and migration 0032). Setting a reason and
+	// (see Activity.DraftReason and migration 0033). Setting a reason and
 	// setting Status are independent patches; nothing here couples them.
 	DraftReason *string
 ```
 
-- [ ] **Step 5: Wire the repository read path**
+- [x] **Step 5: Wire the repository read path**
 
 In `backend/activities-service/internal/repository/activity.go`, change `adminColumns` (line 250) to select the new column — append it before `created_at`:
 
@@ -216,7 +216,7 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 
 The scan order must match `adminColumns` exactly — `draft_reason` before `created_at` in both.
 
-- [ ] **Step 6: Wire the repository write path**
+- [x] **Step 6: Wire the repository write path**
 
 In the same file, add this helper next to the existing `nonNilPhotos`/`nonNilTags`/`nonEmptyDetailsBytes` helpers (around line 411–445):
 
@@ -224,7 +224,7 @@ In the same file, add this helper next to the existing `nonNilPhotos`/`nonNilTag
 // nullIfEmpty maps the empty string to a SQL NULL bind arg. Only
 // draft_reason needs this: it is the one nullable text column where NULL
 // is a distinct, meaningful value ("no machine reason" — see migration
-// 0032), unlike city/address/external_id, which COALESCE NULL and '' to
+// 0033), unlike city/address/external_id, which COALESCE NULL and '' to
 // the same thing on read and would gain nothing from the distinction.
 func nullIfEmpty(s string) any {
 	if s == "" {
@@ -242,19 +242,19 @@ And add to `Update`'s SET list, after the `patch.Subcategory` block:
 	}
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `cd backend/activities-service && go test -tags=integration ./internal/repository/ -run TestActivities_AdminCRUD_Integration -v`
 
 Expected: PASS, including both new subtests.
 
-- [ ] **Step 8: Run the full suite and the linter**
+- [x] **Step 8: Run the full suite and the linter**
 
 Run: `cd backend/activities-service && gofmt -l . && go build ./... && go test ./... && golangci-lint run ./...`
 
 Expected: `gofmt -l` prints nothing, the build succeeds, all tests pass, the linter is clean. Other packages construct `activitiessvc.Activity` and `UpdatePatch` with field names, so adding fields breaks nothing — but run it to be sure.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/shared/models/activitiessvc/activity.go backend/activities-service/internal/repository/
@@ -291,12 +291,12 @@ Exported because `cmd/auditcontent` (a separate `package main`) is its consumer,
 | Signal | Points |
 | --- | --- |
 | non-empty `Description` | 2 |
-| a body block: `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes` | 2 (once, however many are present) |
+| a body block: `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup` | 2 (once, however many are present) |
 | a quotable Tripadvisor `reviews` array | 2 |
 | non-empty merged `GoogleReviews` | 2 |
-| any presentational signal: `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor` | 1 total |
+| any presentational signal: `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear`, `difficulty` | 1 total |
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/activities-service/internal/service/renderable_test.go`:
 
@@ -479,13 +479,13 @@ func TestRenderability_VerdictReasonIsEmptyWhenOK(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd backend/activities-service && go test ./internal/service/ -run TestRenderability -v`
 
 Expected: FAIL to compile — `undefined: service.Renderability`, `undefined: service.ReasonNoPhoto`, `undefined: service.DefaultMinContentScore`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `backend/activities-service/internal/service/renderable.go`:
 
@@ -500,7 +500,7 @@ import (
 )
 
 // Reason values recorded in the activities.draft_reason column
-// (migration 0032). Stored verbatim, so these strings are a persisted
+// (migration 0033). Stored verbatim, so these strings are a persisted
 // vocabulary — renaming one needs a data migration, not just a constant
 // edit.
 const (
@@ -634,19 +634,19 @@ func hasValue(raw json.RawMessage) bool {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend/activities-service && go test ./internal/service/ -run TestRenderability -v`
 
 Expected: PASS, all subtests.
 
-- [ ] **Step 5: Run the full suite and the linter**
+- [x] **Step 5: Run the full suite and the linter**
 
 Run: `cd backend/activities-service && gofmt -l . && go test ./... && golangci-lint run ./...`
 
 Expected: clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/activities-service/internal/service/renderable.go backend/activities-service/internal/service/renderable_test.go
@@ -680,7 +680,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 A key the mapper cannot emit for a sparse fixture simply isn't checked, which weakens the guard but can never false-fail it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/activities-service/internal/service/renderable_drift_test.go`:
 
@@ -779,13 +779,13 @@ func TestKnownDetailKeys_HasNoDuplicates(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd backend/activities-service && go test ./internal/service/ -run 'TestRenderability_ScorerClassifiesEveryLiveDetailKey|TestKnownDetailKeys' -v`
 
 Expected: FAIL to compile — `undefined: service.KnownDetailKeys`.
 
-- [ ] **Step 3: Add the test seam**
+- [x] **Step 3: Add the test seam**
 
 Append to `backend/activities-service/internal/service/renderable.go`:
 
@@ -803,7 +803,7 @@ func KnownDetailKeys() []string {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend/activities-service && go test ./internal/service/ -run 'TestRenderability_ScorerClassifiesEveryLiveDetailKey|TestKnownDetailKeys' -v`
 
@@ -811,13 +811,13 @@ Expected: PASS. The mapper's full key set — `hours`, `opening_hours`, `known_f
 
 If it fails naming a key you did not expect, that is the guard doing its job: classify the key, don't widen the test.
 
-- [ ] **Step 5: Run the full suite and the linter**
+- [x] **Step 5: Run the full suite and the linter**
 
 Run: `cd backend/activities-service && gofmt -l . && go test ./... && golangci-lint run ./...`
 
 Expected: clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/activities-service/internal/service/renderable.go backend/activities-service/internal/service/renderable_drift_test.go
@@ -847,7 +847,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 **Why the wrapper.** The sweep needs the same merge the detail page applies, but `GetByIDWithLiveDetails` refuses non-published rows — correct for a public read, wrong for an audit that must eventually re-check the rows it drafted. A three-line exported wrapper is the entire refactor; no restructuring of `withLiveDetails` itself.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/activities-service/cmd/auditcontent/main_test.go`:
 
@@ -997,13 +997,13 @@ func TestRunAudit_PacesOncePerRow(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `cd backend/activities-service && go test ./cmd/auditcontent/ -v`
 
 Expected: FAIL — `no Go files in .../cmd/auditcontent` or, once the file exists, `undefined: publishedRows` / `undefined: runAudit`.
 
-- [ ] **Step 3: Export the live-merge wrapper**
+- [x] **Step 3: Export the live-merge wrapper**
 
 In `backend/activities-service/internal/service/activity.go`, add immediately after `GetByIDWithLiveDetails` (which ends around line 836):
 
@@ -1023,7 +1023,7 @@ func (a *Activities) WithLiveDetails(ctx context.Context, activity activitiessvc
 }
 ```
 
-- [ ] **Step 4: Write the command**
+- [x] **Step 4: Write the command**
 
 Create `backend/activities-service/cmd/auditcontent/main.go`:
 
@@ -1274,19 +1274,19 @@ func (r auditReport) render(minScore int) string {
 }
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `cd backend/activities-service && go test ./cmd/auditcontent/ -v`
 
 Expected: PASS, all four tests.
 
-- [ ] **Step 6: Run the full suite and the linter**
+- [x] **Step 6: Run the full suite and the linter**
 
 Run: `cd backend/activities-service && gofmt -l . && go build ./... && go test ./... && golangci-lint run ./...`
 
 Expected: clean.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/activities-service/cmd/auditcontent/ backend/activities-service/internal/service/activity.go

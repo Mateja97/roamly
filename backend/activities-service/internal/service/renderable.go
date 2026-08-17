@@ -35,17 +35,27 @@ type Verdict struct {
 }
 
 // bodyBlockKeys are the details keys that render a labelled section in the
-// detail page's body. Any one of them is real content.
+// detail page's body. Any one of them is real content. Matched 1:1 against
+// app/src/features/activity-list/activityDetailConfig.ts's uniqueSection —
+// every key that switch renders as a pills/checklist/icongrid/banner/
+// schedule section belongs here, or a row carrying only that key scores 0
+// despite rendering a full section on the detail page.
 var bodyBlockKeys = []string{
 	"good_to_know", "facilities", "known_for",
 	"treatments", "upcoming_shows", "popular_dishes",
+	"what_to_bring", "now_showing", "current_exhibition",
+	"on_the_bar", "signature_pours", "what_youll_find", "lineup",
 }
 
-// presentationalKeys are the details keys that render a chip, an hours row,
-// or an attribution plate — page furniture, not something a user came to
-// read. They share one point between them (see contentScore).
+// presentationalKeys are the details keys that render a chip, a meter, an
+// hours row, or an attribution plate — page furniture, not something a user
+// came to read. They share one point between them (see contentScore).
+// effort_level/gear render as Sport's fact-strip chips; difficulty renders
+// as the promoted DifficultyMeter — none of the three are a labelled body
+// section.
 var presentationalKeys = []string{
 	"opening_hours", "venue_type", "hours", "website_url", "tripadvisor",
+	"effort_level", "gear", "difficulty",
 }
 
 // reviewsKey is the Tripadvisor quoted-review array. Scored like a body

@@ -65,6 +65,14 @@ func main() {
 	minContent := flag.Int("min-content", service.DefaultMinContentScore, "content score a row needs to stay published")
 	flag.Parse()
 
+	// Fail fast on an unrecognized -category rather than silently filtering
+	// to zero rows and printing a report indistinguishable from a genuinely
+	// empty catalog.
+	if *category != "" && !activitiessvc.Category(*category).Valid() {
+		logger.Error("startup failed: unknown -category", "category", *category)
+		os.Exit(1)
+	}
+
 	ctx := context.Background()
 	dsn, err := sharedconfig.Require("DATABASE_URL")
 	if err != nil {
@@ -93,20 +101,17 @@ func main() {
 	repo := repository.New(pool)
 	svc := service.New(repo).WithPlaces(placesClient)
 
-	rows, err := publishedRows(ctx, repo, listPageSize)
+	rows, err := publishedRows(ctx, repo, listPageSize, activitiessvc.Category(*category))
 	if err != nil {
 		logger.Error("listing published rows", "error", err)
 		os.Exit(1)
 	}
-	if *category != "" {
-		rows = onlyCategory(rows, activitiessvc.Category(*category))
-	}
 	logger.Info("enumerated published rows", "count", len(rows), "category", *category)
 
-	if *limit > 0 && len(rows) > *limit {
+	if truncated := applyLimit(rows, *limit); len(truncated) != len(rows) {
 		logger.Info("sampling: the report below covers only this many rows, not the whole catalog",
 			"limit", *limit, "available", len(rows))
-		rows = rows[:*limit]
+		rows = truncated
 	}
 
 	report := runAudit(ctx, svc, rows, *minContent, func() { time.Sleep(auditPace) })
@@ -121,20 +126,25 @@ type activityLister interface {
 }
 
 // liveMerger is (*service.Activities).WithLiveDetails' shape, narrowed the
-// same way, so runAudit is testable without a Places client.
+// same way, so runAudit is testable without a Places client. The bool return
+// is the resolve outcome (see service.Activities.WithLiveDetails' doc):
+// false only when a Places resolve was attempted for the row and failed —
+// runAudit skips that row rather than judging it.
 type liveMerger interface {
-	WithLiveDetails(ctx context.Context, activity activitiessvc.Activity) activitiessvc.Activity
+	WithLiveDetails(ctx context.Context, activity activitiessvc.Activity) (merged activitiessvc.Activity, resolved bool)
 }
 
-// publishedRows pages through every published row. Pending rows are
-// deliberately excluded by the filter: `pending` is the firecrawl review
-// queue, a human workflow this tool has no business judging.
-func publishedRows(ctx context.Context, repo activityLister, pageSize int) ([]activitiessvc.Activity, error) {
+// publishedRows pages through every published row, optionally restricted to
+// one category (the filter runs in SQL via ListFilter.Category — "" means
+// no restriction). Pending rows are deliberately excluded: `pending` is the
+// firecrawl review queue, a human workflow this tool has no business
+// judging.
+func publishedRows(ctx context.Context, repo activityLister, pageSize int, category activitiessvc.Category) ([]activitiessvc.Activity, error) {
 	var out []activitiessvc.Activity
 	offset := 0
 	for {
 		result, err := repo.List(ctx, activitiessvc.ListFilter{
-			Status: activitiessvc.StatusPublished, Limit: pageSize, Offset: offset,
+			Status: activitiessvc.StatusPublished, Category: category, Limit: pageSize, Offset: offset,
 		})
 		if err != nil {
 			return nil, err
@@ -148,14 +158,16 @@ func publishedRows(ctx context.Context, repo activityLister, pageSize int) ([]ac
 	return out, nil
 }
 
-func onlyCategory(rows []activitiessvc.Activity, category activitiessvc.Category) []activitiessvc.Activity {
-	var out []activitiessvc.Activity
-	for _, a := range rows {
-		if a.Category == category {
-			out = append(out, a)
-		}
+// applyLimit caps rows at limit (0 = no cap, the whole catalog) — the
+// -limit flag's truncation, its own function so it's testable without a
+// database. rows are already in repository.List's title order, so this
+// truncation is "the first N titles", not a random sample (see render's
+// header caveat).
+func applyLimit(rows []activitiessvc.Activity, limit int) []activitiessvc.Activity {
+	if limit > 0 && len(rows) > limit {
+		return rows[:limit]
 	}
-	return out
+	return rows
 }
 
 // auditReport tallies one run. byReason is catalog-wide, byCategory is the
@@ -163,10 +175,14 @@ func onlyCategory(rows []activitiessvc.Activity, category activitiessvc.Category
 // from), and byScore is the score distribution across every row scanned —
 // including rows that failed on the photo check, so the distribution
 // describes the catalog rather than only the rows that reached the content
-// check.
+// check. skipped counts rows whose Places resolve failed or timed out
+// (WithLiveDetails' resolved=false) — excluded from scanned, byReason, and
+// byScore entirely, so a quota-exhausted run reads as "N rows skipped"
+// rather than silently inflating no_content.
 type auditReport struct {
 	scanned    int
 	ok         int
+	skipped    int
 	byReason   map[string]int
 	byCategory map[string]map[string]int
 	byScore    map[int]int
@@ -184,10 +200,14 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 	}
 
 	for _, stored := range rows {
-		report.scanned++
-		merged := merger.WithLiveDetails(ctx, stored)
+		merged, resolved := merger.WithLiveDetails(ctx, stored)
 		pace()
+		if !resolved {
+			report.skipped++
+			continue
+		}
 
+		report.scanned++
 		verdict := service.Renderability(merged, minScore)
 		report.byScore[verdict.Score]++
 		if verdict.OK {
@@ -210,6 +230,10 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 // stderr, so a run can be piped into a file without the logs mixed in.
 func (r auditReport) render(minScore int) string {
 	out := fmt.Sprintf("\ncontent audit — %d rows scanned at min-content=%d\n", r.scanned, minScore)
+	out += "  rows are read in repository.List's title order (title ASC, id ASC), not a random sample — an -limit run covers the alphabetically-first rows, not a representative cross-section\n"
+	if r.skipped > 0 {
+		out += fmt.Sprintf("  SKIPPED (Places resolve failed or timed out, excluded from every count below): %d\n", r.skipped)
+	}
 	out += fmt.Sprintf("  would stay published: %d\n", r.ok)
 	out += fmt.Sprintf("  would be drafted:     %d\n\n", r.scanned-r.ok)
 
