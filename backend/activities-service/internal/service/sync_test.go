@@ -49,6 +49,7 @@ func TestActivities_Query_TripadvisorSync_TriggersWhenAreaNeverSynced(t *testing
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
@@ -144,6 +145,7 @@ func TestActivities_Query_TripadvisorSync_SkipsWhenFresh(t *testing.T) {
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.nearbyCalls != 0 {
 		t.Errorf("NearbySearch calls = %d, want 0 (synced an hour ago, within the 14-day TTL)", ta.nearbyCalls)
@@ -159,6 +161,7 @@ func TestActivities_Query_TripadvisorSync_ReSyncsWhenStale(t *testing.T) {
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1 (synced 15 days ago, past the 14-day TTL)", ta.nearbyCalls)
@@ -211,6 +214,7 @@ func TestActivities_Query_TripadvisorSync_UnfilteredQuerySyncsOneSearchOneRow(t 
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1 (restaurants + cafes + bars share one search, unfiltered query)", ta.nearbyCalls)
 	}
@@ -246,6 +250,7 @@ func TestActivities_Query_TripadvisorSync_OneVenueOneRowInvariant(t *testing.T) 
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
@@ -285,6 +290,7 @@ func TestActivities_Query_TripadvisorSync_CandidateSkippedWhenClassifiedCategory
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.nearbyCalls != 1 {
 		t.Errorf("NearbySearch calls = %d, want 1", ta.nearbyCalls)
@@ -312,6 +318,7 @@ func TestActivities_Query_TripadvisorSync_CapsAnchorsPerQuery(t *testing.T) {
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 	if ta.nearbyCalls != maxSyncAnchorsPerQuery {
 		t.Errorf("NearbySearch calls = %d, want %d (5 cities, capped)", ta.nearbyCalls, maxSyncAnchorsPerQuery)
 	}
@@ -343,6 +350,7 @@ func TestActivities_Query_TripadvisorSync_StaleAnchorNotStarvedByEarlierFreshAnc
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.nearbyCalls != 1 {
 		t.Fatalf("NearbySearch calls = %d, want 1 (only the never-synced 4th anchor is due)", ta.nearbyCalls)
@@ -364,6 +372,7 @@ func TestActivities_Query_TripadvisorSync_NearbySearchErrorFallsThrough(t *testi
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v, want the search to fail silently and Query to still succeed", err)
 	}
+	svc.waitForTripadvisorSync()
 	if repo.upsertCalls != 0 {
 		t.Errorf("Upsert calls = %d, want 0", repo.upsertCalls)
 	}
@@ -390,6 +399,7 @@ func TestActivities_Query_TripadvisorSync_OneBadDetailsCallDoesNotSinkTheRest(t 
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 	if repo.upsertCalls != 1 {
 		t.Errorf("Upsert calls = %d, want 1 — \"bad\"'s LocationDetails failure skips only that candidate, \"good\" still upserts", repo.upsertCalls)
 	}
@@ -425,6 +435,7 @@ func TestActivities_Query_TripadvisorSync_NonFoodSummariesNeverCostDetailsCalls(
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.detailsCalls != 1 {
 		t.Errorf("LocationDetails calls = %d, want 1 — only the Restaurant_Review candidate may cost a details call", ta.detailsCalls)
@@ -457,6 +468,7 @@ func TestActivities_Query_TripadvisorSync_DeadlineTruncatedSweepLeavesAreaUnmark
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if len(repo.markSynced) != 0 {
 		t.Errorf("markSynced = %v, want none — a deadline-truncated sweep must leave the area unmarked to resume next query", repo.markSynced)
@@ -466,6 +478,51 @@ func TestActivities_Query_TripadvisorSync_DeadlineTruncatedSweepLeavesAreaUnmark
 	// upsert must have landed.
 	if repo.upsertCalls != 1 {
 		t.Errorf("Upsert calls = %d, want 1 — partial results survive a truncated sweep", repo.upsertCalls)
+	}
+}
+
+// TestActivities_Query_TripadvisorSync_SlowTripadvisorNeverBlocksOrFailsQuery
+// is the T1 regression guard: before, syncTripadvisorIfNeeded ran inline and
+// awaited, so a slow/degraded Tripadvisor pushed real Query latency toward
+// tripadvisorSyncTotalTimeout, and a client that gave up first (its request
+// context cancelled) turned into a failed query, not merely a stale one.
+// This proves both halves: Query returns promptly despite a slow
+// LocationDetails call, and the backgrounded sweep still completes even
+// after the request's own context is cancelled the moment the "client"
+// gives up — exactly the failure mode reported in logs/Fl1, logs/Fl2.
+func TestActivities_Query_TripadvisorSync_SlowTripadvisorNeverBlocksOrFailsQuery(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{
+		nearbyOut: []tripadvisor.LocationSummary{
+			{LocationID: "111", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-1"},
+		},
+		detailsOut: map[string]tripadvisor.LocationDetails{
+			"111": {LocationID: "111", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
+		},
+		detailsDelay: 200 * time.Millisecond, // stands in for a slow/degraded Terra call
+	}
+	svc := New(repo).WithTripadvisor(ta)
+
+	// The request's own context — cancelled right after Query returns, the
+	// same way a client giving up cancels the inbound gRPC/HTTP context.
+	reqCtx, cancel := context.WithCancel(context.Background())
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+
+	start := time.Now()
+	if _, err := svc.Query(reqCtx, req); err != nil {
+		t.Fatalf("Query() error: %v, want a slow Tripadvisor to never fail the query", err)
+	}
+	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+		t.Errorf("Query() took %v with a 200ms-slow Tripadvisor client, want it to return well under that — the sync must run backgrounded, not inline", elapsed)
+	}
+	cancel() // the client has already "given up" by the time this fires
+
+	svc.waitForTripadvisorSync()
+	if repo.upsertCalls != 1 {
+		t.Errorf("Upsert calls = %d, want 1 — the backgrounded sweep must finish even after the request context is cancelled", repo.upsertCalls)
+	}
+	if len(repo.markSynced) != 1 {
+		t.Errorf("markSynced = %v, want the area marked synced once the backgrounded sweep completes", repo.markSynced)
 	}
 }
 
@@ -488,6 +545,7 @@ func TestActivities_Query_TripadvisorSync_AllSummariesMissingWebURLAbortsUnmarke
 	if _, err := svc.Query(context.Background(), req); err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
+	svc.waitForTripadvisorSync()
 
 	if ta.detailsCalls != 0 {
 		t.Errorf("LocationDetails calls = %d, want 0", ta.detailsCalls)
@@ -581,9 +639,11 @@ func TestTripadvisorReviews_FilterAndTruncation(t *testing.T) {
 // package doc): configuring WithPlaces to exercise ReverseGeocodeCity would
 // otherwise also arm Query's unrelated background Google discovery sync
 // (syncGoogleIfNeeded doesn't gate on the request's categories), which
-// races this test's own gp.geocodeCalls counter and outlives the subtest
-// unless separately awaited. Calling the Tripadvisor path directly sidesteps
-// that entirely — it runs synchronously with no goroutine to leak.
+// races this test's own gp.geocodeCalls counter against waitForTripadvisorSync
+// (a different WaitGroup) unless separately awaited too. Calling the
+// Tripadvisor path directly sidesteps that entirely — the sweep it triggers
+// is still backgrounded (see waitForTripadvisorSync below), but it's the
+// only background sync in flight.
 func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -638,6 +698,7 @@ func TestActivities_Query_TripadvisorSync_CityResolution(t *testing.T) {
 
 			req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
 			svc.syncTripadvisorIfNeeded(context.Background(), req)
+			svc.waitForTripadvisorSync()
 
 			if len(repo.gotUpserts) != 2 {
 				t.Fatalf("upserts = %d, want 2", len(repo.gotUpserts))
@@ -891,6 +952,7 @@ func TestActivities_Query_TripadvisorSync_SubtypeResolvedFromGooglePlaceType(t *
 
 	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
 	svc.syncTripadvisorIfNeeded(context.Background(), req)
+	svc.waitForTripadvisorSync()
 
 	if repo.gotUpsert.Subcategory != "fine_dining" {
 		t.Errorf("gotUpsert.Subcategory = %q, want fine_dining (resolved via the Places lookup)", repo.gotUpsert.Subcategory)
@@ -916,6 +978,7 @@ func TestActivities_Query_TripadvisorSync_PlacesErrorStillIngestsVenue(t *testin
 
 	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
 	svc.syncTripadvisorIfNeeded(context.Background(), req)
+	svc.waitForTripadvisorSync()
 
 	if repo.upsertCalls != 1 {
 		t.Errorf("Upsert calls = %d, want 1 — a Places resolve error must not skip ingesting the venue", repo.upsertCalls)

@@ -151,6 +151,9 @@ type Activities struct {
 	// never waits on it — it exists so tests can join the goroutine instead
 	// of sleeping (see waitForGoogleSync).
 	googleSync sync.WaitGroup
+	// tripadvisorSync tracks in-flight background Tripadvisor sync sweeps —
+	// same test-only join contract as googleSync (see waitForTripadvisorSync).
+	tripadvisorSync sync.WaitGroup
 }
 
 func New(repo repository) *Activities {
@@ -170,6 +173,11 @@ func (a *Activities) WithPlaces(p placesClient) *Activities {
 // waitForGoogleSync blocks until every in-flight background discovery pass
 // finishes. Test-only: production deliberately never waits.
 func (a *Activities) waitForGoogleSync() { a.googleSync.Wait() }
+
+// waitForTripadvisorSync blocks until every in-flight background
+// Tripadvisor sync sweep finishes. Test-only: production deliberately never
+// waits (see syncTripadvisorIfNeeded).
+func (a *Activities) waitForTripadvisorSync() { a.tripadvisorSync.Wait() }
 
 // WithTripadvisor attaches a live Tripadvisor client for the
 // Restaurants/Bars lazy sync and GetPhotos' Tripadvisor-sourced resolve
@@ -1390,10 +1398,11 @@ type syncGroup struct {
 
 // syncTripadvisorIfNeeded triggers a live Tripadvisor sync for req's
 // Restaurants/Cafés/Bars anchors when the resolved category filter could include
-// them and their cached data is missing or stale. Never fails Query — a
-// sync problem at any step is logged and simply leaves the DB as-is; the
-// SQL query that follows just sees whatever's already cached (possibly
-// nothing, for a never-synced area, until the next successful attempt).
+// them and their cached data is missing or stale. Never fails or blocks
+// Query (T1, tripadvisor-sync-blocks-query-activities) — a sync problem at
+// any step is logged and simply leaves the DB as-is; the SQL query that
+// follows just sees whatever's already cached (possibly nothing, for a
+// never-synced area, until the next successful attempt).
 //
 // Staleness is checked for every (anchor, category) pair *before* the
 // maxSyncAnchorsPerQuery cap is applied, not after — capping the raw anchor
@@ -1402,6 +1411,19 @@ type syncGroup struct {
 // an Anywhere request's cities) indefinitely across repeated requests with
 // the same anchor set. The cap itself then applies to distinct anchors
 // (groups), not (anchor, category) pairs — see maxSyncAnchorsPerQuery.
+//
+// Staleness itself is still checked on the caller's goroutine (a handful of
+// fast repo.SyncedAt reads, same request context as the rest of Query), but
+// the actual live Terra work — one NearbySearch plus a
+// LocationDetails/LocationReviews/LocationPhotos pass per candidate,
+// syncTripadvisorAnchor's real cost — is handed to a detached background
+// goroutine, the same shape syncGoogleIfNeeded already uses. Before, this
+// ran inline and awaited: a slow or degraded Tripadvisor pushed real
+// user-facing Query latency toward tripadvisorSyncTotalTimeout, and a
+// client that gave up first turned into a failed, not merely stale, query.
+// Now Query returns as soon as due groups are known; a slow Tripadvisor
+// only delays when the synced data lands, never whether the request
+// succeeds.
 func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 	if a.tripadvisor == nil {
 		return
@@ -1437,16 +1459,30 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 	if len(groups) > maxSyncAnchorsPerQuery {
 		groups = groups[:maxSyncAnchorsPerQuery]
 	}
-	// One shared budget across all of this query's anchors, so worst-case
-	// query latency is bounded by tripadvisorSyncTotalTimeout rather than
-	// maxSyncAnchorsPerQuery × the per-anchor timeout. An anchor cut off by
-	// the shared budget behaves exactly like one cut off by its own: partial
-	// upserts kept, cell left unmarked, re-swept on a later query.
-	totalCtx, cancel := context.WithTimeout(ctx, tripadvisorSyncTotalTimeout)
-	defer cancel()
-	for _, g := range groups {
-		a.syncTripadvisorAnchor(totalCtx, g.anchor, g.categories)
+	if len(groups) == 0 {
+		return
 	}
+
+	a.tripadvisorSync.Add(1)
+	go func() {
+		defer a.tripadvisorSync.Done()
+		// Detached from the request context on purpose, same rationale as
+		// syncGoogleIfNeeded: the HTTP/gRPC request is already finishing,
+		// and inheriting its cancellation would abort the sweep the moment
+		// Query returns instead of letting it run to its own budget.
+		//
+		// One shared budget across all of this query's anchors, so
+		// worst-case sweep duration is bounded by tripadvisorSyncTotalTimeout
+		// rather than maxSyncAnchorsPerQuery × the per-anchor timeout. An
+		// anchor cut off by the shared budget behaves exactly like one cut
+		// off by its own: partial upserts kept, cell left unmarked,
+		// re-swept on a later query.
+		totalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), tripadvisorSyncTotalTimeout)
+		defer cancel()
+		for _, g := range groups {
+			a.syncTripadvisorAnchor(totalCtx, g.anchor, g.categories)
+		}
+	}()
 }
 
 // syncTripadvisorAnchor syncs one anchor for categories (the due
