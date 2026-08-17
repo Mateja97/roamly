@@ -212,6 +212,14 @@ type Activity struct {
 	// exposed on any proto message or HTTP DTO — server-side only (Places
 	// ToS §14.3 permits caching the bare id, nothing else).
 	GooglePlaceID string
+	// DraftReason (content-audit-draft-demotion T1) is why cmd/auditcontent
+	// drafted this row: "no_photo", "no_place_id", or "no_content". Empty
+	// for every row the audit didn't draft — including a row an admin
+	// drafted by hand, which is exactly the distinction the audit's
+	// republish step keys on (see migration 0033). Read from the
+	// `draft_reason` column via COALESCE, so a NULL column and an empty
+	// string are indistinguishable here on purpose: "no machine reason".
+	DraftReason string
 	// CreatedAt (T3, admin-activities-schema-resync) is the row's creation
 	// timestamp, read from the `created_at` column (NOT NULL DEFAULT now(),
 	// migration 0001) — selected for the first time by this field.
@@ -764,4 +772,11 @@ type UpdatePatch struct {
 	// other fields; validated against the effective Category (see
 	// service.Update).
 	Subcategory *string
+	// DraftReason (content-audit-draft-demotion T1): same
+	// nil-untouched/non-nil-set convention as the other fields, with one
+	// addition — a pointer to the empty string writes SQL NULL, not an
+	// empty string, since NULL is the meaningful "no machine reason" value
+	// (see Activity.DraftReason and migration 0033). Setting a reason and
+	// setting Status are independent patches; nothing here couples them.
+	DraftReason *string
 }

@@ -1,19 +1,25 @@
-// Command websitesync scrapes each published Wellness/Entertainment/
-// Culture/Art/Sport venue's own website (resolved live via Google Place
-// Details, never stored — see
+// Command websitesync scrapes each published Wellness/Entertainment/Culture/
+// Art/Sport/Shopping venue's own website (resolved live via Google
+// Place Details, never stored — see
 // docs/superpowers/specs/2026-08-01-wellness-entertainment-detail-page-design.md
 // and
 // docs/superpowers/specs/2026-08-02-culture-art-sport-website-enrichment-design.md)
 // for content Google Places doesn't provide, filling in whatever fields
-// the row doesn't already have curated. Every category except
-// Entertainment is skipped permanently once its fields are all filled —
-// see internal/service/websitesync.go's isComplete. Run periodically —
+// the row doesn't already have curated. A category is skipped permanently
+// once its fields are all filled — see internal/service/websitesync.go's
+// isComplete — except the perishable ones (Entertainment and Culture),
+// whose content names what is on right now rather than describing the
+// venue, and so keeps re-scanning monthly; see perishableFields. Run periodically —
 // never wired into activities-service's own startup path, same
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //
-// Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync [-dry-run]
+// Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync [-dry-run] [-limit 25] [-category sport]
 //
-// A non-Entertainment row that stays incomplete only ever gets one
+// Every row costs one Firecrawl extract plus one Places call, so -limit
+// (a cap PER CATEGORY) and -category exist to pilot a category before
+// committing to it unbounded.
+//
+// A non-perishable row that stays incomplete only ever gets one
 // automatic attempt (see internal/service/websitesync.go's
 // SyncWebsiteContent) — to force a specific row to be re-attempted anyway:
 // DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync -retry-id=<activity-id>
@@ -21,9 +27,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
+	"slices"
 
 	"activities-service/internal/firecrawl"
 	"activities-service/internal/places"
@@ -39,7 +47,16 @@ import (
 const listPageSize = 200
 
 // syncCategories are the categories this job covers, per the design specs'
-// scope decisions. Adding a category here also requires an entry in
+// scope decisions.
+//
+// Nightlife is deliberately absent. It was built and piloted on 25 rows:
+// three of eight extractions were literal placeholders ("Event 1", "Event
+// Name 2") with invented times and stages, and the rest were a hotel's meal
+// times, a generic opening-hours blurb, and a 2023 date. Club websites do
+// not publish lineups — that content lives on social media — so the failure
+// is the source, not the prompt, and no rewording recovers it. Rendering
+// fabricated acts under the app's "Tonight" heading is worse than rendering
+// nothing. Adding a category here also requires an entry in
 // internal/service/websitesync.go's extractionConfig and
 // scraperOwnedFields — this list alone doesn't teach SyncWebsiteContent
 // anything new, it only decides which rows get enumerated.
@@ -49,6 +66,7 @@ var syncCategories = []activitiessvc.Category{
 	activitiessvc.CategoryCulture,
 	activitiessvc.CategoryArt,
 	activitiessvc.CategorySport,
+	activitiessvc.CategoryShopping,
 }
 
 func main() {
@@ -56,7 +74,9 @@ func main() {
 	slog.SetDefault(logger)
 
 	dryRun := flag.Bool("dry-run", false, "list what would be synced without calling Places, Firecrawl, or writing")
-	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except Entertainment")
+	limit := flag.Int("limit", 0, "stop after this many rows PER CATEGORY (0 = no cap); every row costs a Firecrawl extract plus a Places call, so pilot a new category before running it unbounded")
+	category := flag.String("category", "", "restrict the run to one category slug (default: every category in syncCategories)")
+	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except the perishable categories (see perishableFields)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -93,12 +113,29 @@ func main() {
 		return
 	}
 
-	rows, err := publishedRows(ctx, repo, syncCategories, listPageSize)
+	categories := syncCategories
+	if *category != "" {
+		requested := activitiessvc.Category(*category)
+		// Valid() alone accepts a category this job doesn't cover (e.g.
+		// restaurants) — that would enumerate and GetByID hundreds of rows
+		// only to skip each one as unsupported in SyncWebsiteContent, one
+		// wasted admin List query and no other cost, but a confusing "0
+		// synced" report all the same. Membership in syncCategories is the
+		// real bound.
+		if !requested.Valid() || !slices.Contains(syncCategories, requested) {
+			logger.Error("startup failed: unknown or unsupported -category, this job only covers syncCategories",
+				"category", *category, "supported", syncCategories)
+			os.Exit(1)
+		}
+		categories = []activitiessvc.Category{requested}
+	}
+
+	rows, err := publishedRows(ctx, repo, categories, listPageSize, *limit)
 	if err != nil {
 		logger.Error("listing rows", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("found published rows", "count", len(rows))
+	logger.Info("found published rows", "count", len(rows), "per_category_limit", *limit)
 
 	if *dryRun {
 		for _, r := range rows {
@@ -119,16 +156,44 @@ func main() {
 	}
 	svc := service.New(repo).WithPlaces(placesClient).WithFirecrawl(fc)
 
-	var synced, skippedOrFailed int
+	synced, skippedOrFailed, aborted := runSync(ctx, svc, rows, logger)
+	if aborted {
+		logger.Error("website sync aborted: firecrawl credits exhausted, no rows were retired for lack of credit",
+			"total", len(rows), "synced", synced, "skipped_or_failed", skippedOrFailed)
+		os.Exit(1)
+	}
+	logger.Info("website sync complete", "total", len(rows), "synced", synced, "skipped_or_failed", skippedOrFailed)
+}
+
+// websiteSyncer is (*service.Activities).SyncWebsiteContent's shape,
+// narrowed so runSync is testable without a real Places/Firecrawl client.
+type websiteSyncer interface {
+	SyncWebsiteContent(ctx context.Context, id string, force bool) error
+}
+
+// runSync syncs each row in order and stops immediately — without
+// attempting any remaining row — the moment SyncWebsiteContent returns
+// firecrawl.ErrInsufficientCredits. Every remaining row would otherwise
+// still burn a billed Places call to reach a Firecrawl call that cannot
+// succeed either, on an account that is already out of credit. aborted
+// reports whether that happened, so the caller can exit non-zero and make
+// the operator top up credit before re-running, rather than reading a
+// misleadingly complete-looking "sync complete" summary.
+func runSync(ctx context.Context, svc websiteSyncer, rows []activitiessvc.Activity, logger *slog.Logger) (synced, skippedOrFailed int, aborted bool) {
 	for _, r := range rows {
 		if err := svc.SyncWebsiteContent(ctx, r.ID, false); err != nil {
+			if errors.Is(err, firecrawl.ErrInsufficientCredits) {
+				logger.Error("aborting run: firecrawl account is out of credit",
+					"title", r.Title, "id", r.ID, "error", err)
+				return synced, skippedOrFailed, true
+			}
 			logger.Warn("sync failed", "title", r.Title, "id", r.ID, "error", err)
 			skippedOrFailed++
 			continue
 		}
 		synced++
 	}
-	logger.Info("website sync complete", "total", len(rows), "synced", synced, "skipped_or_failed", skippedOrFailed)
+	return synced, skippedOrFailed, false
 }
 
 // activityLister is the one repository capability this tool's enumeration
@@ -141,20 +206,39 @@ type activityLister interface {
 // publishedRows pages through every published row in categories. List's own
 // Category filter is singular, so this calls it once per category rather
 // than filtering client-side across an unfiltered full-catalog scan.
-func publishedRows(ctx context.Context, repo activityLister, categories []activitiessvc.Category, pageSize int) ([]activitiessvc.Activity, error) {
+//
+// perCategoryLimit caps how many rows each category contributes (0 = no
+// cap). Per category, not overall, because the categories differ by an order
+// of magnitude in size — a single overall cap applied to a list built
+// category-by-category would spend the whole budget on the first category
+// and never reach the last, which is useless for a pilot whose entire
+// purpose is comparing extraction quality across categories.
+//
+// The cap also stops the paging early, so a pilot doesn't enumerate 1,443
+// shopping rows to keep 25.
+func publishedRows(ctx context.Context, repo activityLister, categories []activitiessvc.Category, pageSize, perCategoryLimit int) ([]activitiessvc.Activity, error) {
 	var out []activitiessvc.Activity
 	for _, cat := range categories {
 		offset := 0
+		taken := 0
 		for {
+			pageLimit := pageSize
+			if perCategoryLimit > 0 && perCategoryLimit-taken < pageLimit {
+				pageLimit = perCategoryLimit - taken
+			}
 			result, err := repo.List(ctx, activitiessvc.ListFilter{
-				Category: cat, Status: activitiessvc.StatusPublished, Limit: pageSize, Offset: offset,
+				Category: cat, Status: activitiessvc.StatusPublished, Limit: pageLimit, Offset: offset,
 			})
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, result.Activities...)
+			taken += len(result.Activities)
 			offset += len(result.Activities)
 			if len(result.Activities) == 0 || offset >= result.Total {
+				break
+			}
+			if perCategoryLimit > 0 && taken >= perCategoryLimit {
 				break
 			}
 		}

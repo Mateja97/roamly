@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	firecrawlpkg "activities-service/internal/firecrawl"
 	"activities-service/internal/placesmap"
 
 	"backend/shared/models/activitiessvc"
@@ -184,6 +187,34 @@ func TestSyncWebsiteContent_ExtractionError_StillMarksAttempted(t *testing.T) {
 	wantKey := syncKey(websiteSyncProvider, "1", string(activitiessvc.CategoryWellness), "")
 	if len(repo.markSynced) != 1 || repo.markSynced[0] != wantKey {
 		t.Errorf("repo.markSynced = %v, want exactly [%q] — an extraction failure must still count toward the give-up policy", repo.markSynced, wantKey)
+	}
+}
+
+// TestSyncWebsiteContent_InsufficientCredits_DoesNotMarkAttempted is finding
+// 1's fix: this already happened once for real (see the operational note in
+// docs/plans/content-audit-draft-demotion.md) — a Firecrawl 402 was being
+// recorded as a content failure, which permanently skipped every
+// non-perishable row it touched (1,143 of them on the incident run) even
+// though the row's own site was never the problem. A 402 must be treated
+// like a repo.Update failure, not like a genuine extraction error: the row
+// stays eligible for a normal retry once the account is topped up.
+func TestSyncWebsiteContent_InsufficientCredits_DoesNotMarkAttempted(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryWellness, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-spa.rs"}}
+	firecrawl := &fakeFirecrawl{err: fmt.Errorf("firecrawl scrape https://example-spa.rs status 402: %w", firecrawlpkg.ErrInsufficientCredits)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err == nil {
+		t.Fatal("SyncWebsiteContent() error = nil, want the credit-exhausted error surfaced")
+	} else if !errors.Is(err, firecrawlpkg.ErrInsufficientCredits) {
+		t.Errorf("error = %v, want it to wrap firecrawl.ErrInsufficientCredits", err)
+	}
+	if len(repo.markSynced) != 0 {
+		t.Errorf("repo.markSynced = %v, want empty — a credit-exhausted row must stay eligible for a normal retry, not get permanently skipped like a genuine content failure", repo.markSynced)
 	}
 }
 
@@ -383,7 +414,7 @@ func TestIsComplete_PerCategory(t *testing.T) {
 }
 
 // TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently proves a
-// non-Entertainment category with every scraper-owned field already filled
+// non-perishable category with every scraper-owned field already filled
 // is skipped before any Places or Firecrawl call — regardless of how long
 // ago (or whether ever) it was synced.
 func TestSyncWebsiteContent_CompleteWellnessRow_SkipsPermanently(t *testing.T) {
@@ -481,7 +512,7 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 // refreshed.
 func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *testing.T) {
 	// good_to_know deliberately left empty — the row is not complete, so an
-	// Entertainment row keeps entertainmentRefreshFreshness's periodic
+	// Entertainment row keeps perishableRefreshFreshness's periodic
 	// re-scan (30 days) rather than the one-attempt-and-give-up rule every
 	// other category gets; seed synced_at older than that so the sync
 	// actually proceeds to the merge step instead of being skipped as
@@ -694,7 +725,7 @@ func TestSyncWebsiteContent_Culture_DenylistedBanner_NotTreatedAsFilled(t *testi
 }
 
 // TestSyncWebsiteContent_IncompleteRow_GivesUpAfterOneAttempt proves a
-// non-Entertainment row that already had one automatic attempt (however
+// non-perishable row that already had one automatic attempt (however
 // long ago) is skipped forever afterward, not retried on any timer — the
 // credit-cost fix: an unbounded 7-day retry loop on a row that will never
 // complete (a missing field on the venue's site, permanently) was never
@@ -912,5 +943,220 @@ func TestEntertainmentSchema_UpcomingShowsDateTitleOnly(t *testing.T) {
 	}
 	if row["date"] != "2026-09-01" || row["title"] != "Jazz Night" {
 		t.Errorf("upcoming_shows[0] = %v, want date+title unchanged", row)
+	}
+}
+
+// TestExtractionConfig_CoversEveryScraperOwnedCategory pins the two maps
+// together. A category with a prompt but no owned fields never completes and
+// re-scrapes forever; one with owned fields but no prompt is silently
+// unsupported. Either way the failure is invisible at runtime.
+func TestExtractionConfig_CoversEveryScraperOwnedCategory(t *testing.T) {
+	for category := range extractionConfig {
+		if len(scraperOwnedFields[category]) == 0 {
+			t.Errorf("category %q has an extraction config but no scraperOwnedFields — it can never be complete", category)
+		}
+	}
+	for category := range scraperOwnedFields {
+		if _, ok := extractionConfig[category]; !ok {
+			t.Errorf("category %q has scraperOwnedFields but no extraction config — it is silently unsupported", category)
+		}
+	}
+}
+
+// TestPerishableFields_AreScraperOwned guards the overwrite path: a
+// perishable field that isn't scraper-owned would be overwritten on every
+// pass while never counting toward completeness.
+func TestPerishableFields_AreScraperOwned(t *testing.T) {
+	for category, field := range perishableFields {
+		if !slices.Contains(scraperOwnedFields[category], field) {
+			t.Errorf("perishable field %q for category %q is not in scraperOwnedFields %v",
+				field, category, scraperOwnedFields[category])
+		}
+	}
+}
+
+// TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently: shopping is
+// NOT perishable — a shop's product mix is a venue fact, so once captured it
+// must never be re-scraped, unlike nightlife above.
+func TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryShopping, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+		Details: json.RawMessage(`{"what_youll_find":["Local honey","Handmade ceramics"]}`),
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-market.rs"}}
+	firecrawl := &fakeFirecrawl{}
+	repo := &fakeRepo{getOut: stored}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if firecrawl.calls != 0 {
+		t.Errorf("firecrawl.calls = %d, want 0 — a complete non-perishable row is skipped permanently", firecrawl.calls)
+	}
+}
+
+// TestPerishableFields_Membership pins which categories re-scrape and which
+// are captured once. Entertainment's shows and Culture's programme both name
+// a date; Art, Sport, Shopping and Wellness describe the venue, so
+// re-scraping them is spend with nothing to show a reader.
+func TestPerishableFields_Membership(t *testing.T) {
+	perishable := []activitiessvc.Category{
+		activitiessvc.CategoryEntertainment,
+		activitiessvc.CategoryCulture,
+	}
+	permanent := []activitiessvc.Category{
+		activitiessvc.CategoryArt,
+		activitiessvc.CategorySport,
+		activitiessvc.CategoryShopping,
+		activitiessvc.CategoryWellness,
+	}
+
+	for _, c := range perishable {
+		if _, ok := perishableFields[c]; !ok {
+			t.Errorf("category %q should be perishable — its content names a date and would sit unrefreshed forever", c)
+		}
+	}
+	for _, c := range permanent {
+		if field, ok := perishableFields[c]; ok {
+			t.Errorf("category %q is marked perishable on %q — it would re-scrape monthly forever for content that describes the venue", c, field)
+		}
+	}
+	if len(perishableFields) != len(perishable) {
+		t.Errorf("perishableFields has %d entries, want %d", len(perishableFields), len(perishable))
+	}
+}
+
+// TestSyncWebsiteContent_CompleteCultureRow_RefreshesAfter30Days is the
+// behaviour making Culture perishable actually buys: a complete row is no
+// longer skipped forever, and now_showing is overwritten rather than
+// gap-filled, so a stale dated programme is replaced instead of preserved.
+func TestSyncWebsiteContent_CompleteCultureRow_RefreshesAfter30Days(t *testing.T) {
+	completeDetails := `{"now_showing":{"title":"August programme","description":"Runs Wednesday, August 19, 2026."}}`
+
+	t.Run("skipped at 10 days", func(t *testing.T) {
+		stored := activitiessvc.Activity{
+			ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
+		}
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+		firecrawl := &fakeFirecrawl{}
+		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+			syncKey("website", "1", "culture", ""): time.Now().Add(-10 * 24 * time.Hour),
+		}}
+		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if firecrawl.calls != 0 {
+			t.Errorf("firecrawl.calls = %d, want 0 — 10 days is inside the 30-day window", firecrawl.calls)
+		}
+	})
+
+	t.Run("re-attempted at 31 days, overwriting the stale programme", func(t *testing.T) {
+		stored := activitiessvc.Activity{
+			ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
+		}
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+		firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"September programme","description":"Runs from September 2026."}}`)}
+		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+			syncKey("website", "1", "culture", ""): time.Now().Add(-31 * 24 * time.Hour),
+		}}
+		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if firecrawl.calls != 1 {
+			t.Errorf("firecrawl.calls = %d, want 1 — 31 days is past the window", firecrawl.calls)
+		}
+		if repo.gotUpdatePatch.Details == nil {
+			t.Fatal("repo.Update was not called with Details")
+		}
+		var got map[string]any
+		if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+			t.Fatalf("unmarshal updated details: %v", err)
+		}
+		banner, ok := got["now_showing"].(map[string]any)
+		if !ok {
+			t.Fatalf("now_showing = %v, want an object", got["now_showing"])
+		}
+		if banner["title"] != "September programme" {
+			t.Errorf("now_showing.title = %v, want the fresh programme — a gap-fill would have kept the stale August one", banner["title"])
+		}
+	})
+}
+
+// TestSyncWebsiteContent_NoWebsite_MarksTheAttempt is the repeat-cost fix.
+// Before it, a venue with no website on file returned without marking, so
+// every subsequent run re-resolved it through a billed Places call to
+// rediscover the same absence — measured at ~1,800 such rows across
+// art/culture/sport/shopping, roughly $36 per run, forever.
+//
+// The second half is the half that actually saves the money: the skip has to
+// land in the attemptedBefore branch, which returns BEFORE the Places call.
+// A mark that still let the row reach PlaceDetails would fix nothing.
+func TestSyncWebsiteContent_NoWebsite_MarksTheAttempt(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryShopping, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{}} // no WebsiteURI
+	firecrawl := &fakeFirecrawl{}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+
+	wantKey := syncKey("website", "1", "shopping", "")
+	if !slices.Contains(repo.markSynced, wantKey) {
+		t.Fatalf("markSynced = %v, want it to contain %q — an unmarked row is re-resolved every run", repo.markSynced, wantKey)
+	}
+	if places.detailCalls != 1 {
+		t.Errorf("places.detailCalls = %d, want 1 on the first run", places.detailCalls)
+	}
+	if firecrawl.calls != 0 {
+		t.Errorf("firecrawl.calls = %d, want 0 — no website to scrape", firecrawl.calls)
+	}
+
+	t.Run("a second run skips before the Places call, not after it", func(t *testing.T) {
+		places.detailCalls = 0
+		repo.syncedAtOut = map[string]time.Time{wantKey: time.Now()}
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if places.detailCalls != 0 {
+			t.Errorf("places.detailCalls = %d, want 0 — the whole point is to stop paying to rediscover a missing website", places.detailCalls)
+		}
+	})
+}
+
+// TestSyncWebsiteContent_NoWebsite_PerishableStillRecovers guards the
+// escape hatch: marking a no-website row must not strand a venue that
+// later publishes a site. A perishable category re-checks on its own
+// cadence; everything else needs an explicit -retry-id run.
+func TestSyncWebsiteContent_NoWebsite_PerishableStillRecovers(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+	firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"Autumn programme","description":"Opens in October."}}`)}
+	repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+		syncKey("website", "1", "culture", ""): time.Now().Add(-31 * 24 * time.Hour),
+	}}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if firecrawl.calls != 1 {
+		t.Errorf("firecrawl.calls = %d, want 1 — a perishable row marked 31 days ago is re-attempted, so a venue that gained a website is picked up", firecrawl.calls)
 	}
 }

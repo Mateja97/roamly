@@ -3,6 +3,7 @@ package firecrawl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -118,6 +119,35 @@ func TestClient_ExtractJSON_NonTransientStatus_NoRetry(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Errorf("calls = %d, want 1 (400 is non-transient, no retry)", calls.Load())
+	}
+}
+
+// TestClient_ExtractJSON_402_ReturnsErrInsufficientCredits proves a 402
+// (insufficient credits) is wrapped in the exported sentinel — the one
+// status callers must recognize and treat differently from every other
+// extraction failure (see internal/service/websitesync.go's
+// SyncWebsiteContent) — and, like every other non-transient status, fails on
+// the first attempt rather than burning through retries against an account
+// that cannot recover mid-run.
+func TestClient_ExtractJSON_402_ReturnsErrInsufficientCredits(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusPaymentRequired)
+		_, _ = w.Write([]byte(`{"success": false, "error": "Insufficient credits"}`))
+	}))
+	defer srv.Close()
+
+	c := NewWithBase("test-key", srv.URL)
+	_, err := c.ExtractJSON(context.Background(), "https://example-spa.rs", "Extract treatments.", map[string]any{"type": "object"})
+	if err == nil {
+		t.Fatal("ExtractJSON() error = nil, want an error on 402")
+	}
+	if !errors.Is(err, ErrInsufficientCredits) {
+		t.Errorf("error = %v, want it to wrap ErrInsufficientCredits", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1 — 402 is non-transient, no retry (and retrying wouldn't help anyway)", calls.Load())
 	}
 }
 

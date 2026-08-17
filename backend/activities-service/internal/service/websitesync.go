@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
+
+	"activities-service/internal/firecrawl"
 
 	"backend/shared/models/activitiessvc"
 )
@@ -19,15 +22,16 @@ import (
 // later... no schema change."
 const websiteSyncProvider = "website"
 
-// entertainmentRefreshFreshness bounds how often an Entertainment row gets
-// re-scraped — complete or not. Entertainment is the one category whose
-// scraper-owned content (upcoming_shows) genuinely goes stale over time, so
-// unlike every other category it keeps a periodic re-scan indefinitely
-// rather than giving up after one incomplete attempt (see SyncWebsiteContent).
-// Every other category is skipped permanently once complete (isComplete),
-// because static content like a spa's treatment menu or a museum's current
-// exhibit description doesn't need repeat scraping once it's been captured.
-const entertainmentRefreshFreshness = 30 * 24 * time.Hour
+// perishableRefreshFreshness bounds how often a perishable category's rows
+// get re-scraped — complete or not (see perishableFields). A month suits
+// both members: theatre seasons and museum programmes turn over on roughly
+// that scale, and a listing a few weeks stale still names a real programme
+// rather than an invented one.
+//
+// Every non-perishable category is skipped permanently once complete
+// (isComplete), because static content like a spa's treatment menu doesn't
+// need repeat scraping once captured.
+const perishableRefreshFreshness = 30 * 24 * time.Hour
 
 // websiteResolveTimeout bounds the one live Places call this job makes per
 // venue to resolve the website URL — same reasoning as detailResolveTimeout,
@@ -38,8 +42,8 @@ const websiteResolveTimeout = 8 * time.Second
 const firecrawlTimeout = 45 * time.Second
 
 // extraction pairs one category's LLM prompt with the JSON schema Firecrawl
-// extracts against — extractionConfig below is the one place all five
-// categories' extraction targets live.
+// extracts against — extractionConfig below is the one place every
+// supported category's extraction target lives.
 type extraction struct {
 	prompt string
 	schema map[string]any
@@ -49,9 +53,9 @@ type extraction struct {
 // half is trivial here — app/src has zero i18n (no i18n/intl/locale dep in
 // app/package.json, zero locale/Localization/i18n hits), every label is a
 // hardcoded English literal, so the target language is the fixed constant
-// "English", not per-venue infra that needs building — both prompts below
-// now instruct the model to answer in English. What's still NOT implemented
-// is the *validator*-side half: T1's contentkind package has no
+// "English", not per-venue infra that needs building — every extraction
+// prompt below now instructs the model to answer in English. What's still
+// NOT implemented is the *validator*-side half: T1's contentkind package has no
 // confidently-wrong-language check, so a value that ignores the prompt's
 // instruction and answers in another language isn't rejected server-side.
 // That check is a real language-detection dependency this task's scope (a
@@ -115,7 +119,7 @@ var entertainmentSchema = map[string]any{
 	},
 }
 
-var culturePrompt = "Extract this culture/heritage venue's current or upcoming exhibit, show, or program as a short title and one-paragraph description — what's showing right now, not the venue's general description."
+var culturePrompt = "Answer in English throughout, regardless of the page's own language. Extract this culture/heritage venue's current or upcoming exhibit, show, or program as a short title and one-paragraph description — what's showing right now, not the venue's general description."
 
 var cultureSchema = map[string]any{
 	"type": "object",
@@ -130,7 +134,7 @@ var cultureSchema = map[string]any{
 	},
 }
 
-var artPrompt = "Extract this art venue's current exhibition as a short title and one-paragraph description — what's on display right now, not the venue's general description. Do not attempt to identify a specific artist, artwork, or medium."
+var artPrompt = "Answer in English throughout, regardless of the page's own language. Extract this art venue's current exhibition as a short title and one-paragraph description — what's on display right now, not the venue's general description. Do not attempt to identify a specific artist, artwork, or medium."
 
 var artSchema = map[string]any{
 	"type": "object",
@@ -145,7 +149,7 @@ var artSchema = map[string]any{
 	},
 }
 
-var sportPrompt = "Extract this sport/activity venue's typical effort level (e.g. Easy, Moderate, Intense), what gear or equipment is provided, a short list of what visitors should bring themselves, and your own best estimate of overall difficulty on a 1-5 scale (1 = beginner-friendly, 5 = expert only) based on how the page describes the activity's intensity or skill requirements — an estimate is expected even if the page never states a number directly."
+var sportPrompt = "Answer in English throughout, regardless of the page's own language. Extract this sport/activity venue's typical effort level (e.g. Easy, Moderate, Intense), what gear or equipment is provided, a short list of what visitors should bring themselves, and your own best estimate of overall difficulty on a 1-5 scale (1 = beginner-friendly, 5 = expert only) based on how the page describes the activity's intensity or skill requirements — an estimate is expected even if the page never states a number directly."
 
 var sportSchema = map[string]any{
 	"type": "object",
@@ -154,6 +158,15 @@ var sportSchema = map[string]any{
 		"gear":          map[string]any{"type": "string"},
 		"what_to_bring": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		"difficulty":    map[string]any{"type": "integer", "minimum": 1, "maximum": 5},
+	},
+}
+
+var shoppingPrompt = "Answer in English throughout, regardless of the page's own language. Extract a short list of the kinds of goods, departments, or product categories a visitor will find at this shop or market — for example 'Local honey and preserves', 'Vintage vinyl', 'Handmade ceramics'. Describe what is actually sold, not the venue's marketing copy, and never invent brands or prices."
+
+var shoppingSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"what_youll_find": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 	},
 }
 
@@ -166,6 +179,32 @@ var extractionConfig = map[activitiessvc.Category]extraction{
 	activitiessvc.CategoryCulture:       {culturePrompt, cultureSchema},
 	activitiessvc.CategoryArt:           {artPrompt, artSchema},
 	activitiessvc.CategorySport:         {sportPrompt, sportSchema},
+	activitiessvc.CategoryShopping:      {shoppingPrompt, shoppingSchema},
+}
+
+// perishableFields names, per category, the scraper-owned field whose value
+// goes stale on its own — a show listing or a programme describes what is on
+// right now, not the venue. Membership has three consequences, all of which used to be
+// hardcoded `== CategoryEntertainment` checks: the row is never permanently
+// skipped once complete, it keeps a periodic re-scan, and the named field is
+// overwritten on each pass rather than gap-filled, so a stale value is
+// replaced instead of preserved forever.
+//
+// Culture joined after the first full run showed what it actually captures:
+// `now_showing` came back holding dated programme entries ("Wednesday,
+// August 19, 2026"), which a permanently-skipped category would carry
+// unrefreshed forever — the same staleness that got Nightlife removed, only
+// slower. Nightlife itself was piloted here and removed for fabricating
+// content outright: see the removal note on syncCategories in
+// cmd/websitesync.
+//
+// Art is deliberately NOT here. Its `current_exhibition` reads as a standing
+// description of what a venue shows rather than a dated listing, so
+// re-scraping 204 rows monthly would rewrite prose that rarely changes.
+// Revisit if art rows start coming back with dates in them.
+var perishableFields = map[activitiessvc.Category]string{
+	activitiessvc.CategoryEntertainment: "upcoming_shows",
+	activitiessvc.CategoryCulture:       "now_showing",
 }
 
 // scraperOwnedFields lists, per category, the `details` keys this job is
@@ -179,11 +218,12 @@ var scraperOwnedFields = map[activitiessvc.Category][]string{
 	activitiessvc.CategoryCulture:       {"now_showing"},
 	activitiessvc.CategoryArt:           {"current_exhibition"},
 	activitiessvc.CategorySport:         {"what_to_bring", "effort_level", "gear", "difficulty"},
+	activitiessvc.CategoryShopping:      {"what_youll_find"},
 }
 
 // isComplete reports whether every one of category's scraper-owned fields
 // already has a value on details — the permanent-skip signal for every
-// category except Entertainment (see SyncWebsiteContent). false for a
+// non-perishable category (see perishableFields; SyncWebsiteContent). false for a
 // category with no entry in scraperOwnedFields (never complete, matches
 // "unsupported category" falling through to the extractionConfig guard
 // before this is ever consulted for such a category in practice). Uses
@@ -229,18 +269,19 @@ func isFieldEmpty(v any) bool {
 // extracts via Firecrawl; and writes only the fields the row doesn't
 // already have a value for (fillGaps below) — an admin's own edit is never
 // overwritten. A row whose scraper-owned fields (scraperOwnedFields) are
-// all already filled is skipped permanently, except Entertainment, which
-// still re-checks every entertainmentRefreshFreshness because
-// upcoming_shows genuinely goes stale over time.
+// all already filled is skipped permanently, except the perishable
+// categories (see perishableFields), which still re-check every
+// perishableRefreshFreshness because their scraper-owned content genuinely
+// goes stale over time.
 //
-// A non-Entertainment row that stays incomplete gets exactly one automatic
+// A non-perishable row that stays incomplete gets exactly one automatic
 // attempt from the batch job, ever — a second failure means the venue's
 // site is missing that field for good (or is unscrapable), so retrying it
 // every cycle would burn Firecrawl credits with no ceiling (the design
 // spec's credit-cost review flagged this: an indefinitely-retried row was
 // never accounted for in the cost estimate). force skips that
-// already-attempted gate (and Entertainment's freshness window) for a
-// single explicitly-requested row — see cmd/websitesync's -retry-id flag.
+// already-attempted gate (and a perishable category's freshness window) for
+// a single explicitly-requested row — see cmd/websitesync's -retry-id flag.
 //
 // "Attempt" is recorded (markAttempt below) once Firecrawl has actually been
 // called and the outcome is a content problem — an extraction error
@@ -251,6 +292,17 @@ func isFieldEmpty(v any) bool {
 // deliberately NOT recorded: that's an infra blip on content that already
 // passed validation, not a reason to give up on the row, so it still
 // retries next cycle exactly as it did before this policy existed.
+//
+// firecrawl.ErrInsufficientCredits is the one extraction error that is NOT
+// recorded either, and for the same underlying reason as a repo.Update
+// failure: it is not a fact about this row's source, it is a fact about our
+// own account balance, and it starts succeeding again the instant the
+// account is topped up. Recording it here would retire the row forever on a
+// billing problem — this already happened once, see the operational note in
+// docs/plans/content-audit-draft-demotion.md. The error is returned instead
+// so cmd/websitesync's run loop can recognize it and abort the whole run,
+// rather than grinding through the remaining catalog burning a billed
+// Places call per row to reach a Firecrawl call that cannot succeed either.
 func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bool) error {
 	if a.places == nil || a.firecrawl == nil {
 		return fmt.Errorf("places and firecrawl clients must both be configured")
@@ -271,8 +323,9 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		return nil
 	}
 
+	_, perishable := perishableFields[activity.Category]
 	complete := isComplete(activity.Category, activity.Details)
-	if complete && activity.Category != activitiessvc.CategoryEntertainment {
+	if complete && !perishable {
 		// Permanently done: this category's content doesn't go stale the way
 		// Entertainment's upcoming_shows does, so once every scraper-owned
 		// field is filled there's nothing left to gain from ever
@@ -302,11 +355,12 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	}
 	if !force {
 		switch {
-		case activity.Category == activitiessvc.CategoryEntertainment:
-			// Reachable here whether complete or not — Entertainment's show
-			// listings go stale regardless of completeness, so unlike every
-			// other category it keeps a periodic re-scan instead of giving up.
-			if attemptedBefore && time.Since(syncedAt) < entertainmentRefreshFreshness {
+		case perishable:
+			// Reachable here whether complete or not — a perishable field's
+			// value goes stale regardless of completeness, so unlike every
+			// other category these keep a periodic re-scan instead of
+			// giving up. See perishableFields.
+			if attemptedBefore && time.Since(syncedAt) < perishableRefreshFreshness {
 				slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
 				return nil
 			}
@@ -318,26 +372,15 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		}
 	}
 
-	resolveCtx, cancel := context.WithTimeout(ctx, websiteResolveTimeout)
-	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID)
-	cancel()
-	if err != nil {
-		return fmt.Errorf("resolving website for %s: %w", id, err)
-	}
-	if detail.WebsiteURI == "" {
-		slog.Info("website sync skipped, no website on file", "activity_id", id)
-		return nil
-	}
-
-	// markAttempt records the attempt the moment Firecrawl was actually
-	// called, for every outcome that means "this row's content is the
-	// problem" — an extraction error, malformed JSON, or a validation
-	// failure will produce the exact same result next cycle, so retrying
-	// spends another Firecrawl call for nothing (see the doc comment
-	// above). Deliberately NOT called on a repo.Update failure below: that's
-	// an infra blip on already-good, already-validated content, unrelated
-	// to the venue's site — the row should still retry next cycle, same as
-	// before this attempt-tracking existed.
+	// markAttempt records the attempt for every outcome that means "this
+	// row's source is the problem" — no website on file, an extraction
+	// error, malformed JSON, or a validation failure all produce the exact
+	// same result next cycle, so retrying spends another billed call for
+	// nothing (see the doc comment above). Deliberately NOT called on a
+	// repo.Update failure below: that's an infra blip on already-good,
+	// already-validated content, unrelated to the venue's site — the row
+	// should still retry next cycle, same as before this attempt-tracking
+	// existed.
 	markAttempt := func() error {
 		// radiusKM 0: not geographic (see the SyncedAt call above).
 		if err := a.repo.MarkSynced(ctx, websiteSyncProvider, activity.ID, string(activity.Category), "", 0); err != nil {
@@ -346,10 +389,39 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		return nil
 	}
 
+	resolveCtx, cancel := context.WithTimeout(ctx, websiteResolveTimeout)
+	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID)
+	cancel()
+	if err != nil {
+		return fmt.Errorf("resolving website for %s: %w", id, err)
+	}
+	if detail.WebsiteURI == "" {
+		// Marked, not merely skipped. Without this the row is re-resolved on
+		// every single run, spending a billed Places call each time to
+		// rediscover that the venue still has no website — measured at
+		// ~1,800 such rows across art/culture/sport/shopping, about $36 per
+		// run, forever. Marking moves the skip to the attemptedBefore branch
+		// above, which returns before the Places call rather than after it.
+		//
+		// A venue that gains a website later is picked up by the perishable
+		// categories' periodic re-scan, and elsewhere by an explicit
+		// -retry-id run — the same recovery path every other one-attempt
+		// outcome already relies on.
+		slog.Info("website sync skipped, no website on file", "activity_id", id)
+		return markAttempt()
+	}
+
 	extractCtx, cancel := context.WithTimeout(ctx, firecrawlTimeout)
 	extracted, err := a.firecrawl.ExtractJSON(extractCtx, detail.WebsiteURI, extract.prompt, extract.schema)
 	cancel()
 	if err != nil {
+		if errors.Is(err, firecrawl.ErrInsufficientCredits) {
+			// Deliberately not markAttempt() — see the doc comment above.
+			// The row's source isn't the problem, our account balance is,
+			// and this row must stay eligible for a normal retry once
+			// credits are topped up.
+			return fmt.Errorf("extracting website content for %s: %w", id, err)
+		}
 		if markErr := markAttempt(); markErr != nil {
 			return markErr
 		}
@@ -364,8 +436,8 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		}
 		return fmt.Errorf("merging website content for %s: %w", id, err)
 	}
-	if activity.Category == activitiessvc.CategoryEntertainment {
-		merged = overwriteField(merged, extracted, "upcoming_shows")
+	if field, ok := perishableFields[activity.Category]; ok {
+		merged = overwriteField(merged, extracted, field)
 	}
 	if activity.Category == activitiessvc.CategorySport {
 		merged = markDifficultyInferred(activity.Details, merged)

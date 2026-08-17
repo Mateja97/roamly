@@ -1023,6 +1023,76 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("draft_reason round-trips, and an empty patch value clears it back to NULL", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{
+			Title: "Reason Fixture", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusDraft,
+		})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+		if created.DraftReason != "" {
+			t.Errorf("new row DraftReason = %q, want \"\" (the column defaults to NULL)", created.DraftReason)
+		}
+
+		reason := "no_photo"
+		demoted, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{DraftReason: &reason})
+		if err != nil {
+			t.Fatalf("Update() setting draft_reason: %v", err)
+		}
+		if demoted.DraftReason != "no_photo" {
+			t.Errorf("DraftReason after set = %q, want %q", demoted.DraftReason, "no_photo")
+		}
+
+		var isNull bool
+		if err := db.QueryRow(ctx, `SELECT draft_reason IS NULL FROM activities WHERE id = $1`, created.ID).Scan(&isNull); err != nil {
+			t.Fatalf("checking draft_reason nullness after set: %v", err)
+		}
+		if isNull {
+			t.Error("draft_reason is NULL in the database after setting it to \"no_photo\"")
+		}
+
+		cleared := ""
+		republished, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{DraftReason: &cleared})
+		if err != nil {
+			t.Fatalf("Update() clearing draft_reason: %v", err)
+		}
+		if republished.DraftReason != "" {
+			t.Errorf("DraftReason after clear = %q, want \"\"", republished.DraftReason)
+		}
+		if err := db.QueryRow(ctx, `SELECT draft_reason IS NULL FROM activities WHERE id = $1`, created.ID).Scan(&isNull); err != nil {
+			t.Fatalf("checking draft_reason nullness after clear: %v", err)
+		}
+		if !isNull {
+			t.Error("draft_reason is not NULL after clearing — NULL is what distinguishes a human-drafted row from an audit-drafted one")
+		}
+	})
+
+	t.Run("omitting DraftReason from a patch leaves an existing reason untouched", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{
+			Title: "Untouched Reason", Category: activitiessvc.CategorySport, Status: activitiessvc.StatusDraft,
+		})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+
+		reason := "no_content"
+		if _, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{DraftReason: &reason}); err != nil {
+			t.Fatalf("Update() setting draft_reason: %v", err)
+		}
+
+		newTitle := "Untouched Reason (renamed)"
+		got, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{Title: &newTitle})
+		if err != nil {
+			t.Fatalf("Update() renaming: %v", err)
+		}
+		if got.DraftReason != "no_content" {
+			t.Errorf("DraftReason after an unrelated patch = %q, want %q preserved", got.DraftReason, "no_content")
+		}
+	})
+
 	t.Run("Update with no set fields is a no-op read, not an invalid SQL statement", func(t *testing.T) {
 		created, err := repo.Create(ctx, activitiessvc.NewActivity{Title: "Untouched", Category: activitiessvc.CategoryArt, Status: activitiessvc.StatusDraft})
 		if err != nil {
