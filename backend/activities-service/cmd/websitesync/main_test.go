@@ -154,7 +154,8 @@ func TestPublishedRows_LimitNarrowsThePageRequest(t *testing.T) {
 // next best thing: the enumeration list is the one place a category can be
 // silently dropped from the job while its prompt and schema sit there
 // unused, which is exactly what happened to Shopping and Nightlife when
-// they were added to the service maps alone.
+// they were added to the service maps alone. Nightlife is deliberately not
+// here — see the removal note on syncCategories.
 func TestSyncCategories_IncludesEveryEnrichedCategory(t *testing.T) {
 	want := []activitiessvc.Category{
 		activitiessvc.CategoryWellness,
@@ -163,7 +164,6 @@ func TestSyncCategories_IncludesEveryEnrichedCategory(t *testing.T) {
 		activitiessvc.CategoryArt,
 		activitiessvc.CategorySport,
 		activitiessvc.CategoryShopping,
-		activitiessvc.CategoryNightlife,
 	}
 
 	have := map[activitiessvc.Category]bool{}

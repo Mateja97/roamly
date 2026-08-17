@@ -946,75 +946,9 @@ func TestPerishableFields_AreScraperOwned(t *testing.T) {
 }
 
 func TestRefreshFreshness(t *testing.T) {
-	if got := refreshFreshness(activitiessvc.CategoryNightlife); got != 24*time.Hour {
-		t.Errorf("nightlife refresh = %v, want 24h — a \"Tonight\" lineup is wrong, not merely stale, after a day", got)
-	}
 	if got := refreshFreshness(activitiessvc.CategoryEntertainment); got != 30*24*time.Hour {
 		t.Errorf("entertainment refresh = %v, want 720h", got)
 	}
-}
-
-// TestSyncWebsiteContent_CompleteNightlifeRow_RefreshesDaily is the
-// Nightlife analogue of the Entertainment refresh test: a complete row must
-// NOT be permanently skipped, and its lineup must be overwritten rather than
-// gap-filled, or the app would show last week's act under "Tonight".
-func TestSyncWebsiteContent_CompleteNightlifeRow_RefreshesDaily(t *testing.T) {
-	completeDetails := `{"lineup":[{"time":"22:00","act":"Stale DJ","stage":"Main"}]}`
-
-	t.Run("skipped 2 hours after the last attempt", func(t *testing.T) {
-		stored := activitiessvc.Activity{
-			ID: "1", Category: activitiessvc.CategoryNightlife, Status: activitiessvc.StatusPublished,
-			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
-		}
-		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-club.rs"}}
-		firecrawl := &fakeFirecrawl{}
-		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
-			syncKey("website", "1", "nightlife", ""): time.Now().Add(-2 * time.Hour),
-		}}
-		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
-
-		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
-			t.Fatalf("SyncWebsiteContent() error: %v", err)
-		}
-		if firecrawl.calls != 0 {
-			t.Errorf("firecrawl.calls = %d, want 0 — 2 hours is inside the daily window", firecrawl.calls)
-		}
-	})
-
-	t.Run("re-attempted after 25 hours, overwriting the stale lineup", func(t *testing.T) {
-		stored := activitiessvc.Activity{
-			ID: "1", Category: activitiessvc.CategoryNightlife, Status: activitiessvc.StatusPublished,
-			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
-		}
-		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-club.rs"}}
-		firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"lineup":[{"time":"23:00","act":"Tonight DJ","stage":"Main"}]}`)}
-		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
-			syncKey("website", "1", "nightlife", ""): time.Now().Add(-25 * time.Hour),
-		}}
-		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
-
-		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
-			t.Fatalf("SyncWebsiteContent() error: %v", err)
-		}
-		if firecrawl.calls != 1 {
-			t.Errorf("firecrawl.calls = %d, want 1 — 25 hours is past the daily window", firecrawl.calls)
-		}
-		if repo.gotUpdatePatch.Details == nil {
-			t.Fatal("repo.Update was not called with Details")
-		}
-		var got map[string]any
-		if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
-			t.Fatalf("unmarshal updated details: %v", err)
-		}
-		lineup, ok := got["lineup"].([]any)
-		if !ok || len(lineup) != 1 {
-			t.Fatalf("lineup = %v, want one fresh entry", got["lineup"])
-		}
-		entry, ok := lineup[0].(map[string]any)
-		if !ok || entry["act"] != "Tonight DJ" {
-			t.Errorf("lineup[0] = %v, want the freshly scraped act, not the stale stored one", lineup[0])
-		}
-	})
 }
 
 // TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently: shopping is

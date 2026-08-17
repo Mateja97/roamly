@@ -1,5 +1,5 @@
 // Command websitesync scrapes each published Wellness/Entertainment/Culture/
-// Art/Sport/Shopping/Nightlife venue's own website (resolved live via Google
+// Art/Sport/Shopping venue's own website (resolved live via Google
 // Place Details, never stored — see
 // docs/superpowers/specs/2026-08-01-wellness-entertainment-detail-page-design.md
 // and
@@ -7,9 +7,9 @@
 // for content Google Places doesn't provide, filling in whatever fields
 // the row doesn't already have curated. A category is skipped permanently
 // once its fields are all filled — see internal/service/websitesync.go's
-// isComplete — except the perishable ones (Entertainment monthly, Nightlife
-// daily), whose content names a date rather than the venue and so keeps
-// re-scanning; see perishableFields. Run periodically —
+// isComplete — except the perishable ones (Entertainment), whose content
+// names a date rather than the venue and so keeps re-scanning; see
+// perishableFields. Run periodically —
 // never wired into activities-service's own startup path, same
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //
@@ -45,7 +45,16 @@ import (
 const listPageSize = 200
 
 // syncCategories are the categories this job covers, per the design specs'
-// scope decisions. Adding a category here also requires an entry in
+// scope decisions.
+//
+// Nightlife is deliberately absent. It was built and piloted on 25 rows:
+// three of eight extractions were literal placeholders ("Event 1", "Event
+// Name 2") with invented times and stages, and the rest were a hotel's meal
+// times, a generic opening-hours blurb, and a 2023 date. Club websites do
+// not publish lineups — that content lives on social media — so the failure
+// is the source, not the prompt, and no rewording recovers it. Rendering
+// fabricated acts under the app's "Tonight" heading is worse than rendering
+// nothing. Adding a category here also requires an entry in
 // internal/service/websitesync.go's extractionConfig and
 // scraperOwnedFields — this list alone doesn't teach SyncWebsiteContent
 // anything new, it only decides which rows get enumerated.
@@ -56,7 +65,6 @@ var syncCategories = []activitiessvc.Category{
 	activitiessvc.CategoryArt,
 	activitiessvc.CategorySport,
 	activitiessvc.CategoryShopping,
-	activitiessvc.CategoryNightlife,
 }
 
 func main() {
