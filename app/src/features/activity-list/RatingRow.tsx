@@ -1,19 +1,9 @@
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { EdgeFade } from '../../components/EdgeFade';
 import { space } from '../../theme/tokens';
-import { RATING_OPTIONS } from './filters';
+import { RATING_OPTIONS, ratingAccessibilityLabel } from './filters';
 import { SegmentChip } from './SegmentChip';
 import type { RatingOption } from './types';
-
-// design-spec.md T2: visible labels ("Any", "4.0+") are too terse to stand
-// alone for AT, same reasoning CategoryRow's "All" -> "All categories"
-// override already follows.
-const RATING_ACCESSIBILITY_LABELS: Record<string, string> = {
-  Any: 'Any rating',
-  '4.0+': 'Rated 4.0 and up',
-  '4.5+': 'Rated 4.5 and up',
-  '4.8+': 'Rated 4.8 and up',
-};
 
 type RatingRowProps = {
   selected: RatingOption | null;
@@ -33,7 +23,7 @@ export function RatingRow({ selected, onSelect }: RatingRowProps) {
           <SegmentChip
             key={option.label}
             label={option.label}
-            accessibilityLabel={RATING_ACCESSIBILITY_LABELS[option.label]}
+            accessibilityLabel={ratingAccessibilityLabel(option.value)}
             selected={selected === option.value}
             onPress={() => {
               if (selected === option.value) return; // re-tapping the already-selected chip is a no-op
