@@ -111,10 +111,13 @@ same check Build step 0 below already uses per-task.
   normal pass — rebase, push, poll for mergeability, merge, unlock, remove —
   finishes in well under an hour, so anything crossing that age is
   presumptively a crash regardless of whether it's still locked or clean.
-  For those: `git worktree unlock` it (harmless no-op if it isn't actually
-  locked) then `git worktree remove` it; if that still fails (genuinely
-  dirty, not just locked), leave it and note it in the report, same as
-  everywhere else — never `--force`/`-f -f`. Skip anything younger than 60
+  For those: `git worktree unlock` it — if it genuinely wasn't locked, this
+  fails with `fatal: '<path>' is not locked` (exit 128); that failure is
+  expected and means only "wasn't locked," never "still in use," so ignore it
+  and continue regardless of its exit code. Then `git worktree remove` it; if
+  that still fails (genuinely dirty, not just locked), leave it and note it
+  in the report, same as everywhere else — never `--force`/`-f -f`. Skip
+  anything younger than 60
   minutes outright, no unlock or removal attempt at all — it may be a
   legitimate in-progress merge. Worth sweeping even for `<slug>`: a leftover
   one left behind by an earlier crashed run of this same slug is exactly the
@@ -479,19 +482,30 @@ merge it into `main` — respecting dependency order and integrating conflicts:
 
    **Creating it, or reusing what's there.** `git worktree prune` first —
    clears a stale registration a crashed run can leave even after its
-   directory itself is gone. Then, if
+   directory itself is gone, but only when that registration is *unlocked*;
+   these are created with `--lock`, so a directory removed by hand (the only
+   way one goes missing without going through step 3's own
+   unlock-then-remove) leaves a locked-but-missing registration that `prune`
+   silently skips. Then, if
    `<repo-root>/.claude/worktrees/<slug>-merge-<tn>` already exists on disk,
    it's either this same PR's own worktree from an earlier pass through this
    step (reuse it as-is — it may already carry a rebase from a previous
    pass, don't recreate it out from under that) or a crashed run's leftover.
    Tell them apart the only way that matters operationally: `git worktree
-   unlock` it (harmless no-op if it isn't locked) then try `git worktree
-   remove` it. Succeeds → it was stale; create fresh as below. Still fails →
-   it's either genuinely in use or genuinely dirty either way, don't force
-   it: skip this PR's merge for this pass, report it, and move on to other
-   eligible PRs. If the path didn't exist at all, create fresh: `git fetch
-   origin`, then `git worktree add --detach --lock
-   <repo-root>/.claude/worktrees/<slug>-merge-<tn> feature/<slug>-<tn>`.
+   unlock` it — if it genuinely wasn't locked, this fails with `fatal:
+   '<path>' is not locked` (exit 128); ignore that failure and continue
+   regardless of its exit code — then try `git worktree remove` it. Succeeds
+   → it was stale; create fresh as below. Still fails → it's either
+   genuinely in use or genuinely dirty either way, don't force it: skip this
+   PR's merge for this pass, report it, and move on to other eligible PRs.
+   If the path didn't exist at all, create fresh: `git fetch origin`, then
+   `git worktree add --detach --lock
+   <repo-root>/.claude/worktrees/<slug>-merge-<tn> feature/<slug>-<tn>`. If
+   that `add` instead fails with `fatal: '<path>' is a missing but locked
+   worktree` — the registration `prune` couldn't clear because someone
+   deleted the directory by hand while it was locked — recover explicitly:
+   `git worktree unlock <path>` (this succeeds even though the directory is
+   gone), then `git worktree prune`, then retry the `add`.
 
    `--lock` matters as much as `--detach` — it's the actual in-use
    protection against step 0's own crash-recovery sweep (or a concurrent
