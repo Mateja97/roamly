@@ -55,17 +55,31 @@ describe('FeedHeader', () => {
     expect(flatStyle.fontFamily).not.toBe('Marcellus_400Regular');
   });
 
-  // T6: an active minimum-rating filter must be visible/announced on the
-  // pill after the scope sheet closes, without reopening it.
-  it('an active minRating appends to both the pill text and its accessibilityLabel', () => {
+  // T6, review round 1: an active minimum-rating filter must stay visible
+  // (not just accessible) even on the pill's longest scope shapes, so it
+  // renders as its own non-truncating segment rather than folded into the
+  // truncatable scope label. accessibilityLabel uses RatingRow's own "Rated
+  // N and up" phrasing, not a bare "4.5+".
+  it('an active minRating renders as a separate, non-truncating rating segment + an accessible "Rated N and up" label', () => {
     render(<FeedHeader scope="nearby" cities={[]} minRating={4.5} hour={7} travelerMode={false} onOpenScope={jest.fn()} />);
-    expect(screen.getByRole('button', { name: /scope: nearby · 4\.5\+/i })).toBeTruthy();
-    expect(screen.getByText('Nearby · 4.5+')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Scope: Nearby, Rated 4.5 and up. Opens the scope sheet.' })).toBeTruthy();
+    expect(screen.getByText('Nearby')).toBeTruthy();
+    expect(screen.getByText('· 4.5+')).toBeTruthy();
   });
 
-  it('clearing minRating (back to null) returns the pill to its unfiltered label', () => {
-    render(<FeedHeader scope="nearby" cities={[]} minRating={null} hour={7} travelerMode={false} onOpenScope={jest.fn()} />);
+  // A real 4.5 -> null transition via rerender (not two independent
+  // fresh-mount renders) — the case the acceptance criteria actually name.
+  it('clearing minRating (4.5 -> null) removes the rating segment and reverts accessibilityLabel', () => {
+    const onOpenScope = jest.fn();
+    const { rerender } = render(
+      <FeedHeader scope="nearby" cities={[]} minRating={4.5} hour={7} travelerMode={false} onOpenScope={onOpenScope} />
+    );
+    expect(screen.getByText('· 4.5+')).toBeTruthy();
+
+    rerender(<FeedHeader scope="nearby" cities={[]} minRating={null} hour={7} travelerMode={false} onOpenScope={onOpenScope} />);
+
+    expect(screen.getByRole('button', { name: 'Scope: Nearby. Opens the scope sheet.' })).toBeTruthy();
     expect(screen.getByText('Nearby')).toBeTruthy();
-    expect(screen.queryByText(/4\.5\+/)).toBeNull();
+    expect(screen.queryByText('· 4.5+')).toBeNull();
   });
 });

@@ -1,29 +1,41 @@
 import { Globe, MapPin } from 'lucide-react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import type { CitySuggestion } from '../../api/cities';
-import { citiesJoinLabel } from './filters';
+import { citiesJoinLabel, RATING_OPTIONS, ratingAccessibilityLabel } from './filters';
 import { timeBucket } from './categoryOrder';
 import type { Scope } from '../../types/scope';
 import type { RatingOption } from './types';
 
-export type ScopePillInfo = { label: string; icon: LucideIcon };
+// `label` is the scope-only base text (unchanged shape, still truncatable —
+// see FeedHeader's `numberOfLines`). `ratingLabel`/`ratingAccessibleLabel`
+// are T6's addition, kept OUT of `label` on purpose: FeedHeader renders the
+// rating as a sibling `flexShrink: 0` Text so it can never be clipped by the
+// scope text's own truncation (`Exploring everywhere · 4.5+` alone already
+// overflows the pill's ~176px text budget).
+export type ScopePillInfo = {
+  label: string;
+  icon: LucideIcon;
+  ratingLabel: string | null;
+  ratingAccessibleLabel: string | null;
+};
 
 // design-spec.md T3's three scope-pill labels: `Nearby` (MapPin) /
 // `Anywhere · {city} +N` (Globe) / `Exploring everywhere` (Globe, cold
 // start — also covers the "Anywhere, no city chosen yet" case, which reads
 // the same as cold start to a user: broad, unanchored-by-place). T6 adds a
-// fourth, orthogonal segment: an active minimum-rating filter appends
-// ` · {rating}+` (same `·` separator RATING_OPTIONS' own chip labels use,
-// e.g. "4.5+") so the pill's one visible/accessible string always reflects
-// every scope+rating combination — no separate badge, no sheet reopen
-// needed to see it's active.
+// fourth, orthogonal signal: an active minimum-rating filter, surfaced via
+// `ratingLabel`/`ratingAccessibleLabel` rather than folded into `label` (see
+// the type comment above for why).
 export function scopePillInfo(scope: Scope, cities: CitySuggestion[], minRating: RatingOption | null): ScopePillInfo {
-  const ratingSuffix = minRating === null ? '' : ` · ${minRating.toFixed(1)}+`;
-  if (scope === 'nearby') return { label: `Nearby${ratingSuffix}`, icon: MapPin };
-  if (cities.length === 0) return { label: `Exploring everywhere${ratingSuffix}`, icon: Globe };
+  // Reuses RATING_OPTIONS' own "4.5+" formatting (rung 2: already in this
+  // codebase) instead of re-deriving it from the raw number.
+  const ratingLabel = minRating === null ? null : (RATING_OPTIONS.find((o) => o.value === minRating)?.label ?? null);
+  const ratingAccessibleLabel = minRating === null ? null : ratingAccessibilityLabel(minRating);
+  if (scope === 'nearby') return { label: 'Nearby', icon: MapPin, ratingLabel, ratingAccessibleLabel };
+  if (cities.length === 0) return { label: 'Exploring everywhere', icon: Globe, ratingLabel, ratingAccessibleLabel };
   const extra = cities.length - 1;
-  const base = extra > 0 ? `Anywhere · ${cities[0].city} +${extra}` : `Anywhere · ${cities[0].city}`;
-  return { label: `${base}${ratingSuffix}`, icon: Globe };
+  const label = extra > 0 ? `Anywhere · ${cities[0].city} +${extra}` : `Anywhere · ${cities[0].city}`;
+  return { label, icon: Globe, ratingLabel, ratingAccessibleLabel };
 }
 
 // ponytail: design-spec.md T3's context-line examples name four cases

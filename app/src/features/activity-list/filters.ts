@@ -192,6 +192,14 @@ export const RATING_OPTIONS: { value: RatingOption | null; label: string }[] = [
   { value: 4.8, label: '4.8+' },
 ];
 
+// Accessible phrasing for a minimum-rating value — "4.5+" alone is too terse
+// for AT (same reasoning CategoryRow's "All" -> "All categories" override
+// follows). Single source of truth for RatingRow's own chips and the Feed
+// scope pill's accessibilityLabel (T6) so the two never drift.
+export function ratingAccessibilityLabel(value: RatingOption | null): string {
+  return value === null ? 'Any rating' : `Rated ${value.toFixed(1)} and up`;
+}
+
 // "Lisbon" / "Lisbon & Barcelona" / "Lisbon, Barcelona & Amsterdam" — comma
 // join with "&" before the last item, no Oxford comma. Empty input returns
 // '' (callers only reach for this once they know cities.length > 0).

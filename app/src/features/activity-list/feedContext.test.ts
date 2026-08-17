@@ -6,38 +6,75 @@ function city(city: string, country = 'X') {
 }
 
 describe('scopePillInfo', () => {
-  it('nearby -> "Nearby" + MapPin', () => {
-    expect(scopePillInfo('nearby', [], null)).toEqual({ label: 'Nearby', icon: MapPin });
+  it('nearby -> "Nearby" + MapPin, no rating fields when minRating is null', () => {
+    expect(scopePillInfo('nearby', [], null)).toEqual({
+      label: 'Nearby',
+      icon: MapPin,
+      ratingLabel: null,
+      ratingAccessibleLabel: null,
+    });
   });
 
   it('anywhere with one city -> "Anywhere · City" + Globe, no +N', () => {
-    expect(scopePillInfo('anywhere', [city('Barcelona')], null)).toEqual({ label: 'Anywhere · Barcelona', icon: Globe });
+    expect(scopePillInfo('anywhere', [city('Barcelona')], null)).toEqual({
+      label: 'Anywhere · Barcelona',
+      icon: Globe,
+      ratingLabel: null,
+      ratingAccessibleLabel: null,
+    });
   });
 
   it('anywhere with 2+ cities -> "Anywhere · City +N"', () => {
     expect(scopePillInfo('anywhere', [city('Barcelona'), city('Lisbon')], null)).toEqual({
       label: 'Anywhere · Barcelona +1',
       icon: Globe,
+      ratingLabel: null,
+      ratingAccessibleLabel: null,
     });
   });
 
   it('anywhere with no cities -> "Exploring everywhere" (cold start)', () => {
-    expect(scopePillInfo('anywhere', [], null)).toEqual({ label: 'Exploring everywhere', icon: Globe });
-  });
-
-  // T6: an active minRating appends " · {rating}+" to every scope shape's
-  // label; clearing it (back to null) returns the exact unfiltered label.
-  it('an active minRating appends " · {rating}+" regardless of scope shape', () => {
-    expect(scopePillInfo('nearby', [], 4.5)).toEqual({ label: 'Nearby · 4.5+', icon: MapPin });
-    expect(scopePillInfo('anywhere', [city('Barcelona')], 4.0)).toEqual({
-      label: 'Anywhere · Barcelona · 4.0+',
+    expect(scopePillInfo('anywhere', [], null)).toEqual({
+      label: 'Exploring everywhere',
       icon: Globe,
+      ratingLabel: null,
+      ratingAccessibleLabel: null,
     });
-    expect(scopePillInfo('anywhere', [], 4.8)).toEqual({ label: 'Exploring everywhere · 4.8+', icon: Globe });
   });
 
-  it('clearing minRating (null) returns the pill to its unfiltered label', () => {
-    expect(scopePillInfo('nearby', [], null)).toEqual({ label: 'Nearby', icon: MapPin });
+  // T6, review round 1: an active minRating is carried as separate
+  // ratingLabel/ratingAccessibleLabel fields, never folded into `label` —
+  // FeedHeader renders ratingLabel as a non-truncating sibling Text so the
+  // pill's ~176px text budget can't clip it off (see feedContext.ts's
+  // ScopePillInfo comment). ratingAccessibleLabel reuses RatingRow's own
+  // "Rated N and up" phrasing (ratingAccessibilityLabel in filters.ts), not
+  // a bare "4.5+".
+  it('an active minRating populates ratingLabel/ratingAccessibleLabel without touching label, for every scope shape', () => {
+    expect(scopePillInfo('nearby', [], 4.5)).toEqual({
+      label: 'Nearby',
+      icon: MapPin,
+      ratingLabel: '4.5+',
+      ratingAccessibleLabel: 'Rated 4.5 and up',
+    });
+    expect(scopePillInfo('anywhere', [city('Barcelona')], 4.0)).toEqual({
+      label: 'Anywhere · Barcelona',
+      icon: Globe,
+      ratingLabel: '4.0+',
+      ratingAccessibleLabel: 'Rated 4.0 and up',
+    });
+    expect(scopePillInfo('anywhere', [], 4.8)).toEqual({
+      label: 'Exploring everywhere',
+      icon: Globe,
+      ratingLabel: '4.8+',
+      ratingAccessibleLabel: 'Rated 4.8 and up',
+    });
+  });
+
+  it('clearing minRating (4.5 -> null) drops ratingLabel/ratingAccessibleLabel back to null; label was never touched by either', () => {
+    const withRating = scopePillInfo('nearby', [], 4.5);
+    const cleared = scopePillInfo('nearby', [], null);
+    expect(withRating.label).toBe(cleared.label);
+    expect(cleared).toEqual({ label: 'Nearby', icon: MapPin, ratingLabel: null, ratingAccessibleLabel: null });
   });
 });
 
