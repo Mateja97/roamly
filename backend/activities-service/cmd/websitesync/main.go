@@ -13,7 +13,11 @@
 // never wired into activities-service's own startup path, same
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //
-// Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync [-dry-run]
+// Usage: DATABASE_URL=... GOOGLE_MAPS_API_KEY=... FIRECRAWL_API_KEY=... go run ./cmd/websitesync [-dry-run] [-limit 25] [-category sport]
+//
+// Every row costs one Firecrawl extract plus one Places call, so -limit
+// (a cap PER CATEGORY) and -category exist to pilot a category before
+// committing to it unbounded.
 //
 // A non-Entertainment row that stays incomplete only ever gets one
 // automatic attempt (see internal/service/websitesync.go's
@@ -51,6 +55,8 @@ var syncCategories = []activitiessvc.Category{
 	activitiessvc.CategoryCulture,
 	activitiessvc.CategoryArt,
 	activitiessvc.CategorySport,
+	activitiessvc.CategoryShopping,
+	activitiessvc.CategoryNightlife,
 }
 
 func main() {
@@ -58,6 +64,8 @@ func main() {
 	slog.SetDefault(logger)
 
 	dryRun := flag.Bool("dry-run", false, "list what would be synced without calling Places, Firecrawl, or writing")
+	limit := flag.Int("limit", 0, "stop after this many rows PER CATEGORY (0 = no cap); every row costs a Firecrawl extract plus a Places call, so pilot a new category before running it unbounded")
+	category := flag.String("category", "", "restrict the run to one category slug (default: every category in syncCategories)")
 	retryID := flag.String("retry-id", "", "force a single activity to be re-attempted, bypassing the one-attempt-and-give-up skip (see package doc) — ignores -dry-run; no-op on a row that's already permanently complete for its category (nothing left to fill), except Entertainment")
 	flag.Parse()
 
@@ -95,12 +103,21 @@ func main() {
 		return
 	}
 
-	rows, err := publishedRows(ctx, repo, syncCategories, listPageSize)
+	categories := syncCategories
+	if *category != "" {
+		if !activitiessvc.Category(*category).Valid() {
+			logger.Error("startup failed: unknown -category", "category", *category)
+			os.Exit(1)
+		}
+		categories = []activitiessvc.Category{activitiessvc.Category(*category)}
+	}
+
+	rows, err := publishedRows(ctx, repo, categories, listPageSize, *limit)
 	if err != nil {
 		logger.Error("listing rows", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("found published rows", "count", len(rows))
+	logger.Info("found published rows", "count", len(rows), "per_category_limit", *limit)
 
 	if *dryRun {
 		for _, r := range rows {
@@ -143,20 +160,39 @@ type activityLister interface {
 // publishedRows pages through every published row in categories. List's own
 // Category filter is singular, so this calls it once per category rather
 // than filtering client-side across an unfiltered full-catalog scan.
-func publishedRows(ctx context.Context, repo activityLister, categories []activitiessvc.Category, pageSize int) ([]activitiessvc.Activity, error) {
+//
+// perCategoryLimit caps how many rows each category contributes (0 = no
+// cap). Per category, not overall, because the categories differ by an order
+// of magnitude in size — a single overall cap applied to a list built
+// category-by-category would spend the whole budget on the first category
+// and never reach the last, which is useless for a pilot whose entire
+// purpose is comparing extraction quality across categories.
+//
+// The cap also stops the paging early, so a pilot doesn't enumerate 1,443
+// shopping rows to keep 25.
+func publishedRows(ctx context.Context, repo activityLister, categories []activitiessvc.Category, pageSize, perCategoryLimit int) ([]activitiessvc.Activity, error) {
 	var out []activitiessvc.Activity
 	for _, cat := range categories {
 		offset := 0
+		taken := 0
 		for {
+			pageLimit := pageSize
+			if perCategoryLimit > 0 && perCategoryLimit-taken < pageLimit {
+				pageLimit = perCategoryLimit - taken
+			}
 			result, err := repo.List(ctx, activitiessvc.ListFilter{
-				Category: cat, Status: activitiessvc.StatusPublished, Limit: pageSize, Offset: offset,
+				Category: cat, Status: activitiessvc.StatusPublished, Limit: pageLimit, Offset: offset,
 			})
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, result.Activities...)
+			taken += len(result.Activities)
 			offset += len(result.Activities)
 			if len(result.Activities) == 0 || offset >= result.Total {
+				break
+			}
+			if perCategoryLimit > 0 && taken >= perCategoryLimit {
 				break
 			}
 		}
