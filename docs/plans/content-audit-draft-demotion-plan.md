@@ -291,10 +291,10 @@ Exported because `cmd/auditcontent` (a separate `package main`) is its consumer,
 | Signal | Points |
 | --- | --- |
 | non-empty `Description` | 2 |
-| a body block: `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup` | 2 (once, however many are present) |
+| a body block: `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup`, `difficulty` | 2 (once, however many are present) |
 | a quotable Tripadvisor `reviews` array | 2 |
 | non-empty merged `GoogleReviews` | 2 |
-| any presentational signal: `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear`, `difficulty` | 1 total |
+| any presentational signal: `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear` | 1 total |
 
 - [x] **Step 1: Write the failing test**
 

@@ -127,10 +127,10 @@ merely present in the JSON:
 | Signal | Score |
 | --- | --- |
 | non-empty `Description` | 2 |
-| a body block — `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup` | 2 |
+| a body block — `good_to_know`, `facilities`, `known_for`, `treatments`, `upcoming_shows`, `popular_dishes`, `what_to_bring`, `now_showing`, `current_exhibition`, `on_the_bar`, `signature_pours`, `what_youll_find`, `lineup`, `difficulty` | 2 |
 | a quotable Tripadvisor `reviews` array | 2 |
 | a non-empty merged `GoogleReviews` | 2 |
-| presentational only — `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear`, `difficulty` | 1 total, however many are present |
+| presentational only — `opening_hours`, `venue_type`, `hours`, `website_url`, `tripadvisor`, `effort_level`, `gear` | 1 total, however many are present |
 
 Each signal scores once, not per key: three chips are still one chip row, and
 two body blocks are still one screenful of substance.

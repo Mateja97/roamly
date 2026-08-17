@@ -45,17 +45,24 @@ var bodyBlockKeys = []string{
 	"treatments", "upcoming_shows", "popular_dishes",
 	"what_to_bring", "now_showing", "current_exhibition",
 	"on_the_bar", "signature_pours", "what_youll_find", "lineup",
+	// difficulty is Sport's own body section: DetailBody renders it as the
+	// DifficultyMeter, promoted above the stat grid rather than sitting in
+	// it. websitesync fills it, so a scraped Sport row whose only content
+	// is a difficulty rating renders a labelled meter — scoring it as a
+	// chip would tally that row no_content and overstate the gap in the
+	// one category the enforce-versus-extend decision turns on.
+	"difficulty",
 }
 
 // presentationalKeys are the details keys that render a chip, a meter, an
 // hours row, or an attribution plate — page furniture, not something a user
 // came to read. They share one point between them (see contentScore).
-// effort_level/gear render as Sport's fact-strip chips; difficulty renders
-// as the promoted DifficultyMeter — none of the three are a labelled body
-// section.
+// effort_level/gear render as Sport's fact-strip chips — genuinely chips,
+// unlike difficulty beside them, which is a body section and lives in
+// bodyBlockKeys.
 var presentationalKeys = []string{
 	"opening_hours", "venue_type", "hours", "website_url", "tripadvisor",
-	"effort_level", "gear", "difficulty",
+	"effort_level", "gear",
 }
 
 // reviewsKey is the Tripadvisor quoted-review array. Scored like a body
