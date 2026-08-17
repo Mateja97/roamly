@@ -305,6 +305,17 @@ This is a deliberate override of that file's Build section, not an omission.
   never advances it. These are two distinct instructions in the same
   dispatch: the base *name* the engineer operates relative to (`main`), and
   the exact ref its branch must start from (`origin/main`).
+- **Also instruct the engineer to `git push -u origin feature/<slug>-<taskid>`
+  immediately after its first commit** — not to wait until `gh pr create`. The
+  engineer files (out of scope, unmodified) only push at that point today, so
+  an engineer that dies after committing but before opening its PR leaves no
+  remote branch. `triager.md`'s attempt-cap gate reads `git ls-remote --heads
+  origin feature/<slug>-T<n>` to tell "an attempt was made" from "nothing was
+  built" — with no early push, that dead engineer's real work is
+  indistinguishable from no work at all, and the gate refunds the attempt: the
+  same unbounded-retry hole the cap exists to close. Pushing right after the
+  first commit makes the remote branch real evidence the moment work exists,
+  regardless of whether the engineer ever reaches `gh pr create`.
 
 ### Dispatch tasks ONE AT A TIME — Phase 4 is serial
 **Never dispatch two engineers at once.** Take the tasks in `bug-tasks.md`
@@ -355,9 +366,10 @@ overnight weekly cron. Wall-clock is not the constraint; correctness is.
 
   | Artifact | Lives in | Absolute path you pass |
   | --- | --- | --- |
-  | `findings.md`, `reprobe.md`, `reprobe-traffic.md`, `probes/**`, `bug-tasks.md`, `polish-gate.md`, `ledger.json` | **primary checkout** | `<repo-root>/pipeline/bugs/<slug>/…` |
+  | `findings.md`, `reprobe.md`, `reprobe-traffic.md`, `probes/**`, `bug-tasks.md`, `polish-gate.md` | **primary checkout** | `<repo-root>/pipeline/bugs/<slug>/…` |
   | `task-plan.md`, `engineering-notes.md`, `review-log.md`, `design-spec.md` | **primary checkout** | `<repo-root>/pipeline/bugs/<slug>/…` |
   | **`screenshots/<Tn>/`** | **the worktree** | `<repo-root>/.claude/worktrees/<slug>/pipeline/bugs/<slug>/screenshots/<Tn>/` |
+  | **`ledger.json`** | **primary checkout, one level up — shared across every run, not per-slug** | `<repo-root>/pipeline/bugs/ledger.json` |
 
   **Screenshots are the one exception, and they are not optional to get
   right.** Every other artifact is gitignored bookkeeping that is only ever
@@ -472,8 +484,9 @@ includes a `standards/F…` finding.** The `standards` prober files only finding
   either of the other two doing it anyway. It needs the rule as something to
   check, not to obey — see its own wording below.
 
-Left unsaid to either, "the code violates the standard" gets closed by
-rewriting the standard, and next week's probe passes. Such a dispatch must say:
+Left unsaid to any of the three, "the code violates the standard" gets closed
+by rewriting the standard, and next week's probe passes. Such a dispatch must
+say:
 
 > This task originates from a `standards` probe finding: the running code was
 > observed to **diverge from a standard that is already written**. For this

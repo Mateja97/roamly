@@ -9,11 +9,13 @@ it finds:
 flowchart LR
     subgraph FP["Feature pipeline — /run-pipeline"]
         R[researcher] --> P[product]
-        P -- "area: frontend" --> D[designer]
+        P -- "area: frontend | app" --> D[designer]
         P -- "area: backend" --> EB["backend-engineer\nbrainstorm→plan→work"]
         D --> EF["frontend-engineer\nbrainstorm→plan→work"]
+        D --> EA["app-engineer\nbrainstorm→plan→work"]
         EB --> RV[reviewer]
         EF --> RV
+        EA --> RV
     end
 
     subgraph AP["Audit pipeline — /run-audit-auto"]
@@ -78,8 +80,9 @@ The orchestrator:
    (`proceed` / `reject` / `defer`). On reject/defer the pipeline stops. On
    proceed → **checkpoint: you review the tasks**.
 3. For each task, in order: dispatches the area's engineer —
-   **backend-engineer** or **frontend-engineer** per the task's `area` tag —
-   (branch → code → draft PR), then the **reviewer**. The engineer↔reviewer loop
+   **backend-engineer**, **frontend-engineer** or **app-engineer** per the
+   task's `area` tag — (branch → code → draft PR), then the **reviewer**. The
+   engineer↔reviewer loop
    runs automatically (max 3 rounds, then it escalates to you). On approval the
    PR is flipped from draft to ready → **checkpoint: you merge it**.
 

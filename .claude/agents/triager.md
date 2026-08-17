@@ -205,25 +205,30 @@ nothing that earned a place can escape it.
      git ls-remote --heads origin feature/<slug>-T<n>
      ```
 
-     - **Empty (no such branch on the remote)** → no engineer ever got as far
-       as producing work. **Decrement `attempts` by 1** (floor 0, never
-       below): step 7's increment when the task was filed bought nothing, so
-       it must not count toward the cap. This is what keeps a Phase-3 polish
-       rejection — or a run killed before Phase 4 ever dispatched — from
-       marching a finding toward `needs-human` without a single fix having
-       been attempted.
-     - **Branch exists** → an engineer built something; the attempt is real
-       and **`attempts` stands**, whatever happened to the PR afterward. A
-       PR closed unmerged is a rejected fix, and an engineer that dies after
-       pushing but before `gh pr create` is a *failing* engineer — exactly
-       the kind of repeatable, unattended failure the cap exists to surface.
-       Decrementing here would net `attempts` back to 0 every week and
-       re-file the same task forever, invisibly: unbounded retry, which is
-       the failure the cap was added to prevent.
+     `ls-remote` prints nothing both when the ref genuinely doesn't exist and
+     when the query itself fails (network, auth) — split on **exit code**,
+     never on output alone:
 
-     If `git ls-remote` errors, **do not decrement** — leave `attempts` as it
-     is. Failing closed costs at most one extra counted attempt; failing open
-     costs the cap entirely.
+     - **Exit 0, empty output** → the query succeeded and the ref genuinely
+       does not exist: no engineer ever got as far as producing work.
+       **Decrement `attempts` by 1** (floor 0, never below): step 7's
+       increment when the task was filed bought nothing, so it must not count
+       toward the cap. This is what keeps a Phase-3 polish rejection — or a
+       run killed before Phase 4 ever dispatched — from marching a finding
+       toward `needs-human` without a single fix having been attempted.
+     - **Exit 0, a line of output** → the branch exists; an engineer built
+       something. The attempt is real and **`attempts` stands**, whatever
+       happened to the PR afterward. A PR closed unmerged is a rejected fix,
+       and an engineer that dies after pushing but before `gh pr create` is a
+       *failing* engineer — exactly the kind of repeatable, unattended
+       failure the cap exists to surface. Decrementing here would net
+       `attempts` back to 0 every week and re-file the same task forever,
+       invisibly: unbounded retry, which is the failure the cap was added to
+       prevent.
+     - **Non-zero exit** → the query failed (network, auth) — not evidence of
+       anything. **Do not decrement** — leave `attempts` as it is. Failing
+       closed costs at most one extra counted attempt; failing open costs the
+       cap entirely.
 
    Note what this step deliberately does NOT do: it never sets `resolved`. A
    merged PR is not evidence the finding is gone — only a re-probe is, and
