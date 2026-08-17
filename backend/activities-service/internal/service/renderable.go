@@ -76,7 +76,7 @@ var bodyBlockKeys = []string{
 	// is a difficulty rating renders a labelled meter — scoring it as a
 	// chip would tally that row no_content and overstate the gap in the
 	// one category the enforce-versus-extend decision turns on.
-	"difficulty",
+	difficultyKey,
 }
 
 // presentationalKeys are the details keys that render a chip, a meter, an

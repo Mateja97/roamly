@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -290,11 +291,12 @@ func TestRunAudit_TracksByPassingSignalsAndPerCategoryRates(t *testing.T) {
 	if !strings.Contains(out, wantCombo) {
 		t.Errorf("render() = %q, want it to list the passing signal combo %q", out, wantCombo)
 	}
-	// The per-category table: "nature" scanned 2, passed 1, rate 50%.
-	for _, want := range []string{"nature", "2", "1", "50%"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("render() = %q, want the per-category row to contain %q", out, want)
-		}
+	// The per-category table as one formatted row — asserting the fields
+	// separately would let "2" and "1" match anywhere in the report and
+	// only "50%" would carry any weight.
+	wantRow := fmt.Sprintf("  %-16s %8d %7d %6s", "nature", 2, 1, "50%")
+	if !strings.Contains(out, wantRow) {
+		t.Errorf("render() = %q, want the per-category row %q (scanned 2, passed 1, rate 50%%)", out, wantRow)
 	}
 }
 

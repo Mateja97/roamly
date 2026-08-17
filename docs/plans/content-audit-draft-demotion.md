@@ -795,6 +795,14 @@ credit outage was therefore recorded as "we tried, there is nothing there",
 and topping up credit alone would not have recovered a single row. The 1,143
 marks were deleted so a later run re-attempts them.
 
+**Fixed.** `internal/firecrawl` now wraps a 402 in a
+`firecrawl.ErrInsufficientCredits` sentinel; `SyncWebsiteContent` returns
+before `markAttempt` on it, so an outage no longer retires a row; and
+`cmd/websitesync`'s run loop aborts on it rather than grinding through the
+remaining catalog burning a billed Places call per row to reach a Firecrawl
+call that cannot succeed. Read the incident above as history, not as current
+behaviour.
+
 **So shopping's measured 26% is not shopping's ceiling.** Its pilot extracted
 content from 13 of 13 rows that had a website — the best rate of any
 category. Treat the post-enrichment numbers for shopping, and to a lesser
