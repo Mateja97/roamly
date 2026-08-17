@@ -617,3 +617,89 @@ Google-sourced rows that genuinely render nothing.
 The 67 photoless restaurants need no product decision. Whatever the bar
 becomes, a published row with no photo is a broken card, and `no_photo` is
 the one reason in this audit that is unambiguous across every category.
+
+## Decision: the Tripadvisor categories are out of scope
+
+Rows with `source = "tripadvisor"` are excluded from the audit, the same way
+`pending` rows are — someone else's workflow, not this bar's business. The
+restaurants run above is the justification: the bar drafts 76% of them, which
+is a verdict about the bar's fit rather than about the rows. A Tripadvisor
+row's proposition is traveller reviews, and this scorer counts reviews as
+furniture by design. They return to the audit if they get a body-content
+sourcing plan.
+
+**The filter is on `Source`, not `Category`**, which is the stricter reading.
+Restaurants and Bars are entirely Tripadvisor-sourced so the two are
+identical for them, but Cafés are mixed: dropping that category wholesale
+would also drop ~1,367 Google-sourced cafés, and cafés turn out to be the
+best-performing category in the catalog. Source keeps them.
+
+The count is printed in the report (`EXCLUDED: 367`) rather than applied
+silently. A scope decision the reader cannot see is indistinguishable from a
+bug.
+
+## Final broad sample — Tripadvisor excluded, per-category rates
+
+```
+content audit — 300 rows scanned at min-content=2
+  EXCLUDED (Tripadvisor-sourced, out of scope for this bar): 367
+  would stay published: 129
+  would be drafted:     171
+
+by reason        no_photo 17 · no_place_id 1 · no_content 153
+
+by category      scanned  passed   rate   no_photo   no_place_id   no_content
+  art                  6       0     0%          0             0            6
+  shopping            50       1     2%          7             1           41
+  sport               47       1     2%          3             0           43
+  nightlife           26       3    11%          0             0           23
+  culture             16       4    25%          0             0           12
+  wellness            24      12    50%          0             0           12
+  entertainment       18      13    72%          0             0            5
+  kids                50      38    76%          4             0            8
+  nature              19      15    78%          1             0            3
+  cafes               44      42    95%          2             0            0
+
+score distribution   1: 167 · 3: 124 · 5: 9
+```
+
+### The table the whole spec was written to produce
+
+Pass rate tracks one thing and one thing only: whether the category has a
+working body-content source.
+
+| Category | Pass rate | Body-content source |
+| --- | --- | --- |
+| cafes | **95%** | `known_for`, live from the mapper |
+| nature | 78% | `good_to_know`, live from the mapper |
+| kids | 76% | `facilities`, live from the mapper |
+| entertainment | 72% | `websitesync`, 349 rows done |
+| wellness | 50% | `websitesync`, 201 rows done |
+| culture | 25% | none |
+| nightlife | 11% | none |
+| sport | 2% | none |
+| shopping | 2% | none |
+| art | 0% | none |
+
+The five categories with a source pass at 50–95%. The five without pass at
+0–25%. There is no overlap between the two groups and no other variable that
+explains the split — not category size, not photo coverage, not provider.
+
+**Cafés at 95% is the proof of concept.** One live body field, `known_for`,
+sourced from amenity booleans Google already returns, moves a category from
+the failing group to the top of the passing group. It is not an expensive
+field and it is not a special case.
+
+## Recommendation
+
+1. **Do not enforce yet.** 171 of 300 draft, and 153 of those are
+   `no_content` in five categories that have no way to pass.
+2. **Extend `websitesync` to art, shopping, sport, nightlife and culture** —
+   125 of the 153 content failures. Cafés, Nature and Kids show that one
+   well-chosen body field per category is enough.
+3. **Fix the photos independently.** `no_photo` needs no product decision and
+   is concentrated in shopping (7), kids (4), sport (3) — plus 67 of 200
+   restaurants, which stay broken cards whether or not the category is in
+   scope for the content bar.
+4. **Re-run this audit after each sourcing change.** The tool is report-only
+   and the per-category rate is now the metric to move.

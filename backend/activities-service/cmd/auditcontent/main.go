@@ -109,6 +109,17 @@ func main() {
 	}
 	logger.Info("enumerated published rows", "count", len(rows), "category", *category)
 
+	rows, excluded := excludeTripadvisorSourced(rows)
+	if excluded > 0 {
+		logger.Info("excluded Tripadvisor-sourced rows — out of scope for this bar, see excludeTripadvisorSourced",
+			"excluded", excluded, "remaining", len(rows))
+	}
+	if len(rows) == 0 {
+		logger.Error("nothing left to audit: every enumerated row was Tripadvisor-sourced and therefore out of scope",
+			"category", *category, "excluded", excluded)
+		os.Exit(1)
+	}
+
 	if truncated := applyLimit(rows, *limit); len(truncated) != len(rows) {
 		logger.Info("sampling: the report below covers only this many rows, not the whole catalog",
 			"limit", *limit, "available", len(rows))
@@ -116,6 +127,7 @@ func main() {
 	}
 
 	report := runAudit(ctx, svc, rows, *minContent, func() { time.Sleep(auditPace) })
+	report.excluded = excluded
 	fmt.Print(report.render(*minContent))
 }
 
@@ -157,6 +169,38 @@ func publishedRows(ctx context.Context, repo activityLister, pageSize int, categ
 		}
 	}
 	return out, nil
+}
+
+// tripadvisorSource is the Source value on rows whose content comes from
+// Tripadvisor rather than Google — the same string internal/service
+// switches on to route a row's photo and detail resolves.
+const tripadvisorSource = "tripadvisor"
+
+// excludeTripadvisorSourced drops rows whose content is Tripadvisor's, and
+// reports how many it dropped. They are out of this audit's scope by
+// decision, not by oversight: the bar asks "is there a body to read", and a
+// Tripadvisor row's whole proposition is traveller reviews, which this
+// scorer counts as furniture. Measured on 200 restaurants, the bar drafts
+// 76% of them — a verdict about the bar's fit, not about the rows. They
+// return to the audit if and when they get a body-content sourcing plan.
+//
+// Filtering on Source, not Category, is deliberate and is the stricter
+// reading of "the Tripadvisor categories". Restaurants and Bars are
+// entirely Tripadvisor-sourced, so for them the two are identical — but
+// Cafés are mixed, and dropping the category wholesale would also drop
+// ~1,367 Google-sourced cafés, the best-performing category in the broad
+// sample (zero content failures in 300 rows). Source keeps them.
+//
+// Free: it runs on the enumerated rows before any billed Places call.
+func excludeTripadvisorSourced(rows []activitiessvc.Activity) ([]activitiessvc.Activity, int) {
+	kept := make([]activitiessvc.Activity, 0, len(rows))
+	for _, a := range rows {
+		if a.Source == tripadvisorSource {
+			continue
+		}
+		kept = append(kept, a)
+	}
+	return kept, len(rows) - len(kept)
 }
 
 // applyLimit caps rows at limit (0 = no cap, the whole catalog) — the
@@ -203,6 +247,12 @@ type auditReport struct {
 	// different numbers per category.
 	scannedByCategory map[string]int
 	okByCategory      map[string]int
+	// excluded counts Tripadvisor-sourced rows dropped before any billed
+	// call (see excludeTripadvisorSourced). Printed in render because a
+	// scope decision the reader cannot see is indistinguishable from a bug:
+	// "restaurants: 0 scanned" must read as "deliberately out of scope",
+	// not as "the catalog is empty".
+	excluded int
 }
 
 // runAudit merges and judges rows in place, one at a time, in the order
@@ -255,6 +305,9 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 func (r auditReport) render(minScore int) string {
 	out := fmt.Sprintf("\ncontent audit — %d rows scanned at min-content=%d\n", r.scanned, minScore)
 	out += "  rows are read in repository.List's title order (title ASC, id ASC), not a random sample — an -limit run covers the alphabetically-first rows, not a representative cross-section\n"
+	if r.excluded > 0 {
+		out += fmt.Sprintf("  EXCLUDED (Tripadvisor-sourced, out of scope for this bar): %d\n", r.excluded)
+	}
 	if r.skipped > 0 {
 		out += fmt.Sprintf("  SKIPPED (Places resolve failed or timed out, excluded from every count below): %d\n", r.skipped)
 	}
