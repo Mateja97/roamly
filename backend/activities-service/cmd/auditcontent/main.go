@@ -195,6 +195,14 @@ type auditReport struct {
 	// split, a category can look healthy while every one of its pages is
 	// still bare.
 	byPassingSignals map[string]int
+	// scannedByCategory and okByCategory make per-category pass rates
+	// computable from the report alone. byCategory counts only failures, so
+	// without these a category showing 40 no_content could be a disaster or
+	// a rounding error depending on how many of its rows the sample
+	// actually reached — and an -limit run in title order reaches wildly
+	// different numbers per category.
+	scannedByCategory map[string]int
+	okByCategory      map[string]int
 }
 
 // runAudit merges and judges rows in place, one at a time, in the order
@@ -203,10 +211,12 @@ type auditReport struct {
 // nothing.
 func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activity, minScore int, pace func()) auditReport {
 	report := auditReport{
-		byReason:         map[string]int{},
-		byCategory:       map[string]map[string]int{},
-		byScore:          map[int]int{},
-		byPassingSignals: map[string]int{},
+		byReason:          map[string]int{},
+		byCategory:        map[string]map[string]int{},
+		byScore:           map[int]int{},
+		byPassingSignals:  map[string]int{},
+		scannedByCategory: map[string]int{},
+		okByCategory:      map[string]int{},
 	}
 
 	for _, stored := range rows {

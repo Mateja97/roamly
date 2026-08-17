@@ -189,12 +189,44 @@ func anyKeyHasValue(fields map[string]json.RawMessage, keys []string) bool {
 }
 
 // hasValue reports whether a decoded details value is worth rendering.
-// Absent, null, "", [] and {} all read as absent — the app's own slots omit
-// themselves for every one of these, so scoring them would credit a row for
-// a section the user never sees.
+// Absent, null, [] and {} all read as absent, as does a blank or
+// whitespace-only string — the app's own slots omit themselves for every one
+// of these, so scoring them would credit a row for a section the user never
+// sees.
+//
+// An array counts only if at least one element does: the app's
+// classifyPhrases drops blank entries before a section decides whether to
+// omit itself, so ["", " "] renders an empty section, not content. Recursing
+// per element is what makes that true here too.
+//
+// An undecodable value is credited rather than dropped. It is non-empty
+// bytes that this function cannot parse, and the failure direction that
+// matters is the one that drafts a row — better to keep a row published on
+// a value we cannot read than to delete catalog over a parse we got wrong.
 func hasValue(raw json.RawMessage) bool {
-	switch strings.TrimSpace(string(raw)) {
-	case "", "null", `""`, "[]", "{}":
+	trimmed := strings.TrimSpace(string(raw))
+	switch trimmed {
+	case "", "null", "[]", "{}":
+		return false
+	}
+
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return true
+		}
+		return strings.TrimSpace(s) != ""
+	case '[':
+		var items []json.RawMessage
+		if err := json.Unmarshal(raw, &items); err != nil {
+			return true
+		}
+		for _, item := range items {
+			if hasValue(item) {
+				return true
+			}
+		}
 		return false
 	}
 	return true

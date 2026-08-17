@@ -137,6 +137,28 @@ func TestRenderability(t *testing.T) {
 			wantScore:  0,
 		},
 		{
+			// The app's classifyPhrases drops blank entries before the
+			// section decides whether to omit itself, so a list of empty
+			// strings renders an empty section, not content.
+			name:       "a body block of only blank strings is not content",
+			activity:   activitiessvc.Activity{Photos: onePhoto, ExternalID: "place-1", Details: json.RawMessage(`{"good_to_know":["","   "]}`)},
+			wantOK:     false,
+			wantReason: service.ReasonNoContent,
+			wantScore:  0,
+		},
+		{
+			name:      "one non-blank entry among blanks is still content",
+			activity:  activitiessvc.Activity{Photos: onePhoto, ExternalID: "place-1", Details: json.RawMessage(`{"good_to_know":["","Free entry"]}`)},
+			wantOK:    true,
+			wantScore: 2,
+		},
+		{
+			name:      "a list of objects is content, not blank",
+			activity:  activitiessvc.Activity{Photos: onePhoto, ExternalID: "place-1", Details: json.RawMessage(`{"treatments":[{"name":"Massage","price":"2000"}]}`)},
+			wantOK:    true,
+			wantScore: 2,
+		},
+		{
 			name:       "a whitespace-only description is not a description",
 			activity:   activitiessvc.Activity{Photos: onePhoto, ExternalID: "place-1", Description: "   ", Details: json.RawMessage(`{}`)},
 			wantOK:     false,

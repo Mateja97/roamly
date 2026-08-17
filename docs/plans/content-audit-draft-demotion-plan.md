@@ -485,6 +485,14 @@ Expected: FAIL to compile — `undefined: service.Renderability`, `undefined: se
 
 - [x] **Step 3: Write the implementation**
 
+> **Historical — the snippet below is what was planned, not what shipped.**
+> Review and measurement changed the scoring three times after this was
+> written: seven body-block keys were missing, `difficulty` was misfiled as
+> a chip, and reviews were demoted from content to furniture once the first
+> runs showed 51% of rows clearing the bar on them alone. The score table
+> above this step is current; `internal/service/renderable.go` is the
+> authority.
+
 Create `backend/activities-service/internal/service/renderable.go`:
 
 ```go
