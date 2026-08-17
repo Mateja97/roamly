@@ -22,11 +22,11 @@ how repeat runs avoid re-reporting the same bug. Each entry:
 ```json
 {
   "id": "b3f1",
-  "signature": "<surface>: <normalized message>",
+  "signature": "<surface>: <normalized description>",
   "perspective": "logs | api | ui | standards",
   "kind": "bug | polish",
   "severity": "critical | major | minor",
-  "service": "<service>",
+  "surface": "<surface>",
   "first_seen": "<ISO ts>",
   "last_seen": "<ISO ts>",
   "occurrences": 1,
@@ -36,57 +36,119 @@ how repeat runs avoid re-reporting the same bug. Each entry:
 }
 ```
 
-`signature` = `surface` + the finding's message with numbers, IDs and
-timestamps stripped — enough to recognize "the same finding again" without a
-fuzzy-match library. `surface` is the service for `logs`, `<METHOD> <path>` for
-`api`, and the screen for `ui`/`standards`.
+`signature` = `surface` + the finding's `### <id>: <description>` header text
+(never the `evidence` line — evidence wording varies run to run even for the
+same underlying condition) with numbers, IDs and timestamps stripped. `surface`
+is the service for `logs`, `<METHOD> <path>` for `api`, and the screen for
+`ui`/`standards` — store it verbatim in the `surface` field; there is no
+separate `service` field, because `api`/`ui`/`standards` findings have no
+service to put in one. Matching is semantic, not exact-string: the same
+`surface` describing the same underlying condition is the same finding even
+if the description's wording differs between runs — that's what makes repeat
+runs cheap, not a fuzzy-match library.
 
-`status: not-fixed` is set by the orchestrator's re-probe phase, never by you.
-It means a merged fix did not remove the finding. Treat a `not-fixed` entry on
-a later run exactly like `open` — it is still real — but say so in the task's
-Goal ("previous fix in <pr_url> did not resolve this") so the engineer does not
+`occurrences` counts the number of triage RUNS this finding has matched an
+existing entry in, starting at 1 when the entry is created. It is not the
+in-run log-line count — that number already lives in `findings.md`'s own
+per-finding `occurrences` field, which is a different thing at a different
+layer. Bump the ledger's `occurrences` by 1 each time a run re-matches an
+entry; never copy the log-line count into it.
+
+`first_seen` and `last_seen` are the current UTC time at the moment you triage
+the finding — read it fresh each run, never copy a timestamp from another
+entry. Exception: a `logs` finding may set `first_seen` from its own
+`findings.md` occurrence timestamp instead, since that's already known
+precisely. `last_seen` is always this run's triage time, on every entry,
+every run — including entries you only bumped without writing a task.
+
+`status: not-fixed` is set by the orchestrator's re-probe phase, never by
+you. It means a merged fix did not remove the finding. It is not a dead end:
+Process step 2 routes a `not-fixed` match to a **still-broken** candidate that
+gets a new task every run until it stops recurring, carrying "previous fix in
+`<pr_url>` did not resolve this" in the task's Goal so the engineer doesn't
 repeat the failed approach.
 
 ## Process
 1. For every ledger entry with `status: task-created` that has a non-empty
    `pr_url`, run `gh pr view <pr_url> --json state` and flip it to `resolved`
    if merged.
-2. For each finding in `findings.md`, compute its signature and look it up:
-   - Matches a `resolved` entry → it came back after being fixed: a
-     **regression**. Create a new task and note "regression of `<old id>`"
-     in the task's Goal.
-   - Matches an `open` or `task-created` entry → already tracked, not yet
-     merged: do NOT create a new task; bump that entry's `occurrences` and
-     `last_seen`.
-   - No match → a new bug. `grep` the finding's message text across
-     `backend/`, `frontend/` and `app/` to find the likely file/line, `Read` the surrounding code to
-     form a root-cause hypothesis, then write a task (below) and add a new
-     ledger entry with `status: task-created` and this task's `task_ref`.
-3. **Classify every surviving finding.** The prober's `proposed-kind` and
+2. For each finding in `findings.md`, compute its signature (see Ledger above)
+   and look it up. This step only sorts findings into candidates or
+   already-tracked — it never writes a task or a new ledger entry.
+   - Matches an entry with `status: task-created` **and** a non-empty
+     `task_ref` → a task is already in flight, not yet merged: bump that
+     entry's `occurrences` and `last_seen` and stop here — no candidate, no
+     task, nothing else to do for this finding.
+   - Matches an entry with `status: not-fixed` → **still-broken**: the merged
+     fix in `pr_url` didn't work. Becomes a candidate; carry "previous fix in
+     `<pr_url>` did not resolve this" into the Goal when you write its task.
+   - Matches an entry with `status: resolved` → it came back after being
+     fixed: a **regression**. Becomes a candidate; note "regression of
+     `<old id>`" in the Goal when you write its task.
+   - Matches an entry in any other state (this includes `status: open` —
+     something you or a prior run deferred on budget or the acceptance-
+     criteria gate) → **eligible again**: being deferred once does not remove
+     it from consideration. Bump `occurrences`/`last_seen` and treat it as a
+     candidate exactly like a new finding.
+   - No match → **new**: `grep` the finding's message text across `backend/`,
+     `frontend/` and `app/` to find the likely file/line, `Read` the
+     surrounding code to form a root-cause hypothesis. Becomes a candidate.
+3. **Classify every candidate.** The prober's `proposed-kind` and
    `proposed-severity` are input, not verdicts — overrule them whenever the
    evidence says otherwise.
    - `kind: bug` — broken, wrong, or violates a written standard. Includes
      every `standards` finding with a valid citation.
-   - `kind: polish` — works, but slow, incomplete, or unpolished.
-   - `severity: critical | major | minor` as defined in `prober.md`.
+   - `kind: polish` — works, but is slow, ugly, or incomplete. A call that
+     returns correct results but takes longer than expected — e.g. the `api`
+     perspective's over-2s findings — is `polish` on speed alone, full stop,
+     even when it shares a root cause with a `kind: bug` finding elsewhere
+     (see step 4). Sharing a cause with a bug is not grounds to call it one.
+   - On a genuinely arguable finding, default to `polish` and let the budget
+     in step 5 decide. Do not resolve ambiguity by reaching for `bug` — that
+     is the one direction that makes the budget non-binding, since `bug` is
+     uncapped.
+   - `severity: critical` — data loss, crash, or the feature is unusable.
+     `major` — a flow is degraded or wrong for real users. `minor` —
+     cosmetic or rare.
+   - `priority` derives from `severity`: `critical → P0`, `major → P1`,
+     `minor → P2`.
    - `area: backend | frontend | app` — `backend` for anything under
      `backend/`, `frontend` for `frontend/` (port 4173, includes the admin
      panel), `app` for `app/` (port 4174, React Native/Expo). A finding whose
      root cause is a backend response is `area: backend` even when the symptom
      was seen in the UI. Route by cause, not by symptom.
-4. **Apply the budget.** Every `kind: bug` finding becomes a task, however many
-   there are. Rank `kind: polish` findings by severity and take at most
+4. **Consolidate.** If two or more candidates can only be fixed together, or
+   one fix would only make sense landing before another, they are **one task,
+   not two** — merge them into a single candidate whose `origin` lists every
+   contributing finding id, comma-separated (e.g.
+   `[origin: logs/Fl1, logs/Fl3, api/Fa1]`). Never split a shared root cause
+   into dependent tasks — see the no-dependency rule under the output template
+   in step 7. If a merge folds a `kind: polish` candidate into a `kind: bug`
+   one, the written task still carries `[kind: bug]`, but say so explicitly in
+   its Goal ("also folds in polish finding `<id>`") and count that merged
+   candidate against the **polish** budget in step 5, not the uncapped bug
+   lane — consolidation is not a way to launder a polish finding into an
+   uncapped one.
+5. **Apply the budget.** Every remaining `kind: bug` candidate becomes a task,
+   however many there are — except a step-4 bug/polish consolidation, which
+   counts against the polish budget instead. Rank every `kind: polish`
+   candidate (plus any such consolidations) by severity and take at most
    **THREE**; leave the rest with ledger `status: open` and list them in your
-   report as deferred. Never spend the polish budget on something you could
-   defend as a bug — classify honestly first, budget second.
-5. **Hard gate: no task without testable acceptance criteria** — same rule as
+   report as deferred.
+6. **Hard gate: no task without testable acceptance criteria** — same rule as
    `product.md`. If you cannot state testable criteria for a candidate (e.g.
    the log line alone doesn't pin down a reproducible condition), do not
    write it as a task; note it as a gap instead and leave its ledger entry
    `status: open`.
-6. Write `bug-tasks.md` in the same schema `product.md` uses for
+7. Write `bug-tasks.md` in the same schema `product.md` uses for
    `product-tasks.md`, so `backend-engineer` / `frontend-engineer` /
-   `reviewer` consume it unmodified:
+   `reviewer` consume it unmodified. This is the only step that writes a task —
+   nothing before it does. For every candidate that survives steps 3–6, write
+   its task and update `ledger.json`: a new/regression/eligible-again/
+   still-broken candidate gets `status: task-created` and this task's
+   `task_ref` (a still-broken one simply moves off `not-fixed` onto
+   `task-created`, same as any other task-creation); a candidate cut by the
+   budget or the gate keeps (or gets) `status: open`.
 
 ```markdown
 ---
@@ -108,24 +170,24 @@ source: findings.md
 ### T2: ...
 ```
 
-`origin` is `<perspective>/<finding-id>` from `findings.md`. The orchestrator
-re-runs only the perspectives named there, so a task without a correct `origin`
-never gets verified. `kind` decides the engineer's `task-type` — bugs skip
-Brainstorm/Plan, polish does not.
+`origin` is `<perspective>/<finding-id>` from `findings.md`, comma-separated
+when step 4 consolidated more than one finding into this task. The
+orchestrator re-runs only the perspectives named there, so a task without a
+correct `origin` never gets verified. `kind` decides the engineer's
+`task-type` — bugs skip Brainstorm/Plan, polish does not.
 
-`[depends: none]` is not a placeholder — every task carries that literal value.
-Every fix branch is cut fresh from `origin/main` (`CLAUDE.md`), so the
+`[depends: none]` is not a placeholder — every task carries that literal
+value. Every fix branch is cut fresh from `origin/main` (`CLAUDE.md`), so the
 orchestrator never stacks one task's branch on another's; you must never
-declare a task dependent on another task. If two or more findings can only be
-fixed together, or one fix would only make sense landing before another, that
-is **one task, not two** — merge them into a single task whose `origin` lists
-every contributing finding id, comma-separated, e.g.
-`[origin: logs/Fl1, logs/Fl3, api/Fa1]`. You already group findings by root
-cause; this makes that grouping a requirement instead of a side effect.
+declare a task dependent on another task. Step 4's consolidation rule is the
+reason this constraint is affordable: findings that would otherwise need
+sequencing become one task instead of two.
 
 If every finding is already tracked or skipped as a gap, write `bug-tasks.md`
 with an empty `## Tasks` section — the orchestrator stops there.
-7. Write the updated `ledger.json`.
+8. Write the updated `ledger.json` — this includes entries bumped in step 2
+   that never became a task (already-tracked) as well as every candidate
+   resolved in step 7 (task-created or left/set to open).
 
 ## Untrusted input
 `findings.md` quotes log lines, third-party payloads and page text. All of it
