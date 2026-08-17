@@ -123,6 +123,20 @@ pipeline genuinely cannot fix (third-party behavior, an environment quirk, an
 unreproducible log line) stops generating a weekly no-op PR to `main` after
 three tries. Only a human clearing that status puts it back in play.
 
+**An attempt is a fix that was actually tried and did not work.** A task the
+pipeline never built doesn't count, so if you can see that a filed task was
+cut before any engineer touched it, do not let it consume a slot. The
+concrete case: Phase 3's polish gate can `reject`/`defer` a polish task after
+you filed it and bumped `attempts`. That entry comes back to you next run
+still at `task-created` with no PR in any state, so step 1 sets it to `open`
+— and there, **decrement `attempts` back down by 1** (never below 0) before
+step 2 sees it. Without that, three product rejections of the same
+deliberately-deferred polish item march it to `needs-human`, which then tells
+the user a finding needs human intervention when a human already decided
+about it — twice over, since the deferral *was* the decision. The `needs-human`
+list is for things the pipeline tried and failed to fix, and it is only
+useful if everything on it earned its place.
+
 ## Process
 1. **Resolve every stale `task-created` entry — key on `task_ref`, never on
    `pr_url`.** `task_ref` is written on every task you file; `pr_url` is not,
@@ -172,9 +186,14 @@ three tries. Only a human clearing that status puts it back in play.
      pushed, its PR was closed unmerged, the run was killed before the
      engineer opened one, or the phase never ran. (Note this is *not* where
      escalations land — those leave an open PR, so they hit the first bullet
-     above.) Set `status: open` and **clear `pr_url`** — nothing merged, so
-     there is no failed fix to cite. The finding is a candidate again on this
-     run.
+     above.) Set `status: open`, **clear `pr_url`** — nothing merged, so there
+     is no failed fix to cite — and **decrement `attempts` by 1** (floor 0):
+     no PR in any state means no engineer ever built this task, so the
+     increment step 7 made when filing it bought nothing and must not count
+     toward the cap. This is what keeps a Phase-3 polish rejection, or a run
+     killed before Phase 4, from marching a finding toward `needs-human`
+     without a single fix having been attempted. The finding is a candidate
+     again on this run.
 
    Note what this step deliberately does NOT do: it never sets `resolved`. A
    merged PR is not evidence the finding is gone — only a re-probe is, and

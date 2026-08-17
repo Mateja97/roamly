@@ -160,9 +160,11 @@ like before committing to a direction.
 ## Running autonomously (supervised autopilot)
 
 `/run-pipeline-auto <topic-or-slug>` runs the whole chain **without pausing** —
-research → product → build → review — and leaves reviewer-approved PRs **ready
-for you to merge** (it never merges). The one human gate that remains is the
-merge: nothing reaches `main` without you.
+research → product → build → review → **merge**. A reviewer-approved PR does
+not sit waiting for you: the orchestrator flips it out of draft and merges it
+into `main` itself, in dependency order, resolving conflicts on the feature
+branch as it goes. That is the whole point of the autonomous variant — it
+ships. Use plain `/run-pipeline` when you want the merge to be yours.
 
 - **No prompts:** `.claude/settings.json` sets `permissions.defaultMode: "auto"`,
   so routine commands (build, test, git, `gh pr`, docker) run without asking
