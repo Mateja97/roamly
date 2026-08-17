@@ -202,6 +202,11 @@ type fakeTripadvisor struct {
 	nearbyErr       error
 	nearbyCalls     int
 	gotNearbySearch []nearbySearchCall
+	// blockNearby, if non-nil, is received from inside NearbySearch after
+	// recording the call — lets concurrency tests hold a sweep "in flight"
+	// deterministically instead of racing on goroutine scheduling (same
+	// pattern as fakeGooglePlaces.blockNearby).
+	blockNearby chan struct{}
 
 	detailsOut   map[string]tripadvisor.LocationDetails
 	detailsErrs  map[string]error // per-locationID error, so one bad candidate can be simulated without failing every candidate
@@ -220,9 +225,13 @@ func (f *fakeTripadvisor) LocationPhotos(_ context.Context, _ string, _ int) ([]
 
 func (f *fakeTripadvisor) NearbySearch(_ context.Context, lat, lng, radiusKM float64, category string) ([]tripadvisor.LocationSummary, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.nearbyCalls++
 	f.gotNearbySearch = append(f.gotNearbySearch, nearbySearchCall{lat: lat, lng: lng, radiusKM: radiusKM, category: category})
+	block := f.blockNearby
+	f.mu.Unlock()
+	if block != nil {
+		<-block
+	}
 	return f.nearbyOut, f.nearbyErr
 }
 

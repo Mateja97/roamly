@@ -499,7 +499,7 @@ func TestActivities_Query_TripadvisorSync_SlowTripadvisorNeverBlocksOrFailsQuery
 		detailsOut: map[string]tripadvisor.LocationDetails{
 			"111": {LocationID: "111", Name: "Restoran Taverna", WebURL: "https://ta/Restaurant_Review-1", PriceLevel: "Mid Range"},
 		},
-		detailsDelay: 200 * time.Millisecond, // stands in for a slow/degraded Terra call
+		detailsDelay: 2 * time.Second, // stands in for a slow/degraded Terra call
 	}
 	svc := New(repo).WithTripadvisor(ta)
 
@@ -512,8 +512,11 @@ func TestActivities_Query_TripadvisorSync_SlowTripadvisorNeverBlocksOrFailsQuery
 	if _, err := svc.Query(reqCtx, req); err != nil {
 		t.Fatalf("Query() error: %v, want a slow Tripadvisor to never fail the query", err)
 	}
-	if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
-		t.Errorf("Query() took %v with a 200ms-slow Tripadvisor client, want it to return well under that — the sync must run backgrounded, not inline", elapsed)
+	// Bound against the injected delay itself, not a fixed wall-clock
+	// number — a fixed bound is flake-prone under -race on a loaded runner;
+	// well under the delay is only possible if the sweep is backgrounded.
+	if elapsed := time.Since(start); elapsed >= ta.detailsDelay {
+		t.Errorf("Query() took %v with a %v-slow Tripadvisor client, want it to return well under that — the sync must run backgrounded, not inline", elapsed, ta.detailsDelay)
 	}
 	cancel() // the client has already "given up" by the time this fires
 
@@ -523,6 +526,100 @@ func TestActivities_Query_TripadvisorSync_SlowTripadvisorNeverBlocksOrFailsQuery
 	}
 	if len(repo.markSynced) != 1 {
 		t.Errorf("markSynced = %v, want the area marked synced once the backgrounded sweep completes", repo.markSynced)
+	}
+}
+
+// The two tests below cover the concurrency guards syncTripadvisorIfNeeded's
+// backgrounded sweep must carry, the same way syncGoogleIfNeeded already
+// does (see TestSyncGoogleIfNeeded_ConcurrentSameCellOnlyOneSweep /
+// TestSyncGoogleIfNeeded_SaturatedSemaphoreDropsWithoutBlockingCaller,
+// whose shape these mirror exactly): detaching the sweep from the request
+// context without an in-flight cell claim and a concurrency cap would trade
+// the original "slow query" bug for "unbounded concurrent load on Terra",
+// triggered by exactly the degraded-Tripadvisor condition this fix targets.
+// fakeTripadvisor.blockNearby holds a sweep provably in flight (never
+// returned from NearbySearch, so its defer hasn't released the cell/
+// semaphore) while the test issues the calls that must be dropped, removing
+// any dependence on goroutine scheduling.
+
+func TestSyncTripadvisorIfNeeded_ConcurrentSameCellOnlyOneSweep(t *testing.T) {
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	block := make(chan struct{})
+	ta := &fakeTripadvisor{blockNearby: block}
+	svc := New(repo).WithTripadvisor(ta)
+	req := Request{Scope: activitiessvc.ScopeNearby, CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46}, Categories: []activitiessvc.Category{activitiessvc.CategoryRestaurants}}
+
+	// Sweep 1: claims the anchor's cell synchronously, then its goroutine
+	// blocks inside its NearbySearch call until we close(block) below — so
+	// the cell claim is guaranteed still held for every line until then.
+	// Tripadvisor issues exactly one NearbySearch per anchor (unlike
+	// Google's per-subtype fan-out), so no reference sweep is needed to know
+	// what "one sweep's worth" of calls looks like.
+	svc.syncTripadvisorIfNeeded(context.Background(), req)
+
+	// Sweep 2 and 3: same anchor. The in-flight guard must drop these
+	// synchronously — a saturated guard should keep dropping, not let a
+	// later call slip through once one is already denied.
+	svc.syncTripadvisorIfNeeded(context.Background(), req)
+	svc.syncTripadvisorIfNeeded(context.Background(), req)
+
+	close(block)
+	svc.waitForTripadvisorSync()
+
+	if ta.nearbyCalls != 1 {
+		t.Errorf("NearbySearch calls = %d, want 1 — the concurrent calls for the same anchor should have been dropped by the in-flight guard, not started their own sweeps", ta.nearbyCalls)
+	}
+}
+
+func TestSyncTripadvisorIfNeeded_SaturatedSemaphoreDropsWithoutBlockingCaller(t *testing.T) {
+	block := make(chan struct{})
+	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
+	ta := &fakeTripadvisor{blockNearby: block}
+	svc := New(repo).WithTripadvisor(ta)
+
+	// Fill every concurrency slot with a sweep against its own distinct
+	// anchor, so the per-cell guard above isn't what's under test here. Each
+	// call's cell claim + semaphore acquire happens synchronously before
+	// this loop moves on, so by the time it exits, all
+	// tripadvisorSyncConcurrency slots are held — regardless of whether any
+	// sweep goroutine has actually been scheduled yet.
+	for i := range tripadvisorSyncConcurrency {
+		req := Request{
+			Scope:           activitiessvc.ScopeNearby,
+			CurrentLocation: &activitiessvc.Point{Lat: 10 + float64(i), Lng: 10},
+			Categories:      []activitiessvc.Category{activitiessvc.CategoryRestaurants},
+		}
+		svc.syncTripadvisorIfNeeded(context.Background(), req)
+	}
+
+	// One more, a distinct anchor again: the semaphore is full, so this must
+	// be dropped rather than queued, and — the "without blocking" half of
+	// the fix — syncTripadvisorIfNeeded itself must return immediately
+	// rather than waiting for a slot to free up.
+	const extraLat = 999.0
+	extraReq := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: extraLat, Lng: 10},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryRestaurants},
+	}
+	done := make(chan struct{})
+	go func() {
+		svc.syncTripadvisorIfNeeded(context.Background(), extraReq)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("syncTripadvisorIfNeeded blocked the caller instead of dropping the sweep when the semaphore was saturated")
+	}
+
+	close(block)
+	svc.waitForTripadvisorSync()
+
+	for _, c := range ta.gotNearbySearch {
+		if c.lat == extraLat {
+			t.Error("the semaphore-saturated sweep's anchor was processed anyway — it should have been dropped, never run")
+		}
 	}
 }
 

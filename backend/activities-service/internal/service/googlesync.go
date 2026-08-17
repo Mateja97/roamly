@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"slices"
-	"sync"
 	"time"
 
 	"activities-service/internal/namemap"
@@ -155,59 +154,29 @@ const googleSyncConcurrency = 4
 // failed row already gets (see syncGoogleRow's doc).
 var googleSyncSem = make(chan struct{}, googleSyncConcurrency)
 
-// googleSyncCellsInFlight is the set of sync cells with a sweep currently
-// running, guarded by googleSyncCellsMu. Without it, two concurrent queries
-// against the same uncovered cell both see the same stale rows from
-// SyncedAt and both sync them — doubling every search, upsert and photo
-// call for that sweep. Cells are claimed synchronously in
-// syncGoogleIfNeeded before its goroutine is spawned (so a second call for
-// the same cell sees the claim immediately, not just once the first
-// goroutine gets scheduled) and released via defer when the goroutine
-// returns on every exit path, including panic.
-var (
-	googleSyncCellsMu       sync.Mutex
-	googleSyncCellsInFlight = make(map[string]struct{})
-)
-
-// claimGoogleSyncCells claims every cell in cells atomically: either all are
-// free and all get claimed, or none are (some other sweep already covers at
-// least one of them) and nothing is claimed. All-or-nothing is simpler than
-// partial claiming and just as safe, since the caller drops the whole sweep
-// either way when the claim fails.
-func claimGoogleSyncCells(cells []string) bool {
-	googleSyncCellsMu.Lock()
-	defer googleSyncCellsMu.Unlock()
-	for _, c := range cells {
-		if _, busy := googleSyncCellsInFlight[c]; busy {
-			return false
-		}
-	}
-	for _, c := range cells {
-		googleSyncCellsInFlight[c] = struct{}{}
-	}
-	return true
-}
-
-// releaseGoogleSyncCells undoes claimGoogleSyncCells. Always called via
-// defer so a claimed cell is freed no matter how the sweep's goroutine
-// exits.
-func releaseGoogleSyncCells(cells []string) {
-	googleSyncCellsMu.Lock()
-	defer googleSyncCellsMu.Unlock()
-	for _, c := range cells {
-		delete(googleSyncCellsInFlight, c)
-	}
-}
+// googleSyncCells is the set of sync cells with a Google sweep currently
+// running. Without it, two concurrent queries against the same uncovered
+// cell both see the same stale rows from SyncedAt and both sync them —
+// doubling every search, upsert and photo call for that sweep. Cells are
+// claimed synchronously in syncGoogleIfNeeded before its goroutine is
+// spawned (so a second call for the same cell sees the claim immediately,
+// not just once the first goroutine gets scheduled) and released via defer
+// when the goroutine returns on every exit path, including panic.
+//
+// tripadvisorSyncCells (activity.go) is the same guard for the Tripadvisor
+// sweep, its own instance of syncCellGate — a separate provider means a
+// separate quota and a separate in-flight set, but the claim/release shape
+// is identical, hence the shared type instead of a second copy of this
+// mutex-and-map pair.
+var googleSyncCells = &syncCellGate{inFlight: make(map[string]struct{})}
 
 // syncGoogleIfNeeded schedules a background type-driven discovery pass for
-// req's anchors.
-//
-// Unlike the Tripadvisor sync, this runs detached: Query returns immediately
-// and results land for the next search. Per-subtype granularity means one
-// query can only ever fetch maxGoogleRowsPerQuery of ~53 rows, so blocking a
-// search for seconds to deliver a fraction of a city is the worst of both
-// options — and photo resolution (below) would blow any in-request budget
-// outright.
+// req's anchors — detached the same way syncTripadvisorIfNeeded's sweep is
+// (see that function's doc): Query returns immediately and results land for
+// the next search. Per-subtype granularity means one query can only ever
+// fetch maxGoogleRowsPerQuery of ~53 rows, so blocking a search for seconds
+// to deliver a fraction of a city is the worst of both options — and photo
+// resolution (below) would blow any in-request budget outright.
 //
 // googleDueRows itself — and every SyncedAt lookup it makes, up to ~53 per
 // anchor — runs inside the goroutine, not here. Only the "is a Places client
@@ -217,7 +186,7 @@ func releaseGoogleSyncCells(cells []string) {
 // entirely, matching the "background" contract this function promises.
 //
 // Gating happens in this order: claim this request's cells (cheap, no I/O —
-// see claimGoogleSyncCells), then acquire a concurrency slot. Either failing
+// see googleSyncCells), then acquire a concurrency slot. Either failing
 // drops the sweep entirely rather than queueing it; a dropped sweep's rows
 // stay stale and a later query retries them.
 //
@@ -243,20 +212,20 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		cells = append(cells, key)
 	}
 
-	if !claimGoogleSyncCells(cells) {
+	if !googleSyncCells.claim(cells) {
 		return
 	}
 	select {
 	case googleSyncSem <- struct{}{}:
 	default:
-		releaseGoogleSyncCells(cells)
+		googleSyncCells.release(cells)
 		return
 	}
 
 	a.googleSync.Add(1)
 	go func() {
 		defer a.googleSync.Done()
-		defer releaseGoogleSyncCells(cells)
+		defer googleSyncCells.release(cells)
 		defer func() { <-googleSyncSem }()
 		// Detached from the request context on purpose: the HTTP/gRPC
 		// request is already finishing, and inheriting its cancellation
