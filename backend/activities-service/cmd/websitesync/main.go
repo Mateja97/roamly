@@ -1,13 +1,15 @@
-// Command websitesync scrapes each published Wellness/Entertainment/
-// Culture/Art/Sport venue's own website (resolved live via Google Place
-// Details, never stored — see
+// Command websitesync scrapes each published Wellness/Entertainment/Culture/
+// Art/Sport/Shopping/Nightlife venue's own website (resolved live via Google
+// Place Details, never stored — see
 // docs/superpowers/specs/2026-08-01-wellness-entertainment-detail-page-design.md
 // and
 // docs/superpowers/specs/2026-08-02-culture-art-sport-website-enrichment-design.md)
 // for content Google Places doesn't provide, filling in whatever fields
-// the row doesn't already have curated. Every category except
-// Entertainment is skipped permanently once its fields are all filled —
-// see internal/service/websitesync.go's isComplete. Run periodically —
+// the row doesn't already have curated. A category is skipped permanently
+// once its fields are all filled — see internal/service/websitesync.go's
+// isComplete — except the perishable ones (Entertainment monthly, Nightlife
+// daily), whose content names a date rather than the venue and so keeps
+// re-scanning; see perishableFields. Run periodically —
 // never wired into activities-service's own startup path, same
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -912,5 +913,128 @@ func TestEntertainmentSchema_UpcomingShowsDateTitleOnly(t *testing.T) {
 	}
 	if row["date"] != "2026-09-01" || row["title"] != "Jazz Night" {
 		t.Errorf("upcoming_shows[0] = %v, want date+title unchanged", row)
+	}
+}
+
+// TestExtractionConfig_CoversEveryScraperOwnedCategory pins the two maps
+// together. A category with a prompt but no owned fields never completes and
+// re-scrapes forever; one with owned fields but no prompt is silently
+// unsupported. Either way the failure is invisible at runtime.
+func TestExtractionConfig_CoversEveryScraperOwnedCategory(t *testing.T) {
+	for category := range extractionConfig {
+		if len(scraperOwnedFields[category]) == 0 {
+			t.Errorf("category %q has an extraction config but no scraperOwnedFields — it can never be complete", category)
+		}
+	}
+	for category := range scraperOwnedFields {
+		if _, ok := extractionConfig[category]; !ok {
+			t.Errorf("category %q has scraperOwnedFields but no extraction config — it is silently unsupported", category)
+		}
+	}
+}
+
+// TestPerishableFields_AreScraperOwned guards the overwrite path: a
+// perishable field that isn't scraper-owned would be overwritten on every
+// pass while never counting toward completeness.
+func TestPerishableFields_AreScraperOwned(t *testing.T) {
+	for category, field := range perishableFields {
+		if !slices.Contains(scraperOwnedFields[category], field) {
+			t.Errorf("perishable field %q for category %q is not in scraperOwnedFields %v",
+				field, category, scraperOwnedFields[category])
+		}
+	}
+}
+
+func TestRefreshFreshness(t *testing.T) {
+	if got := refreshFreshness(activitiessvc.CategoryNightlife); got != 24*time.Hour {
+		t.Errorf("nightlife refresh = %v, want 24h — a \"Tonight\" lineup is wrong, not merely stale, after a day", got)
+	}
+	if got := refreshFreshness(activitiessvc.CategoryEntertainment); got != 30*24*time.Hour {
+		t.Errorf("entertainment refresh = %v, want 720h", got)
+	}
+}
+
+// TestSyncWebsiteContent_CompleteNightlifeRow_RefreshesDaily is the
+// Nightlife analogue of the Entertainment refresh test: a complete row must
+// NOT be permanently skipped, and its lineup must be overwritten rather than
+// gap-filled, or the app would show last week's act under "Tonight".
+func TestSyncWebsiteContent_CompleteNightlifeRow_RefreshesDaily(t *testing.T) {
+	completeDetails := `{"lineup":[{"time":"22:00","act":"Stale DJ","stage":"Main"}]}`
+
+	t.Run("skipped 2 hours after the last attempt", func(t *testing.T) {
+		stored := activitiessvc.Activity{
+			ID: "1", Category: activitiessvc.CategoryNightlife, Status: activitiessvc.StatusPublished,
+			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
+		}
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-club.rs"}}
+		firecrawl := &fakeFirecrawl{}
+		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+			syncKey("website", "1", "nightlife", ""): time.Now().Add(-2 * time.Hour),
+		}}
+		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if firecrawl.calls != 0 {
+			t.Errorf("firecrawl.calls = %d, want 0 — 2 hours is inside the daily window", firecrawl.calls)
+		}
+	})
+
+	t.Run("re-attempted after 25 hours, overwriting the stale lineup", func(t *testing.T) {
+		stored := activitiessvc.Activity{
+			ID: "1", Category: activitiessvc.CategoryNightlife, Status: activitiessvc.StatusPublished,
+			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
+		}
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-club.rs"}}
+		firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"lineup":[{"time":"23:00","act":"Tonight DJ","stage":"Main"}]}`)}
+		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+			syncKey("website", "1", "nightlife", ""): time.Now().Add(-25 * time.Hour),
+		}}
+		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if firecrawl.calls != 1 {
+			t.Errorf("firecrawl.calls = %d, want 1 — 25 hours is past the daily window", firecrawl.calls)
+		}
+		if repo.gotUpdatePatch.Details == nil {
+			t.Fatal("repo.Update was not called with Details")
+		}
+		var got map[string]any
+		if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+			t.Fatalf("unmarshal updated details: %v", err)
+		}
+		lineup, ok := got["lineup"].([]any)
+		if !ok || len(lineup) != 1 {
+			t.Fatalf("lineup = %v, want one fresh entry", got["lineup"])
+		}
+		entry, ok := lineup[0].(map[string]any)
+		if !ok || entry["act"] != "Tonight DJ" {
+			t.Errorf("lineup[0] = %v, want the freshly scraped act, not the stale stored one", lineup[0])
+		}
+	})
+}
+
+// TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently: shopping is
+// NOT perishable — a shop's product mix is a venue fact, so once captured it
+// must never be re-scraped, unlike nightlife above.
+func TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryShopping, Status: activitiessvc.StatusPublished,
+		Source: "google_places", ExternalID: "place-1",
+		Details: json.RawMessage(`{"what_youll_find":["Local honey","Handmade ceramics"]}`),
+	}
+	places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-market.rs"}}
+	firecrawl := &fakeFirecrawl{}
+	repo := &fakeRepo{getOut: stored}
+	svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+	if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+		t.Fatalf("SyncWebsiteContent() error: %v", err)
+	}
+	if firecrawl.calls != 0 {
+		t.Errorf("firecrawl.calls = %d, want 0 — a complete non-perishable row is skipped permanently", firecrawl.calls)
 	}
 }

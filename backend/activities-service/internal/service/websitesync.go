@@ -29,6 +29,15 @@ const websiteSyncProvider = "website"
 // exhibit description doesn't need repeat scraping once it's been captured.
 const entertainmentRefreshFreshness = 30 * 24 * time.Hour
 
+// nightlifeRefreshFreshness is Nightlife's own, much shorter window. Its
+// `lineup` renders under a "Tonight" heading, so a value even a few days
+// old is not merely stale but wrong — it names last weekend's act as
+// tonight's. Daily is the longest cadence that keeps that heading honest,
+// and it is the reason Nightlife is the most expensive category in this job
+// by an order of magnitude: 865 published rows re-scraped daily, against
+// Entertainment's 551 monthly.
+const nightlifeRefreshFreshness = 24 * time.Hour
+
 // websiteResolveTimeout bounds the one live Places call this job makes per
 // venue to resolve the website URL — same reasoning as detailResolveTimeout,
 // just not on a request path so it can afford to be a little longer.
@@ -38,8 +47,8 @@ const websiteResolveTimeout = 8 * time.Second
 const firecrawlTimeout = 45 * time.Second
 
 // extraction pairs one category's LLM prompt with the JSON schema Firecrawl
-// extracts against — extractionConfig below is the one place all five
-// categories' extraction targets live.
+// extracts against — extractionConfig below is the one place every
+// supported category's extraction target lives.
 type extraction struct {
 	prompt string
 	schema map[string]any
@@ -157,6 +166,34 @@ var sportSchema = map[string]any{
 	},
 }
 
+var shoppingPrompt = "Answer in English throughout, regardless of the page's own language. Extract a short list of the kinds of goods, departments, or product categories a visitor will find at this shop or market — for example 'Local honey and preserves', 'Vintage vinyl', 'Handmade ceramics'. Describe what is actually sold, not the venue's marketing copy, and never invent brands or prices."
+
+var shoppingSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"what_youll_find": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+	},
+}
+
+var nightlifePrompt = "Answer in English throughout, regardless of the page's own language. Extract this nightlife venue's upcoming lineup as a list of entries, each with the act or event name, its start time if stated, and the room or stage if the venue has more than one. Only include entries the page presents as scheduled events with a date or time — never the venue's general music policy or resident-DJ blurb."
+
+var nightlifeSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"lineup": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"time":  map[string]any{"type": "string"},
+					"act":   map[string]any{"type": "string"},
+					"stage": map[string]any{"type": "string"},
+				},
+			},
+		},
+	},
+}
+
 // extractionConfig is the one place a category's scrape target is defined —
 // adding a category is a new map entry here (plus scraperOwnedFields below),
 // not a new switch branch.
@@ -166,6 +203,35 @@ var extractionConfig = map[activitiessvc.Category]extraction{
 	activitiessvc.CategoryCulture:       {culturePrompt, cultureSchema},
 	activitiessvc.CategoryArt:           {artPrompt, artSchema},
 	activitiessvc.CategorySport:         {sportPrompt, sportSchema},
+	activitiessvc.CategoryShopping:      {shoppingPrompt, shoppingSchema},
+	activitiessvc.CategoryNightlife:     {nightlifePrompt, nightlifeSchema},
+}
+
+// perishableFields names, per category, the scraper-owned field whose value
+// goes stale on its own — a show listing or a club lineup describes a date,
+// not the venue. Membership has three consequences, all of which used to be
+// hardcoded `== CategoryEntertainment` checks: the row is never permanently
+// skipped once complete, it keeps a periodic re-scan, and the named field is
+// overwritten on each pass rather than gap-filled, so a stale value is
+// replaced instead of preserved forever.
+//
+// Nightlife's `lineup` renders under a "Tonight" heading in the app, which
+// is a stronger freshness claim than this job can honour on any batch
+// cadence — see nightlifeRefreshFreshness.
+var perishableFields = map[activitiessvc.Category]string{
+	activitiessvc.CategoryEntertainment: "upcoming_shows",
+	activitiessvc.CategoryNightlife:     "lineup",
+}
+
+// refreshFreshness returns how long a perishable category's stored value
+// stays usable before a re-scan. Entertainment's month-out show listings
+// tolerate 30 days; a club lineup does not, so Nightlife re-scans daily.
+// A non-perishable category never reaches this.
+func refreshFreshness(category activitiessvc.Category) time.Duration {
+	if category == activitiessvc.CategoryNightlife {
+		return nightlifeRefreshFreshness
+	}
+	return entertainmentRefreshFreshness
 }
 
 // scraperOwnedFields lists, per category, the `details` keys this job is
@@ -179,6 +245,8 @@ var scraperOwnedFields = map[activitiessvc.Category][]string{
 	activitiessvc.CategoryCulture:       {"now_showing"},
 	activitiessvc.CategoryArt:           {"current_exhibition"},
 	activitiessvc.CategorySport:         {"what_to_bring", "effort_level", "gear", "difficulty"},
+	activitiessvc.CategoryShopping:      {"what_youll_find"},
+	activitiessvc.CategoryNightlife:     {"lineup"},
 }
 
 // isComplete reports whether every one of category's scraper-owned fields
@@ -271,8 +339,9 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		return nil
 	}
 
+	_, perishable := perishableFields[activity.Category]
 	complete := isComplete(activity.Category, activity.Details)
-	if complete && activity.Category != activitiessvc.CategoryEntertainment {
+	if complete && !perishable {
 		// Permanently done: this category's content doesn't go stale the way
 		// Entertainment's upcoming_shows does, so once every scraper-owned
 		// field is filled there's nothing left to gain from ever
@@ -302,11 +371,12 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	}
 	if !force {
 		switch {
-		case activity.Category == activitiessvc.CategoryEntertainment:
-			// Reachable here whether complete or not — Entertainment's show
-			// listings go stale regardless of completeness, so unlike every
-			// other category it keeps a periodic re-scan instead of giving up.
-			if attemptedBefore && time.Since(syncedAt) < entertainmentRefreshFreshness {
+		case perishable:
+			// Reachable here whether complete or not — a perishable field's
+			// value goes stale regardless of completeness, so unlike every
+			// other category these keep a periodic re-scan instead of
+			// giving up. See perishableFields.
+			if attemptedBefore && time.Since(syncedAt) < refreshFreshness(activity.Category) {
 				slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
 				return nil
 			}
@@ -364,8 +434,8 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 		}
 		return fmt.Errorf("merging website content for %s: %w", id, err)
 	}
-	if activity.Category == activitiessvc.CategoryEntertainment {
-		merged = overwriteField(merged, extracted, "upcoming_shows")
+	if field, ok := perishableFields[activity.Category]; ok {
+		merged = overwriteField(merged, extracted, field)
 	}
 	if activity.Category == activitiessvc.CategorySport {
 		merged = markDifficultyInferred(activity.Details, merged)
