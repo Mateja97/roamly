@@ -22,6 +22,9 @@ func (s *Server) GetActivityWithLiveDetails(ctx context.Context, req *activities
 		if errors.Is(err, sharederrors.ErrNotFound) {
 			return nil, status.Error(codes.NotFound, "activity not found")
 		}
+		if errors.Is(err, sharederrors.ErrInvalidInput) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		s.logger.Error("get activity with live details failed", "error", err, "id", req.GetId())
 		return nil, status.Error(codes.Internal, "internal error")
 	}

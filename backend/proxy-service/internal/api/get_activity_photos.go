@@ -32,8 +32,8 @@ type getActivityPhotosResponseDTO struct {
 // first view (see activities-service's GetActivityPhotos, T2). No auth
 // beyond query_activities' own (none) — this is the same public surface.
 // T2's RPC never fails on a Places timeout/error (falls back to whatever is
-// already stored), so the only gRPC error this handler ever sees is
-// NotFound for an unknown activity id.
+// already stored), so the gRPC errors this handler sees are NotFound for an
+// unknown activity id and InvalidArgument for a malformed one.
 func (h *GetActivityPhotosHandler) Handle(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.client.GetActivityPhotos(r.Context(), &activitiesv1.GetActivityPhotosRequest{Id: r.PathValue("id")})
 	if err != nil {

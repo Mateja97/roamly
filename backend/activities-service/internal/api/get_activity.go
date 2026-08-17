@@ -19,6 +19,9 @@ func (s *Server) GetActivity(ctx context.Context, req *activitiesv1.GetActivityR
 		if errors.Is(err, sharederrors.ErrNotFound) {
 			return nil, status.Error(codes.NotFound, "activity not found")
 		}
+		if errors.Is(err, sharederrors.ErrInvalidInput) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		s.logger.Error("get activity failed", "error", err, "id", req.GetId())
 		return nil, status.Error(codes.Internal, "internal error")
 	}

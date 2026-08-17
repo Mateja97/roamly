@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -67,6 +68,16 @@ func TestGetActivityWithLiveDetails_NotFoundMapsTo404(t *testing.T) {
 	_, err := client.GetActivityWithLiveDetails(context.Background(), &activitiesv1.GetActivityRequest{Id: "missing"})
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("status code = %v, want NotFound", status.Code(err))
+	}
+}
+
+func TestGetActivityWithLiveDetails_MalformedIDMapsTo400(t *testing.T) {
+	fake := &fakeQueryService{liveErr: fmt.Errorf("%w: invalid activity id %q", sharederrors.ErrInvalidInput, "not-a-uuid")}
+	client := dialServer(t, fake)
+
+	_, err := client.GetActivityWithLiveDetails(context.Background(), &activitiesv1.GetActivityRequest{Id: "not-a-uuid"})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("status code = %v, want InvalidArgument", status.Code(err))
 	}
 }
 
