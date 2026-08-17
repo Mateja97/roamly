@@ -24,10 +24,14 @@ var liveMappedCategories = []activitiessvc.Category{
 
 // fullyPopulatedDetail turns on every field BuildLiveDetails reads, so the
 // union of keys it emits across all categories is as wide as the mapper can
-// make it. ParkingOptions/AccessibilityOptions are left zero — their type is
-// unexported, so this test can't construct them — which costs nothing:
-// natureGoodToKnow and kidsFacilities both still emit from the plain
-// booleans below.
+// make it.
+//
+// opening_hours is the one exception this fixture cannot reach:
+// buildOpeningHours only emits it when RegularOpeningHours.Periods is
+// non-empty, and Periods is []placePeriod, an unexported type — an external
+// service_test package cannot construct a value for it. This guard therefore
+// gives no drift protection for opening_hours; a reader must not rely on it
+// to catch a future opening_hours-shaped key.
 func fullyPopulatedDetail() placesmap.PlaceDetail {
 	var d placesmap.PlaceDetail
 	d.WebsiteURI = "https://example.com"
@@ -39,6 +43,8 @@ func fullyPopulatedDetail() placesmap.PlaceDetail {
 	d.Restroom = true
 	d.OutdoorSeating = true
 	d.LiveMusic = true
+	d.ParkingOptions = map[string]bool{"freeParkingLot": true}
+	d.AccessibilityOptions = map[string]bool{"wheelchairAccessibleEntrance": true}
 	d.ServesCoffee = true
 	d.ServesVegetarianFood = true
 	d.MenuForChildren = true
