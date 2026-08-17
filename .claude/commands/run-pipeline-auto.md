@@ -99,19 +99,23 @@ same check Build step 0 below already uses per-task.
   branches for those task IDs — it doesn't wait on sibling chains or on the
   primary.
 - **Any `*-merge-<tn>` directory, anywhere, including under `<slug>`
-  itself:** no merge-status check needed regardless of which run created it
-  or whether it's this run's own — nothing legitimate keeps a throwaway merge
-  worktree (Merge-on-approval step 2) alive past the one pass that created
-  it, so any that still exists is leftover from a crash. This isn't
-  unconditionally safe, though: `git worktree remove` has no in-use lock on a
-  clean tree, so in principle another session's own Merge-on-approval could
-  be mid-rebase in that exact worktree right now, in the seconds-wide window
-  before it's dirtied by that rebase's changes. The dirty-tree check below is
-  the only guard — it's just usually enough, since a mid-rebase worktree is
-  dirty almost immediately. Remove it the same
-  way, no task-merge check needed. Worth sweeping even for `<slug>`: a
-  leftover one left behind by an earlier crashed run of this same slug is
-  exactly the kind of stale state a resume shouldn't have to work around.
+  itself, older than 60 minutes:** nothing legitimate keeps a throwaway
+  merge worktree (Merge-on-approval step 2) alive past the one pass that
+  created it, and that pass — rebase, push, poll for mergeability, merge —
+  normally finishes in well under an hour, so anything crossing that age is
+  either a crashed leftover or stuck badly enough that treating it as one is
+  the right call regardless. The age check is the real protection here, not
+  the dirty-tree check: after a *clean* rebase the worktree stays clean all
+  the way through push and merge, which is minutes, not seconds — so on a
+  clean tree alone, a concurrent same-repo run could be legitimately
+  mid-merge in that exact worktree and `git worktree remove` has no in-use
+  lock to stop you deleting it out from under it. Skip anything younger than
+  60 minutes outright, no removal attempt at all. For whatever clears the
+  age bar, the dirty-tree check below is still the last-resort guard on top
+  (a crashed pass can leave real uncommitted state). Worth sweeping even for
+  `<slug>`: a leftover one left behind by an earlier crashed run of this
+  same slug is exactly the kind of stale state a resume shouldn't have to
+  work around.
 
 If `git worktree remove` refuses because the worktree is dirty, leave it and
 note it in the report — never reach for `--force`; that's real uncommitted
@@ -262,12 +266,40 @@ active worktree per session, and Build needs up to N running at once. That
 worktree is where **all** of that chain's git work happens — every `git
 checkout -b`, `add`, `commit`, `push`, `gh pr create` for its tasks (rebases
 and conflict resolution at merge time are the one exception — never in a
-chain worktree, see Merge-on-approval step 2). It's also a fresh checkout
-with no installed dependencies: the first thing the chain's first engineer
-does there, before anything else, is its own dependency install (`npm ci` /
-`go mod download` / etc.) — say so explicitly in the step 3 dispatch, since a
-fresh worktree with no `node_modules` fails the build gate for a reason that
-has nothing to do with the task.
+chain worktree, see Merge-on-approval step 2).
+
+**It lands in detached HEAD, and the first thing every engineer is normally
+told to do fails there.** `git worktree add <path> origin/main` checks out
+that commit detached, not on a branch — `main` itself stays checked out in
+the primary worktree, where it always is. `CLAUDE.md`'s standard flow
+(`git checkout main && git pull && git checkout -b <branch>`) and the
+engineer agents' own step 1 both start with `git checkout main`, and inside
+a linked worktree that is `fatal: 'main' is already used by worktree at
+<repo-root>`, exit 128 — not theoretical, this repo's own merge step hits
+the same class of error on a plain `git checkout main`. The step 3 dispatch
+below must override that flow explicitly: the engineer creates its branch
+directly, `git checkout -b feature/<slug>-<tn>`, from whatever HEAD already
+is — detached at `origin/main` for a chain's root task, or already sitting
+on the parent's branch for a stacked child (the chain worktree is never
+detached again once its first task creates a branch) — and must never run
+`git checkout main` first.
+
+It's also a fresh checkout missing two things a build needs and nothing
+installs by default: dependencies, and the gitignored env files. Both are
+the first thing the chain's first engineer does there, before anything
+else — say so explicitly in the step 3 dispatch:
+- **Dependencies** (`npm ci` / `go mod download` / etc.) — a fresh worktree
+  has no `node_modules`, so skipping this fails the build gate for a reason
+  that has nothing to do with the task.
+- **`.env` and `app/.env`** — both are gitignored, so they exist only in the
+  repo root and `git worktree add` never brings them along.
+  `docker-compose.yaml` interpolates them as `${VAR:-}`, so a stack missing
+  them doesn't fail loudly — it comes up with no Google Maps key, no admin
+  token, no GetYourGuide partner id, degraded but running. Left unfixed, the
+  visual-gate screenshots that degraded stack as if it were correct and the
+  reviewer approves against it. Copy (or symlink) both files from
+  `<repo-root>/.env` and `<repo-root>/app/.env` into the same relative paths
+  in the chain worktree before bringing up any stack there.
 
 Most pipeline bookkeeping stays where it's always been, under
 `pipeline/<slug>/` in the step-0 `<slug>` worktree — but not all of it:
@@ -317,12 +349,18 @@ Most pipeline bookkeeping stays where it's always been, under
   have more than one `frontend-engineer` or `app-engineer` dispatch in
   flight at a time, across *all* chains (queue a second one if one is
   already running) — **and** before handing the gate to the next chain in
-  the queue, tear down the previous one's stack from its own worktree
-  (`docker compose -p <slug>-c<prev> down`), so the next chain's `docker
-  compose ps` finds nothing left to either collide with or wrongly reuse.
-  Everything else about a chain (design, code edits, git, review, merge)
-  stays fully concurrent; only that one dispatch type is a global
-  bottleneck, and only for as long as its own stack needs to be up.
+  the queue, tear down the previous one's stack: `docker compose -p
+  <slug>-c<prev> down`, so the next chain's `docker compose ps` finds
+  nothing left to either collide with or wrongly reuse. This is a one-command
+  orchestrator action (Token discipline exception, same as `gh pr list`), run
+  from wherever the orchestrator already is — the `-p` flag names the project
+  explicitly, so it tears down the right containers regardless of which
+  worktree's cwd you run it from; there's no need to `cd` into the chain
+  worktree the orchestrator otherwise never touches. Every worktree carries
+  the same tracked `docker-compose.yaml`, so any of them will do as the
+  command's cwd. Everything else about a chain (design, code edits, git,
+  review, merge) stays fully concurrent; only that one dispatch type is a
+  global bottleneck, and only for as long as its own stack needs to be up.
 - Escalation stays per-chain: a task that fails its review loop skips only the
   tasks that depend on it (its own chain's tail); other chains are unaffected.
 
@@ -331,7 +369,14 @@ needs its own dependency install before its engineer can build — slower to
 spin up and heavier on disk than the one shared tree this used to be. That's
 the price of chains that genuinely don't collide; pay it rather than
 serializing the build or leaning on branch-level isolation that was never
-real.
+real. Worth naming honestly: the visual-gate serialization above is a second,
+separate cost, and on a task set that's entirely `area: frontend`/`area: app`
+it can erase most of the parallel speedup this whole per-chain-worktree
+design exists to deliver — every chain's engineer still has to wait its turn
+for the one dispatch type that matters most for those tasks. Everything
+else about a chain still overlaps (design, code edits, git, review, merge),
+so it's never as bad as a fully serial build, but a run that's all
+frontend/app work is the case where this fix's speedup claim holds least.
 
 For each task `Tn` in a chain (chains advance in parallel; steps below are per
 task, and run inside that chain's worktree,
@@ -359,12 +404,17 @@ task, and run inside that chain's worktree,
    `task-type: feature`, this chain's `task-plan-c<n>.md` path, this chain's
    `engineering-notes-c<n>.md` path, the base branch to use, the chain
    worktree's absolute path with an explicit instruction to do all git and
-   file work there (dependency install first, per the note above), AND —
-   for `area: frontend` or `area: app` — this chain's `design-spec-c<n>.md`
-   path and the screenshots directory
-   `<chain-worktree>/pipeline/<slug>/screenshots/<Tn>/` (inside the chain
-   worktree, not the step-0 one — that's what `git add -f` can actually
-   reach).
+   file work there — dependency install and `.env`/`app/.env` copy first,
+   per the note above, **and** for a chain's first task specifically: the
+   worktree starts in detached HEAD, so create the branch directly with
+   `git checkout -b feature/<slug>-<tn>` and do NOT run `git checkout main`
+   first (that fails inside a linked worktree — `main` is already checked
+   out in the primary worktree — overriding `CLAUDE.md`'s general branch-off
+   flow for this pipeline context only) — AND, for `area: frontend` or
+   `area: app` — this chain's `design-spec-c<n>.md` path and the screenshots
+   directory `<chain-worktree>/pipeline/<slug>/screenshots/<Tn>/` (inside the
+   chain worktree, not the step-0 one — that's what `git add -f` can
+   actually reach).
    - **`area: frontend` or `area: app` only (no pause):** if the engineer
      reports `NEEDS_DESIGN`, re-dispatch `designer` with the task id, this
      chain's `design-spec-c<n>.md` path, the reported gap, and the same
@@ -381,8 +431,13 @@ task, and run inside that chain's worktree,
      this chain's `design-spec-c<n>.md` path and the same in-chain-worktree
      screenshots directory as step 3.
    - `changes-requested` → re-dispatch the same area engineer (resolve mode,
-     this chain's `review-log-c<n>.md` path, same chain worktree path) →
-     re-review.
+     this chain's `review-log-c<n>.md` path, same chain worktree path — tell
+     it explicitly that if its resolve step rebases before pushing, the push
+     must be `git push --force-with-lease`, never a plain `git push`, since a
+     rebase makes a plain push a non-fast-forward and it gets rejected — same
+     requirement as the merge-time resolver below, and just as easy to miss
+     since it's the engineer's own routine, not something this file's earlier
+     text calls out) → re-review.
    - `approved` → `gh pr ready` (mark ready), then hand the PR to the
      **Merge-on-approval** step below. A newly-approved PR does not sit waiting
      for the user — it merges as soon as its dependencies are satisfied.
@@ -398,33 +453,40 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    on is already merged into `main`. If an approved PR isn't yet eligible, leave
    it ready and revisit when its parent merges — approvals often land out of
    dependency order across parallel chains.
-2. **Rebase before merge — never in a chain worktree.** Before merging an
-   eligible PR, make sure its branch sits on the current `main` tip: if
-   `main` has moved since the branch was cut, it needs a rebase (drops an
-   already-merged parent's commits, surfaces cross-chain conflicts on shared
-   files). By the time a PR is eligible, its chain has very likely already
-   moved on to the next stacked task in that same worktree, so rebasing
-   there means checking an older branch out over an in-progress one — the
-   identical HEAD-flip/dirty-tree collision described above, just
-   intra-chain. Do it instead in a **throwaway per-PR worktree**, checked
-   out **detached**, never as the branch itself: `git fetch origin`, then
-   `git worktree add --detach <repo-root>/.claude/worktrees/<slug>-merge-<tn>
-   feature/<slug>-<tn>`. Detached matters beyond isolation — a *non*-detached
-   checkout is refused whenever that branch is still checked out in its own
-   chain worktree, which is permanently true for a chain's last task (nothing
-   ever advances past it to release the branch), so a plain checkout there
-   would deadlock the rest of the run: that PR would sit "not yet eligible"
-   forever, merged nowhere and never flagged as escalated. `--detach`
-   sidesteps that exclusivity check entirely. Then `git rebase origin/main`
-   there. Clean rebase → `git push --force-with-lease origin
-   HEAD:feature/<slug>-<tn>` — plain `git push` is a non-fast-forward and
-   gets rejected, since the rebase rewrote this branch's commits — then `git
-   worktree remove` the throwaway worktree (if that's refused because it's
-   dirty, leave it and note it in the report — never `--force`). Conflicts →
-   leave the worktree exactly as it is and go to step 4. The chain
-   worktree's own copy of that branch is now stale; that's harmless — the
-   chain never touches an already-approved task's branch again, it only
-   ever branched a stacked child off it once, before this rebase ran.
+2. **Rebase before merge — never in a chain worktree.** Always stage this in
+   a **throwaway per-PR worktree** — unconditionally, whether or not `main`
+   looks like it's moved, so step 4 always has somewhere to work if a
+   conflict turns up there instead (a PR can flip to `CONFLICTING` at step 3
+   from a sibling's merge without ever failing this step's own check first).
+   The worktree is cheap and the rebase is a safe no-op when there's
+   genuinely nothing to replay, so there's no real cost to always creating
+   it. Checked out **detached**, never as the branch itself: `git fetch
+   origin`, then `git worktree add --detach
+   <repo-root>/.claude/worktrees/<slug>-merge-<tn> feature/<slug>-<tn>`.
+   Detached matters beyond isolation — a *non*-detached checkout is refused
+   whenever that branch is still checked out in its own chain worktree,
+   which is permanently true for a chain's last task (nothing ever advances
+   past it to release the branch), so a plain checkout there would deadlock
+   the rest of the run: that PR would sit "not yet eligible" forever, merged
+   nowhere and never flagged as escalated. `--detach` sidesteps that
+   exclusivity check entirely. Then `git rebase origin/main` there (drops an
+   already-merged parent's commits when there are any, surfaces cross-chain
+   conflicts on shared files, and does nothing at all if the branch is
+   already caught up — by the time a PR is eligible its chain has very
+   likely moved on to the next stacked task in that same worktree, so this
+   rebase must never run there: checking an older branch out over an
+   in-progress one is the identical HEAD-flip/dirty-tree collision described
+   above, just intra-chain). If the rebase actually moved anything, push
+   with `git push --force-with-lease origin HEAD:feature/<slug>-<tn>` — plain
+   `git push` is a non-fast-forward and gets rejected, since the rebase
+   rewrote this branch's commits (skip the push if the rebase was a genuine
+   no-op; nothing changed, nothing to push) — then `git worktree remove` the
+   throwaway worktree (if that's refused because it's dirty, leave it and
+   note it in the report — never `--force`). Conflicts → leave the worktree
+   exactly as it is and go to step 4. The chain worktree's own copy of that
+   branch is now stale; that's harmless — the chain never touches an
+   already-approved task's branch again, it only ever branched a stacked
+   child off it once, before this rebase ran.
 
    **Stacked children re-parent through this same step, not automatically.**
    A rebase here moves only this one branch, not any child already stacked
@@ -442,7 +504,11 @@ merge it into `main` — respecting dependency order and integrating conflicts:
    through step 4 like any other.
 3. **Merge.** When `gh pr view <n> --json mergeable,mergeStateStatus` reports
    `MERGEABLE`/`CLEAN`, merge in dependency order (`gh pr merge <n> --squash`
-   unless the repo's merged-PR history shows another style). After each merge,
+   unless the repo's merged-PR history shows another style). `mergeable:
+   UNKNOWN` right after step 2's force-push is GitHub still recomputing, not
+   a verdict — poll the same check a few times with a short wait between
+   (a few seconds each) instead of treating it as blocked; only `CONFLICTING`
+   is an actual conflict, worth going to step 4 for. After each merge,
    re-check the remaining open approved PRs — a merge to `main` can flip a
    sibling to `CONFLICTING`.
 4. **Conflicts → resolver subagent.** If a rebase/merge hits conflicts, do NOT
@@ -481,8 +547,11 @@ next run's chain worktree has a different directory basename, so its own
 hard-fails on the same ports — the identical hazard, just moved from
 inter-chain to inter-run. If this run ever dispatched a `frontend-engineer`
 or `app-engineer`, run `docker compose -p <slug>-c<n> down` for whichever
-chain held the gate last. This is a one-command orchestrator action, not a
-subagent dispatch — it's in the Token discipline exception list above,
+chain held the gate last — from wherever the orchestrator already is, same
+as Build's version of this command: `-p` names the project explicitly, so no
+`cd` into that chain's worktree is needed. This is a one-command orchestrator
+action, not a subagent dispatch — it's in the Token discipline exception
+list above,
 alongside `gh pr list`/`gh pr ready`.
 
 **Standards push-back (design-import runs only):** if any merged PR changed
