@@ -140,3 +140,15 @@ func hasValue(raw json.RawMessage) bool {
 	}
 	return true
 }
+
+// KnownDetailKeys returns every details key the scorer classifies, in no
+// particular order. Exported for the drift guard in
+// renderable_drift_test.go, which asserts placesmap.BuildLiveDetails cannot
+// emit a key this list is missing — an unclassified key scores nothing and
+// would draft rows that render perfectly well.
+func KnownDetailKeys() []string {
+	out := make([]string, 0, len(bodyBlockKeys)+len(presentationalKeys)+1)
+	out = append(out, bodyBlockKeys...)
+	out = append(out, presentationalKeys...)
+	return append(out, reviewsKey)
+}
