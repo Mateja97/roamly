@@ -878,9 +878,18 @@ feature branch would. Do not "fix" this back to a per-run branch.
       Ignore it and continue to step 2 regardless of this command's exit
       code.
    2. `git status --porcelain` — if non-empty, clean **only `CHANGELOG.md`**:
-      `git restore --staged --worktree CHANGELOG.md` for a
-      modified-or-staged one, `git clean -f CHANGELOG.md` for an untracked
-      one. Run both; each is a no-op against the state the other handles.
+      run `git restore --staged --worktree CHANGELOG.md`, then
+      `git clean -f CHANGELOG.md`, in that order, regardless of either
+      command's exit code. Against a modified-or-staged file, `git restore`
+      is exit 0 and `git clean -f` is a genuine no-op (nothing untracked to
+      remove). Against an **untracked** file — the state a crash leaves when
+      Phase 6 wrote a fresh `CHANGELOG.md` but never got to commit it —
+      `git restore --staged --worktree` has nothing tracked to restore:
+      `error: pathspec 'CHANGELOG.md' did not match any file(s) known to
+      git`, exit 1, **not** a no-op, and the file is still there afterward.
+      That non-zero exit means exactly "this file wasn't tracked," not
+      "cleanup failed" — do not stop here; `git clean -f` right after it is
+      what actually removes the file in this case.
    3. Re-run `git status --porcelain`. `CHANGELOG.md` must be gone from it.
       Anything else still listed is **not yours to remove** — report it and
       stop; do not widen the cleanup to make the output empty.
