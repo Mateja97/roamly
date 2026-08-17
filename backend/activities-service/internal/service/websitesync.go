@@ -19,15 +19,16 @@ import (
 // later... no schema change."
 const websiteSyncProvider = "website"
 
-// entertainmentRefreshFreshness bounds how often an Entertainment row gets
-// re-scraped — complete or not. Entertainment is the one category whose
-// scraper-owned content (upcoming_shows) genuinely goes stale over time, so
-// unlike every other category it keeps a periodic re-scan indefinitely
-// rather than giving up after one incomplete attempt (see SyncWebsiteContent).
-// Every other category is skipped permanently once complete (isComplete),
-// because static content like a spa's treatment menu or a museum's current
-// exhibit description doesn't need repeat scraping once it's been captured.
-const entertainmentRefreshFreshness = 30 * 24 * time.Hour
+// perishableRefreshFreshness bounds how often a perishable category's rows
+// get re-scraped — complete or not (see perishableFields). A month suits
+// both members: theatre seasons and museum programmes turn over on roughly
+// that scale, and a listing a few weeks stale still names a real programme
+// rather than an invented one.
+//
+// Every non-perishable category is skipped permanently once complete
+// (isComplete), because static content like a spa's treatment menu doesn't
+// need repeat scraping once captured.
+const perishableRefreshFreshness = 30 * 24 * time.Hour
 
 // websiteResolveTimeout bounds the one live Places call this job makes per
 // venue to resolve the website URL — same reasoning as detailResolveTimeout,
@@ -179,26 +180,28 @@ var extractionConfig = map[activitiessvc.Category]extraction{
 }
 
 // perishableFields names, per category, the scraper-owned field whose value
-// goes stale on its own — a show listing or a club lineup describes a date,
-// not the venue. Membership has three consequences, all of which used to be
+// goes stale on its own — a show listing or a programme describes what is on
+// right now, not the venue. Membership has three consequences, all of which used to be
 // hardcoded `== CategoryEntertainment` checks: the row is never permanently
 // skipped once complete, it keeps a periodic re-scan, and the named field is
 // overwritten on each pass rather than gap-filled, so a stale value is
 // replaced instead of preserved forever.
 //
-// Nightlife was piloted here and removed: see the removal note on
-// syncCategories in cmd/websitesync.
+// Culture joined after the first full run showed what it actually captures:
+// `now_showing` came back holding dated programme entries ("Wednesday,
+// August 19, 2026"), which a permanently-skipped category would carry
+// unrefreshed forever — the same staleness that got Nightlife removed, only
+// slower. Nightlife itself was piloted here and removed for fabricating
+// content outright: see the removal note on syncCategories in
+// cmd/websitesync.
+//
+// Art is deliberately NOT here. Its `current_exhibition` reads as a standing
+// description of what a venue shows rather than a dated listing, so
+// re-scraping 204 rows monthly would rewrite prose that rarely changes.
+// Revisit if art rows start coming back with dates in them.
 var perishableFields = map[activitiessvc.Category]string{
 	activitiessvc.CategoryEntertainment: "upcoming_shows",
-}
-
-// refreshFreshness returns how long a perishable category's stored value
-// stays usable before a re-scan. One entry today (Entertainment), but kept
-// as a function rather than inlining the constant: perishability is
-// per-category by nature — the next perishable category will want its own
-// window, not Entertainment's.
-func refreshFreshness(activitiessvc.Category) time.Duration {
-	return entertainmentRefreshFreshness
+	activitiessvc.CategoryCulture:       "now_showing",
 }
 
 // scraperOwnedFields lists, per category, the `details` keys this job is
@@ -264,7 +267,7 @@ func isFieldEmpty(v any) bool {
 // already have a value for (fillGaps below) — an admin's own edit is never
 // overwritten. A row whose scraper-owned fields (scraperOwnedFields) are
 // all already filled is skipped permanently, except Entertainment, which
-// still re-checks every entertainmentRefreshFreshness because
+// still re-checks every perishableRefreshFreshness because
 // upcoming_shows genuinely goes stale over time.
 //
 // A non-Entertainment row that stays incomplete gets exactly one automatic
@@ -342,7 +345,7 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 			// value goes stale regardless of completeness, so unlike every
 			// other category these keep a periodic re-scan instead of
 			// giving up. See perishableFields.
-			if attemptedBefore && time.Since(syncedAt) < refreshFreshness(activity.Category) {
+			if attemptedBefore && time.Since(syncedAt) < perishableRefreshFreshness {
 				slog.Info("website sync skipped, still fresh", "activity_id", id, "synced_at", syncedAt)
 				return nil
 			}

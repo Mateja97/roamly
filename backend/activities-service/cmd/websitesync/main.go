@@ -7,9 +7,9 @@
 // for content Google Places doesn't provide, filling in whatever fields
 // the row doesn't already have curated. A category is skipped permanently
 // once its fields are all filled — see internal/service/websitesync.go's
-// isComplete — except the perishable ones (Entertainment), whose content
-// names a date rather than the venue and so keeps re-scanning; see
-// perishableFields. Run periodically —
+// isComplete — except the perishable ones (Entertainment and Culture),
+// whose content names what is on right now rather than describing the
+// venue, and so keeps re-scanning monthly; see perishableFields. Run periodically —
 // never wired into activities-service's own startup path, same
 // "build/maintenance-time tool" category as cmd/backfilltripadvisor.
 //

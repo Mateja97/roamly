@@ -482,7 +482,7 @@ func TestSyncWebsiteContent_CompleteEntertainmentRow_RefreshesAfter30Days(t *tes
 // refreshed.
 func TestSyncWebsiteContent_IncompleteEntertainmentRow_StillRefreshesShows(t *testing.T) {
 	// good_to_know deliberately left empty — the row is not complete, so an
-	// Entertainment row keeps entertainmentRefreshFreshness's periodic
+	// Entertainment row keeps perishableRefreshFreshness's periodic
 	// re-scan (30 days) rather than the one-attempt-and-give-up rule every
 	// other category gets; seed synced_at older than that so the sync
 	// actually proceeds to the merge step instead of being skipped as
@@ -945,12 +945,6 @@ func TestPerishableFields_AreScraperOwned(t *testing.T) {
 	}
 }
 
-func TestRefreshFreshness(t *testing.T) {
-	if got := refreshFreshness(activitiessvc.CategoryEntertainment); got != 30*24*time.Hour {
-		t.Errorf("entertainment refresh = %v, want 720h", got)
-	}
-}
-
 // TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently: shopping is
 // NOT perishable — a shop's product mix is a venue fact, so once captured it
 // must never be re-scraped, unlike nightlife above.
@@ -971,4 +965,97 @@ func TestSyncWebsiteContent_CompleteShoppingRow_SkipsPermanently(t *testing.T) {
 	if firecrawl.calls != 0 {
 		t.Errorf("firecrawl.calls = %d, want 0 — a complete non-perishable row is skipped permanently", firecrawl.calls)
 	}
+}
+
+// TestPerishableFields_Membership pins which categories re-scrape and which
+// are captured once. Entertainment's shows and Culture's programme both name
+// a date; Art, Sport, Shopping and Wellness describe the venue, so
+// re-scraping them is spend with nothing to show a reader.
+func TestPerishableFields_Membership(t *testing.T) {
+	perishable := []activitiessvc.Category{
+		activitiessvc.CategoryEntertainment,
+		activitiessvc.CategoryCulture,
+	}
+	permanent := []activitiessvc.Category{
+		activitiessvc.CategoryArt,
+		activitiessvc.CategorySport,
+		activitiessvc.CategoryShopping,
+		activitiessvc.CategoryWellness,
+	}
+
+	for _, c := range perishable {
+		if _, ok := perishableFields[c]; !ok {
+			t.Errorf("category %q should be perishable — its content names a date and would sit unrefreshed forever", c)
+		}
+	}
+	for _, c := range permanent {
+		if field, ok := perishableFields[c]; ok {
+			t.Errorf("category %q is marked perishable on %q — it would re-scrape monthly forever for content that describes the venue", c, field)
+		}
+	}
+	if len(perishableFields) != len(perishable) {
+		t.Errorf("perishableFields has %d entries, want %d", len(perishableFields), len(perishable))
+	}
+}
+
+// TestSyncWebsiteContent_CompleteCultureRow_RefreshesAfter30Days is the
+// behaviour making Culture perishable actually buys: a complete row is no
+// longer skipped forever, and now_showing is overwritten rather than
+// gap-filled, so a stale dated programme is replaced instead of preserved.
+func TestSyncWebsiteContent_CompleteCultureRow_RefreshesAfter30Days(t *testing.T) {
+	completeDetails := `{"now_showing":{"title":"August programme","description":"Runs Wednesday, August 19, 2026."}}`
+
+	t.Run("skipped at 10 days", func(t *testing.T) {
+		stored := activitiessvc.Activity{
+			ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
+		}
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+		firecrawl := &fakeFirecrawl{}
+		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+			syncKey("website", "1", "culture", ""): time.Now().Add(-10 * 24 * time.Hour),
+		}}
+		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if firecrawl.calls != 0 {
+			t.Errorf("firecrawl.calls = %d, want 0 — 10 days is inside the 30-day window", firecrawl.calls)
+		}
+	})
+
+	t.Run("re-attempted at 31 days, overwriting the stale programme", func(t *testing.T) {
+		stored := activitiessvc.Activity{
+			ID: "1", Category: activitiessvc.CategoryCulture, Status: activitiessvc.StatusPublished,
+			Source: "google_places", ExternalID: "place-1", Details: json.RawMessage(completeDetails),
+		}
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{WebsiteURI: "https://example-museum.rs"}}
+		firecrawl := &fakeFirecrawl{out: json.RawMessage(`{"now_showing":{"title":"September programme","description":"Runs from September 2026."}}`)}
+		repo := &fakeRepo{getOut: stored, syncedAtOut: map[string]time.Time{
+			syncKey("website", "1", "culture", ""): time.Now().Add(-31 * 24 * time.Hour),
+		}}
+		svc := New(repo).WithPlaces(places).WithFirecrawl(firecrawl)
+
+		if err := svc.SyncWebsiteContent(context.Background(), "1", false); err != nil {
+			t.Fatalf("SyncWebsiteContent() error: %v", err)
+		}
+		if firecrawl.calls != 1 {
+			t.Errorf("firecrawl.calls = %d, want 1 — 31 days is past the window", firecrawl.calls)
+		}
+		if repo.gotUpdatePatch.Details == nil {
+			t.Fatal("repo.Update was not called with Details")
+		}
+		var got map[string]any
+		if err := json.Unmarshal(*repo.gotUpdatePatch.Details, &got); err != nil {
+			t.Fatalf("unmarshal updated details: %v", err)
+		}
+		banner, ok := got["now_showing"].(map[string]any)
+		if !ok {
+			t.Fatalf("now_showing = %v, want an object", got["now_showing"])
+		}
+		if banner["title"] != "September programme" {
+			t.Errorf("now_showing.title = %v, want the fresh programme — a gap-fill would have kept the stale August one", banner["title"])
+		}
+	})
 }
