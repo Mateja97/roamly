@@ -82,6 +82,12 @@ const styles = StyleSheet.create({
     gap: space[1],
     minHeight: 44,
     maxWidth: 220,
+    // Without this, `topRow`'s fixed-width Wordmark (110) + this pill's
+    // maxWidth (220) overflow a 320pt screen — the pill (and the T6 rating
+    // segment on its far right) got pushed off-screen entirely, not just
+    // truncated. Shrinking the pill itself, on top of scopePillLabel's own
+    // flexShrink, is what lets `scopePillRating` stay on screen at 320pt.
+    flexShrink: 1,
     borderRadius: radius.full,
     backgroundColor: colors.surface,
     borderTopWidth: 1,
