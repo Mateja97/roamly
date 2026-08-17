@@ -228,16 +228,19 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 		}
 
 		report.scanned++
+		category := string(stored.Category)
+		report.scannedByCategory[category]++
+
 		verdict := service.Renderability(merged, minScore)
 		report.byScore[verdict.Score]++
 		if verdict.OK {
 			report.ok++
+			report.okByCategory[category]++
 			report.byPassingSignals[strings.Join(verdict.Signals, "+")]++
 			continue
 		}
 
 		report.byReason[verdict.Reason]++
-		category := string(stored.Category)
 		if report.byCategory[category] == nil {
 			report.byCategory[category] = map[string]int{}
 		}
@@ -264,15 +267,22 @@ func (r auditReport) render(minScore int) string {
 	}
 
 	out += "\nby category\n"
-	out += fmt.Sprintf("  %-16s %10s %13s %12s\n", "category", "no_photo", "no_place_id", "no_content")
-	categories := make([]string, 0, len(r.byCategory))
-	for category := range r.byCategory {
+	out += fmt.Sprintf("  %-16s %8s %7s %6s %10s %13s %12s\n",
+		"category", "scanned", "passed", "rate", "no_photo", "no_place_id", "no_content")
+	categories := make([]string, 0, len(r.scannedByCategory))
+	for category := range r.scannedByCategory {
 		categories = append(categories, category)
 	}
 	sort.Strings(categories)
 	for _, category := range categories {
 		counts := r.byCategory[category]
-		out += fmt.Sprintf("  %-16s %10d %13d %12d\n", category,
+		scanned := r.scannedByCategory[category]
+		rate := ""
+		if scanned > 0 {
+			rate = fmt.Sprintf("%d%%", r.okByCategory[category]*100/scanned)
+		}
+		out += fmt.Sprintf("  %-16s %8d %7d %6s %10d %13d %12d\n", category,
+			scanned, r.okByCategory[category], rate,
 			counts[service.ReasonNoPhoto], counts[service.ReasonNoPlaceID], counts[service.ReasonNoContent])
 	}
 

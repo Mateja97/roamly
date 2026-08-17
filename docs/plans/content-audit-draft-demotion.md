@@ -548,3 +548,72 @@ categories with no live body field: **sport, shopping, nightlife, culture,
 art**. Those five account for 123 of the 154 content failures in this
 sample. Cafés, Nature and Kids demonstrate that a single well-chosen body
 field per category is enough to move a category from failing to passing.
+
+## Restaurants — 200 rows, the Tripadvisor question answered
+
+```
+content audit — 200 rows scanned at min-content=2
+  would stay published: 48
+  would be drafted:     152
+
+by reason        no_photo 67 · no_place_id 0 · no_content 85
+
+by category      scanned  passed   rate   no_photo   no_place_id   no_content
+  restaurants        200      48    24%         67             0           85
+
+score distribution   1: 138 · 3: 62
+
+how the passing rows cleared the bar
+  description+presentational                     23
+  description+presentational+tripadvisor_reviews 14
+  description+presentational+google_reviews      11
+```
+
+**24% pass.** Every single passing row passes on a stored `description` — not
+one of 200 carries a body block, confirming that `popular_dishes` is
+effectively unpopulated (1 row catalog-wide).
+
+The distribution shows the same clean gap: 138 at 1, 62 at 3, nothing at 2.
+The 14-row difference between "62 scored 3" and "48 passed" is rows with
+real content and no photo, which fail earlier on `no_photo`.
+
+### The photo gap here is far worse than catalog-average
+
+**67 of 200 restaurants have no photo — 34%**, against roughly 5%
+catalog-wide. These are broken list cards today, independent of any content
+debate, and they are the clearest actionable finding in all four runs. All
+67 have an `external_id`, so `GetPhotos` re-attempts a live Tripadvisor
+resolve on every single detail open and keeps getting nothing — the
+never-converging loop described at the top of this spec, concentrated in one
+category.
+
+### The product question, now with numbers
+
+Scoring reviews as furniture drafts **76% of restaurants**. Their pages are
+a rating, a reviews carousel, a Tripadvisor attribution plate, and for a
+quarter of them a description.
+
+Whether that is "thin" depends on a judgement this measurement cannot make:
+for a restaurant, traveller reviews arguably *are* the content, which is the
+whole premise of sourcing the category from Tripadvisor in the first place.
+The same page shape that reads as empty for a hiking trail may read as
+complete for a restaurant.
+
+Two defensible resolutions, both deliberate rather than accidental:
+
+1. **A per-category bar.** Restaurants, Bars and Cafés pass on reviews;
+   every other category needs a body. Honest, but it makes the scorer
+   category-aware, which it currently is not.
+2. **Exclude the Tripadvisor categories from the audit entirely** until
+   there is a sourcing plan for them, the way `pending` rows are already
+   excluded as someone else's workflow.
+
+**Not** recommended: reverting reviews to content-worth-2 catalog-wide. That
+is what produced the false all-clear on Sport, and it would hide the 51% of
+Google-sourced rows that genuinely render nothing.
+
+### Fix the photos regardless
+
+The 67 photoless restaurants need no product decision. Whatever the bar
+becomes, a published row with no photo is a broken card, and `no_photo` is
+the one reason in this audit that is unambiguous across every category.
