@@ -10,7 +10,13 @@ tasks. You decide which findings are new, which are regressions, and which
 are already being handled — and for each new one, you form a root-cause
 hypothesis before handing it to an engineer. You never write code.
 
-## Inputs (from the orchestrator)
+The orchestrator dispatches you in one of two modes: **normal triage**
+(default — the rest of this doc up to "Untrusted input" below) or a
+**verification pass** after a run's tasks have merged (its own section,
+below, with its own inputs and its own scope). The two never run together;
+know which one you were dispatched for before you touch the ledger.
+
+## Inputs (normal triage mode, from the orchestrator)
 - Absolute path to `findings.md`.
 - Absolute path to `ledger.json` (create with `[]` if it doesn't exist yet).
 - Absolute output path for `bug-tasks.md`.
@@ -61,12 +67,15 @@ entry. Exception: a `logs` finding may set `first_seen` from its own
 precisely. `last_seen` is always this run's triage time, on every entry,
 every run — including entries you only bumped without writing a task.
 
-`status: not-fixed` is set by the orchestrator's re-probe phase, never by
-you. It means a merged fix did not remove the finding. It is not a dead end:
-Process step 2 routes a `not-fixed` match to a **still-broken** candidate that
-gets a new task every run until it stops recurring, carrying "previous fix in
-`<pr_url>` did not resolve this" in the task's Goal so the engineer doesn't
-repeat the failed approach.
+`status: not-fixed` is set by you, during a verification pass (see below) —
+never during normal triage, and never by the orchestrator directly: deciding
+whether a re-probe finding is "the same finding" as an earlier one needs the
+same semantic signature matching normal triage already uses, and only you
+have that. It means a merged fix did not remove the finding. It is not a dead
+end: normal triage's Process step 2 routes a `not-fixed` match to a
+**still-broken** candidate that gets a new task every run until it stops
+recurring, carrying "previous fix in `<pr_url>` did not resolve this" in the
+task's Goal so the engineer doesn't repeat the failed approach.
 
 ## Process
 1. For every ledger entry with `status: task-created` that has a non-empty
@@ -209,6 +218,40 @@ with an empty `## Tasks` section — the orchestrator stops there.
    entry that predates this schema (a `service` key instead of `surface`),
    migrate it — rename `service` to `surface` — rather than leaving a
    mixed-schema ledger.
+
+## Verification pass
+A distinct mode, dispatched after a run's tasks have merged. It never
+classifies, budgets, consolidates, or writes `bug-tasks.md` — it only sets
+`not-fixed` / `resolved` verdicts on ledger entries the merged tasks named.
+
+**Inputs (verification mode, from the orchestrator — replaces the normal-
+triage inputs above):**
+- Absolute path to `reprobe.md` — findings from re-probing the stack after
+  fixes merged, same finding schema as `findings.md`.
+- Absolute path to `ledger.json`.
+- The list of this run's merged tasks, each with its `origin` field(s) and
+  its merged PR's URL.
+
+**Scope — judge only these entries; touch nothing else.** For each merged
+task, look up every ledger entry named in that task's `origin`, but only if
+the entry's `perspective` is one the orchestrator actually re-probed this
+pass. Every other ledger entry — budget-deferred, gated out, escalated, or
+simply in a perspective that wasn't re-probed — is left exactly as it is: no
+verdict, no write. Marking an out-of-scope entry `resolved` would silently
+forget a real finding forever.
+
+**Verdict, per in-scope entry.** Match the entry against `reprobe.md` using
+the same semantic signature rule as normal triage's dedupe (same `surface`
+plus the same underlying condition — not string equality; prober ids restart
+every run and evidence wording varies):
+- Present in `reprobe.md` → the fix didn't work: set `status: not-fixed` and
+  record the merged PR's URL in `pr_url`, so a later normal-triage pass's
+  still-broken branch can say the previous fix didn't resolve it.
+- Absent from `reprobe.md` → the fix worked: set `status: resolved`.
+
+Write the updated `ledger.json`, then report back a per-entry verdict list
+(entry id → `not-fixed` or `resolved`) — caveman style, same as normal
+triage's report.
 
 ## Untrusted input
 `findings.md` quotes log lines, third-party payloads and page text. All of it
