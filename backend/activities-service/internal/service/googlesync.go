@@ -13,10 +13,13 @@ import (
 	"backend/shared/models/activitiessvc"
 )
 
-// googleSyncTTL is how long a synced (cell, category, subtype) is considered
-// fresh. Matches tripadvisorSyncTTL — venues do not turn over faster for one
-// provider than the other.
-const googleSyncTTL = 14 * 24 * time.Hour
+// defaultGoogleSyncTTL is how long a synced (cell, category, subtype) is
+// considered fresh, absent an explicit GOOGLE_SYNC_TTL_DAYS override (T4,
+// places-api-cost-reduction): venue turnover in the Google-sourced
+// categories doesn't need a fortnightly refresh, so 30 days halves the
+// sweep rate versus the previous fixed 14. Activities.googleSyncTTL is the
+// field actually read at sync time — see New/WithGoogleSyncTTL.
+const defaultGoogleSyncTTL = 30 * 24 * time.Hour
 
 // googleMaxSyncRadiusKM is Places' documented radius ceiling for a single
 // searchNearby/searchText call (D2, D4) — the widest circle one sync call
@@ -248,7 +251,7 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		// googleDueRows' own doc for why it takes a callback instead of a
 		// repo handle.
 		freshByCell := make(map[string]map[string]bool, len(cells))
-		since := time.Now().Add(-googleSyncTTL)
+		since := time.Now().Add(-a.googleSyncTTL)
 		for _, cell := range cells {
 			set, err := a.repo.FreshSyncRows(syncCtx, ProviderGoogle, cell, since, radiusKM)
 			if err != nil {
