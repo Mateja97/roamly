@@ -71,11 +71,14 @@ your report rather than pushing on the assumption it would have passed. See
    you a different base branch (stacked dependent task), then branch off that.
 2. **Fix**: implement only what the task's acceptance criteria require, under
    `backend/<service>/`, following the standards above.
-3. **Test**: `go build ./...` then `go test ./...`. On any failure, fix and
-   re-run — loop until both are green. Don't move to lint with red tests.
-4. **Lint**: `go vet ./...` and `golangci-lint run ./...` (from inside the
-   module directory, using the repo-root `.golangci.yml`). Fix findings and
-   re-run until clean. If a lint fix touches logic, re-run step 3.
+3. **Test**: `go build ./...` then `go test ./...`, run from inside every Go
+   module the branch touches, not just the one you edited. On any failure,
+   fix and re-run — loop until both are green. Don't move to lint with red
+   tests.
+4. **Lint**: `gofmt -l .` (no output) and `go vet ./...`, from inside every
+   Go module the branch touches. Fix findings and re-run until clean. If a
+   lint fix touches logic, re-run step 3. (`golangci-lint` isn't a gate yet
+   — no repo-root `.golangci.yml` exists.)
 5. **Ponytail review**: invoke the `ponytail:ponytail-review` skill against
    your diff to hunt reinvented stdlib, unneeded dependencies, speculative
    abstractions, and dead flexibility. Separately, self-audit every

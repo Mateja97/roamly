@@ -43,15 +43,18 @@ configure a `claude_design` MCP server for it. The project's
   force-push, or a resolve-pass update to an open PR — the whole branch must build,
   its tests must pass, and lint must be clean, for every module or package the branch
   touches. Not just the files in the last commit: a change that compiles alone can
-  still break a sibling package. Run the gates the area actually uses (`go build ./...`,
-  `go vet ./...`, `go test ./...` per Go module; `npx tsc --noEmit`, `npm run lint`,
-  `npm test` for `frontend/` and `app/`) and read the real exit status — a command
-  piped into `tail` reports the exit status of `tail`, not of the gate.
+  still break a sibling package. Run the gates the area actually uses (`gofmt -l .`
+  with no output, `go build ./...`, `go vet ./...`, `go test ./...` per Go module;
+  `npx tsc --noEmit`, `npm run lint`, `npm test` for `frontend/` and `app/`) and read
+  the real exit status — a command piped into `tail` reports the exit status of
+  `tail`, not of the gate. `go vet` is the authoritative Go lint gate — it's what CI
+  actually runs. `golangci-lint` is not part of this gate until a repo-root
+  `.golangci.yml` exists (see `GO_STANDARDS.md`).
 - If a gate cannot be run (no toolchain, a suite that needs a service that isn't up),
   say so explicitly in the PR and in the report rather than pushing on the assumption
-  it would have passed. CI is the backstop, not the gate: `backend/` and `frontend/`
-  are covered, but `.claude/` and `docs/` changes match no workflow, so for those the
-  branch's own gates are the only check there is.
+  it would have passed. CI is the backstop, not the gate: `backend/`, `frontend/`, and
+  `app/` are covered, but `.claude/` and `docs/` changes match no workflow, so for
+  those the branch's own gates are the only check there is.
 - When bumping a pinned dependency/runtime version, update every place that pins it (package.json across `frontend/`/`app/`, lockfiles, Dockerfiles, CI config) in the same change — a version bumped in only one place is a skew that `npm install`/local dev can mask but `npm ci`/Docker builds will hard-fail on.
 - **Every session works in its own git worktree, cut from `origin/main`.** Never work
   directly in the primary checkout, and never work on a branch another worktree already
@@ -59,13 +62,14 @@ configure a `claude_design` MCP server for it. The project's
   to prevent, and it is silent: one session's `git add` sweeps the other's uncommitted
   edits into its commit, and a `git checkout` in one flips HEAD under the other.
   `git fetch origin && git worktree add -b <branch> .claude/worktrees/<name> origin/main`.
-  Cut from `origin/main`, not local `main` — `gh pr merge` never advances local `main`,
-  so it goes stale the moment anything merges.
+  Cut from `origin/main`, not local `main` — local `main` only advances when
+  `gh pr merge -d` runs from the merged PR's own branch; a merge from the GitHub UI, a
+  different flag, or a merge done in another checkout leaves it stale, and nothing in
+  a fresh worktree tells you which case applied, so treat it as unreliable.
 - Inside a linked worktree, do NOT run `git checkout main` first: `main` is usually
   checked out elsewhere and the command fails with `fatal: 'main' is already used by
-  worktree at ...`. Create the branch directly with `git checkout -b <branch>`. This
-  supersedes the older `git checkout main && git pull && git checkout -b ...` recipe for
-  any session working in a worktree. Never branch off another feature branch.
+  worktree at ...`. Create the branch directly with `git checkout -b <branch>`. Never
+  branch off another feature branch.
 - A subagent dispatched into a worktree is given that worktree's **absolute** path and
   works only there. It must never write to, or run a state-changing git command against,
   any other checkout — including the primary one. Gitignored files the work needs

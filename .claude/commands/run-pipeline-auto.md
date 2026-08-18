@@ -277,14 +277,14 @@ chain worktree, see Merge-on-approval step 2).
 **It lands in detached HEAD, and the first thing every engineer is normally
 told to do fails there.** `git worktree add <path> origin/main` checks out
 that commit detached, not on a branch — `main` itself stays checked out in
-the primary worktree, where it always is. `CLAUDE.md`'s standard flow
-(`git checkout main && git pull && git checkout -b <branch>`) and the
-engineer agents' own step 1 both start with `git checkout main`, and inside
-a linked worktree that is `fatal: 'main' is already used by worktree at
-<repo-root>`, exit 128 — not theoretical, this repo's own merge step hits
-the same class of error on a plain `git checkout main`. The step 3 dispatch
-below must override that flow explicitly: the engineer creates its branch
-directly from the base step 1 already computed —
+the primary worktree, where it always is, exactly as `CLAUDE.md`'s own
+worktree rule warns: `git checkout main` inside a linked worktree fails with
+`fatal: 'main' is already used by worktree at <repo-root>`, exit 128 — not
+theoretical, this repo's own merge step hits the same class of error on a
+plain `git checkout main`. The step 3 dispatch below must override the
+engineer agents' own step 1 (`Branch feature/<slug>-<taskid> off main`)
+explicitly: the engineer creates its branch directly from the base step 1
+already computed —
 `git checkout -b feature/<slug>-<tn> <base>`, where `<base>` is `origin/main`
 for a chain's root task or `feature/<slug>-<tm>` for a stacked child, always
 passed explicitly — and must never run `git checkout main` first. Explicit,
@@ -419,8 +419,8 @@ task, and run inside that chain's worktree,
    handed to it (never inferred from whatever HEAD happens to be — a
    forking chain can leave HEAD on a sibling's branch), and do NOT run
    `git checkout main` first (that fails inside a linked worktree — `main`
-   is already checked out in the primary worktree — overriding
-   `CLAUDE.md`'s general branch-off flow for this pipeline context only) —
+   is already checked out in the primary worktree — this matches
+   `CLAUDE.md`'s worktree rule, it is not an override of it) —
    AND, for `area: frontend` or `area: app` — this chain's
    `design-spec-c<n>.md` path and the screenshots
    directory `<chain-worktree>/pipeline/<slug>/screenshots/<Tn>/` (inside the

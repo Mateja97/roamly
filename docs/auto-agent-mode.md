@@ -34,18 +34,20 @@ merged — you merge, in dependency order, whenever you want.
 Never run an autopilot build in the same working directory as another Claude
 session — they share one working tree and **will** collide (a real incident:
 a build session's commit got mixed into an unrelated one). Give each build its
-own git worktree:
+own git worktree, per `CLAUDE.md`'s worktree rule — cut from `origin/main`,
+not local `main`, and under `.claude/worktrees/`:
 
 ```bash
-git worktree add ../claude-workspace-build -b feat/<topic> main
-cd ../claude-workspace-build
+git fetch origin
+git worktree add .claude/worktrees/<topic> -b feat/<topic> origin/main
+cd .claude/worktrees/<topic>
 # start Claude Code here, then run the pipeline
 ```
 
 When the work is merged and done:
 
 ```bash
-git worktree remove ../claude-workspace-build
+git worktree remove .claude/worktrees/<topic>
 ```
 
 ## Running the pipeline
