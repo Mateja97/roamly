@@ -70,8 +70,10 @@ output.
 
 These are wire-visible on every route and are not written by any handler in
 this repo — `http.ServeMux`/`http.FileServer` produce them directly, with
-their own status codes, headers, and `text/plain` bodies (verified by
-probing a mux built from this package's real route registrations):
+their own status codes and headers (`text/plain` bodies for the two 4xx
+cases below; the redirect below carries a minimal auto-generated HTML
+body, not `text/plain`) (verified by probing a mux built from this
+package's real route registrations):
 
 - **`404 Not Found`, unmatched path** — no route pattern matches. Body
   `404 page not found\n`, `Content-Type: text/plain; charset=utf-8`. This is
@@ -87,9 +89,17 @@ probing a mux built from this package's real route registrations):
   for any pattern registered as `GET` automatically; every `GET` route in
   this document also accepts `HEAD` (headers only, no body), without the
   handler needing to do anything.
-- **`301 Moved Permanently`** — `http.FileServer` redirects a directory
-  request without a trailing slash to the slash-terminated form (probe:
-  `GET /photos/sub` → `301` toward `/photos/sub/`).
+- **`307 Temporary Redirect`, `GET /photos` (no trailing slash) only** —
+  `net/http`'s `ServeMux` itself redirects a bare request for a
+  registered trailing-slash subtree pattern (`GET /photos/`) to the
+  slash-terminated form, **before `http.FileServer` ever runs** (probe:
+  `GET /photos` → `307`, `Location: /photos/`, `Content-Type: text/html;
+  charset=utf-8`). This is the only redirect left in this API: an earlier
+  revision of this document also listed a `301` that `http.FileServer`
+  produced for a real subdirectory requested without a trailing slash —
+  that redirect (and the directory listing it led into) no longer happens
+  as of #210; see `GET /photos/{path}` below for the current, narrower
+  behavior.
 - Conditional-request headers (`If-Modified-Since`, `Range`, etc.) are
   honored by `http.FileServer` on `/photos/*` per its stdlib defaults; not
   re-verified item-by-item here, but treat that route as "whatever
@@ -104,7 +114,7 @@ For any request a handler in this repo actually processes,
 `proxy-service` returns exactly one of six statuses for any gRPC-backed
 route, plus two proxy-local ones (`400` for malformed request bodies/query
 params rejected before a gRPC call is made, `413` for an oversize upload).
-This is the handler-level contract; it does not cover `404`/`405`/`301`,
+This is the handler-level contract; it does not cover `404`/`405`/`307`,
 which `net/http` itself can produce before a handler runs — see "Responses
 `net/http` writes itself" above.
 `writeGRPCError` (`internal/api/admin_translate.go`) is the single place
@@ -352,33 +362,47 @@ Public city-name typeahead. No auth.
 
 Public, static file serving straight off the shared `/data/photos` volume
 (configured via `PHOTOS_DIR`, default `/data/photos`) using stdlib
-`http.FileServer`. No auth. Registered as the subtree pattern `GET
-/photos/`, which cannot collide with any other route including `/admin/*`.
+`http.FileServer` wrapped in a directory-refusing `http.FileSystem`
+(`noDirListingFS`, added in #210 — see below). No auth. Registered as the
+subtree pattern `GET /photos/`, which cannot collide with any other route
+including `/admin/*`.
 
 - **200** — a file, streamed with `http.FileServer`'s standard headers
   (`Content-Type` sniffed from extension/content, `Content-Length`, etc. —
-  not the JSON envelope used elsewhere in this API); **or a directory
-  listing** — see below.
-- **404** — no file or directory at that path (`http.FileServer`'s default).
-- **301** — a directory request without a trailing slash redirects to the
-  slash-terminated form (probe: `GET /photos/sub` → `301` toward
-  `/photos/sub/`).
+  not the JSON envelope used elsewhere in this API). Probe-verified against
+  a real fixture: `Content-Type: image/jpeg` for a `.jpg`.
+- **404** — no *file* at that path, **and, as of #210, any directory
+  path too** — `GET /photos/`, `GET /photos/sub`, `GET /photos/sub/` all
+  `404` now, whether or not `sub` actually exists as a directory
+  (probe-verified). Directories are made indistinguishable from missing
+  files on purpose (see below); a `404` here does not imply the path never
+  existed, only that nothing servable does.
+- **307** — the bare, no-trailing-slash request for this route's own root,
+  `GET /photos` (no path after it) *only*, redirects to `/photos/` —
+  `net/http.ServeMux`'s own subtree-pattern redirect, fired before
+  `http.FileServer` or the directory wrapper ever run (probe: `GET
+  /photos` → `307`, `Location: /photos/`; the redirect target itself then
+  `404`s per the point above). See "Responses `net/http` writes itself"
+  above for why this is a different producer than ordinary file serving.
+  This is the only redirect this route produces — the `301` a subdirectory
+  request used to get (documented in an earlier revision of this
+  document) is gone as of #210: see below.
 
-**`GET /photos/` (and any directory path under it) serves an HTML directory
-listing of the photos volume — this is real, present behavior, not a
-theoretical `http.FileServer` capability.** Probe-verified: `GET /photos/`
-→ `200`, `Content-Type: text/html; charset=utf-8`, body an auto-generated
-index (`<pre><a href="sub/">sub/</a></pre>`-style) of every entry directly
-under the configured `PHOTOS_DIR`, and the same holds recursively for any
-subdirectory. `mux.Handle("GET /photos/", ...)` registers the bare
-`/photos/` path itself (the trailing-slash subtree pattern matches its own
-root), and `http.FileServer` renders an index for any directory request
-that doesn't resolve to a file — there is no "no route serves it bare"
-exemption; that reasoning was wrong. Whether directory enumeration of the
-photos volume is acceptable exposure (nothing under it is expected to be
-secret — it's public-facing photo storage — but the *file names/structure*
-being enumerable was not a stated design decision) is out of scope for this
-document to resolve; see "Known gaps" below for how it's tracked.
+**Fixed in #210 (`df8e2e1`, merged): `GET /photos/` no longer serves a
+directory listing, and no longer 301-redirects a bare subdirectory path
+either.** An earlier revision of this document described the listing as
+current, present behavior on `main` at the time — that was accurate then
+and is the reason #210 exists, but it is stale now that the fix has
+landed; this section describes the **current** state. Mechanism: a
+`noDirListingFS` wrapper around the volume's `http.FileSystem` makes
+`Open` return `fs.ErrNotExist` for any directory (`internal/api/photo_routes.go`),
+so `http.FileServer` treats every directory exactly like a missing file —
+before it ever gets far enough to list one or to redirect a bare
+subdirectory path toward a trailing slash (that redirect only used to fire
+*because* `FileServer` had successfully opened the directory; refusing the
+`Open` removes the precondition for both behaviors at once, not just the
+listing). File serving itself (content, `Content-Type`, `..`-traversal
+rejection via the wrapped `http.Dir`) is unaffected.
 
 Conditional-request headers (`If-Modified-Since`, `Range`, etc.) are honored
 by `http.FileServer` on this route per its stdlib defaults, not
@@ -649,14 +673,23 @@ specific wire contract.
 
 ## Known gaps
 
-- **Tracked as a defect, not documented as intended: `GET /photos/` (and
-  every directory under it) serves a full directory listing of the photos
-  volume.** This is described accurately above because that's what the code
-  does today, not because it's an accepted design decision — it is being
-  raised with the maintainer separately as a fix to `photo_routes.go`
-  (out of scope for this document, which only records reality). If it's
-  fixed, this document needs a matching update to drop the listing
-  description and the `200`-for-a-directory-request status.
+- **Resolved, not an open gap: `GET /photos/` used to serve a full
+  directory listing of the photos volume; #210 (`df8e2e1`) fixed it.** An
+  earlier revision of this document described the listing as current,
+  present behavior — accurate at the time, on `main` as it stood then —
+  and flagged it here as a tracked defect rather than an accepted design
+  decision. #210 has since merged to `main` and this document's `GET
+  /photos/{path}` section above has been updated to match (the listing is
+  gone, the old `301` subdirectory redirect is gone with it, and every
+  directory path now `404`s). Left as a Known gaps entry, past tense,
+  rather than deleted outright, as a record of the drift: #210 is an
+  ordinary code change and did not pass through Phase 6 of
+  `run-audit-auto.md` (that phase only runs against tasks merged through
+  this pipeline's own dispatch) — nothing automated prompted this
+  document's update when #210 merged; it was updated by hand, in the same
+  pass that merged `origin/main` into this branch and re-probed the route
+  to confirm the new behavior. A future fix landing outside the pipeline
+  has the same gap and the same fix: someone has to notice and re-probe.
 - The exact set of activities-service gRPC error conditions that can
   produce `codes.PermissionDenied`/`codes.Unauthenticated` (→ `403`) or
   `codes.AlreadyExists` (→ `409`) is not exercised by any test in
@@ -684,16 +717,19 @@ specific wire contract.
   existence, DTO shapes,
   and the six-status `writeGRPCError` mapping are verified by reading
   handler source directly. Wire-visible edge behavior — the stdlib-mux
-  404/405/301/HEAD responses, the `/photos/` directory listing, the
-  PATCH `null`-vs-empty-value semantics, and the admin-auth
-  404-vs-403 distinguishability — was verified by **probing**: building a
-  mux from this package's real route registrations and issuing real
-  `net/http/httptest` requests against it, not by reading and assuming. An
-  earlier version of this document got several of these wrong by reasoning
-  about `http.FileServer`/`encoding/json` from memory instead of probing;
-  treat any future edit to this document that isn't probe- or test-verified
-  as suspect, and prefer adding a probe over inferring behavior from the
-  code's shape.
+  404/405/307/HEAD responses, the `/photos/{path}` directory/file
+  distinction (both before and after #210), the PATCH `null`-vs-empty-value
+  semantics, the admin-auth 404-vs-403 distinguishability, and the
+  multipart upload's implicit `Content-Type` requirement — was verified by
+  **probing**: building a mux from this package's real route registrations
+  and issuing real `net/http/httptest` requests against it, not by reading
+  and assuming. An earlier version of this document got several of these
+  wrong by reasoning about `http.FileServer`/`encoding/json` from memory
+  instead of probing, and a later revision re-probed after `origin/main`
+  moved (#210 merged mid-review) to confirm this document's `/photos`
+  section still matched; treat any future edit to this document that isn't
+  probe- or test-verified as suspect, and re-probe rather than assume
+  nothing changed underneath a claim just because it was correct once.
 
 ## Not part of the contract (unpinned)
 
@@ -719,9 +755,16 @@ incidental behavior:
 - Response `Content-Type` beyond "the JSON routes send
   `application/json`, `GET /healthz` and stdlib-written responses don't" —
   no promise about charset parameters or exact casing.
-- Request `Content-Type` — no route in this package enforces a
-  `Content-Type` header on the request; sending JSON with the wrong or no
-  `Content-Type` still decodes.
+- Request `Content-Type` on the JSON routes (`POST /activities/query`,
+  every admin JSON body) — none of them check the header; sending JSON
+  with the wrong or missing `Content-Type` still decodes. **This does not
+  extend to `POST /admin/activities/{id}/photos`**: `r.FormFile` needs the
+  multipart boundary that only a correct `multipart/form-data;
+  boundary=...` `Content-Type` carries, so a missing or wrong
+  `Content-Type` there fails the same way a missing `file` field does
+  (probe-verified: `400`, `{"error":"missing \"file\" form field"}`) —
+  that route effectively requires the right `Content-Type` even though no
+  line of code checks the header directly.
 - Server read/write timeouts and any body size limit other than the
   explicit 8 MiB cap on `POST /admin/activities/{id}/photos` (no other
   route in this document has an enforced request body size limit stated in
