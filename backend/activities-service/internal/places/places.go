@@ -509,10 +509,12 @@ func truncate(b []byte, n int) string {
 //
 // Placeholder for T1 ("Count every Places call by SKU tier"), which was not
 // yet merged when this was written: T1 owns the definitive, call-counted
-// version of this classification. This copy exists only so T7's batch tools
-// (auditcontent, scrapecity, PrewarmGoogle) can report a tier breakdown
-// today; when T1 lands, switch these call sites to its exported labeller
-// instead of this one (see engineering-notes.md).
+// version of this classification, ideally covering every field the Places
+// API can return. This copy only needs to classify the fields this
+// package's own masks (NearbyFieldMask, detailFieldMask, AuditFieldMask)
+// actually send — so, deliberately, it lists only those, not the full
+// Places API field catalog. When T1 lands, switch these call sites to its
+// exported labeller instead of this one (see engineering-notes.md).
 var skuTierFields = []struct {
 	tier   string
 	fields []string
@@ -522,12 +524,10 @@ var skuTierFields = []struct {
 		"goodForChildren", "goodForGroups", "allowsDogs", "restroom",
 		"outdoorSeating", "liveMusic", "parkingOptions", "accessibilityOptions",
 		"servesCoffee", "servesVegetarianFood", "menuForChildren", "dineIn",
-		"takeout", "reservable", "delivery", "curbsidePickup",
-		"servesBreakfast", "servesLunch", "servesDinner", "servesBrunch",
-		"servesBeer", "servesWine", "servesCocktails", "servesDessert",
+		"takeout", "reservable",
 	}},
-	{"Enterprise", []string{"rating", "userRatingCount", "priceLevel", "regularSecondaryOpeningHours"}},
-	{"Pro", []string{"regularOpeningHours", "currentOpeningHours", "websiteUri", "primaryTypeDisplayName", "utcOffsetMinutes", "businessStatus"}},
+	{"Enterprise", []string{"rating", "userRatingCount", "priceLevel"}},
+	{"Pro", []string{"regularOpeningHours", "websiteUri", "primaryTypeDisplayName"}},
 	{"Photos", []string{"photos"}},
 }
 
