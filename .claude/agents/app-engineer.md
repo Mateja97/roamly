@@ -94,8 +94,11 @@ gate's. If a gate genuinely cannot be run, say so explicitly in the PR and in
 your report rather than pushing on the assumption it would have passed. See
 `CLAUDE.md`'s working rules.
 
-1. Branch `feature/<slug>-<taskid>` off `main` — unless the orchestrator gives
-   you a different base branch (stacked dependent task), then branch off that.
+1. Create the branch directly from `origin/main` — do NOT `git checkout main`
+   first, that fails inside a linked worktree (`CLAUDE.md`'s worktree rule):
+   `git checkout -b feature/<slug>-<taskid> origin/main`. Unless the
+   orchestrator gives you a different base branch (stacked dependent task),
+   then branch off that instead.
 2. **Fix**: implement only what the task's acceptance criteria require, under
    `app/`, following the standards above. Every API call handles all
    outcomes the typed client can return (success + `400/403/404/409/500`,

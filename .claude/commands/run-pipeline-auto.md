@@ -623,7 +623,8 @@ alongside `gh pr list`/`gh pr ready`.
 `DESIGN_STANDARDS.md` and `pipeline/<slug>/design-import/SOURCE.md` exists,
 push the post-merge copy back to the design project so its mirror stays
 fresh: read the project UUID from `SOURCE.md`, then take the file from the
-**remote** main tip — `gh pr merge` never advances local `main`, so `git
+**remote** main tip — local `main` only advances via `gh pr merge -d` from the
+merged PR's own branch, so it can't be trusted here, `git
 fetch origin && git show origin/main:DESIGN_STANDARDS.md >
 <tmpdir>/DESIGN_STANDARDS.md` (plain `git show main:` would push a stale
 pre-merge copy),
