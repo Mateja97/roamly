@@ -106,6 +106,57 @@ builds, merges and verifies on its own, then reports. `pipeline/bugs/ledger.json
 persists across runs, so a second run against an unchanged stack costs one
 probe and stops.
 
+It also runs itself. `scripts/audit-cron.sh` is the scheduled entry point —
+weekly by default, logging each run to `pipeline/bugs/cron/`. It skips rather
+than forces: no overlapping runs (a staleness-aware lock directory — see
+below), no run on a dirty tree (a `CHANGELOG.md`-only tree is let through,
+since Phase 0 self-heals exactly that), no run on a checkout that doesn't
+carry the command, and it never starts the stack unattended. A skipped week
+is recoverable; a corrupted checkout is not. Anything the script can't
+explain as a skip — missing `docker`/`claude` binaries, a failed `git
+status` — is a loud `FAIL` instead, never a silent `SKIP`.
+
+Install it with `crontab -e`:
+
+```
+0 3 * * 1 /absolute/path/to/repo/scripts/audit-cron.sh
+```
+
+cron runs jobs with a minimal `PATH` (commonly just `/usr/bin:/bin`), which
+has neither `docker` nor `claude` on it — the script exports a `PATH` that
+adds `/usr/local/bin`, `/opt/homebrew/bin` and `~/.local/bin` before checking
+for either binary, so you don't need a `PATH=` line in the crontab itself. If
+`claude` lives somewhere else entirely, point `CLAUDE_BIN` at its absolute
+path (e.g. `CLAUDE_BIN=/Users/you/.local/bin/claude` on the crontab line
+before the script path).
+
+On macOS, cron needs Full Disk Access (System Settings → Privacy & Security) or
+the job cannot read the repo — if a scheduled run leaves no log at all, that is
+why.
+
+**Stale lock recovery is automatic, on liveness alone.** The lock directory
+(`pipeline/bugs/cron/.lock`) records its owner's pid; a run that finds an
+existing lock reclaims it (logging `WARN: reclaiming stale lock ...`) when
+that pid is no longer running, and never otherwise. A `SIGKILL` skips the
+EXIT trap that would clean the lock up, so without this one hard kill would
+silently skip every future scheduled run. A live owner is never preempted at
+any age — the alternative, reclaiming from a process that is still working,
+would mean two audits racing a merge to `main`.
+
+The `claude -p` call is capped at 4 hours (TERM, then KILL 30s later) by a
+watcher that outlives the script, so a hung run releases the lock rather than
+holding it indefinitely. One case is left deliberately unhandled: if the
+owner's pid is recycled by an unrelated process, the lock reads as live and
+every run logs `SKIP: a previous run still holds ...` until you
+`rmdir pipeline/bugs/cron/.lock` by hand. That is the trade — a loudly logged
+block you can clear in one command, rather than a silent double run.
+
+Headless runs cannot always start the browser tools, so the `ui` perspective may
+report itself `skipped`; the run continues on the other three.
+
+What a scheduled run leaves you: merged fixes on `main`, and one open changelog
+PR. Versions are never touched — you cut the release.
+
 Builds run **one task at a time**. Every task's engineer works in the same
 worktree directory — one HEAD, one index — so concurrent engineers would
 sweep each other's uncommitted files into the wrong PR. Branches name commits;

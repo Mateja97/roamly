@@ -1055,3 +1055,19 @@ changelog PR. Versions are never touched — you cut the release.
 git add scripts/audit-cron.sh docs/agent-pipeline.md
 git commit -m "feat(pipeline): run the audit weekly via cron"
 ```
+
+**Deviations from this plan (PR #198 review):**
+- Added a command-file guard (`.claude/commands/run-audit-auto.md` must
+  exist) beyond what Step 2's wrapper listed — a checkout parked on a branch
+  that doesn't carry the command would otherwise fail deep inside the
+  `claude -p` call instead of at a cheap, legible SKIP. Not called out at the
+  time; recorded here since the review caught the gap.
+- Step 6 ("prove no `command not found`/PATH error") was not actually run
+  under cron's minimal PATH before merge — the review reproduced the failure
+  with `env -i PATH=/usr/bin:/bin ./scripts/audit-cron.sh`
+  (`docker: command not found`, masked as `SKIP: stack is not running`). Fixed
+  by exporting a known-good PATH and preflighting `docker`/`claude` with a
+  loud `FAIL` before any guard can absorb a missing binary as something else.
+  Re-verified the same way post-fix (see PR #198's fix commit for the
+  transcript: `docker`/`claude` resolve and the guard chain no longer
+  misreports PATH problems as `SKIP: stack is not running`).
