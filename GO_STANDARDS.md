@@ -101,17 +101,27 @@ the User entity).
 ## Migrations
 
 - Every `ADD COLUMN` in a forward SQL migration (`internal/repository/migrations/`)
-  uses `ADD COLUMN IF NOT EXISTS`, even though the runner (`backend/shared/db`)
-  tracks applied filenames in `schema_migrations` and normally never re-runs a
-  file. `schema_migrations` and the live schema can still drift apart (e.g. a
+  uses `ADD COLUMN IF NOT EXISTS`, and every `DROP COLUMN` uses `DROP COLUMN
+  IF EXISTS`, even though the runner (`backend/shared/db`) tracks applied
+  filenames in `schema_migrations` and normally never re-runs a file.
+  `schema_migrations` and the live schema can still drift apart (e.g. a
   hand-edited database, a restored backup taken between the `ALTER TABLE` and
-  the row insert) — on a plain `ADD COLUMN` that drift is a permanent,
-  unrecoverable startup failure (`SQLSTATE 42701`), since every future start
-  retries the same doomed statement forever. `IF NOT EXISTS` makes a
-  compatible drift a no-op instead, while a genuinely broken migration (bad
-  SQL, wrong table, a failing `NOT NULL`/`CHECK`) still errors and still stops
-  startup — the guard only widens what counts as "already done", it never
-  swallows an error.
+  the row insert) — on a plain `ADD COLUMN`/`DROP COLUMN` that drift is a
+  permanent, unrecoverable startup failure (`SQLSTATE 42701` / `42703`),
+  since every future start retries the same doomed statement forever.
+  `IF NOT EXISTS`/`IF EXISTS` make a compatible drift a no-op instead, and a
+  genuinely broken migration (bad SQL, wrong table, a failing
+  `NOT NULL`/`CHECK`) still errors and still stops startup.
+- **The guard's limit:** `IF NOT EXISTS` matches on column name only — it
+  does not check the existing column's type, nullability, or default. A
+  drifted column with the *wrong* shape (wrong type, missing the migration's
+  intended `NOT NULL`/`DEFAULT`) is silently accepted, not rejected: the
+  `ADD COLUMN` statement is skipped and the rest of the file still runs
+  against whatever is actually there. This is a real, load-bearing
+  limitation, not a hidden one — a migration is only safe to make idempotent
+  this way when a name match is a reasonable proxy for a shape match (a
+  single new column with no other migration touching it in between). It is
+  not a general defense against schema drift of any kind.
 
 ## Testing
 
