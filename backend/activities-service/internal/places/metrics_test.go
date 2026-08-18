@@ -28,13 +28,20 @@ func TestSKUTierForMask(t *testing.T) {
 		{"details essentials-only mask", "places.id,places.location,places.types,places.formattedAddress", "PlaceDetails", places.TierEssentials},
 		{"details enterprise mask (rating present)", "places.id,places.location,places.rating,places.userRatingCount", "PlaceDetails", places.TierEnterprise},
 		{"details enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", "PlaceDetails", places.TierEnterpriseAtmosphere},
-		{"details enterprise mask (websiteUri forces enterprise, not pro)", "places.displayName,places.websiteUri,places.priceRange", "PlaceDetails", places.TierEnterprise},
+		{"details enterprise mask (websiteUri forces enterprise, not pro)", "places.displayName,places.websiteUri", "PlaceDetails", places.TierEnterprise},
 		{"details ids-only mask", "id,name", "PlaceDetails", places.TierIDsOnly},
 
 		// Search (Nearby/Text): displayName/primaryType/types/location are
 		// Pro here even though they read as "basic" fields — the exact bug
 		// this table used to have (T1 review, proved by T2's narrowed mask).
 		{"search pro mask (T2's TripadvisorSubtypeFieldMask, not Essentials)", places.TripadvisorSubtypeFieldMask, "SearchTextInArea", places.TierPro},
+		// "location" alone is Essentials in fieldTiers but Pro only via
+		// searchTierOverrides on a Search endpoint, and no other field in
+		// this mask forces Pro on its own -- fails if searchTierOverrides
+		// is ever bypassed. TripadvisorSubtypeFieldMask above also carries
+		// displayName, which is Pro in the base table too, so that case
+		// alone stays green even with overrides nil'd out.
+		{"search pro mask via override only (location, no other Pro+ field)", "places.id,places.location", "SearchNearby", places.TierPro},
 		{"search enterprise mask (rating present)", "places.id,places.displayName,places.rating,places.userRatingCount", "SearchNearby", places.TierEnterprise},
 		{"search enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", "SearchText", places.TierEnterpriseAtmosphere},
 		{"search ids-only mask", "id,name", "SearchText", places.TierIDsOnly},
