@@ -1821,7 +1821,7 @@ func (a *Activities) ResolveTripadvisorSubtype(ctx context.Context, category act
 	if a.places == nil || name == "" || (lat == 0 && lng == 0) {
 		return orPrice(nameSlug, category, priceLevel), ""
 	}
-	found, err := a.places.SearchTextInArea(ctx, name, lat, lng, tripadvisorSubtypeRadiusKM, places.NearbyFieldMask)
+	found, err := a.places.SearchTextInArea(ctx, name, lat, lng, tripadvisorSubtypeRadiusKM, places.TripadvisorSubtypeFieldMask)
 	if err != nil {
 		slog.Warn("tripadvisor subtype resolve failed", "location_id", locationID, "name", name, "error", err)
 		return orPrice(nameSlug, category, priceLevel), ""

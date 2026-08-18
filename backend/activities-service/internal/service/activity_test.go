@@ -202,8 +202,9 @@ type fakeGooglePlaces struct {
 }
 
 type searchTextInAreaCall struct {
-	lat, lng float64
-	radiusKM float64
+	lat, lng  float64
+	radiusKM  float64
+	fieldMask string
 }
 
 func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
@@ -233,10 +234,10 @@ func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.
 // exercise the sweep's behavior around a Places call succeeding or failing,
 // not which of the two discovery paths a given row happens to take (see
 // placesmap.DiscoveryRow's Types/TextQuery split).
-func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, lat, lng, radiusKM float64, _ string) ([]placesmap.Place, error) {
+func (f *fakeGooglePlaces) SearchTextInArea(_ context.Context, _ string, lat, lng, radiusKM float64, fieldMask string) ([]placesmap.Place, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.gotSearchTextInArea = append(f.gotSearchTextInArea, searchTextInAreaCall{lat: lat, lng: lng, radiusKM: radiusKM})
+	f.gotSearchTextInArea = append(f.gotSearchTextInArea, searchTextInAreaCall{lat: lat, lng: lng, radiusKM: radiusKM, fieldMask: fieldMask})
 	return f.nearbyOut, f.nearbyErr
 }
 
@@ -1775,5 +1776,32 @@ func TestResolveTripadvisorSubtype_Idempotent(t *testing.T) {
 	}
 	if first != "casual_dining" {
 		t.Errorf("got %q, want casual_dining", first)
+	}
+}
+
+// TestResolveTripadvisorSubtype_UsesNarrowFieldMask pins T2
+// (places-api-cost-reduction): the resolve must send its own narrow mask,
+// not NearbyFieldMask, and that mask must not carry rating/userRatingCount
+// (the fields that force the Text Search Enterprise tier).
+func TestResolveTripadvisorSubtype_UsesNarrowFieldMask(t *testing.T) {
+	fake := &fakeGooglePlaces{}
+	svc := &Activities{places: fake}
+
+	svc.ResolveTripadvisorSubtype(context.Background(), activitiessvc.CategoryRestaurants, "Restoran Da Giorgio", 44.8, 20.4, "loc-1", "")
+
+	if len(fake.gotSearchTextInArea) != 1 {
+		t.Fatalf("SearchTextInArea calls = %d, want 1", len(fake.gotSearchTextInArea))
+	}
+	got := fake.gotSearchTextInArea[0].fieldMask
+	if got != places.TripadvisorSubtypeFieldMask {
+		t.Errorf("field mask = %q, want %q", got, places.TripadvisorSubtypeFieldMask)
+	}
+	if got == places.NearbyFieldMask {
+		t.Errorf("field mask reuses NearbyFieldMask, want its own narrow mask")
+	}
+	for _, forbidden := range []string{"rating", "userRatingCount"} {
+		if strings.Contains(got, forbidden) {
+			t.Errorf("field mask %q contains %q, want no rating fields (forces Enterprise tier)", got, forbidden)
+		}
 	}
 }

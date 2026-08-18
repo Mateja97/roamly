@@ -144,6 +144,15 @@ const NearbyFieldMask = "places.id,places.displayName,places.location," +
 	"places.googleMapsUri,places.photos,places.primaryType,places.types," +
 	"places.addressComponents"
 
+// TripadvisorSubtypeFieldMask selects only the fields
+// Activities.ResolveTripadvisorSubtype reads off its SearchTextInArea match:
+// id, displayName (identity check), primaryType/types (subtype
+// classification) and location. Deliberately excludes rating/userRatingCount
+// — the fields that push Text Search into the Enterprise tier — since the
+// resolve never reads either (T2, places-api-cost-reduction).
+const TripadvisorSubtypeFieldMask = "places.id,places.displayName,places.location," +
+	"places.primaryType,places.types"
+
 // NearbyRequest is one searchNearby call's inputs. RadiusM must be <= 50000
 // (the API's documented ceiling); MaxResults is clamped to 1..20 by the API,
 // which returns no pagination token — 20 per call is the hard ceiling, which
