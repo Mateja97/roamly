@@ -81,6 +81,11 @@ type placesClient interface {
 	// PlaceDetails fetches live Place Details for one placeID — the data
 	// source for GetByID's live merge (see withLiveDetails).
 	PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
+	// PlaceDetailsForAudit is PlaceDetails sent with places.AuditFieldMask
+	// instead of the live detail-page's wider mask (T7,
+	// places-api-cost-reduction) — resolvePlaceDetails' data source when
+	// WithAuditFieldMask has been set (cmd/auditcontent only).
+	PlaceDetailsForAudit(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
 	// SearchNearby is the type-driven discovery call: one per (cell,
 	// category, subtype) row, circle-restricted, max 20 results.
 	SearchNearby(ctx context.Context, req places.NearbyRequest, fieldMask string) ([]placesmap.Place, error)
@@ -160,6 +165,11 @@ type Activities struct {
 	// tripadvisorSync tracks in-flight background Tripadvisor sync sweeps —
 	// same test-only join contract as googleSync (see waitForTripadvisorSync).
 	tripadvisorSync sync.WaitGroup
+	// auditFieldMask, when set (see WithAuditFieldMask), routes
+	// resolvePlaceDetails to PlaceDetailsForAudit instead of PlaceDetails
+	// (T7, places-api-cost-reduction) — cmd/auditcontent's own Activities
+	// instance opts in; the live detail-page path never does.
+	auditFieldMask bool
 }
 
 func New(repo repository) *Activities {
@@ -182,6 +192,16 @@ func (a *Activities) WithGoogleSyncTTL(ttl time.Duration) *Activities {
 // back to on error/timeout. Returns itself so call sites can chain it onto New.
 func (a *Activities) WithPlaces(p placesClient) *Activities {
 	a.places = p
+	return a
+}
+
+// WithAuditFieldMask switches every future PlaceDetails resolve this
+// Activities makes onto places.AuditFieldMask instead of the live
+// detail-page mask (T7, places-api-cost-reduction) — cmd/auditcontent's own
+// opt-in, since it judges rows on less than the live detail page renders.
+// Returns itself so call sites can chain it onto New/WithPlaces.
+func (a *Activities) WithAuditFieldMask() *Activities {
+	a.auditFieldMask = true
 	return a
 }
 
@@ -1038,7 +1058,13 @@ func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeI
 	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
 	defer cancel()
 
-	detail, err := a.places.PlaceDetails(resolveCtx, placeID)
+	var detail placesmap.PlaceDetail
+	var err error
+	if a.auditFieldMask {
+		detail, err = a.places.PlaceDetailsForAudit(resolveCtx, placeID)
+	} else {
+		detail, err = a.places.PlaceDetails(resolveCtx, placeID)
+	}
 	if err != nil {
 		slog.Warn("live place details resolve failed, falling back to stored row", "activity_id", activityID, "error", err)
 		return placesmap.PlaceDetail{}, false

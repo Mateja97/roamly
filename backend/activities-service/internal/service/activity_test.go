@@ -230,6 +230,12 @@ func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.
 	return placesmap.PlaceDetail{}, nil
 }
 
+// PlaceDetailsForAudit: this fake stands in for the background discovery
+// sweep's placesClient, never for WithAuditFieldMask — no test here calls it.
+func (f *fakeGooglePlaces) PlaceDetailsForAudit(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
+	return placesmap.PlaceDetail{}, nil
+}
+
 // SearchTextInArea shares nearbyOut/nearbyErr with SearchNearby: these tests
 // exercise the sweep's behavior around a Places call succeeding or failing,
 // not which of the two discovery paths a given row happens to take (see

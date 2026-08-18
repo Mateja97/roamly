@@ -499,3 +499,46 @@ func TestActivities_WithLiveDetails_MergesOntoStoredDetails(t *testing.T) {
 		t.Errorf("website_url = %v, want the live websiteUri", details["website_url"])
 	}
 }
+
+// TestActivities_WithAuditFieldMask_RoutesToPlaceDetailsForAudit is T7's
+// wiring assertion: an Activities built with WithAuditFieldMask must resolve
+// live details through PlaceDetailsForAudit (places.AuditFieldMask), never
+// through PlaceDetails (the live detail page's wider mask) — and an
+// Activities without it must do the exact opposite, unchanged from before
+// T7.
+func TestActivities_WithAuditFieldMask_RoutesToPlaceDetailsForAudit(t *testing.T) {
+	row := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryCafes, City: "Belgrade",
+		Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1",
+	}
+
+	t.Run("with WithAuditFieldMask", func(t *testing.T) {
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{Rating: 4.5}}
+		svc := New(&fakeRepo{}).WithPlaces(places).WithAuditFieldMask()
+
+		if _, resolved := svc.WithLiveDetails(context.Background(), row); !resolved {
+			t.Fatal("WithLiveDetails() resolved = false, want true")
+		}
+		if places.auditDetailCalls != 1 {
+			t.Errorf("auditDetailCalls = %d, want 1", places.auditDetailCalls)
+		}
+		if places.detailCalls != 0 {
+			t.Errorf("detailCalls = %d, want 0 — WithAuditFieldMask must never call the live-detail-page mask", places.detailCalls)
+		}
+	})
+
+	t.Run("without WithAuditFieldMask", func(t *testing.T) {
+		places := &fakePlaces{detailOut: placesmap.PlaceDetail{Rating: 4.5}}
+		svc := New(&fakeRepo{}).WithPlaces(places)
+
+		if _, resolved := svc.WithLiveDetails(context.Background(), row); !resolved {
+			t.Fatal("WithLiveDetails() resolved = false, want true")
+		}
+		if places.detailCalls != 1 {
+			t.Errorf("detailCalls = %d, want 1", places.detailCalls)
+		}
+		if places.auditDetailCalls != 0 {
+			t.Errorf("auditDetailCalls = %d, want 0 — the live detail path must never opt into the audit mask", places.auditDetailCalls)
+		}
+	})
+}
