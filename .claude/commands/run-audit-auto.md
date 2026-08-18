@@ -301,8 +301,10 @@ This is a deliberate override of that file's Build section, not an omission.
   Separately, **explicitly instruct the engineer to create its branch from
   `origin/main`**, not local `main`
   (`git checkout -b feature/<slug>-<taskid> origin/main`) — local `main` inside
-  the worktree can be stale from the first merge onward, since `gh pr merge`
-  never advances it. These are two distinct instructions in the same
+  the worktree only advances when `gh pr merge -d` runs from the merged PR's
+  own branch, so it can be stale from the first merge onward and there's no
+  way to tell from inside the worktree whether it is. These are two distinct
+  instructions in the same
   dispatch: the base *name* the engineer operates relative to (`main`), and
   the exact ref its branch must start from (`origin/main`).
 - **Also instruct the engineer to `git push -u origin feature/<slug>-<taskid>`

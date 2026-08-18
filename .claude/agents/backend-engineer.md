@@ -57,15 +57,31 @@ Plan:
 ## Build a task
 Work through these gates in order — don't skip ahead to PR because an earlier
 gate is "probably fine":
-1. Branch `feature/<slug>-<taskid>` off `main` — unless the orchestrator gives
-   you a different base branch (stacked dependent task), then branch off that.
+
+**Never push a red branch.** Before every `git push` — the first one, a
+force-push, or a resolve-pass update to an open PR — the gates below must pass
+for the WHOLE branch, not only the files in your last commit: a change that
+compiles on its own can still break a sibling package. Read each command's real
+exit status; a command piped into `tail` reports `tail`'s status, not the
+gate's. If a gate genuinely cannot be run, say so explicitly in the PR and in
+your report rather than pushing on the assumption it would have passed. See
+`CLAUDE.md`'s working rules.
+
+1. Create the branch directly from `origin/main` — do NOT `git checkout main`
+   first, that fails inside a linked worktree (`CLAUDE.md`'s worktree rule):
+   `git checkout -b feature/<slug>-<taskid> origin/main`. Unless the
+   orchestrator gives you a different base branch (stacked dependent task),
+   then branch off that instead.
 2. **Fix**: implement only what the task's acceptance criteria require, under
    `backend/<service>/`, following the standards above.
-3. **Test**: `go build ./...` then `go test ./...`. On any failure, fix and
-   re-run — loop until both are green. Don't move to lint with red tests.
-4. **Lint**: `go vet ./...` and `golangci-lint run ./...` (from inside the
-   module directory, using the repo-root `.golangci.yml`). Fix findings and
-   re-run until clean. If a lint fix touches logic, re-run step 3.
+3. **Test**: `go build ./...` then `go test ./...`, run from inside every Go
+   module the branch touches, not just the one you edited. On any failure,
+   fix and re-run — loop until both are green. Don't move to lint with red
+   tests.
+4. **Lint**: `gofmt -l .` (no output) and `go vet ./...`, from inside every
+   Go module the branch touches. Fix findings and re-run until clean. If a
+   lint fix touches logic, re-run step 3. (`golangci-lint` isn't a gate yet
+   — no repo-root `.golangci.yml` exists.)
 5. **Ponytail review**: invoke the `ponytail:ponytail-review` skill against
    your diff to hunt reinvented stdlib, unneeded dependencies, speculative
    abstractions, and dead flexibility. Separately, self-audit every
