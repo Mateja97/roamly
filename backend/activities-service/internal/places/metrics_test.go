@@ -11,27 +11,42 @@ import (
 )
 
 // TestSKUTierForMask pins T1 (places-api-cost-reduction)'s tier derivation:
-// the label comes from the fields actually present in the mask, not from
-// which call site sent it.
+// the label comes from the fields actually present in the mask AND which
+// wire endpoint sent it — Google prices some field names differently between
+// Place Details and Nearby/Text Search (e.g. "location"/"types" are
+// Essentials on Details but Pro on Search; verified against Google's live
+// data-fields-by-SKU table, see research.md).
 func TestSKUTierForMask(t *testing.T) {
 	tests := []struct {
-		name string
-		mask string
-		want places.SKUTier
+		name     string
+		mask     string
+		endpoint string
+		want     places.SKUTier
 	}{
-		{"essentials-only mask", "places.id,places.displayName,places.location,places.types", places.TierEssentials},
-		{"enterprise mask (rating present)", "places.id,places.displayName,places.rating,places.userRatingCount", places.TierEnterprise},
-		{"enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", places.TierEnterpriseAtmosphere},
-		{"pro mask (websiteUri, no enterprise fields)", "places.displayName,places.websiteUri,places.priceRange", places.TierPro},
-		{"ids-only mask", "id,name", places.TierIDsOnly},
-		{"unrecognized field defaults to essentials", "someBrandNewGoogleField", places.TierEssentials},
-		{"dotted subfield bills as its parent", "reviews.authorAttribution", places.TierEnterpriseAtmosphere},
-		{"empty mask is ids-only", "", places.TierIDsOnly},
+		// Place Details: location/types/formattedAddress genuinely are
+		// Essentials here, unlike on Search.
+		{"details essentials-only mask", "places.id,places.location,places.types,places.formattedAddress", "PlaceDetails", places.TierEssentials},
+		{"details enterprise mask (rating present)", "places.id,places.location,places.rating,places.userRatingCount", "PlaceDetails", places.TierEnterprise},
+		{"details enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", "PlaceDetails", places.TierEnterpriseAtmosphere},
+		{"details enterprise mask (websiteUri forces enterprise, not pro)", "places.displayName,places.websiteUri,places.priceRange", "PlaceDetails", places.TierEnterprise},
+		{"details ids-only mask", "id,name", "PlaceDetails", places.TierIDsOnly},
+
+		// Search (Nearby/Text): displayName/primaryType/types/location are
+		// Pro here even though they read as "basic" fields — the exact bug
+		// this table used to have (T1 review, proved by T2's narrowed mask).
+		{"search pro mask (T2's narrowed ResolveTripadvisorSubtype mask: id,displayName,location,primaryType,types)", "places.id,places.displayName,places.location,places.primaryType,places.types", "SearchTextInArea", places.TierPro},
+		{"search enterprise mask (rating present)", "places.id,places.displayName,places.rating,places.userRatingCount", "SearchNearby", places.TierEnterprise},
+		{"search enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", "SearchText", places.TierEnterpriseAtmosphere},
+		{"search ids-only mask", "id,name", "SearchText", places.TierIDsOnly},
+
+		{"unrecognized field defaults to essentials", "someBrandNewGoogleField", "PlaceDetails", places.TierEssentials},
+		{"dotted subfield bills as its parent", "reviews.authorAttribution", "PlaceDetails", places.TierEnterpriseAtmosphere},
+		{"empty mask is ids-only", "", "PlaceDetails", places.TierIDsOnly},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := places.SKUTierForMask(tt.mask); got != tt.want {
-				t.Errorf("SKUTierForMask(%q) = %q, want %q", tt.mask, got, tt.want)
+			if got := places.SKUTierForMask(tt.mask, tt.endpoint); got != tt.want {
+				t.Errorf("SKUTierForMask(%q, %q) = %q, want %q", tt.mask, tt.endpoint, got, tt.want)
 			}
 		})
 	}
@@ -69,15 +84,17 @@ func TestClient_RecordsCallsByEndpointTierAndCaller(t *testing.T) {
 		t.Errorf("SearchNearby Enterprise/discovery count = %d, want %d (NearbyFieldMask carries rating)", got, before+1)
 	}
 
-	essentialsBefore := places.Count("SearchText", places.TierEssentials, places.CallerBatchTool)
+	// displayName is Pro-tier on Text Search (not Essentials — see
+	// TestSKUTierForMask), so a mask of just id+displayName bills Pro.
+	proBefore := places.Count("SearchText", places.TierPro, places.CallerBatchTool)
 	batchCtx := places.WithCaller(context.Background(), places.CallerBatchTool)
 	if _, err := c.SearchText(batchCtx, "q", "", "places.id,places.displayName"); err != nil {
 		t.Fatalf("SearchText: %v", err)
 	}
-	if got := places.Count("SearchText", places.TierEssentials, places.CallerBatchTool); got != essentialsBefore+1 {
-		t.Errorf("SearchText Essentials/batch-tool count = %d, want %d", got, essentialsBefore+1)
+	if got := places.Count("SearchText", places.TierPro, places.CallerBatchTool); got != proBefore+1 {
+		t.Errorf("SearchText Pro/batch-tool count = %d, want %d", got, proBefore+1)
 	}
-	// The Essentials-only call must not have also been tallied as Enterprise.
+	// The Pro-tier call must not have also been tallied as Enterprise.
 	if got := places.Count("SearchText", places.TierEnterprise, places.CallerBatchTool); got != 0 {
 		t.Errorf("SearchText wrongly counted as Enterprise: %d", got)
 	}

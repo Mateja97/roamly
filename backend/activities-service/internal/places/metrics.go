@@ -65,55 +65,57 @@ var tierRank = map[SKUTier]int{
 }
 
 // fieldTiers maps each Places API (New) field name to the SKU tier it forces
-// a call into, per Google's data-fields-by-SKU table
-// (https://developers.google.com/maps/documentation/places/web-service/data-fields).
-// A field missing here falls back to Essentials in SKUTierForMask rather
-// than erroring — the label can lag a brand-new Google field for a release,
-// it must never crash a caller over a lookup miss. Extend this table, not
+// a Place Details call into, per Google's data-fields-by-SKU table
+// (https://developers.google.com/maps/documentation/places/web-service/data-fields,
+// cross-checked live against the page's rendered table — see research.md). A
+// field missing here falls back to Essentials in SKUTierForMask rather than
+// erroring — the label can lag a brand-new Google field for a release, it
+// must never crash a caller over a lookup miss. Extend this table, not
 // SKUTierForMask, when Google ships a new field.
 var fieldTiers = map[string]SKUTier{
 	"id":     TierIDsOnly,
 	"name":   TierIDsOnly,
-	"photos": TierIDsOnly, // Place Details fieldMask=photos alone is genuinely free (ResolvePhotos' first call)
+	"photos": TierIDsOnly,
 
-	"displayName":             TierEssentials,
-	"formattedAddress":        TierEssentials,
-	"location":                TierEssentials,
-	"googleMapsUri":           TierEssentials,
-	"primaryType":             TierEssentials,
-	"types":                   TierEssentials,
-	"addressComponents":       TierEssentials,
-	"primaryTypeDisplayName":  TierEssentials,
-	"businessStatus":          TierEssentials,
-	"shortFormattedAddress":   TierEssentials,
-	"utcOffsetMinutes":        TierEssentials,
-	"plusCode":                TierEssentials,
-	"viewport":                TierEssentials,
-	"iconMaskBaseUri":         TierEssentials,
-	"iconBackgroundColor":     TierEssentials,
-	"subDestinations":         TierEssentials,
-	"adrFormatAddress":        TierEssentials,
-	"containingPlaces":        TierEssentials,
-	"pureServiceAreaBusiness": TierEssentials,
-	"postalAddress":           TierEssentials,
-	"googleMapsLinks":         TierEssentials,
+	"formattedAddress":      TierEssentials,
+	"location":              TierEssentials,
+	"addressComponents":     TierEssentials,
+	"shortFormattedAddress": TierEssentials,
+	"plusCode":              TierEssentials,
+	"postalAddress":         TierEssentials,
+	"viewport":              TierEssentials,
+	"adrFormatAddress":      TierEssentials,
+	"types":                 TierEssentials,
 
-	"priceRange":                   TierPro,
-	"regularOpeningHours":          TierPro,
-	"regularSecondaryOpeningHours": TierPro,
-	"currentOpeningHours":          TierPro,
-	"currentSecondaryOpeningHours": TierPro,
-	"internationalPhoneNumber":     TierPro,
-	"nationalPhoneNumber":          TierPro,
-	"websiteUri":                   TierPro,
+	"displayName":             TierPro,
+	"googleMapsUri":           TierPro,
+	"primaryType":             TierPro,
+	"primaryTypeDisplayName":  TierPro,
+	"businessStatus":          TierPro,
+	"utcOffsetMinutes":        TierPro,
+	"iconMaskBaseUri":         TierPro,
+	"iconBackgroundColor":     TierPro,
+	"subDestinations":         TierPro,
+	"containingPlaces":        TierPro,
+	"pureServiceAreaBusiness": TierPro,
+	"googleMapsLinks":         TierPro,
+	"accessibilityOptions":    TierPro,
 
-	"rating":          TierEnterprise,
-	"userRatingCount": TierEnterprise,
+	"rating":                       TierEnterprise,
+	"userRatingCount":              TierEnterprise,
+	"priceRange":                   TierEnterprise,
+	"priceLevel":                   TierEnterprise,
+	"regularOpeningHours":          TierEnterprise,
+	"regularSecondaryOpeningHours": TierEnterprise,
+	"currentOpeningHours":          TierEnterprise,
+	"currentSecondaryOpeningHours": TierEnterprise,
+	"internationalPhoneNumber":     TierEnterprise,
+	"nationalPhoneNumber":          TierEnterprise,
+	"websiteUri":                   TierEnterprise,
 
 	"reviews":               TierEnterpriseAtmosphere,
 	"editorialSummary":      TierEnterpriseAtmosphere,
 	"generativeSummary":     TierEnterpriseAtmosphere,
-	"priceLevel":            TierEnterpriseAtmosphere,
 	"goodForChildren":       TierEnterpriseAtmosphere,
 	"goodForGroups":         TierEnterpriseAtmosphere,
 	"goodForWatchingSports": TierEnterpriseAtmosphere,
@@ -122,7 +124,6 @@ var fieldTiers = map[string]SKUTier{
 	"outdoorSeating":        TierEnterpriseAtmosphere,
 	"liveMusic":             TierEnterpriseAtmosphere,
 	"parkingOptions":        TierEnterpriseAtmosphere,
-	"accessibilityOptions":  TierEnterpriseAtmosphere,
 	"servesCoffee":          TierEnterpriseAtmosphere,
 	"servesVegetarianFood":  TierEnterpriseAtmosphere,
 	"servesBeer":            TierEnterpriseAtmosphere,
@@ -145,10 +146,47 @@ var fieldTiers = map[string]SKUTier{
 	"routingSummaries":      TierEnterpriseAtmosphere,
 }
 
+// searchTierOverrides lists the fields Nearby/Text Search bills one tier
+// higher than Place Details does for the identical field name (confirmed
+// against Google's live data-fields-by-SKU table, see research.md) — these
+// nine location/address/type fields and "photos" are Essentials(-ish) on
+// Place Details but Pro on Search. Every other field (including
+// "displayName"/"primaryType", which read as basic but are Pro everywhere,
+// and every Enterprise/Enterprise+Atmosphere field) prices the same on both,
+// so this table only needs the deltas rather than a second full copy of
+// fieldTiers — that duplication is exactly what mislabeled T2's narrowed
+// mask as Essentials in T1's original review (fixed here). "id"/"name" are
+// omitted: Nearby Search bills them Pro while Text Search bills them
+// Essentials(IDs Only), but no mask in this codebase isolates id/name
+// without a Pro-or-above field alongside them, so the fieldTiers base value
+// (IDs Only) already produces the right derived tier for every real call —
+// ponytail: split id/name out with its own override if a future mask
+// changes that.
+var searchTierOverrides = map[string]SKUTier{
+	"photos":                TierPro,
+	"formattedAddress":      TierPro,
+	"location":              TierPro,
+	"types":                 TierPro,
+	"addressComponents":     TierPro,
+	"shortFormattedAddress": TierPro,
+	"plusCode":              TierPro,
+	"viewport":              TierPro,
+	"adrFormatAddress":      TierPro,
+	"postalAddress":         TierPro,
+}
+
 // SKUTierForMask derives the SKU tier a Places call bills at from the actual
-// X-Goog-FieldMask sent, not a per-call-site label — a mask edit moves the
-// label with it automatically (T1, places-api-cost-reduction).
-func SKUTierForMask(fieldMask string) SKUTier {
+// X-Goog-FieldMask sent and which wire endpoint it was sent to, not a
+// per-call-site label — a mask edit moves the label with it automatically
+// (T1, places-api-cost-reduction). endpoint must be one of the endpoint*
+// constants in places.go; only endpointPlaceDetails skips searchTierOverrides
+// (the two Search endpoints, places:searchText and places:searchNearby, both
+// use it).
+func SKUTierForMask(fieldMask, endpoint string) SKUTier {
+	overrides := searchTierOverrides
+	if endpoint == endpointPlaceDetails {
+		overrides = nil
+	}
 	tier := TierIDsOnly
 	for _, raw := range strings.Split(fieldMask, ",") {
 		field := strings.TrimPrefix(strings.TrimSpace(raw), "places.")
@@ -158,7 +196,10 @@ func SKUTierForMask(fieldMask string) SKUTier {
 		if idx := strings.Index(field, "."); idx >= 0 {
 			field = field[:idx] // "reviews.authorAttribution" bills as "reviews"
 		}
-		t, ok := fieldTiers[field]
+		t, ok := overrides[field]
+		if !ok {
+			t, ok = fieldTiers[field]
+		}
 		if !ok {
 			t = TierEssentials
 		}
