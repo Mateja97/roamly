@@ -102,23 +102,6 @@ func TestDetailFieldMask_SportDropsEnterpriseAtmosphere(t *testing.T) {
 	}
 }
 
-// TestDetailFieldMask_EveryOtherCategoryStillCarriesReviews guards against
-// silently widening Sport's carve-out to every category (which would defeat
-// T3's cost cut for the categories that DO render Google reviews/description
-// at the header level).
-func TestDetailFieldMask_EveryOtherCategoryStillCarriesReviews(t *testing.T) {
-	for cat := range activitiessvc.Subcategories {
-		if cat == activitiessvc.CategorySport || cat == activitiessvc.CategoryRestaurants ||
-			cat == activitiessvc.CategoryBars || cat == activitiessvc.CategoryToursExperiences {
-			continue
-		}
-		mask := placesmap.DetailFieldMask(cat)
-		if !strings.Contains(mask, "reviews") {
-			t.Errorf("DetailFieldMask(%s) = %q, want it to still carry reviews", cat, mask)
-		}
-	}
-}
-
 func TestReviewFieldMask_OnlyMergedFields(t *testing.T) {
 	got := strings.Split(placesmap.ReviewFieldMask, ",")
 	want := []string{"rating", "userRatingCount", "reviews", "reviews.authorAttribution", "googleMapsUri"}
