@@ -12,17 +12,18 @@ import (
 
 // wantDetailFields is the independently-authored expectation for
 // DetailFieldMask(cat): the header fields every live-merge needs (rating,
-// userRatingCount, googleMapsUri, plus reviews/editorialSummary/
-// generativeSummary for every category except Sport) union'd with exactly
-// the fields that category's BuildLiveDetails switch case reads (cross-check
+// userRatingCount, googleMapsUri, reviews/editorialSummary/
+// generativeSummary — every category alike, see DetailFieldMask's doc on why
+// Sport is no longer special-cased out of these) union'd with exactly the
+// fields that category's BuildLiveDetails switch case reads (cross-check
 // against placesmap.go's own switch above). Kept separate from
 // categoryDetailFields in placesmap.go on purpose — comparing against a
 // second, independently-written list is what makes this a real regression
 // test instead of a tautology against the implementation it's checking.
 func wantDetailFields(cat activitiessvc.Category) []string {
-	header := []string{"rating", "userRatingCount", "googleMapsUri"}
-	if cat != activitiessvc.CategorySport {
-		header = append(header, "reviews", "reviews.authorAttribution", "editorialSummary", "generativeSummary")
+	header := []string{
+		"rating", "userRatingCount", "googleMapsUri",
+		"reviews", "reviews.authorAttribution", "editorialSummary", "generativeSummary",
 	}
 	extra := map[activitiessvc.Category][]string{
 		activitiessvc.CategoryCafes: {
@@ -45,18 +46,6 @@ func wantDetailFields(cat activitiessvc.Category) []string {
 		// CategorySport: no BuildLiveDetails case, no extra fields.
 	}
 	return append(header, extra[cat]...)
-}
-
-// enterpriseAtmosphereFields are the fields that put a Place Details request
-// in the Enterprise+Atmosphere SKU tier (T3, places-api-cost-reduction's own
-// list): reviews, editorialSummary, generativeSummary, priceLevel/
-// priceRange, and every amenity boolean BuildLiveDetails can read.
-var enterpriseAtmosphereFields = []string{
-	"reviews", "reviews.authorAttribution", "editorialSummary", "generativeSummary",
-	"priceLevel", "priceRange",
-	"goodForChildren", "goodForGroups", "allowsDogs", "restroom", "outdoorSeating",
-	"liveMusic", "parkingOptions", "accessibilityOptions", "servesCoffee",
-	"servesVegetarianFood", "menuForChildren", "dineIn", "takeout", "reservable",
 }
 
 func TestDetailFieldMask_OneMaskPerCategory(t *testing.T) {
@@ -86,21 +75,12 @@ func TestDetailFieldMask_OneMaskPerCategory(t *testing.T) {
 	}
 }
 
-// TestDetailFieldMask_SportDropsEnterpriseAtmosphere covers T3's acceptance
-// criterion that at least one category's mask carries no
-// Enterprise+Atmosphere field: Sport's BuildLiveDetails case is a no-op
-// ("{}"), so its mask needs none of them (reviews, editorialSummary,
-// generativeSummary, priceLevel, no amenity booleans) and drops out of the
-// Enterprise+Atmosphere SKU tier down to Enterprise (rating/userRatingCount
-// stay, for the header rating cluster every category still renders).
-func TestDetailFieldMask_SportDropsEnterpriseAtmosphere(t *testing.T) {
-	got := strings.Split(placesmap.DetailFieldMask(activitiessvc.CategorySport), ",")
-	for _, f := range got {
-		if slices.Contains(enterpriseAtmosphereFields, f) {
-			t.Errorf("Sport's DetailFieldMask = %v, contains Enterprise+Atmosphere field %q", got, f)
-		}
-	}
-}
+// No TestDetailFieldMask_SportDropsEnterpriseAtmosphere here (round-2
+// review): dropping Sport out of Enterprise+Atmosphere broke its live
+// reviews/description card (a real AC4 violation), because
+// withLiveDetails' header merge is category-blind and every one of the 10
+// Places-sourced categories renders that same card — see DetailFieldMask's
+// doc for the full trace and the AC3 escalation.
 
 func TestReviewFieldMask_OnlyMergedFields(t *testing.T) {
 	got := strings.Split(placesmap.ReviewFieldMask, ",")

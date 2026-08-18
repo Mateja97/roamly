@@ -979,7 +979,8 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		return activity, true
 	}
 
-	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID, placesmap.DetailFieldMask(activity.Category))
+	fieldMask := placesmap.DetailFieldMask(activity.Category)
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID, fieldMask)
 	if !ok {
 		return activity, false
 	}
@@ -998,7 +999,19 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		activity.Rating = detail.Rating
 		activity.ReviewCount = detail.UserRatingCount
 	}
-	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	// Guarded on the mask actually having asked for reviews (round-2 review
+	// finding, T3 places-api-cost-reduction): GoogleReviews is never
+	// persisted, so an unconditional overwrite here silently clobbers it to
+	// nil the moment any category's DetailFieldMask ever narrows away
+	// "reviews" — exactly the bug that broke Sport's reviews card. Today
+	// every category's mask requests reviews (DetailFieldMask no longer
+	// narrows it away, see that func's doc), so this is a no-op in practice;
+	// it's the guard that stops the next mask narrowing from reintroducing
+	// the same silent-stomp regression, mirroring liveDescription's existing
+	// "only overwrite when Places actually returned something" pattern above.
+	if strings.Contains(fieldMask, "reviews") {
+		activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	}
 	activity.GoogleMapsURI = detail.GoogleMapsURI
 	return activity, true
 }

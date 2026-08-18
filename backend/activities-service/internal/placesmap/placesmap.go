@@ -412,7 +412,8 @@ func BuildLiveDetails(cat activitiessvc.Category, country string, d PlaceDetail)
 // cat actually reads. Kept next to BuildLiveDetails so the two can never
 // drift: add a field to a switch case above, add it here. CategorySport has
 // no entry — its switch case is a no-op, and its DetailFieldMask carries no
-// category-specific fields at all (T3, places-api-cost-reduction).
+// category-specific fields beyond the header baseline (T3,
+// places-api-cost-reduction).
 var categoryDetailFields = map[activitiessvc.Category][]string{
 	activitiessvc.CategoryCafes: {
 		"regularOpeningHours", "websiteUri", // hours, opening_hours, website_url
@@ -437,20 +438,39 @@ var categoryDetailFields = map[activitiessvc.Category][]string{
 
 // DetailFieldMask is the X-Goog-FieldMask a detail-page open sends for cat
 // (T3, places-api-cost-reduction): the header fields withLiveDetails always
-// merges onto Activity (rating, review count, Google Maps link) plus exactly
-// the fields cat's BuildLiveDetails case reads, from categoryDetailFields
-// above. reviews/editorialSummary/generativeSummary — the fields that put a
-// request in the Enterprise+Atmosphere SKU tier alongside the amenity
-// booleans — ride along for every category except Sport: Sport's
-// BuildLiveDetails case is a no-op ("{}") and, uniquely, its header accepts
-// no live review/description refresh in exchange for dropping out of
-// Enterprise+Atmosphere entirely (down to Enterprise, since rating stays).
-// Every other category still pays for reviews, but none is charged for an
-// amenity boolean its own BuildLiveDetails case never reads.
+// merges onto Activity (rating, review count, Google Maps link, reviews,
+// description) plus exactly the fields cat's BuildLiveDetails case reads,
+// from categoryDetailFields above.
+//
+// reviews/editorialSummary/generativeSummary ride along for every category,
+// including Sport, and are NOT narrowed per category here (round-2 review
+// finding, T3 places-api-cost-reduction): withLiveDetails' header merge
+// (service/activity.go) sets Activity.GoogleReviews/Description
+// unconditionally from whatever this call returns, for every one of the 10
+// Places-sourced categories alike — the app's PLACES_LIVE_CATEGORIES set and
+// ActivityDetailScreen's reviews card render identically regardless of
+// category (gated only on GoogleMapsURI/rating presence, never on cat). A
+// category whose mask drops these fields loses live reviews/description on
+// its detail page for good, a real AC4 violation ("no user-visible change"),
+// not merely a payload-scope technicality. Sport previously special-cased
+// this away to satisfy AC3 ("at least one category has no Enterprise+
+// Atmosphere field") — that mask shipped, then broke Sport's reviews card
+// exactly as this comment describes, per review round 2's Critical finding.
+//
+// AC3 is NOT met by this mask for any category as of this revision: doing so
+// safely requires either a coordinated frontend change (a category-specific
+// opt-out of the reviews/description card, out of this task's scope per its
+// own "Out of scope: changing which fields the detail page renders" line) or
+// a product ruling on which category may give up live reviews. Escalated in
+// review-log.md/engineering-notes.md rather than silently reinterpreted a
+// second time. Every category still saves on the fields its own
+// BuildLiveDetails case never reads (amenity booleans, hours, venue type,
+// website) via categoryDetailFields — Enterprise+Atmosphere is unavoidable
+// today, Pro/Essentials-tier fields are still trimmed per category.
 func DetailFieldMask(cat activitiessvc.Category) string {
-	fields := []string{"rating", "userRatingCount", "googleMapsUri"}
-	if cat != activitiessvc.CategorySport {
-		fields = append(fields, "reviews", "reviews.authorAttribution", "editorialSummary", "generativeSummary")
+	fields := []string{
+		"rating", "userRatingCount", "googleMapsUri",
+		"reviews", "reviews.authorAttribution", "editorialSummary", "generativeSummary",
 	}
 	fields = append(fields, categoryDetailFields[cat]...)
 	return strings.Join(fields, ",")
