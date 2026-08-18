@@ -171,3 +171,29 @@ func TestClient_CountsA2xxCallEvenWhenBodyFailsToDecode(t *testing.T) {
 		t.Errorf("count for undecodable 2xx body = %d, want %d (billed calls are counted before the decode)", got, before+1)
 	}
 }
+
+// TestPlaceDetails_TierFollowsSentMask pins the round-3 review bug (now
+// structurally impossible after PlaceDetails' own T3 redesign, but worth
+// guarding directly): the recorded SKU tier for a Place Details call must
+// come from the fieldMask actually passed to PlaceDetails, not some other
+// mask — PlaceDetailsForAudit and a live detail-page open must be able to
+// land in different tier buckets when their masks differ.
+func TestPlaceDetails_TierFollowsSentMask(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	ctx := places.WithCaller(context.Background(), places.CallerBatchTool)
+
+	// Essentials — a mask AuditFieldMask/a full detail-page mask never sends.
+	const narrowMask = "places.location,places.types"
+	before := places.Count("PlaceDetails", places.TierEssentials, places.CallerBatchTool)
+	if _, err := c.PlaceDetails(ctx, "place-1", narrowMask); err != nil {
+		t.Fatalf("PlaceDetails: %v", err)
+	}
+	if got := places.Count("PlaceDetails", places.TierEssentials, places.CallerBatchTool); got != before+1 {
+		t.Errorf("Essentials count for narrow mask = %d, want %d (tier must follow the mask actually sent)", got, before+1)
+	}
+}
