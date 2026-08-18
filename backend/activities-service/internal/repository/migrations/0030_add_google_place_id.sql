@@ -5,4 +5,4 @@
 -- Caching a bare place_id (not any Places content) is explicitly permitted
 -- by Places ToS §14.3. Nullable, no default, no backfill here — existing
 -- rows are covered separately by cmd/backfillgoogleplaceid (T2).
-ALTER TABLE activities ADD COLUMN google_place_id TEXT;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS google_place_id TEXT;

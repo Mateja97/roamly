@@ -11,4 +11,4 @@
 -- exists for; and the reason vocabulary is owned by
 -- internal/service/renderable.go, so a CHECK would force a migration every
 -- time a reason is added or renamed.
-ALTER TABLE activities ADD COLUMN draft_reason text;
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS draft_reason text;

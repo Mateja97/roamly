@@ -4,4 +4,4 @@
 -- one category's shape is ever populated per row. Existing rows default to
 -- '{}' (no detail data), same "renders base layout, unique section
 -- omitted" contract as an activity with no photos.
-ALTER TABLE activities ADD COLUMN details JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}';

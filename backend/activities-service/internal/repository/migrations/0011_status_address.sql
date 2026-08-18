@@ -4,10 +4,12 @@
 -- — the catalog is live today, so defaulting existing rows to 'draft' would
 -- hide the whole thing from the app. address is nullable, same precedent as
 -- city (0005): no data loss on the populated table, nothing backfills it yet.
--- No IF NOT EXISTS guards: the migration runner tracks applied filenames in
--- schema_migrations and never re-runs this file, so they'd be dead weight.
-ALTER TABLE activities ADD COLUMN status TEXT NOT NULL DEFAULT 'published';
-ALTER TABLE activities ADD COLUMN address TEXT;
+-- IF NOT EXISTS guard (see GO_STANDARDS.md Migrations): schema_migrations
+-- normally stops this file re-running, but if the row for this filename is
+-- ever missing while the column already exists (schema/tracking drift), an
+-- unguarded ADD COLUMN dies on SQLSTATE 42701 and bricks startup for good.
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS address TEXT;
 
 -- Trust-boundary enforcement at the DB layer per GO_STANDARDS.md: exactly
 -- these three lifecycle values, regardless of what a caller sends.

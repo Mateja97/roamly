@@ -3,4 +3,4 @@
 -- activitiessvc.ValidSubcategory, not a DB CHECK — a mismatch is caught at
 -- the service layer before it ever reaches SQL). No backfill needed: all
 -- activity data is wiped before this ships (design doc precondition).
-ALTER TABLE activities ADD COLUMN subcategory TEXT NOT NULL DEFAULT '';
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS subcategory TEXT NOT NULL DEFAULT '';
