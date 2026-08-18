@@ -473,7 +473,7 @@ func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) == 0 {
 		t.Fatal("no upserts")
@@ -501,7 +501,7 @@ func TestActivities_Query_GoogleSync_PassesRadiusAndTypesToClient(t *testing.T) 
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"night_club"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if gp.nearbyCalls != 1 {
 		t.Fatalf("nearbyCalls = %d, want 1", gp.nearbyCalls)
@@ -642,7 +642,7 @@ func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a venue with no photo is still worth ingesting", len(repo.gotUpserts))
@@ -668,7 +668,7 @@ func TestActivities_SyncGoogleRow_SkipsVenueWithMismatchedPrimaryType(t *testing
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) != 0 {
 		t.Errorf("upserts = %v, want none — the venue's own primaryType belongs to Kids, not this Nature row", repo.gotUpserts)
@@ -686,7 +686,7 @@ func TestActivities_SyncGoogleRow_IngestsVenueMatchingRowCategory(t *testing.T) 
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — the venue's primaryType agrees with the row's own category", len(repo.gotUpserts))
@@ -707,7 +707,7 @@ func TestActivities_SyncGoogleRow_IngestsVenueWithUnmappablePrimaryType(t *testi
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — an unmappable primaryType must fall back to trusting the row", len(repo.gotUpserts))
@@ -733,7 +733,7 @@ func TestActivities_SyncGoogleRow_TextQueryRowIngestsDespiteMismatchedPrimaryTyp
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryEntertainment, Subtype: "escape_room", TextQuery: "escape room"},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) != 1 {
 		t.Fatalf("upserts = %d, want 1 — a TextQuery row is stronger evidence than an incidental type overlap", len(repo.gotUpserts))
@@ -754,7 +754,7 @@ func TestActivities_SyncGoogleRow_AllSkippedStillMarksSynced(t *testing.T) {
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
 	}
-	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM)
+	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
 	if len(repo.gotUpserts) != 0 {
 		t.Fatalf("upserts = %v, want none", repo.gotUpserts)

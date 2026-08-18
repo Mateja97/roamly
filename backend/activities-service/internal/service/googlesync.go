@@ -304,23 +304,73 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 			if erroredCells[key] {
 				continue
 			}
-			a.syncGoogleRow(syncCtx, job, cellLocations[key], radiusKM)
+			a.syncGoogleRow(syncCtx, job, cellLocations[key], radiusKM, nil)
 		}
 	}()
 }
 
-// PrewarmGoogle runs every discovery row at anchor synchronously, ignoring
-// both the freshness TTL and maxGoogleRowsPerQuery. Seed/build-time only
-// (cmd/scrapecity) — the request path uses syncGoogleIfNeeded, which is
-// budgeted and detached.
+// placesCallTally counts Places API calls a batch run makes, split by SKU
+// tier (places.SKUTier) — T7's "report calls made, per SKU tier" contract
+// for every batch Places tool. nil-safe: syncGoogleIfNeeded's live
+// per-request sync passes nil into syncGoogleRow and skips tallying
+// entirely, since that path is already capped by maxGoogleRowsPerQuery and
+// prints no report.
+type placesCallTally struct {
+	total  int
+	byTier map[string]int
+}
+
+// record counts one Places call sent with fieldMask. Safe to call on a nil
+// *placesCallTally (a no-op), so syncGoogleRow does not need its own
+// tally==nil branch at every call site.
+func (t *placesCallTally) record(fieldMask string) {
+	if t == nil {
+		return
+	}
+	if t.byTier == nil {
+		t.byTier = map[string]int{}
+	}
+	t.byTier[places.SKUTier(fieldMask)]++
+	t.total++
+}
+
+// PrewarmSummary reports one PrewarmGoogle run: how much of anchor's
+// discovery-row table it covered before its call budget ran out (T7,
+// places-api-cost-reduction) — "stop cleanly, report calls made and input
+// coverage as partial" for every batch Places tool.
+type PrewarmSummary struct {
+	RowsTotal, RowsCovered, CallsMade int
+	CallsByTier                      map[string]int
+	// Partial is true when maxCalls was reached before every discovery row
+	// at anchor got a turn — the run stopped short of full coverage.
+	Partial bool
+}
+
+// PrewarmGoogle runs discovery rows at anchor synchronously, ignoring the
+// freshness TTL and maxGoogleRowsPerQuery, until either every row has run or
+// maxCalls Places calls have been made — whichever comes first. Seed/build-
+// time only (cmd/scrapecity) — the request path uses syncGoogleIfNeeded,
+// which is budgeted and detached.
+//
+// maxCalls must be > 0; cmd/scrapecity is the one place that validates this
+// (T7's "refuses to start without one" contract lives at the CLI flag, not
+// here) — PrewarmGoogle itself just treats maxCalls <= 0 as "stop
+// immediately, zero rows covered" rather than looping forever.
+//
+// The budget is checked once per row, before that row's calls are made, not
+// mid-row: syncGoogleRow's own search-plus-photo-resolve calls are not
+// individually preemptible, so a run can overshoot maxCalls by at most one
+// row's worth of calls (its search call, plus one ResolvePhotos per venue
+// that row upserts). Bounded overshoot, not unlimited spend — the row that
+// pushes the tally over budget is the last one this run makes.
 //
 // It resolves anchor's city once, the same way syncGoogleIfNeeded resolves
-// it once per sync cell, then runs every row through syncGoogleRow — the
-// same function the lazy sync uses — rather than reimplementing discovery.
-func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Point) {
+// it once per sync cell, then runs each row through syncGoogleRow — the same
+// function the lazy sync uses — rather than reimplementing discovery.
+func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Point, maxCalls int) PrewarmSummary {
 	if a.places == nil {
 		slog.Error("prewarm needs a Places client")
-		return
+		return PrewarmSummary{}
 	}
 	var cell cellLocation
 	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
@@ -333,19 +383,36 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 	} else {
 		cell = cellLocation{City: city, Country: country}
 	}
+
+	rows := make([]placesmap.DiscoveryRow, 0, len(placesmap.DiscoveryRows))
 	for _, row := range placesmap.DiscoveryRows {
 		// Same gate as googleDueRows: Restaurants/Bars rows classify
 		// Tripadvisor venues but are never discovered from Google.
-		if !slices.Contains(placesmap.GoogleCategories, row.Category) {
-			continue
+		if slices.Contains(placesmap.GoogleCategories, row.Category) {
+			rows = append(rows, row)
+		}
+	}
+
+	summary := PrewarmSummary{RowsTotal: len(rows)}
+	tally := &placesCallTally{}
+	for _, row := range rows {
+		if tally.total >= maxCalls {
+			summary.Partial = true
+			slog.Warn("prewarm call budget reached; stopping short of full coverage",
+				"rows_covered", summary.RowsCovered, "rows_total", summary.RowsTotal, "calls_made", tally.total, "max_calls", maxCalls)
+			break
 		}
 		// NearbyRadiusKM, unchanged from before this radius became
 		// per-request (D2): this manual seed tool has no Request/scope to
 		// resolve a wider radius from, and widening it is outside this
 		// task's scope — a seed run stays exactly as comprehensive as it
 		// was.
-		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell, NearbyRadiusKM)
+		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell, NearbyRadiusKM, tally)
+		summary.RowsCovered++
 	}
+	summary.CallsMade = tally.total
+	summary.CallsByTier = tally.byTier
+	return summary
 }
 
 // syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
@@ -370,7 +437,13 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 // trading the stale-data bug for an unbounded quota-spend one. A single
 // Upsert failure is logged and skipped without abandoning the rest of the
 // row.
-func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation, radiusKM float64) {
+//
+// tally records every Places call this row makes (search plus one
+// ResolvePhotos per upserted venue), split by SKU tier — nil for
+// syncGoogleIfNeeded's live per-request sync, which has no report to build
+// (see placesCallTally's doc); PrewarmGoogle passes a real one to track its
+// call budget.
+func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation, radiusKM float64, tally *placesCallTally) {
 	var found []placesmap.Place
 	var err error
 	if len(job.row.Types) > 0 {
@@ -386,6 +459,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 		found, err = a.places.SearchTextInArea(ctx, job.row.TextQuery,
 			job.anchor.Lat, job.anchor.Lng, radiusKM, places.NearbyFieldMask)
 	}
+	tally.record(places.NearbyFieldMask)
 	if err != nil {
 		slog.Warn("google discovery row failed",
 			"category", job.row.Category, "subtype", job.row.Subtype, "error", err)
@@ -418,6 +492,7 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 		// is not fatal: a venue with no image still beats no venue, and the
 		// client falls back to its missing-image state.
 		photos, err := a.places.ResolvePhotos(ctx, p.ID, 1)
+		tally.record("photos")
 		if err != nil {
 			slog.Warn("google provisional photo failed", "place_id", p.ID, "error", err)
 			photos = nil
