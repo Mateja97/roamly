@@ -156,10 +156,13 @@ report itself `skipped`; the run continues on the other three.
 
 What a scheduled run leaves you: merged fixes on `main`, and one open changelog
 PR. The PR usually carries a computed SemVer bump too — merging it is the
-release. If proxy-service's HTTP route surface changed in a way the run can't
-confidently classify as backward compatible, it leaves the section as
-`[Unreleased]` and every version field untouched instead of guessing, and says
-so in the PR and the report: a human has to make that call.
+release. If proxy-service's HTTP wire contract visibly changed and the run
+can't classify the change as clearly backward compatible or clearly
+breaking, it leaves the section as `[Unreleased]` and every version field
+untouched instead of guessing, and says so in the PR and the report: a
+human has to make that call. (Merely touching a route file with no
+observable contract change — an internal fix, a refactor — does not trigger
+this; see below.)
 
 Builds run **one task at a time**. Every task's engineer works in the same
 worktree directory — one HEAD, one index — so concurrent engineers would
@@ -173,28 +176,45 @@ in `CHANGELOG.md` — `kind: bug` under `### Fixed`, `kind: polish` under
 `### Changed`. It then computes a bump per [SemVer 2.0.0](https://semver.org/)
 from evidence in the merged diffs — PATCH by default (a normal all-bugfix
 run), MINOR for a backward-compatible addition to proxy-service's HTTP
-contract (a new route, parameter or response field) or any merged `kind:
-polish` task, MAJOR for a backward-incompatible change to that contract —
-renames `[Unreleased]` to `## [X.Y.Z] - <date>`, opens a fresh empty
-`[Unreleased]` above it, and bumps `app/package.json`, `app/app.json`
-(`expo.version`) and `frontend/package.json` together to the same `X.Y.Z`.
-All three fields move as one product version; `frontend` leaves SemVer's
-`0.y.z` initial-development phase the first time this runs and jumps to the
-product version, deliberately. All of that lands in one commit on the
-long-lived `audit-changelog` branch, which it opens (or updates) as a
-**non-draft PR that it deliberately does not merge** — merging it is the
-release, and that stays your call.
+contract (a new route, parameter or response field) or a route/param/field
+marked deprecated (SemVer item 7 requires this — a deprecation is never a
+PATCH), or any merged `kind: polish` task (this pipeline's own policy, not
+something the spec compels), MAJOR for a backward-incompatible change to
+that contract — renames `[Unreleased]` to `## [X.Y.Z] - <date>`, opens a
+fresh empty `[Unreleased]` above it, and bumps `app/package.json`,
+`app/app.json` (`expo.version`) and `frontend/package.json` together to the
+same `X.Y.Z`. All three fields move as one product version: as of this
+writing `app/package.json` is `1.0.0` and `frontend/package.json` is
+`0.0.0`, so the first PATCH-only run takes `frontend` straight from `0.0.0`
+to `1.0.1` — never through `1.0.0` — deliberately leaving SemVer's `0.y.z`
+phase for a number that was never a promise about `frontend`'s own API
+(only proxy-service's HTTP contract is the declared API here). All of that
+lands in one commit on the long-lived `audit-changelog` branch, which it
+opens (or updates, editing the existing PR's body too so the classification
+below is never silently stale) as a **non-draft PR that it deliberately
+does not merge** — merging it is the release, and that stays your call.
 
 **The one case it refuses to guess on** is this feature's safety property,
-not a footnote: if proxy-service's route surface changed at all and the run
-can't tell with confidence whether the change is backward compatible, it
-does not bump in either direction. That run's bullets still land under
-`[Unreleased]` (left unversioned), all three version fields stay untouched,
-and the PR body and the run report both name which route/PR needs a human to
-classify. Guessing low would ship a breaking change labeled PATCH; guessing
-high would cry wolf on every clean run — so neither guess happens. If the
-phase fails outright, it says so and the run still counts as green — the
-fixes are already on `main` either way.
+not a footnote: if proxy-service's wire contract itself visibly changed —
+not merely a route *file* touched with no observable contract change, which
+stays whatever `kind: bug`/`kind: polish` already assigned — and the run
+can't classify that change as clearly backward compatible or clearly
+breaking, it does not bump in either direction. That run's bullets still
+land under `[Unreleased]` (left unversioned), all three version fields stay
+untouched, and the PR body and the run report both name which route/PR
+needs a human to classify. Guessing low would ship a breaking change
+labeled PATCH; guessing high would cry wolf on every clean run — so neither
+guess happens. If the phase fails outright, it says so and the run still
+counts as green — the fixes are already on `main` either way.
+
+**A changelog PR left open across several weekly runs accumulates several
+dated version sections, not one growing list.** Each run that merges tasks
+and computes a bump closes out `[Unreleased]` into its own dated section
+before opening a fresh one, so a PR sitting unmerged for a few weeks shows
+`## [1.0.2] - <date>` stacked above `## [1.0.1] - <date>`, each one real
+only once the PR is actually merged — read an unmerged section's date as
+"when this phase computed that bump," not "when it shipped." The numbers
+still only ever increase.
 
 A finding the pipeline tries and fails to fix three times is marked
 `needs-human` in the ledger and stops being re-filed; it shows up in the run
