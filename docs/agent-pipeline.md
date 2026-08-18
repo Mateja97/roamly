@@ -106,6 +106,29 @@ builds, merges and verifies on its own, then reports. `pipeline/bugs/ledger.json
 persists across runs, so a second run against an unchanged stack costs one
 probe and stops.
 
+It also runs itself. `scripts/audit-cron.sh` is the scheduled entry point —
+weekly by default, logging each run to `pipeline/bugs/cron/`. It skips rather
+than forces: no overlapping runs (lock directory), no run on a dirty tree, no
+run on a checkout that doesn't carry the command, and it never starts the stack
+unattended. A skipped week is recoverable; a corrupted checkout is not.
+
+Install it with `crontab -e`:
+
+```
+0 3 * * 1 /absolute/path/to/repo/scripts/audit-cron.sh
+```
+
+On macOS, cron needs Full Disk Access (System Settings → Privacy & Security) or
+the job cannot read the repo — if a scheduled run leaves no log at all, that is
+why.
+
+Headless runs cannot always start the browser tools, so the `ui` perspective may
+report itself `skipped`; the run continues on the other three.
+
+What a scheduled run leaves you: merged fixes on `main`, and one open changelog
+PR. Versions are never touched — you cut the release.
+
+
 Builds run **one task at a time**. Every task's engineer works in the same
 worktree directory — one HEAD, one index — so concurrent engineers would
 sweep each other's uncommitted files into the wrong PR. Branches name commits;
