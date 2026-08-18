@@ -34,7 +34,7 @@ func TestSKUTierForMask(t *testing.T) {
 		// Search (Nearby/Text): displayName/primaryType/types/location are
 		// Pro here even though they read as "basic" fields — the exact bug
 		// this table used to have (T1 review, proved by T2's narrowed mask).
-		{"search pro mask (T2's narrowed ResolveTripadvisorSubtype mask: id,displayName,location,primaryType,types)", "places.id,places.displayName,places.location,places.primaryType,places.types", "SearchTextInArea", places.TierPro},
+		{"search pro mask (T2's TripadvisorSubtypeFieldMask, not Essentials)", places.TripadvisorSubtypeFieldMask, "SearchTextInArea", places.TierPro},
 		{"search enterprise mask (rating present)", "places.id,places.displayName,places.rating,places.userRatingCount", "SearchNearby", places.TierEnterprise},
 		{"search enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", "SearchText", places.TierEnterpriseAtmosphere},
 		{"search ids-only mask", "id,name", "SearchText", places.TierIDsOnly},
