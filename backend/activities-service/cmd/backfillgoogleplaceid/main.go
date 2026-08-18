@@ -63,7 +63,10 @@ func main() {
 	limit := flag.Int("limit", 0, "stop after processing this many rows (0 = no cap); lets a run be staged across multiple invocations against a tight daily quota")
 	flag.Parse()
 
-	ctx := context.Background()
+	// CallerBatchTool (T1, places-api-cost-reduction): every Places call this
+	// tool makes goes through ResolveTripadvisorSubtype, run by hand over
+	// stored rows.
+	ctx := places.WithCaller(context.Background(), places.CallerBatchTool)
 	dsn, err := sharedconfig.Require("DATABASE_URL")
 	if err != nil {
 		logger.Error("startup failed", "error", err)
