@@ -944,3 +944,61 @@ func placeNamed(name, primaryType string, types []string) placesmap.Place {
 	p.Types = types
 	return p
 }
+
+// googleDiscoveryRowCount is the number of placesmap.DiscoveryRows
+// PrewarmGoogle actually runs — the same GoogleCategories gate PrewarmGoogle
+// and googleDueRows both apply, computed once here so the tests below don't
+// hard-code a row count that would silently go stale as the table grows.
+func googleDiscoveryRowCount() int {
+	n := 0
+	for _, row := range placesmap.DiscoveryRows {
+		if slices.Contains(placesmap.GoogleCategories, row.Category) {
+			n++
+		}
+	}
+	return n
+}
+
+// TestPrewarmGoogle_StopsAtCallBudget is T7's "stop cleanly and report
+// partial" contract: a maxCalls smaller than the discovery-row table must
+// stop PrewarmGoogle before every row runs, reported as a partial summary
+// rather than read as a full pre-warm.
+func TestPrewarmGoogle_StopsAtCallBudget(t *testing.T) {
+	gp := &fakeGooglePlaces{geocodeCity: "Belgrade", geocodeCountry: "Serbia"}
+	svc := New(&fakeRepo{syncedAtOut: map[string]time.Time{}}).WithPlaces(gp)
+
+	summary := svc.PrewarmGoogle(context.Background(), activitiessvc.Point{Lat: 44.81, Lng: 20.46}, 3)
+
+	if summary.RowsTotal != googleDiscoveryRowCount() {
+		t.Errorf("RowsTotal = %d, want %d", summary.RowsTotal, googleDiscoveryRowCount())
+	}
+	if summary.RowsCovered != 3 {
+		t.Errorf("RowsCovered = %d, want 3 (the budget: one search call per row here, nothing found to resolve photos for)", summary.RowsCovered)
+	}
+	if !summary.Partial {
+		t.Error("Partial = false, want true — the budget stopped the run short of the full table")
+	}
+	if summary.CallsMade != 3 {
+		t.Errorf("CallsMade = %d, want 3", summary.CallsMade)
+	}
+}
+
+// TestPrewarmGoogle_CoversEverythingWhenBudgetIsEnough is the budget's other
+// edge: a maxCalls comfortably above the discovery table's size must run
+// every row and report a complete, non-partial summary.
+func TestPrewarmGoogle_CoversEverythingWhenBudgetIsEnough(t *testing.T) {
+	gp := &fakeGooglePlaces{geocodeCity: "Belgrade", geocodeCountry: "Serbia"}
+	svc := New(&fakeRepo{syncedAtOut: map[string]time.Time{}}).WithPlaces(gp)
+
+	summary := svc.PrewarmGoogle(context.Background(), activitiessvc.Point{Lat: 44.81, Lng: 20.46}, 10000)
+
+	if summary.Partial {
+		t.Error("Partial = true, want false — the budget never ran out")
+	}
+	if summary.RowsCovered != summary.RowsTotal {
+		t.Errorf("RowsCovered = %d, want RowsTotal (%d) — every row should run", summary.RowsCovered, summary.RowsTotal)
+	}
+	if len(summary.CallsByTier) == 0 {
+		t.Error("CallsByTier is empty, want the SKU tier breakdown of the calls PrewarmGoogle made")
+	}
+}
