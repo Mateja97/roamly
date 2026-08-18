@@ -108,9 +108,13 @@ probe and stops.
 
 It also runs itself. `scripts/audit-cron.sh` is the scheduled entry point —
 weekly by default, logging each run to `pipeline/bugs/cron/`. It skips rather
-than forces: no overlapping runs (lock directory), no run on a dirty tree, no
-run on a checkout that doesn't carry the command, and it never starts the stack
-unattended. A skipped week is recoverable; a corrupted checkout is not.
+than forces: no overlapping runs (a staleness-aware lock directory — see
+below), no run on a dirty tree (a `CHANGELOG.md`-only tree is let through,
+since Phase 0 self-heals exactly that), no run on a checkout that doesn't
+carry the command, and it never starts the stack unattended. A skipped week
+is recoverable; a corrupted checkout is not. Anything the script can't
+explain as a skip — missing `docker`/`claude` binaries, a failed `git
+status` — is a loud `FAIL` instead, never a silent `SKIP`.
 
 Install it with `crontab -e`:
 
@@ -118,16 +122,34 @@ Install it with `crontab -e`:
 0 3 * * 1 /absolute/path/to/repo/scripts/audit-cron.sh
 ```
 
+cron runs jobs with a minimal `PATH` (commonly just `/usr/bin:/bin`), which
+has neither `docker` nor `claude` on it — the script exports a `PATH` that
+adds `/usr/local/bin`, `/opt/homebrew/bin` and `~/.local/bin` before checking
+for either binary, so you don't need a `PATH=` line in the crontab itself. If
+`claude` lives somewhere else entirely, point `CLAUDE_BIN` at its absolute
+path (e.g. `CLAUDE_BIN=/Users/you/.local/bin/claude` on the crontab line
+before the script path).
+
 On macOS, cron needs Full Disk Access (System Settings → Privacy & Security) or
 the job cannot read the repo — if a scheduled run leaves no log at all, that is
 why.
+
+**Stale lock recovery is automatic.** The lock directory
+(`pipeline/bugs/cron/.lock`) records its owner's pid and start time; a run
+that finds an existing lock reclaims it (and logs `WARN: reclaiming stale
+lock ...`) if the owner process is no longer alive or the lock is older than
+6 hours — a `SIGKILL` skips the EXIT trap that would otherwise clean it up,
+so without this, one hard kill would silently skip every future scheduled
+run. The `claude -p` call itself is capped at 4 hours (TERM, then KILL 30s
+later) so a hung run can't hold the lock that long in the first place. You
+should never need to `rmdir` the lock by hand; if you do, something upstream
+of this script is misbehaving.
 
 Headless runs cannot always start the browser tools, so the `ui` perspective may
 report itself `skipped`; the run continues on the other three.
 
 What a scheduled run leaves you: merged fixes on `main`, and one open changelog
 PR. Versions are never touched — you cut the release.
-
 
 Builds run **one task at a time**. Every task's engineer works in the same
 worktree directory — one HEAD, one index — so concurrent engineers would
