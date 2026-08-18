@@ -19,6 +19,15 @@ import (
 
 func allStale(_, _, _ string) bool { return false }
 
+// singleRowGroup wraps one DiscoveryRow into the DiscoveryGroup shape
+// syncGoogleRow now takes (T8, places-api-cost-reduction), for tests that
+// exercise one row in isolation the way syncGoogleRow always did before
+// merging — representativeRow returns a single-row group's own Rows[0]
+// unchanged, so this preserves every pre-T8 single-row test exactly.
+func singleRowGroup(row placesmap.DiscoveryRow) placesmap.DiscoveryGroup {
+	return placesmap.DiscoveryGroup{Category: row.Category, Types: row.Types, Rows: []placesmap.DiscoveryRow{row}}
+}
+
 func TestGoogleDueRows_CapsAtBudget(t *testing.T) {
 	req := Request{
 		Scope:           activitiessvc.ScopeNearby,
@@ -38,21 +47,21 @@ func TestGoogleDueRows_PrioritizesRequestedCategory(t *testing.T) {
 	}
 	jobs := googleDueRows(req, allStale)
 	if len(jobs) == 0 {
-		t.Fatal("jobs = 0, want the wellness rows")
+		t.Fatal("jobs = 0, want the wellness groups")
 	}
-	// Wellness has fewer rows (4 subtypes + 1 category-level) than the
-	// budget, so other categories legitimately fill the remainder. What must
-	// hold is ordering: every wellness row comes before any non-wellness one,
-	// so a user filtering on Wellness gets wellness venues on their next
-	// search rather than their seventh.
+	// Wellness has fewer groups than the budget, so other categories
+	// legitimately fill the remainder. What must hold is ordering: every
+	// wellness group comes before any non-wellness one, so a user filtering
+	// on Wellness gets wellness venues on their next search rather than their
+	// seventh.
 	seenOther := false
 	for _, j := range jobs {
-		if j.row.Category != activitiessvc.CategoryWellness {
+		if j.group.Category != activitiessvc.CategoryWellness {
 			seenOther = true
 			continue
 		}
 		if seenOther {
-			t.Errorf("wellness row %q scheduled after a non-requested category; requested categories must come first", j.row.Subtype)
+			t.Errorf("wellness group %v scheduled after a non-requested category; requested categories must come first", j.group.Types)
 		}
 	}
 }
@@ -66,10 +75,16 @@ func TestGoogleDueRows_PrioritizesRequestedSubtype(t *testing.T) {
 	}
 	jobs := googleDueRows(req, allStale)
 	if len(jobs) == 0 {
-		t.Fatal("jobs = 0, want the beach row")
+		t.Fatal("jobs = 0, want the group covering beach")
 	}
-	if jobs[0].row.Subtype != "beach" {
-		t.Errorf("first job subtype = %q, want beach — a user filtering on a subtype should get that subtype synced first", jobs[0].row.Subtype)
+	hasBeach := false
+	for _, r := range jobs[0].group.Rows {
+		if r.Subtype == "beach" {
+			hasBeach = true
+		}
+	}
+	if !hasBeach {
+		t.Errorf("first job's group rows = %v, want one covering beach — a user filtering on a subtype should get that subtype synced first", jobs[0].group.Rows)
 	}
 }
 
@@ -79,12 +94,42 @@ func TestGoogleDueRows_SkipsFreshRows(t *testing.T) {
 		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
 		Categories:      []activitiessvc.Category{activitiessvc.CategoryNature},
 	}
+	// Every Nature subtype except beach is fresh, so the merged Nature group
+	// is still due (T8: a group is due when ANY member row is stale) — this
+	// test now asserts the group still gets scheduled, covering beach among
+	// its other, already-fresh, rows.
 	fresh := func(_, category, subtype string) bool {
-		return category == string(activitiessvc.CategoryNature) && subtype == "beach"
+		return category == string(activitiessvc.CategoryNature) && subtype != "beach"
 	}
-	for _, j := range googleDueRows(req, fresh) {
-		if j.row.Subtype == "beach" {
-			t.Error("a fresh row was scheduled; freshness must be checked per (cell, category, subtype)")
+	jobs := googleDueRows(req, fresh)
+	if len(jobs) == 0 {
+		t.Fatal("jobs = 0, want the Nature group, still due because beach is stale")
+	}
+	found := false
+	for _, r := range jobs[0].group.Rows {
+		if r.Subtype == "beach" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("scheduled group does not cover beach, the one stale row")
+	}
+}
+
+// TestGoogleDueRows_AllMembersFreshSkipsGroup is the other half of the
+// SkipsFreshRows case above: when EVERY member row of a group is fresh, the
+// group itself must not be scheduled at all.
+func TestGoogleDueRows_AllMembersFreshSkipsGroup(t *testing.T) {
+	req := Request{
+		Scope:           activitiessvc.ScopeNearby,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryNature},
+	}
+	fresh := func(_, category, _ string) bool { return category == string(activitiessvc.CategoryNature) }
+	jobs := googleDueRows(req, fresh)
+	for _, j := range jobs {
+		if j.group.Category == activitiessvc.CategoryNature {
+			t.Errorf("scheduled the Nature group %v, want it skipped — every member row is fresh", j.group.Rows)
 		}
 	}
 }
@@ -102,9 +147,9 @@ func TestGoogleDueRows_NeverSchedulesRestaurantsOrBars(t *testing.T) {
 		Categories:      []activitiessvc.Category{activitiessvc.CategoryRestaurants, activitiessvc.CategoryBars},
 	}
 	for _, j := range googleDueRows(req, allStale) {
-		if j.row.Category == activitiessvc.CategoryRestaurants || j.row.Category == activitiessvc.CategoryBars {
-			t.Errorf("scheduled a %s job (subtype %q) — Restaurants/Bars rows classify Tripadvisor venues, never discover from Google",
-				j.row.Category, j.row.Subtype)
+		if j.group.Category == activitiessvc.CategoryRestaurants || j.group.Category == activitiessvc.CategoryBars {
+			t.Errorf("scheduled a %s job (types %v) — Restaurants/Bars rows classify Tripadvisor venues, never discover from Google",
+				j.group.Category, j.group.Types)
 		}
 	}
 }
@@ -477,7 +522,7 @@ func TestActivities_Query_GoogleSync_ResolvesNoProvisionalPhoto(t *testing.T) {
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -505,7 +550,7 @@ func TestActivities_Query_GoogleSync_PassesRadiusAndTypesToClient(t *testing.T) 
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"night_club"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"night_club"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -519,8 +564,8 @@ func TestActivities_Query_GoogleSync_PassesRadiusAndTypesToClient(t *testing.T) 
 	if got.MaxResults != 20 {
 		t.Errorf("MaxResults = %d, want 20", got.MaxResults)
 	}
-	if !slices.Equal(got.IncludedTypes, job.row.Types) {
-		t.Errorf("IncludedTypes = %v, want the row's own types %v passed through unchanged", got.IncludedTypes, job.row.Types)
+	if !slices.Equal(got.IncludedTypes, job.group.Types) {
+		t.Errorf("IncludedTypes = %v, want the group's own types %v passed through unchanged", got.IncludedTypes, job.group.Types)
 	}
 }
 
@@ -646,7 +691,7 @@ func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNightlife, Subtype: "nightclub", Types: []string{"nightclub"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -672,7 +717,7 @@ func TestActivities_SyncGoogleRow_SkipsVenueWithMismatchedPrimaryType(t *testing
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -690,7 +735,7 @@ func TestActivities_SyncGoogleRow_IngestsVenueMatchingRowCategory(t *testing.T) 
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -711,7 +756,7 @@ func TestActivities_SyncGoogleRow_IngestsVenueWithUnmappablePrimaryType(t *testi
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -737,7 +782,7 @@ func TestActivities_SyncGoogleRow_TextQueryRowIngestsDespiteMismatchedPrimaryTyp
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryEntertainment, Subtype: "escape_room", TextQuery: "escape room"},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryEntertainment, Subtype: "escape_room", TextQuery: "escape room"}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -758,7 +803,7 @@ func TestActivities_SyncGoogleRow_AllSkippedStillMarksSynced(t *testing.T) {
 	svc := New(repo).WithPlaces(gp)
 	job := googleSyncJob{
 		anchor: activitiessvc.Point{Lat: 44.81, Lng: 20.46},
-		row:    placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}},
+		group:  singleRowGroup(placesmap.DiscoveryRow{Category: activitiessvc.CategoryNature, Subtype: "botanical_garden", Types: []string{"botanical_garden"}}),
 	}
 	svc.syncGoogleRow(context.Background(), job, cellLocation{}, NearbyRadiusKM, nil)
 
@@ -966,9 +1011,15 @@ func googleDiscoveryRowCount() int {
 }
 
 // TestPrewarmGoogle_StopsAtCallBudget is T7's "stop cleanly and report
-// partial" contract: a maxCalls smaller than the discovery-row table must
-// stop PrewarmGoogle before every row runs, reported as a partial summary
+// partial" contract: a maxCalls smaller than the discovery-group table must
+// stop PrewarmGoogle before every group runs, reported as a partial summary
 // rather than read as a full pre-warm.
+//
+// RowsCovered is no longer pinned to exactly maxCalls (T8, places-api-cost-
+// reduction): one call now covers a whole category's worth of rows, so 3
+// calls can cover anywhere from 3 to a double-digit number of rows depending
+// on which groups the budget lands on — the budget bounds CallsMade, not
+// RowsCovered.
 func TestPrewarmGoogle_StopsAtCallBudget(t *testing.T) {
 	gp := &fakeGooglePlaces{geocodeCity: "Belgrade", geocodeCountry: "Serbia"}
 	svc := New(&fakeRepo{syncedAtOut: map[string]time.Time{}}).WithPlaces(gp)
@@ -978,14 +1029,14 @@ func TestPrewarmGoogle_StopsAtCallBudget(t *testing.T) {
 	if summary.RowsTotal != googleDiscoveryRowCount() {
 		t.Errorf("RowsTotal = %d, want %d", summary.RowsTotal, googleDiscoveryRowCount())
 	}
-	if summary.RowsCovered != 3 {
-		t.Errorf("RowsCovered = %d, want 3 (the budget: one search call per row here, nothing found to resolve photos for)", summary.RowsCovered)
+	if summary.RowsCovered == 0 || summary.RowsCovered >= summary.RowsTotal {
+		t.Errorf("RowsCovered = %d, want somewhere between 0 and RowsTotal (%d) exclusive — the budget stopped partway through", summary.RowsCovered, summary.RowsTotal)
 	}
 	if !summary.Partial {
 		t.Error("Partial = false, want true — the budget stopped the run short of the full table")
 	}
 	if summary.CallsMade != 3 {
-		t.Errorf("CallsMade = %d, want 3", summary.CallsMade)
+		t.Errorf("CallsMade = %d, want 3 — the budget bounds calls made, not rows covered", summary.CallsMade)
 	}
 }
 
