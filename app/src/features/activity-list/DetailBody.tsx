@@ -22,6 +22,7 @@ type DetailBodyProps = {
   activity: Activity;
   isPlacesLive: boolean;
   detailsPending: boolean;
+  description: string | undefined;
   descriptionPending: boolean;
   fields: FactChip[];
   unique: UniqueSectionData | undefined;
@@ -42,6 +43,7 @@ export function DetailBody({
   activity,
   isPlacesLive,
   detailsPending,
+  description,
   descriptionPending,
   fields,
   unique,
@@ -57,13 +59,16 @@ export function DetailBody({
       // Only skeleton when the seed description is genuinely empty —
       // never pulse over text the user could already be reading.
       // design-spec.md's "Prose block" slot (§B5): the one legal home
-      // for a generated sentence. `descriptionPending` (not the raw
-      // `isPlacesLive && detailsPending`) additionally excludes a
-      // Tripadvisor-sourced row — see useActivityDetailData.ts's comment —
-      // since the live merge never fills a description for one, so the
-      // plain gate would skeleton forever and never resolve.
-      if (activity.description) {
-        return <ProseBlock heading="About" value={activity.description} />;
+      // for a generated sentence. `description` is the already-classified
+      // value (activityDetailConfig's `descriptionText`) — a denylisted
+      // placeholder resolves to `undefined` here, same as before threading
+      // the prop through. `descriptionPending` additionally excludes a
+      // Tripadvisor-sourced row and any row with a raw seed description
+      // (denylisted or not) — see useActivityDetailData.ts's comment —
+      // since the live merge never fills/replaces either, so the plain
+      // gate would skeleton forever or risk a flash-then-collapse.
+      if (description) {
+        return <ProseBlock heading="About" value={description} />;
       }
       return descriptionPending ? <DescriptionSkeleton /> : null;
     case 'difficulty':

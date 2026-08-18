@@ -1274,6 +1274,30 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
     });
 
+    // reviews-description-graceful-degrade T2: the tightened
+    // `descriptionPending` gate in useActivityDetailData.ts — a denylisted
+    // seed description is a non-empty raw value, so it must never take the
+    // skeleton branch (the live merge isn't guaranteed to replace it,
+    // DESIGN_STANDARDS.md L268-277's flash-then-collapse ban).
+    it('renders nothing (no skeleton) while pending when the seed description is a denylisted placeholder', () => {
+      const denylistedActivity: Activity = { ...placesActivity, description: 'Not specified' };
+      render(<ActivityDetailScreen activity={denylistedActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByText('Not specified')).toBeNull();
+    });
+
+    it('still renders nothing in the description slot once the merge settles, for a denylisted seed', async () => {
+      const denylistedActivity: Activity = { ...placesActivity, description: 'Not specified' };
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: { ...denylistedActivity, rating: 4.2, review_count: 12 },
+      });
+      render(<ActivityDetailScreen activity={denylistedActivity} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('rating-skeleton')).toBeNull());
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByText('Not specified')).toBeNull();
+    });
+
     it('merges the live fields onto local state on success, replacing every skeleton with real content', async () => {
       mockedGetActivity.mockResolvedValue({
         status: 'success',

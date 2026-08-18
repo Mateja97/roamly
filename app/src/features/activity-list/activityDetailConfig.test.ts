@@ -4,6 +4,7 @@ import { CATEGORY_LABELS, CATEGORY_OPTIONS } from './filters';
 import type { Category } from './types';
 import {
   bodySectionOrder,
+  descriptionText,
   factStripFields,
   getWebsiteURL,
   goodToKnowSection,
@@ -584,6 +585,35 @@ describe('tripadvisorEyebrow (§5b, extended by T6 — this *is* the Meta line s
   it('is undefined for a non-Tripadvisor row (no eyebrow renders)', () => {
     const activity = baseActivity({ category: 'restaurants', cuisine: 'Serbian' });
     expect(tripadvisorEyebrow(activity, '1.2 km away')).toBeUndefined();
+  });
+});
+
+// reviews-description-graceful-degrade T2: single home for the description
+// presence decision — same `prose` classification ProseBlock's own
+// `classifyField` call applies (real value passes through untouched, empty/
+// whitespace/denylisted/missing all collapse to `undefined`).
+describe('descriptionText (T2)', () => {
+  it('passes a real description through unchanged', () => {
+    const activity = { ...baseActivity(undefined), description: 'A cozy neighborhood café.' };
+    expect(descriptionText(activity)).toBe('A cozy neighborhood café.');
+  });
+
+  it('is undefined for a denylisted placeholder', () => {
+    const activity = { ...baseActivity(undefined), description: 'Not specified' };
+    expect(descriptionText(activity)).toBeUndefined();
+  });
+
+  it('is undefined for an empty string', () => {
+    expect(descriptionText({ ...baseActivity(undefined), description: '' })).toBeUndefined();
+  });
+
+  it('is undefined for a whitespace-only string', () => {
+    expect(descriptionText({ ...baseActivity(undefined), description: '   ' })).toBeUndefined();
+  });
+
+  it('is undefined when the field is missing', () => {
+    const activity = { ...baseActivity(undefined), description: undefined as unknown as string };
+    expect(descriptionText(activity)).toBeUndefined();
   });
 });
 
