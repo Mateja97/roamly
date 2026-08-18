@@ -876,7 +876,16 @@ than this phase makes.
    `backend/proxy-service/cmd/proxy-service/main.go`'s route table), their
    parameters, and their response shapes. Nothing else in the repo — the
    frontend, the app, any other service's internals — counts as a public API
-   here.
+   here. `API_CONTRACT.md` (repo root) is the written-down authority for
+   that contract — every route, parameter, response field, and the
+   breaking-vs-additive call for this API. Classify each task's diff against
+   what `API_CONTRACT.md` already documents, not only against the raw diff:
+   a change that matches what the document already states is not a contract
+   change even if the diff touches these files; a change that contradicts or
+   extends what the document states is. When a merged task actually changes
+   the wire contract, update `API_CONTRACT.md` to match as part of that
+   task's own scope, so the document never drifts stale behind the code it's
+   supposed to be the authority for.
 
    **Sticky ambiguity — check this before anything else in this step.**
    Step 3 already added this run's bullets to `[Unreleased]`. Before
