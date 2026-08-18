@@ -325,6 +325,7 @@ func (r auditReport) render(minScore int) string {
 	out += "\n"
 
 	out += "by reason\n"
+	out += "  no_photo (T5, places-api-cost-reduction): Google sync no longer resolves photos at ingest time, so every never-opened Google row now reports no_photo until its detail page is first requested — this count no longer means \"venue has no photo\", it also includes \"not yet opened\"\n"
 	for _, reason := range []string{service.ReasonNoPhoto, service.ReasonNoPlaceID, service.ReasonNoContent} {
 		out += fmt.Sprintf("  %-14s %d\n", reason, r.byReason[reason])
 	}

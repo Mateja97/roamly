@@ -25,6 +25,23 @@ import (
 	"activities-service/internal/tripadvisor"
 )
 
+// maxResolvedPhotosFromEnv parses raw as a positive int, falling back to
+// service.DefaultMaxResolvedPhotos on anything else (unset, non-numeric,
+// <= 0) — bad config degrading to the safe default beats refusing to start
+// over a photo cap. A non-empty but invalid raw is logged so a typo'd env
+// var doesn't silently become the default.
+func maxResolvedPhotosFromEnv(raw string, logger *slog.Logger) int {
+	if raw == "" {
+		return service.DefaultMaxResolvedPhotos
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		logger.Warn("invalid MAX_RESOLVED_PHOTOS, using default", "value", raw, "default", service.DefaultMaxResolvedPhotos)
+		return service.DefaultMaxResolvedPhotos
+	}
+	return n
+}
+
 // defaultGoogleSyncTTLDays mirrors service.defaultGoogleSyncTTL — kept here,
 // not imported, since it's just the fallback string for
 // sharedconfig.OrDefault below and main.go stays the only place env vars are
@@ -76,7 +93,9 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo).WithGoogleSyncTTL(googleSyncTTLFromEnv(logger, os.Getenv("GOOGLE_SYNC_TTL_DAYS")))
+	svc := service.New(repo).
+		WithMaxResolvedPhotos(maxResolvedPhotosFromEnv(os.Getenv("MAX_RESOLVED_PHOTOS"), logger)).
+		WithGoogleSyncTTL(googleSyncTTLFromEnv(logger, os.Getenv("GOOGLE_SYNC_TTL_DAYS")))
 	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
 	// fine, GetActivityPhotos just always answers from stored photos with no
 	// live Google call — same fallback behavior a configured client hits on

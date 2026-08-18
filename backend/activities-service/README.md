@@ -22,6 +22,10 @@ Environment variables, read once at startup in `main.go`:
   `postgres://user:pass@host:5432/activities?sslmode=disable`.
 - `GRPC_ADDR` — gRPC listen address, defaults to `:9090`.
 - `LOG_LEVEL` — slog level, defaults to `info`.
+- `MAX_RESOLVED_PHOTOS` — how many photos `GetPhotos` resolves and persists
+  per venue on first detail view, defaults to `5`. Unset, non-numeric, or
+  non-positive values fall back to the default (a non-empty invalid value
+  logs a warning).
 - `GOOGLE_SYNC_TTL_DAYS` — how long a Google discovery sync stays fresh,
   defaults to `30`. A non-positive or non-numeric value falls back to the
   default rather than failing startup (T4).

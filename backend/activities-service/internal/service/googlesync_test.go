@@ -459,10 +459,15 @@ func TestVenueWrongCategory(t *testing.T) {
 // per sweep whenever more than 8 of the 53 DiscoveryRows are stale, which is
 // true for every unfiltered request against a fakeRepo with an empty
 // syncedAtOut. Since fakeGooglePlaces returns the same fixture place for any
-// row, going through Query here would call ResolvePhotos/Upsert 8 times
-// instead of the 1 these tests need to isolate.
+// row, going through Query here would call Upsert 8 times instead of the 1
+// these tests need to isolate.
 
-func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
+// TestActivities_Query_GoogleSync_ResolvesNoProvisionalPhoto is T5's
+// (places-api-cost-reduction) acceptance criterion: a sync sweep must never
+// call PhotoMediaURL, since most discovered venues are never opened. A
+// venue lands with zero photos at discovery time; GetPhotos resolves the
+// full set on first detail view instead (see photos_test.go).
+func TestActivities_Query_GoogleSync_ResolvesNoProvisionalPhoto(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	gp := &fakeGooglePlaces{
 		nearbyOut: []placesmap.Place{{ID: "p1", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/p1"}},
@@ -478,12 +483,12 @@ func TestActivities_Query_GoogleSync_ResolvesOneProvisionalPhoto(t *testing.T) {
 	if len(repo.gotUpserts) == 0 {
 		t.Fatal("no upserts")
 	}
-	if len(repo.gotUpserts[0].Photos) != 1 {
-		t.Errorf("photos = %d, want exactly 1 provisional photo (the full set resolves on detail view)",
+	if len(repo.gotUpserts[0].Photos) != 0 {
+		t.Errorf("photos = %d, want 0 — no photo resolve at discovery time (GetPhotos resolves on first detail view)",
 			len(repo.gotUpserts[0].Photos))
 	}
-	if gp.resolvePhotoCalls != 1 {
-		t.Errorf("ResolvePhotos calls = %d, want 1 — one per newly discovered venue", gp.resolvePhotoCalls)
+	if gp.resolvePhotoCalls != 0 {
+		t.Errorf("ResolvePhotos calls = %d, want 0 — a sync sweep must issue zero photo-media calls", gp.resolvePhotoCalls)
 	}
 }
 

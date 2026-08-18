@@ -165,6 +165,11 @@ type Activities struct {
 	// tripadvisorSync tracks in-flight background Tripadvisor sync sweeps —
 	// same test-only join contract as googleSync (see waitForTripadvisorSync).
 	tripadvisorSync sync.WaitGroup
+	// maxResolvedPhotos caps how many photos GetPhotos resolves and persists
+	// per venue on first view (T5, places-api-cost-reduction). A field, not a
+	// const, so ops can tune it via config without a deploy-time code change
+	// (see WithMaxResolvedPhotos).
+	maxResolvedPhotos int
 	// auditFieldMask, when set (see WithAuditFieldMask), routes
 	// resolvePlaceDetails to PlaceDetailsForAudit instead of PlaceDetails
 	// (T7, places-api-cost-reduction) — cmd/auditcontent's own Activities
@@ -172,8 +177,33 @@ type Activities struct {
 	auditFieldMask bool
 }
 
+// DefaultMaxResolvedPhotos is maxResolvedPhotos' value absent an explicit
+// WithMaxResolvedPhotos call — lowered from the pre-T5 8 (T5,
+// places-api-cost-reduction): most venues barely need more than a handful of
+// photos rendered, and each one is a billed PhotoMediaURL call. Exported so
+// cmd/activities-service can fall back to the same value its
+// MAX_RESOLVED_PHOTOS env var overrides.
+const DefaultMaxResolvedPhotos = 5
+
 func New(repo repository) *Activities {
-	return &Activities{repo: repo, syncTimeout: tripadvisorSyncTimeout, googleSyncTTL: defaultGoogleSyncTTL}
+	return &Activities{
+		repo:              repo,
+		syncTimeout:       tripadvisorSyncTimeout,
+		maxResolvedPhotos: DefaultMaxResolvedPhotos,
+		googleSyncTTL:     defaultGoogleSyncTTL,
+	}
+}
+
+// WithMaxResolvedPhotos overrides the default cap on how many photos
+// GetPhotos resolves and persists per venue on first view (T5,
+// places-api-cost-reduction). n <= 0 is ignored (keeps the default) rather
+// than disabling photo resolution outright — 0 photos is never a sane
+// operator intent for this knob.
+func (a *Activities) WithMaxResolvedPhotos(n int) *Activities {
+	if n > 0 {
+		a.maxResolvedPhotos = n
+	}
+	return a
 }
 
 // WithGoogleSyncTTL overrides the default googleSyncTTL (T4,
@@ -1137,10 +1167,6 @@ func toGoogleReviews(reviews []placesmap.Review) []activitiessvc.GoogleReview {
 // the first live per-request Places call in the codebase.
 const photoResolveTimeout = 4 * time.Second
 
-// maxResolvedPhotos caps how many Google photos GetPhotos resolves and
-// persists per venue on first view.
-const maxResolvedPhotos = 8
-
 // GetPhotos returns activity id's full photo set (T2): resolve-on-first-
 // view-and-persist. A stored photo count of <= 1 is the "provisional only,
 // never fully resolved" signal (see product-tasks.md's T2 note on this
@@ -1172,9 +1198,9 @@ func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.
 	var resolved []activitiessvc.Photo
 	switch {
 	case activity.Source == "tripadvisor" && a.tripadvisor != nil:
-		resolved, err = a.tripadvisor.LocationPhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+		resolved, err = a.tripadvisor.LocationPhotos(resolveCtx, activity.ExternalID, a.maxResolvedPhotos)
 	case activity.Source != "tripadvisor" && a.places != nil:
-		resolved, err = a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+		resolved, err = a.places.ResolvePhotos(resolveCtx, activity.ExternalID, a.maxResolvedPhotos)
 	default:
 		return activity.Photos, nil
 	}
@@ -1693,10 +1719,12 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 				}
 
 				// One provisional photo at ingest time, the rest resolved later on
-				// first view via GetPhotos — same pattern as cmd/scrapecity's Google
-				// seed (minPhotos = 1). LocationDetails carries no photo of its own
-				// in the real API, so this is the only source for it. A failure or
-				// empty result here must never block the sync.
+				// first view via GetPhotos. Unlike Google discovery (T5,
+				// places-api-cost-reduction, which dropped its own per-venue photo
+				// resolve at sync time), Tripadvisor's LocationDetails carries no
+				// photo of its own in the real API, so this call is the only source
+				// for one at all — there's no zero-photo fallback to prefer here. A
+				// failure or empty result here must never block the sync.
 				photos, err := a.tripadvisor.LocationPhotos(syncCtx, details.LocationID, 1)
 				if err != nil {
 					slog.Warn("tripadvisor location photos failed", "location_id", details.LocationID, "error", err)
