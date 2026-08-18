@@ -98,6 +98,21 @@ the User entity).
 - Config via environment variables only, read once at startup in `main.go`.
 - Fail fast: missing required config kills the process at boot with a clear message.
 
+## Migrations
+
+- Every `ADD COLUMN` in a forward SQL migration (`internal/repository/migrations/`)
+  uses `ADD COLUMN IF NOT EXISTS`, even though the runner (`backend/shared/db`)
+  tracks applied filenames in `schema_migrations` and normally never re-runs a
+  file. `schema_migrations` and the live schema can still drift apart (e.g. a
+  hand-edited database, a restored backup taken between the `ALTER TABLE` and
+  the row insert) — on a plain `ADD COLUMN` that drift is a permanent,
+  unrecoverable startup failure (`SQLSTATE 42701`), since every future start
+  retries the same doomed statement forever. `IF NOT EXISTS` makes a
+  compatible drift a no-op instead, while a genuinely broken migration (bad
+  SQL, wrong table, a failing `NOT NULL`/`CHECK`) still errors and still stops
+  startup — the guard only widens what counts as "already done", it never
+  swallows an error.
+
 ## Testing
 
 - Table-driven tests with the stdlib `testing` package.

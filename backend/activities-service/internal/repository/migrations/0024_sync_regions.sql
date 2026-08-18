@@ -10,8 +10,8 @@
 -- provider value and its own syncXIfNeeded, no schema change.
 ALTER TABLE tripadvisor_sync_regions RENAME TO sync_regions;
 
-ALTER TABLE sync_regions ADD COLUMN provider TEXT NOT NULL DEFAULT 'tripadvisor';
-ALTER TABLE sync_regions ADD COLUMN subtype  TEXT NOT NULL DEFAULT '';
+ALTER TABLE sync_regions ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'tripadvisor';
+ALTER TABLE sync_regions ADD COLUMN IF NOT EXISTS subtype  TEXT NOT NULL DEFAULT '';
 
 -- Drop the default now that existing rows are backfilled: every future write
 -- states its provider explicitly.

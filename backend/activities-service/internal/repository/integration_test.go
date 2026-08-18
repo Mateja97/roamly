@@ -2585,3 +2585,89 @@ func TestMigration0031RenamesActionURLPreservingValue(t *testing.T) {
 		assertUntouched(t, "a café row that never had action_url", cafeNeverHadKey.ID, "known_for_brew")
 	})
 }
+
+// TestMigrate_DriftedColumnAlreadyPresentDoesNotBrickStartup reproduces the
+// audit-2026-08-17-2306 T7 incident: schema_migrations recorded nothing past
+// 0031, but sync_regions.radius_km and activities.draft_reason already
+// existed on the live database. The unguarded `ADD COLUMN` in 0032/0033
+// then died on SQLSTATE 42701 every single start, with no recovery path
+// short of hand-editing the database. GO_STANDARDS.md's Migrations section
+// now requires `ADD COLUMN IF NOT EXISTS` for exactly this reason — this
+// test proves the guard actually holds against the real Postgres SQLSTATE,
+// not just that the SQL parses.
+func TestMigrate_DriftedColumnAlreadyPresentDoesNotBrickStartup(t *testing.T) {
+	ctx := context.Background()
+	pool := startTestPostgresPool(t)
+
+	const cutoff = "0031_rename_action_url_to_website_url.sql"
+	if err := shareddb.Migrate(ctx, pool, migrationsThrough(cutoff)); err != nil {
+		t.Fatalf("running migrations through %s: %v", cutoff, err)
+	}
+
+	// Simulate the drift: the columns 0032/0033 would add already exist,
+	// but schema_migrations has no row for either file (as if applied by
+	// hand, or a restore taken mid-migration).
+	if _, err := pool.Exec(ctx, `ALTER TABLE sync_regions ADD COLUMN radius_km DOUBLE PRECISION`); err != nil {
+		t.Fatalf("seeding drifted radius_km column: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `ALTER TABLE activities ADD COLUMN draft_reason TEXT`); err != nil {
+		t.Fatalf("seeding drifted draft_reason column: %v", err)
+	}
+
+	if err := shareddb.Migrate(ctx, pool, Migrations()); err != nil {
+		t.Fatalf("Migrate() with a drifted-but-compatible schema returned an error, want startup to succeed: %v", err)
+	}
+
+	for _, name := range []string{"0032_sync_regions_radius_km.sql", "0033_draft_reason.sql"} {
+		var applied bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE filename = $1)`, name,
+		).Scan(&applied); err != nil {
+			t.Fatalf("checking schema_migrations for %s: %v", name, err)
+		}
+		if !applied {
+			t.Errorf("%s not recorded in schema_migrations after Migrate(), want it caught up despite the drift", name)
+		}
+	}
+
+	// The rest of 0032's body (UPDATE + SET NOT NULL) must still have run,
+	// not been skipped wholesale — IF NOT EXISTS only guards the ADD COLUMN
+	// statement itself.
+	var isNullable string
+	if err := pool.QueryRow(ctx, `SELECT is_nullable FROM information_schema.columns
+		WHERE table_name='sync_regions' AND column_name='radius_km'`).Scan(&isNullable); err != nil {
+		t.Fatalf("querying radius_km nullability: %v", err)
+	}
+	if isNullable != "NO" {
+		t.Errorf("radius_km is_nullable = %q, want NO (0032's SET NOT NULL must still run after the guarded ADD COLUMN)", isNullable)
+	}
+}
+
+// TestMigrate_GenuinelyBrokenMigrationStillFails proves the fix for T7
+// doesn't overcorrect into masking real failures: IF NOT EXISTS only
+// suppresses "column already exists" (SQLSTATE 42701). Anything else —
+// here, a statement against a table that was never created — must still
+// fail loudly and leave nothing recorded, exactly as before this change.
+func TestMigrate_GenuinelyBrokenMigrationStillFails(t *testing.T) {
+	ctx := context.Background()
+	pool := startTestPostgresPool(t)
+
+	broken := fstest.MapFS{
+		"0001_broken.sql": &fstest.MapFile{
+			Data: []byte(`ALTER TABLE this_table_was_never_created ADD COLUMN IF NOT EXISTS foo TEXT;`),
+		},
+	}
+
+	err := shareddb.Migrate(ctx, pool, broken)
+	if err == nil {
+		t.Fatal("Migrate() with a migration against a nonexistent table returned nil, want an error")
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&count); err != nil {
+		t.Fatalf("counting schema_migrations: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("schema_migrations has %d rows after a failed migration, want 0 (nothing recorded on failure)", count)
+	}
+}

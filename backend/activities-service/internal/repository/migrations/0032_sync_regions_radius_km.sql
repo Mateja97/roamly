@@ -12,7 +12,7 @@
 -- "fresh" marks are thus correctly reclassified as narrow, so an
 -- already-synced cell self-heals the first time a genuinely wider search
 -- asks for it — no manual data purge needed.
-ALTER TABLE sync_regions ADD COLUMN radius_km DOUBLE PRECISION;
+ALTER TABLE sync_regions ADD COLUMN IF NOT EXISTS radius_km DOUBLE PRECISION;
 
 UPDATE sync_regions SET radius_km = 10 WHERE provider = 'google';
 UPDATE sync_regions SET radius_km = 8 WHERE provider = 'tripadvisor';

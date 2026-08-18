@@ -5,5 +5,5 @@
 -- them are a legitimate photo source, so there is nothing worth carrying
 -- forward. An empty photos array is a supported state: it renders as the
 -- existing missing-image fallback, same as an unresolved Google photo.
-ALTER TABLE activities ADD COLUMN photos JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE activities ADD COLUMN IF NOT EXISTS photos JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE activities DROP COLUMN image_refs;
