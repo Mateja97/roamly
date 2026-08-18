@@ -47,7 +47,7 @@ func main() {
 
 	// Public photo serving (T1): read-only off the shared volume
 	// activities-service writes to; no adminAuth, the app needs it.
-	if err := api.RegisterPhotoRoutes(mux, sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos")); err != nil {
+	if err := api.RegisterPhotoRoutes(mux, sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos"), logger); err != nil {
 		logger.Error("startup failed", "error", err)
 		os.Exit(1)
 	}

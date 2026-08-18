@@ -1,8 +1,10 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 )
@@ -28,19 +30,23 @@ import (
 // collapsing every error case (including a genuine permission error) to
 // 404 is deliberate: this route is public and unauthenticated, so there's
 // no caller who should ever see the difference between "missing" and
-// "rejected".
+// "rejected". The client's response is always 404 either way; logger is
+// here purely so an operator isn't as blind as the client.
 type noDirListingFS struct {
-	inner http.FileSystem
+	inner  http.FileSystem
+	logger *slog.Logger
 }
 
 func (nfs noDirListingFS) Open(name string) (http.File, error) {
 	f, err := nfs.inner.Open(name)
 	if err != nil {
+		logRejectedOpen(nfs.logger, name, err)
 		return nil, fs.ErrNotExist
 	}
 	info, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
+		logRejectedOpen(nfs.logger, name, err)
 		return nil, fs.ErrNotExist
 	}
 	if info.IsDir() {
@@ -48,6 +54,35 @@ func (nfs noDirListingFS) Open(name string) (http.File, error) {
 		return nil, fs.ErrNotExist
 	}
 	return f, nil
+}
+
+// logRejectedOpen records an Open/Stat failure noDirListingFS turns into a
+// 404, skipping the routine case — a client asking for a photo that simply
+// isn't there — so that traffic doesn't drown out a genuine anomaly on the
+// volume. Splits the rest into "permission" (an fs.ErrPermission the OS
+// itself reports) and everything else: os.Root doesn't export a sentinel
+// for its own symlink-escape rejection (see RegisterPhotoRoutes), so a
+// rejected escape attempt and a truly unexpected fs fault both land in
+// that second bucket — logged with the real error text, which for the
+// escape case reads literally "path escapes from parent", letting an
+// operator tell the two apart by reading the log line rather than by a Go
+// branch that would have to string-match an internal stdlib error.
+//
+// ponytail: an escape rejection and a genuine unexpected fs error share
+// one Go branch instead of three, because a fourth stdlib-only signal to
+// split them doesn't exist; upgrade path if that's ever not good enough
+// is string-matching os.Root's "path escapes from parent" text directly,
+// which is exactly the brittle coupling to an internal, unexported error
+// this skips for now.
+func logRejectedOpen(logger *slog.Logger, name string, err error) {
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return
+	case errors.Is(err, fs.ErrPermission):
+		logger.Warn("photo route: permission denied opening file", "path", name, "error", err)
+	default:
+		logger.Warn("photo route: rejected open (symlink escape or volume fault)", "path", name, "error", err)
+	}
 }
 
 // RegisterPhotoRoutes serves GET /photos/... straight off the shared
@@ -67,11 +102,11 @@ func (nfs noDirListingFS) Open(name string) (http.File, error) {
 // symlinks, Range requests, conditional requests, and content-type
 // sniffing untouched — they all still go through the same
 // http.FileServer.
-func RegisterPhotoRoutes(mux *http.ServeMux, root string) error {
+func RegisterPhotoRoutes(mux *http.ServeMux, root string, logger *slog.Logger) error {
 	r, err := os.OpenRoot(root)
 	if err != nil {
 		return fmt.Errorf("opening photos root %q: %w", root, err)
 	}
-	mux.Handle("GET /photos/", http.StripPrefix("/photos/", http.FileServer(noDirListingFS{inner: http.FS(r.FS())})))
+	mux.Handle("GET /photos/", http.StripPrefix("/photos/", http.FileServer(noDirListingFS{inner: http.FS(r.FS()), logger: logger})))
 	return nil
 }

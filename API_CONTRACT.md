@@ -727,7 +727,23 @@ specific wire contract.
     document has no prior claim about either way: nothing in this
     document, before this fix, said what an unreadable file returned —
     `http.Dir`'s `403` was stdlib's default, never written down here as a
-    promise. No established behavior, so nothing to break.
+    promise. No established behavior *in this document*, so nothing to
+    break under its literal rule — PATCH stands. Flagging the edge this
+    reading doesn't cover, rather than presenting the call as clean: the
+    rule as written only protects a client against a change this document
+    told it to expect, and by that letter a `403` this document never
+    promised isn't protected. But nothing here rules out an ops
+    tool or alert branching on the *incidental*, undocumented `403` a
+    real deployment could have observed — this document's rule doesn't
+    ask whether an actual caller could have depended on the old behavior,
+    only whether *this document* said so, and those two questions can
+    diverge. Lower-risk in practice than it sounds: the volume's current
+    permission model doesn't produce an unreadable file at all (nothing
+    in `internal/api/photo_routes.go` ever chmods a file to be
+    unreadable), so `403` was likely never actually observed on this
+    route — but "likely never observed" is a claim about today's
+    deployment, not a guarantee, and this document's confidence above is
+    about the rule's literal reading, not about that guarantee.
 
 ## Known gaps
 
