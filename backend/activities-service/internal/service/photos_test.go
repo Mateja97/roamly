@@ -110,9 +110,20 @@ func TestActivities_GetPhotos(t *testing.T) {
 		},
 		{
 			name:          "already resolved is cache-only, no Google call",
-			activity:      activitiessvc.Activity{ID: "1", ExternalID: "place-1", Photos: resolvedSet},
+			activity:      activitiessvc.Activity{ID: "1", ExternalID: "place-1", Photos: resolvedSet, PhotosResolved: true},
 			places:        &fakePlaces{out: resolvedSet},
 			wantPhotos:    resolvedSet,
+			wantPlaceCall: false,
+			wantPersisted: false,
+		},
+		{
+			// T6: a venue whose true Google photo count is exactly 1 must
+			// not re-resolve forever — PhotosResolved (not photo count) is
+			// the signal.
+			name:          "resolved venue with exactly one photo makes no Google call on second view",
+			activity:      activitiessvc.Activity{ID: "1", ExternalID: "place-1", Photos: provisional, PhotosResolved: true},
+			places:        &fakePlaces{out: resolvedSet},
+			wantPhotos:    provisional,
 			wantPlaceCall: false,
 			wantPersisted: false,
 		},
@@ -174,6 +185,9 @@ func TestActivities_GetPhotos(t *testing.T) {
 			}
 			if tt.wantPersisted && repo.gotUpdateID != tt.activity.ID {
 				t.Errorf("repo.Update not called, want persisted photos for id %q", tt.activity.ID)
+			}
+			if tt.wantPersisted && (repo.gotUpdatePatch.PhotosResolved == nil || !*repo.gotUpdatePatch.PhotosResolved) {
+				t.Errorf("repo.Update patch PhotosResolved = %v, want pointer to true", repo.gotUpdatePatch.PhotosResolved)
 			}
 			if !tt.wantPersisted && repo.gotUpdateID != "" {
 				t.Errorf("repo.Update called with id %q, want no persist", repo.gotUpdateID)

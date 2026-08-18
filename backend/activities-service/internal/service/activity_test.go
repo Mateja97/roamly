@@ -1650,6 +1650,85 @@ func TestActivities_Update(t *testing.T) {
 			t.Errorf("repo received vibe = %q, want cleared", got.Vibe)
 		}
 	})
+
+	// T6 (places-api-cost-reduction): an admin patching Photos directly is
+	// itself a resolve — it must mark PhotosResolved so a later GetPhotos
+	// doesn't live-resolve and clobber the admin's curated set.
+	t.Run("photos patch marks PhotosResolved when the caller didn't already say so", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		photos := []activitiessvc.Photo{{URL: "https://example.com/admin.jpg"}}
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Photos: &photos})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotUpdatePatch.PhotosResolved == nil || !*repo.gotUpdatePatch.PhotosResolved {
+			t.Errorf("repo patch PhotosResolved = %v, want true", repo.gotUpdatePatch.PhotosResolved)
+		}
+	})
+
+	t.Run("photos patch does not override an explicit PhotosResolved", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		photos := []activitiessvc.Photo{{URL: "https://example.com/admin.jpg"}}
+		resolvedFalse := false
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Photos: &photos, PhotosResolved: &resolvedFalse})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotUpdatePatch.PhotosResolved == nil || *repo.gotUpdatePatch.PhotosResolved {
+			t.Errorf("repo patch PhotosResolved = %v, want explicit false preserved", repo.gotUpdatePatch.PhotosResolved)
+		}
+	})
+
+	t.Run("no photos patch leaves PhotosResolved untouched", func(t *testing.T) {
+		repo := &fakeRepo{}
+		svc := New(repo)
+		_, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Title: strPtr("New Title")})
+		if err != nil {
+			t.Fatalf("Update() unexpected error: %v", err)
+		}
+		if repo.gotUpdatePatch.PhotosResolved != nil {
+			t.Errorf("repo patch PhotosResolved = %v, want nil", repo.gotUpdatePatch.PhotosResolved)
+		}
+	})
+}
+
+// T6 (places-api-cost-reduction) end-to-end: after an admin patches Photos
+// via Update, the next GetPhotos call for that row must not live-resolve —
+// it should return the admin's curated set untouched, with zero calls to
+// ResolvePhotos/LocationPhotos.
+func TestActivities_GetPhotos_DoesNotOverwriteAdminCuratedPhotos(t *testing.T) {
+	adminPhotos := []activitiessvc.Photo{{URL: "https://example.com/admin-curated.jpg"}}
+	repo := &fakeRepo{}
+	svc := New(repo)
+
+	if _, err := svc.Update(context.Background(), "1", activitiessvc.UpdatePatch{Photos: &adminPhotos}); err != nil {
+		t.Fatalf("Update() unexpected error: %v", err)
+	}
+
+	// The repo's state after Update: ExternalID present (an ingested row)
+	// and PhotosResolved set by the fix, exactly as fakeRepo.Update would
+	// persist it.
+	repo.getOut = activitiessvc.Activity{
+		ExternalID:     "google-place-id",
+		Photos:         adminPhotos,
+		PhotosResolved: repo.gotUpdatePatch.PhotosResolved != nil && *repo.gotUpdatePatch.PhotosResolved,
+	}
+
+	fp := &fakePlaces{out: []activitiessvc.Photo{{URL: "https://example.com/google-overwrite.jpg"}}}
+	svc = New(repo).WithPlaces(fp)
+
+	got, err := svc.GetPhotos(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetPhotos() unexpected error: %v", err)
+	}
+	if fp.calls != 0 {
+		t.Errorf("ResolvePhotos called %d times, want 0 (admin curation must not be re-resolved)", fp.calls)
+	}
+	if len(got) != 1 || got[0].URL != adminPhotos[0].URL {
+		t.Errorf("GetPhotos() = %+v, want admin's curated photos unchanged", got)
+	}
 }
 
 func TestActivities_Create_BlocksTripadvisorSourcedCategories(t *testing.T) {

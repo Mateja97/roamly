@@ -224,6 +224,14 @@ type Activity struct {
 	// timestamp, read from the `created_at` column (NOT NULL DEFAULT now(),
 	// migration 0001) — selected for the first time by this field.
 	CreatedAt time.Time
+	// PhotosResolved (T6, places-api-cost-reduction) records whether
+	// service.GetPhotos has already run a live Google/Tripadvisor photo
+	// resolve for this row, read from the `photos_resolved` column
+	// (migration 0034). Replaces GetPhotos' old len(Photos) > 1 inference,
+	// which misfired forever for a venue whose true photo count is exactly
+	// 1. False for every row that hasn't resolved yet, including one with a
+	// single stored (provisional) photo.
+	PhotosResolved bool
 }
 
 // ItemPrice is a name/price pair: Restaurants' popular dishes, Cafés' bar
@@ -779,4 +787,9 @@ type UpdatePatch struct {
 	// (see Activity.DraftReason and migration 0033). Setting a reason and
 	// setting Status are independent patches; nothing here couples them.
 	DraftReason *string
+	// PhotosResolved (T6, places-api-cost-reduction): same nil-untouched/
+	// non-nil-set convention as the other fields. service.GetPhotos is the
+	// only caller that sets this, right after a live photo resolve
+	// succeeds.
+	PhotosResolved *bool
 }
