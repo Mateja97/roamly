@@ -71,6 +71,19 @@ const AuditFieldMask = "editorialSummary,generativeSummary,reviews,regularOpenin
 // this is a seed-time tool, not a service under load.
 const maxAttempts = 4
 
+// endpoint* name the six billable outbound calls (T1, places-api-cost-reduction)
+// for callMetrics' recording — one label per exported method that hits
+// Google, not per internal helper (ResolvePhotos' own photos-list fetch
+// shares endpointPlaceDetails since it's the same wire endpoint).
+const (
+	endpointSearchText         = "SearchText"
+	endpointSearchNearby       = "SearchNearby"
+	endpointSearchTextInArea   = "SearchTextInArea"
+	endpointPlaceDetails       = "PlaceDetails"
+	endpointPhotoMediaURL      = "PhotoMediaURL"
+	endpointReverseGeocodeCity = "ReverseGeocodeCity"
+)
+
 // Client calls the Google Places API (New): text search + photo media
 // resolution. Exactly one http.Client, one base URL, one key.
 type Client struct {
@@ -133,7 +146,7 @@ func (c *Client) SearchText(ctx context.Context, query, pageToken, fieldMask str
 	}
 
 	var parsed SearchResult
-	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchText", body, map[string]string{
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchText", endpointSearchText, SKUTierForMask(fieldMask, endpointSearchText), body, map[string]string{
 		"Content-Type":     "application/json",
 		"X-Goog-Api-Key":   c.key,
 		"X-Goog-FieldMask": fieldMask,
@@ -199,7 +212,7 @@ func (c *Client) SearchNearby(ctx context.Context, req NearbyRequest, fieldMask 
 	var parsed struct {
 		Places []placesmap.Place `json:"places"`
 	}
-	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchNearby", body, map[string]string{
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchNearby", endpointSearchNearby, SKUTierForMask(fieldMask, endpointSearchNearby), body, map[string]string{
 		"Content-Type":     "application/json",
 		"X-Goog-Api-Key":   c.key,
 		"X-Goog-FieldMask": fieldMask,
@@ -242,7 +255,7 @@ func (c *Client) SearchTextInArea(ctx context.Context, query string, lat, lng, r
 	}
 
 	var parsed SearchResult
-	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchText", body, map[string]string{
+	err = c.doJSON(ctx, http.MethodPost, c.base+"/v1/places:searchText", endpointSearchTextInArea, SKUTierForMask(fieldMask, endpointSearchTextInArea), body, map[string]string{
 		"Content-Type":     "application/json",
 		"X-Goog-Api-Key":   c.key,
 		"X-Goog-FieldMask": fieldMask,
@@ -279,7 +292,14 @@ func (c *Client) ReverseGeocodeCity(ctx context.Context, lat, lng float64) (stri
 			} `json:"address_components"`
 		} `json:"results"`
 	}
-	if err := c.doJSON(ctx, http.MethodGet, url, nil, nil, &parsed); err != nil {
+	// Geocoding has no field mask to select from and only one priced tier in
+	// use here, so the tier is fixed rather than derived (SKUTierForMask
+	// only applies to the field-mask-driven Places endpoints above).
+	// Geocoding is billed under its own separate SKU, not Places' Essentials
+	// — TierGeocoding keeps it out of that bucket so Essentials still means
+	// "Places Essentials" (endpointReverseGeocodeCity is what keeps the two
+	// separable in the recorded counts either way).
+	if err := c.doJSON(ctx, http.MethodGet, url, endpointReverseGeocodeCity, TierGeocoding, nil, nil, &parsed); err != nil {
 		return "", "", fmt.Errorf("reverse geocoding %f,%f: %w", lat, lng, err)
 	}
 	switch parsed.Status {
@@ -317,7 +337,9 @@ func (c *Client) PhotoMediaURL(ctx context.Context, photoName string) (string, e
 	var parsed struct {
 		PhotoURI string `json:"photoUri"`
 	}
-	if err := c.doJSON(ctx, http.MethodGet, url, nil, nil, &parsed); err != nil {
+	// Photo media resolution has no field mask (the URL alone selects the
+	// resource); Photos is its own fixed SKU, not mask-derived.
+	if err := c.doJSON(ctx, http.MethodGet, url, endpointPhotoMediaURL, TierPhotos, nil, nil, &parsed); err != nil {
 		return "", err
 	}
 	if parsed.PhotoURI == "" {
@@ -372,9 +394,10 @@ func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) (
 	var parsed struct {
 		Photos []placePhotoRef `json:"photos"`
 	}
-	if err := c.doJSON(ctx, http.MethodGet, url, nil, map[string]string{
+	const photosOnlyMask = "photos"
+	if err := c.doJSON(ctx, http.MethodGet, url, endpointPlaceDetails, SKUTierForMask(photosOnlyMask, endpointPlaceDetails), nil, map[string]string{
 		"X-Goog-Api-Key":   c.key,
-		"X-Goog-FieldMask": "photos",
+		"X-Goog-FieldMask": photosOnlyMask,
 	}, &parsed); err != nil {
 		return nil, fmt.Errorf("fetching place %s photos: %w", placeID, err)
 	}
@@ -412,7 +435,7 @@ func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) (
 func (c *Client) PlaceDetails(ctx context.Context, placeID, fieldMask string) (placesmap.PlaceDetail, error) {
 	url := fmt.Sprintf("%s/v1/places/%s", c.base, placeID)
 	var parsed placesmap.PlaceDetail
-	if err := c.doJSON(ctx, http.MethodGet, url, nil, map[string]string{
+	if err := c.doJSON(ctx, http.MethodGet, url, endpointPlaceDetails, SKUTierForMask(fieldMask, endpointPlaceDetails), nil, map[string]string{
 		"X-Goog-Api-Key":   c.key,
 		"X-Goog-FieldMask": fieldMask,
 	}, &parsed); err != nil {
@@ -431,8 +454,14 @@ func (c *Client) PlaceDetailsForAudit(ctx context.Context, placeID string) (plac
 
 // doJSON sends one request, retrying on 429/5xx with capped, jittered
 // backoff (non-transient errors, including other 4xx, return immediately),
-// and JSON-decodes a 2xx body into out.
-func (c *Client) doJSON(ctx context.Context, method, url string, body []byte, headers map[string]string, out any) error {
+// and JSON-decodes a 2xx body into out. It is also the single choke point
+// that records a billable call (T1, places-api-cost-reduction): the record
+// happens only on the confirmed-2xx return below, so a call that never
+// succeeds is never counted and a retried-then-successful call counts
+// exactly once, however many failed attempts preceded it. endpoint and tier
+// label that one count; tier is normally SKUTierForMask(fieldMask, endpoint)
+// computed by the caller, since doJSON itself doesn't parse headers.
+func (c *Client) doJSON(ctx context.Context, method, url, endpoint string, tier SKUTier, body []byte, headers map[string]string, out any) error {
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
@@ -468,6 +497,12 @@ func (c *Client) doJSON(ctx context.Context, method, url string, body []byte, he
 		}
 
 		if resp.StatusCode == http.StatusOK {
+			// Google already billed this 2xx before we ever see the body, so
+			// it's recorded here — before the decode — rather than after: a
+			// 2xx whose body fails to decode is still a billable call, and
+			// counting it only on decode success would undercount exactly
+			// that case.
+			metrics.record(endpoint, tier, CallerFrom(ctx))
 			if err := json.Unmarshal(raw, out); err != nil {
 				return fmt.Errorf("decoding response: %w", err)
 			}
