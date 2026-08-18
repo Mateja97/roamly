@@ -5,6 +5,7 @@ import { getActivity, getActivityPhotos } from '../../api/activities';
 import { classifyField } from './fieldKind';
 import {
   artAttribution,
+  descriptionText,
   factStripFields,
   genericActionLabel,
   getWebsiteURL,
@@ -272,6 +273,10 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   // (no link) — silence, not a premature plate.
   const googleReviewsCardShown =
     isPlacesLive && !(detailsPending && (activity.google_reviews ?? []).length === 0 && !activity.google_maps_uri);
+  // reviews-description-graceful-degrade T2: single home for "is there a
+  // real description" — threaded into DetailBody instead of it re-deriving
+  // presence from the raw field.
+  const description = descriptionText(activity);
   // Description skeleton must never show for a Tripadvisor-sourced row
   // (de-marked or not): `withTripadvisorGoogleReviews` (T1) never sets
   // `Description` on that merge path — only Rating/ReviewCount/
@@ -280,7 +285,17 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   // resolve into content, the flash-then-collapse DESIGN_STANDARDS.md
   // forbids. Genuine Places-live categories are unaffected — their skeleton
   // still resolves once the merge lands.
-  const descriptionPending = isPlacesLive && detailsPending && !seedTripadvisorSourced;
+  // Also gated on the raw (pre-classification) field: any non-empty raw
+  // `description` — including a denylisted placeholder that `description`
+  // above classifies away to `undefined` — means there's already seed
+  // content for this row. The live merge isn't guaranteed to replace a
+  // denylisted seed (server-side merge never blanks a stored value), so
+  // skeletoning it risks a guaranteed flash-then-collapse
+  // (DESIGN_STANDARDS.md L268-277) once the merge settles into the same
+  // nothing. A denylisted row must render nothing from frame one, never a
+  // pulse first.
+  const descriptionPending =
+    isPlacesLive && detailsPending && !seedTripadvisorSourced && !activity.description;
 
   return {
     activity,
@@ -320,6 +335,7 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
     eyebrow,
     showMetaRow,
     googleReviewsCardShown,
+    description,
     descriptionPending,
   };
 }

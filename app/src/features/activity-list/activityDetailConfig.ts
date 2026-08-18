@@ -212,6 +212,16 @@ export function artAttribution(activity: Activity): ArtAttribution | undefined {
   return { artist, workYear, medium };
 }
 
+// reviews-description-graceful-degrade T2: single home for "is there a real
+// description" — trims/empties/denylists via the same `prose` classification
+// `ProseBlock` applies. `useActivityDetailData` threads this into `DetailBody`
+// so the screen decides presence once instead of re-deciding inside
+// `ProseBlock` (which keeps its own `classifyField` call for every other
+// consumer — see ProseBlock.tsx).
+export function descriptionText(activity: Activity): string | undefined {
+  return classifyField('prose', activity.description);
+}
+
 // Restaurants/bars are Tripadvisor-exclusive; cafés joined as a third,
 // dual-sourced category per fix(activities-service) #104 ("restore Google as
 // a Café source alongside Tripadvisor" — a café can genuinely come from
