@@ -47,6 +47,13 @@ func (f *fakePlaces) PlaceDetails(ctx context.Context, _ string) (placesmap.Plac
 	return f.detailOut, f.detailErr
 }
 
+// PlaceDetailsForAudit: none of this file's tests exercise
+// WithAuditFieldMask, so it shares PlaceDetails' counter/behavior rather
+// than adding a second one nothing asserts against.
+func (f *fakePlaces) PlaceDetailsForAudit(ctx context.Context, placeID string) (placesmap.PlaceDetail, error) {
+	return f.PlaceDetails(ctx, placeID)
+}
+
 // SearchNearby/SearchTextInArea: fakePlaces here stands in for GetPhotos'/
 // GetByID's live-merge placesClient, never for the background discovery
 // sweep (see fakeGooglePlaces in activity_test.go) — these two exist only to
