@@ -58,6 +58,13 @@ func (f *fakeMerger) WithLiveDetails(_ context.Context, a activitiessvc.Activity
 	return a, true
 }
 
+// unboundedCalls is the -max-calls value every pre-T7 test below passes: big
+// enough that none of their small fixed row sets ever trips the budget, so
+// they keep exercising runAudit's existing behavior untouched. T7's own
+// tests (TestRunAudit_StopsAtMaxCalls, TestRunAudit_ReportsCallsBySKUTier)
+// use a real, small budget instead.
+const unboundedCalls = 1000
+
 func row(id, category string, photos int, details string) activitiessvc.Activity {
 	a := activitiessvc.Activity{
 		ID: id, Title: id, Category: activitiessvc.Category(category),
@@ -136,7 +143,7 @@ func TestRunAudit_TalliesByCategoryReasonAndScore(t *testing.T) {
 	}
 	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}
 
-	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, func() {})
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, unboundedCalls, func() {})
 
 	if report.scanned != 4 {
 		t.Errorf("scanned = %d, want 4", report.scanned)
@@ -173,7 +180,7 @@ func TestRunAudit_JudgesTheMergedRowNotTheStoredOne(t *testing.T) {
 	merged.Description = "A live editorial summary from Google."
 
 	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{"upgradeable": merged}}
-	report := runAudit(context.Background(), merger, []activitiessvc.Activity{stored}, service.DefaultMinContentScore, func() {})
+	report := runAudit(context.Background(), merger, []activitiessvc.Activity{stored}, service.DefaultMinContentScore, unboundedCalls, func() {})
 
 	if report.ok != 1 {
 		t.Errorf("ok = %d, want 1 — the stored row is bare but the merged row has a description", report.ok)
@@ -186,7 +193,7 @@ func TestRunAudit_JudgesTheMergedRowNotTheStoredOne(t *testing.T) {
 func TestRunAudit_PacesOncePerRow(t *testing.T) {
 	rows := []activitiessvc.Activity{row("a", "sport", 1, `{}`), row("b", "sport", 1, `{}`)}
 	paces := 0
-	runAudit(context.Background(), &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}, rows, service.DefaultMinContentScore, func() { paces++ })
+	runAudit(context.Background(), &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}, rows, service.DefaultMinContentScore, unboundedCalls, func() { paces++ })
 
 	if paces != 2 {
 		t.Errorf("paced %d times, want once per row — every row costs a billed Places call", paces)
@@ -207,7 +214,7 @@ func TestRunAudit_SkipsRowsWhosePlacesResolveFailed(t *testing.T) {
 		resolveFails: map[string]bool{"quota-tripped": true},
 	}
 
-	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, func() {})
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, unboundedCalls, func() {})
 
 	if report.skipped != 1 {
 		t.Errorf("skipped = %d, want 1", report.skipped)
@@ -273,7 +280,7 @@ func TestRunAudit_TracksByPassingSignalsAndPerCategoryRates(t *testing.T) {
 	}
 	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}
 
-	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, func() {})
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, unboundedCalls, func() {})
 
 	wantCombo := service.SignalBodyBlock
 	if got := report.byPassingSignals[wantCombo]; got != 1 {
@@ -296,5 +303,82 @@ func TestRunAudit_TracksByPassingSignalsAndPerCategoryRates(t *testing.T) {
 	wantRow := fmt.Sprintf("  %-16s %8d %7d %6s", "nature", 2, 1, "50%")
 	if !strings.Contains(out, wantRow) {
 		t.Errorf("render() = %q, want the per-category row %q (scanned 2, passed 1, rate 50%%)", out, wantRow)
+	}
+}
+
+// TestRunAudit_StopsAtMaxCalls is T7's "when the budget is reached mid-run
+// the tool stops cleanly and reports a partial run" acceptance criterion: a
+// -max-calls smaller than the input must stop the loop before every row is
+// attempted, and the report must say so rather than reading as a complete
+// pass.
+func TestRunAudit_StopsAtMaxCalls(t *testing.T) {
+	rows := []activitiessvc.Activity{
+		row("a", "sport", 1, `{}`), row("b", "sport", 1, `{}`), row("c", "sport", 1, `{}`),
+	}
+	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}
+
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, 2, func() {})
+
+	if report.callsMade != 2 {
+		t.Errorf("callsMade = %d, want 2 (the budget)", report.callsMade)
+	}
+	if !report.partial {
+		t.Error("partial = false, want true — the run stopped before covering every input row")
+	}
+	if len(merger.merged) != 2 {
+		t.Errorf("merged %d rows, want exactly 2 — the third row must never be attempted once the budget is spent", len(merger.merged))
+	}
+	if report.rowsInput != 3 {
+		t.Errorf("rowsInput = %d, want 3 (the full input, regardless of how much was covered)", report.rowsInput)
+	}
+
+	out := report.render(service.DefaultMinContentScore)
+	if !strings.Contains(out, "PARTIAL RUN") {
+		t.Errorf("render() = %q, want it to flag a partial run", out)
+	}
+}
+
+// TestRunAudit_DoesNotStopBeforeTheBudgetIsReached is the budget's other
+// edge: a run that never reaches -max-calls must report a complete pass, not
+// a partial one, even though callsMade never equals rowsInput exactly (the
+// loop simply runs out of rows first).
+func TestRunAudit_DoesNotStopBeforeTheBudgetIsReached(t *testing.T) {
+	rows := []activitiessvc.Activity{row("a", "sport", 1, `{}`)}
+	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}
+
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, 5, func() {})
+
+	if report.partial {
+		t.Error("partial = true, want false — every input row was attempted")
+	}
+	if report.callsMade != 1 {
+		t.Errorf("callsMade = %d, want 1", report.callsMade)
+	}
+}
+
+// TestRunAudit_ReportsCallsBySKUTier is T7's "each tool's run output states
+// the call count per SKU tier" acceptance criterion. auditcontent always
+// sends places.AuditFieldMask, so every attempted row lands in the same
+// tier; the assertion is that the tier breakdown is populated and rendered,
+// not which exact tier name AuditFieldMask happens to classify as (that
+// belongs to TestSKUTier in internal/places).
+func TestRunAudit_ReportsCallsBySKUTier(t *testing.T) {
+	rows := []activitiessvc.Activity{row("a", "sport", 1, `{}`), row("b", "sport", 1, `{}`)}
+	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}
+
+	report := runAudit(context.Background(), merger, rows, service.DefaultMinContentScore, unboundedCalls, func() {})
+
+	if len(report.callsByTier) != 1 {
+		t.Fatalf("callsByTier = %v, want exactly one tier (every call uses the same fixed AuditFieldMask)", report.callsByTier)
+	}
+	for tier, n := range report.callsByTier {
+		if n != 2 {
+			t.Errorf("callsByTier[%q] = %d, want 2", tier, n)
+		}
+	}
+
+	out := report.render(service.DefaultMinContentScore)
+	if !strings.Contains(out, "Places calls: 2") {
+		t.Errorf("render() = %q, want it to report the total call count", out)
 	}
 }
