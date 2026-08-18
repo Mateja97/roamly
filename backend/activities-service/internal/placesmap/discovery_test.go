@@ -1,6 +1,7 @@
 package placesmap
 
 import (
+	"slices"
 	"testing"
 
 	"backend/shared/models/activitiessvc"
@@ -123,6 +124,50 @@ func TestDiscoveryRows_ExactlyOneDiscoveryMethod(t *testing.T) {
 		hasTypes, hasQuery := len(r.Types) > 0, r.TextQuery != ""
 		if hasTypes == hasQuery {
 			t.Errorf("row %s/%s: has types=%v textQuery=%v, want exactly one", r.Category, r.Subtype, hasTypes, hasQuery)
+		}
+	}
+}
+
+// TestDiscoveryGroups_PartitionsDiscoveryRows is T8's (places-api-cost-
+// reduction) grouping contract: every DiscoveryRow appears in exactly one
+// group's Rows, and never any that don't exist — the merge must not drop or
+// duplicate a row, or a subtype loses its only discovery source.
+func TestDiscoveryGroups_PartitionsDiscoveryRows(t *testing.T) {
+	seen := map[string]int{}
+	for _, g := range DiscoveryGroups {
+		for _, r := range g.Rows {
+			seen[string(r.Category)+"|"+r.Subtype]++
+			if r.Category != g.Category {
+				t.Errorf("row %s/%s sits in a %s group; every member row must share its group's category", r.Category, r.Subtype, g.Category)
+			}
+		}
+	}
+	for _, r := range DiscoveryRows {
+		key := string(r.Category) + "|" + r.Subtype
+		if seen[key] != 1 {
+			t.Errorf("row %s has %d group memberships, want exactly 1", key, seen[key])
+		}
+	}
+}
+
+// TestDiscoveryGroups_MergesOnlyTypesRows pins the two group shapes: a
+// TextQuery row (no Table A type) always gets its own single-row group with
+// no Types, since searchNearby has no phrase-search equivalent to merge into;
+// a Types row always lands in a group whose Types is a superset of its own.
+func TestDiscoveryGroups_MergesOnlyTypesRows(t *testing.T) {
+	for _, g := range DiscoveryGroups {
+		if len(g.Rows) == 1 && g.Rows[0].TextQuery != "" {
+			if len(g.Types) != 0 {
+				t.Errorf("TextQuery group %s/%s has non-empty Types %v, want none", g.Category, g.Rows[0].Subtype, g.Types)
+			}
+			continue
+		}
+		for _, r := range g.Rows {
+			for _, ty := range r.Types {
+				if !slices.Contains(g.Types, ty) {
+					t.Errorf("group %s Types %v is missing member row %s/%s's type %q", g.Category, g.Types, r.Category, r.Subtype, ty)
+				}
+			}
 		}
 	}
 }

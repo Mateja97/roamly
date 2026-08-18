@@ -269,6 +269,58 @@ var typeToCategory = func() map[string]activitiessvc.Category {
 	return m
 }()
 
+// DiscoveryGroup merges every Types-based DiscoveryRow within one category
+// into a single unit of search work, so one searchNearby call can carry
+// every member row's includedTypes at once (T8, places-api-cost-reduction).
+// subtypeFor (service/googlesync.go) already classifies a returned venue
+// from its own primaryType via typeToSubtype before it ever falls back to a
+// row's Subtype, so merging the type lists several rows search with does not
+// change which subtype a mapped venue gets — it only cuts how many
+// searchNearby calls find them.
+//
+// A TextQuery row (Types == nil) can't join a group: searchNearby has no
+// phrase-search equivalent, so it stays its own single-row group, unchanged
+// from today's one-call-per-row behaviour.
+type DiscoveryGroup struct {
+	Category activitiessvc.Category
+	// Types is the union of every member row's Types, in DiscoveryRows
+	// order. Empty exactly when this is a single TextQuery row's group.
+	Types []string
+	// Rows are the member DiscoveryRows this group's one search covers —
+	// exactly one for a TextQuery group, one or more for a Types group.
+	// Kept so the caller can mark every member (category, subtype) synced
+	// after a shared search, not just a representative one.
+	Rows []DiscoveryRow
+}
+
+// DiscoveryGroups is DiscoveryRows grouped by category for search execution:
+// every Types-based row in a category shares one group (in the order its
+// first row appears), every TextQuery row keeps its own single-row group.
+// Built once at init from DiscoveryRows, same pattern as typeToSubtype, so
+// the two tables cannot drift.
+var DiscoveryGroups = func() []DiscoveryGroup {
+	merged := map[activitiessvc.Category]int{} // category -> index into groups of its merged Types group
+	var groups []DiscoveryGroup
+	for _, r := range DiscoveryRows {
+		if len(r.Types) == 0 {
+			groups = append(groups, DiscoveryGroup{Category: r.Category, Rows: []DiscoveryRow{r}})
+			continue
+		}
+		if i, ok := merged[r.Category]; ok {
+			groups[i].Types = append(groups[i].Types, r.Types...)
+			groups[i].Rows = append(groups[i].Rows, r)
+			continue
+		}
+		merged[r.Category] = len(groups)
+		groups = append(groups, DiscoveryGroup{
+			Category: r.Category,
+			Types:    append([]string{}, r.Types...),
+			Rows:     []DiscoveryRow{r},
+		})
+	}
+	return groups
+}()
+
 // MinRating and MinReviews are the discovery quality floor, deliberately far
 // below the old batch pipeline's 4.0/50. Those floors existed to compensate
 // for vague text queries returning junk; includedTypes plus a hard circle

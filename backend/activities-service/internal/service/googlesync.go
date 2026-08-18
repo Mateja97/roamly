@@ -48,17 +48,19 @@ func googleSyncRadiusKM(req Request) float64 {
 	return googleMaxSyncRadiusKM
 }
 
-// maxGoogleRowsPerQuery caps how many discovery rows one Query call
-// schedules. There are ~53 rows per cell; running them all on one query
-// would cost ~$1.70 and hammer the API for a single search. At 8 per query a
-// city converges over roughly seven searches, which is the price of not
-// making the first user wait for a full ingest.
+// maxGoogleRowsPerQuery caps how many discovery groups one Query call
+// schedules. There are ~16 groups per cell after T8's merge (down from ~53
+// individual rows — see placesmap.DiscoveryGroups); running them all on one
+// query would still hammer the API for a single search. At 8 per query a
+// city converges in roughly two searches now instead of seven.
 const maxGoogleRowsPerQuery = 8
 
-// googleSyncJob is one unit of work: one discovery row at one anchor.
+// googleSyncJob is one unit of work: one discovery group (T8,
+// places-api-cost-reduction: one or more discovery rows sharing a category,
+// searched together) at one anchor.
 type googleSyncJob struct {
 	anchor activitiessvc.Point
-	row    placesmap.DiscoveryRow
+	group  placesmap.DiscoveryGroup
 }
 
 // cellLocation is a sync cell's resolved place name, applied to every venue
@@ -78,35 +80,48 @@ type cellLocation struct {
 	Country string
 }
 
-// googleDueRows picks which discovery rows to sync for req, in priority
+// googleDueRows picks which discovery groups to sync for req, in priority
 // order, capped at maxGoogleRowsPerQuery.
 //
-// Priority matters because the cap means most rows wait: a user who filtered
-// to Wellness/Yoga should get yoga studios on their next search, not on their
-// seventh. Order is (1) rows matching the request's category AND subtype
-// filter, (2) rows matching its category filter, (3) everything else.
+// Priority matters because the cap means most groups wait: a user who
+// filtered to Wellness/Yoga should get yoga studios on their next search, not
+// on their seventh. Order is (1) groups matching the request's category AND
+// subtype filter, (2) groups matching its category filter, (3) everything
+// else.
 //
-// fresh reports whether (cell, category, subtype) is within TTL; it is a
-// callback rather than a repo call so this stays a pure function.
+// A group is due when ANY member row's (cell, category, subtype) is stale —
+// running it re-covers every member's types in the same call, so there is no
+// reason to wait for all of them to go stale together. fresh reports whether
+// (cell, category, subtype) is within TTL; it is a callback rather than a
+// repo call so this stays a pure function.
 func googleDueRows(req Request, fresh func(cell, category, subtype string) bool) []googleSyncJob {
 	var exact, category, rest []googleSyncJob
 
 	for _, anchor := range syncAnchors(req) {
 		cell := syncCellKey(anchor.Lat, anchor.Lng)
-		for _, row := range placesmap.DiscoveryRows {
-			// Restaurants/Bars rows exist in DiscoveryRows for
+		for _, group := range placesmap.DiscoveryGroups {
+			// Restaurants/Bars groups exist in DiscoveryGroups for
 			// classification only (placesmap.Subtype) — discovery stays
 			// Tripadvisor-exclusive for them, so skip before they ever reach
 			// a searchNearby call.
-			if !slices.Contains(placesmap.GoogleCategories, row.Category) {
+			if !slices.Contains(placesmap.GoogleCategories, group.Category) {
 				continue
 			}
-			if fresh(cell, string(row.Category), row.Subtype) {
+			due := false
+			catWanted := len(req.Categories) == 0 || slices.Contains(req.Categories, group.Category)
+			subWanted := false
+			for _, r := range group.Rows {
+				if !fresh(cell, string(r.Category), r.Subtype) {
+					due = true
+				}
+				if len(req.Subcategories) > 0 && slices.Contains(req.Subcategories, r.Subtype) {
+					subWanted = true
+				}
+			}
+			if !due {
 				continue
 			}
-			job := googleSyncJob{anchor: anchor, row: row}
-			catWanted := len(req.Categories) == 0 || slices.Contains(req.Categories, row.Category)
-			subWanted := len(req.Subcategories) > 0 && slices.Contains(req.Subcategories, row.Subtype)
+			job := googleSyncJob{anchor: anchor, group: group}
 
 			switch {
 			case catWanted && subWanted:
@@ -398,18 +413,20 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 		cell = cellLocation{City: city, Country: country}
 	}
 
-	rows := make([]placesmap.DiscoveryRow, 0, len(placesmap.DiscoveryRows))
-	for _, row := range placesmap.DiscoveryRows {
-		// Same gate as googleDueRows: Restaurants/Bars rows classify
+	var groups []placesmap.DiscoveryGroup
+	rowsTotal := 0
+	for _, g := range placesmap.DiscoveryGroups {
+		// Same gate as googleDueRows: Restaurants/Bars groups classify
 		// Tripadvisor venues but are never discovered from Google.
-		if slices.Contains(placesmap.GoogleCategories, row.Category) {
-			rows = append(rows, row)
+		if slices.Contains(placesmap.GoogleCategories, g.Category) {
+			groups = append(groups, g)
+			rowsTotal += len(g.Rows)
 		}
 	}
 
-	summary := PrewarmSummary{RowsTotal: len(rows)}
+	summary := PrewarmSummary{RowsTotal: rowsTotal}
 	tally := &placesCallTally{}
-	for _, row := range rows {
+	for _, g := range groups {
 		if tally.total >= maxCalls {
 			summary.Partial = true
 			slog.Warn("prewarm call budget reached; stopping short of full coverage",
@@ -421,63 +438,93 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 		// resolve a wider radius from, and widening it is outside this
 		// task's scope — a seed run stays exactly as comprehensive as it
 		// was.
-		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, row: row}, cell, NearbyRadiusKM, tally)
-		summary.RowsCovered++
+		a.syncGoogleRow(ctx, googleSyncJob{anchor: anchor, group: g}, cell, NearbyRadiusKM, tally)
+		summary.RowsCovered += len(g.Rows)
 	}
 	summary.CallsMade = tally.total
 	summary.CallsByTier = tally.byTier
 	return summary
 }
 
-// syncGoogleRow runs one discovery row at one anchor: a single searchNearby,
-// then an Upsert per surviving place — except a place arbitrated away by
-// venueWrongCategory (below), which is neither ingested nor counted as
-// eligible for this row.
+// representativeRow reduces group to the single placesmap.DiscoveryRow shape
+// syncGoogleRow's search/classify/ingest steps already take (T8,
+// places-api-cost-reduction): Category and Types drive the search and the
+// venueWrongCategory arbitration, both identical for every member row of a
+// group by construction. Subtype only matters as subtypeFor's last-resort
+// fallback, reached exclusively for a venue whose primaryType maps to no
+// known subtype at all — for those, "" (the category's own un-subtyped
+// bucket) is as good a bucket as any single merged-away subtype would have
+// been, and the task's own contract only promises unchanged subtypes for
+// venues that DO map.
 //
-// MarkSynced is called only when the search call itself succeeded AND every
-// place that should have been ingested (survived placesmap.PassesFloor AND
-// venueWrongCategory) was actually ingested — or the row genuinely had
-// nothing eligible to ingest, which is not a failure. A row whose search
-// succeeded but whose every eligible Upsert then failed is left unmarked —
-// marking it would freeze the cell at zero ingested rows for the whole TTL,
-// the exact Belgrade failure mode (2 restaurants for 14 days) the
-// Tripadvisor sweep's own MarkSynced gate exists to avoid. That must be
-// distinguished from a row whose search succeeded but returned only
-// sub-floor or wrong-category venues (both a common, unremarkable outcome —
-// a niche subtype in a smaller city rarely clears the floor, and a
-// type-overlapping row often finds venues its own category doesn't own):
-// that row has nothing to ingest through no fault of its own and must still
-// be marked fresh, or it re-searches on every future query forever —
-// trading the stale-data bug for an unbounded quota-spend one. A single
-// Upsert failure is logged and skipped without abandoning the rest of the
-// row.
+// A single-row TextQuery group returns that row unchanged: it never merges
+// with anything, so its old one-row behaviour, subtype fallback included, is
+// preserved exactly.
+func representativeRow(group placesmap.DiscoveryGroup) placesmap.DiscoveryRow {
+	if len(group.Rows) == 1 {
+		return group.Rows[0]
+	}
+	return placesmap.DiscoveryRow{Category: group.Category, Types: group.Types}
+}
+
+// syncGoogleRow runs one discovery group at one anchor: a single searchNearby
+// (or searchText, for a single-row TextQuery group) covering every member
+// row's types at once (T8, places-api-cost-reduction), then an Upsert per
+// surviving place — except a place arbitrated away by venueWrongCategory
+// (below), which is neither ingested nor counted as eligible.
 //
-// tally records every Places call this row makes — just the one search call
-// per row (T5, places-api-cost-reduction removed the per-venue ResolvePhotos
-// call this used to also record; see the no-photo-resolve comment below),
-// split by SKU tier — nil for syncGoogleIfNeeded's live per-request sync,
-// which has no report to build (see placesCallTally's doc); PrewarmGoogle
-// passes a real one to track its call budget.
+// MarkSynced is called, once per member row, only when the search call
+// itself succeeded AND every place that should have been ingested (survived
+// placesmap.PassesFloor AND venueWrongCategory) was actually ingested — or
+// the group genuinely had nothing eligible to ingest, which is not a
+// failure. A group whose search succeeded but whose every eligible Upsert
+// then failed is left entirely unmarked — marking it would freeze the cell
+// at zero ingested rows for the whole TTL, the exact Belgrade failure mode
+// (2 restaurants for 14 days) the Tripadvisor sweep's own MarkSynced gate
+// exists to avoid. That must be distinguished from a group whose search
+// succeeded but returned only sub-floor or wrong-category venues (both a
+// common, unremarkable outcome — a niche subtype in a smaller city rarely
+// clears the floor, and a type-overlapping row often finds venues its own
+// category doesn't own): that group has nothing to ingest through no fault
+// of its own and must still mark every member row fresh, or they re-search
+// on every future query forever — trading the stale-data bug for an
+// unbounded quota-spend one. A single Upsert failure is logged and skipped
+// without abandoning the rest of the group.
+//
+// Every member row is marked fresh together, even one whose own types
+// happened to yield nothing this time: the shared search already paid for
+// their coverage, so there is no cost saved by leaving them stale, and doing
+// so would just re-trigger the exact search this merge exists to avoid.
+//
+// tally records every Places call this group makes — just the one search
+// call per group, covering however many rows it merges (T5,
+// places-api-cost-reduction removed the per-venue ResolvePhotos call this
+// used to also record; see the no-photo-resolve comment below), split by SKU
+// tier — nil for syncGoogleIfNeeded's live per-request sync, which has no
+// report to build (see placesCallTally's doc); PrewarmGoogle passes a real
+// one to track its call budget.
 func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell cellLocation, radiusKM float64, tally *placesCallTally) {
+	row := representativeRow(job.group)
+
 	var found []placesmap.Place
 	var err error
-	if len(job.row.Types) > 0 {
+	if len(row.Types) > 0 {
 		found, err = a.places.SearchNearby(ctx, places.NearbyRequest{
 			Lat: job.anchor.Lat, Lng: job.anchor.Lng,
 			RadiusM:       radiusKM * 1000,
-			IncludedTypes: job.row.Types,
+			IncludedTypes: row.Types,
 			MaxResults:    20,
 		}, places.NearbyFieldMask)
 	} else {
 		// The ~5 subtypes Table A cannot express. Area-bounded so a phrase
 		// like "escape room" can't pull in results from the next country.
-		found, err = a.places.SearchTextInArea(ctx, job.row.TextQuery,
+		found, err = a.places.SearchTextInArea(ctx, row.TextQuery,
 			job.anchor.Lat, job.anchor.Lng, radiusKM, places.NearbyFieldMask)
 	}
 	tally.record(places.NearbyFieldMask)
 	if err != nil {
-		slog.Warn("google discovery row failed",
-			"category", job.row.Category, "subtype", job.row.Subtype, "error", err)
+		slog.Warn("google discovery group failed",
+			"category", job.group.Category, "types", job.group.Types, "error", err)
 		return
 	}
 
@@ -487,9 +534,9 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 		if !placesmap.PassesFloor(p) {
 			continue
 		}
-		if venueWrongCategory(job.row, p) {
+		if venueWrongCategory(row, p) {
 			// Arbitrated away, not a floor rejection and not an upsert
-			// failure — must not touch passed/kept, or a row whose every
+			// failure — must not touch passed/kept, or a group whose every
 			// venue is skipped would look like "found eligible places but
 			// every upsert failed" below and get left unmarked forever
 			// instead of correctly marked fresh (see venueWrongCategory's
@@ -508,27 +555,33 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 		// detail view — the client already renders a missing-image
 		// placeholder for that case, same as a photo-resolve failure always
 		// produced before this change. tally therefore never sees a "photos"
-		// entry for this row — see tally's own doc above, updated by T5 to
+		// entry for this group — see tally's own doc above, updated by T5 to
 		// drop the ResolvePhotos-per-venue call it used to record.
-		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, nil, cell)); err != nil {
+		//
+		// toIngest/subtypeFor still classify p from its own primaryType/types
+		// via placesmap.Subtype, same as before merging — row here is only
+		// the Category and the (rarely reached) subtype fallback, per
+		// representativeRow's doc above.
+		if _, err := a.repo.Upsert(ctx, toIngest(row, p, nil, cell)); err != nil {
 			slog.Warn("google sync upsert failed", "place_id", p.ID, "error", err)
 			continue
 		}
 		kept++
 	}
 	if passed > 0 && kept == 0 {
-		slog.Warn("google discovery row found eligible places but every upsert failed; leaving unmarked to retry",
-			"category", job.row.Category, "subtype", job.row.Subtype, "found", len(found), "passed", passed)
+		slog.Warn("google discovery group found eligible places but every upsert failed; leaving unmarked to retry",
+			"category", job.group.Category, "types", job.group.Types, "found", len(found), "passed", passed)
 		return
 	}
 
 	cellKey := syncCellKey(job.anchor.Lat, job.anchor.Lng)
-	if err := a.repo.MarkSynced(ctx, ProviderGoogle, cellKey, string(job.row.Category), job.row.Subtype, radiusKM); err != nil {
-		slog.Warn("google mark-synced failed", "cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype, "error", err)
-		return
+	for _, r := range job.group.Rows {
+		if err := a.repo.MarkSynced(ctx, ProviderGoogle, cellKey, string(r.Category), r.Subtype, radiusKM); err != nil {
+			slog.Warn("google mark-synced failed", "cell", cellKey, "category", r.Category, "subtype", r.Subtype, "error", err)
+		}
 	}
-	slog.Info("google discovery row synced",
-		"cell", cellKey, "category", job.row.Category, "subtype", job.row.Subtype,
+	slog.Info("google discovery group synced",
+		"cell", cellKey, "category", job.group.Category, "types", job.group.Types,
 		"found", len(found), "kept", kept, "skipped_wrong_category", skipped,
 		"skipped_wrong_category_types", skippedTypes)
 }
