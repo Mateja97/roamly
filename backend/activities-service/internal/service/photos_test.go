@@ -31,6 +31,12 @@ type fakePlaces struct {
 	detailOut   placesmap.PlaceDetail
 	detailErr   error
 	detailBlock bool
+
+	// auditDetailCalls counts PlaceDetailsForAudit separately from
+	// PlaceDetails (T7, places-api-cost-reduction) — so a test can assert
+	// WithAuditFieldMask actually routes resolvePlaceDetails to the audit
+	// call instead of the live detail-page one.
+	auditDetailCalls int
 }
 
 func (f *fakePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
@@ -40,18 +46,20 @@ func (f *fakePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activi
 
 func (f *fakePlaces) PlaceDetails(ctx context.Context, _ string) (placesmap.PlaceDetail, error) {
 	f.detailCalls++
+	return f.resolveDetail(ctx)
+}
+
+func (f *fakePlaces) PlaceDetailsForAudit(ctx context.Context, _ string) (placesmap.PlaceDetail, error) {
+	f.auditDetailCalls++
+	return f.resolveDetail(ctx)
+}
+
+func (f *fakePlaces) resolveDetail(ctx context.Context) (placesmap.PlaceDetail, error) {
 	if f.detailBlock {
 		<-ctx.Done()
 		return placesmap.PlaceDetail{}, ctx.Err()
 	}
 	return f.detailOut, f.detailErr
-}
-
-// PlaceDetailsForAudit: none of this file's tests exercise
-// WithAuditFieldMask, so it shares PlaceDetails' counter/behavior rather
-// than adding a second one nothing asserts against.
-func (f *fakePlaces) PlaceDetailsForAudit(ctx context.Context, placeID string) (placesmap.PlaceDetail, error) {
-	return f.PlaceDetails(ctx, placeID)
 }
 
 // SearchNearby/SearchTextInArea: fakePlaces here stands in for GetPhotos'/

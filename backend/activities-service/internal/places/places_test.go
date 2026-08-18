@@ -560,3 +560,63 @@ func TestClient_ReverseGeocodeCity_ZeroResults(t *testing.T) {
 		t.Errorf("city/country = %q/%q, want empty for ZERO_RESULTS", city, country)
 	}
 }
+
+// TestPlaceDetailsForAudit_SendsAuditFieldMask is T7's "the mask that goes
+// on the wire" assertion: cmd/auditcontent's own Place Details call must
+// carry AuditFieldMask, not the live detail page's wider detailFieldMask.
+func TestPlaceDetailsForAudit_SendsAuditFieldMask(t *testing.T) {
+	var gotMask string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMask = r.Header.Get("X-Goog-FieldMask")
+		if _, err := io.WriteString(w, `{}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	if _, err := c.PlaceDetailsForAudit(context.Background(), "place-1"); err != nil {
+		t.Fatalf("PlaceDetailsForAudit() error: %v", err)
+	}
+	if gotMask != places.AuditFieldMask {
+		t.Errorf("field mask sent = %q, want places.AuditFieldMask", gotMask)
+	}
+}
+
+// TestAuditFieldMask_ExcludesFieldsContentScoringNeverReads is T7's own
+// acceptance criterion, checked directly against the constant: no field that
+// service.Renderability's content scoring never reads once a row is merged —
+// in particular, no amenity boolean it discards (liveMusic) and no field
+// that only ever set Activity.Rating/GoogleMapsURI (never scored).
+func TestAuditFieldMask_ExcludesFieldsContentScoringNeverReads(t *testing.T) {
+	unused := []string{"rating", "userRatingCount", "priceLevel", "priceRange", "googleMapsUri", "liveMusic", "reviews.authorAttribution"}
+	for _, field := range unused {
+		if strings.Contains(places.AuditFieldMask, field) {
+			t.Errorf("AuditFieldMask = %q, must not contain %q — content scoring never reads it", places.AuditFieldMask, field)
+		}
+	}
+}
+
+func TestSKUTier(t *testing.T) {
+	tests := []struct {
+		name string
+		mask string
+		want string
+	}{
+		{"id only", "id", "IDs-Only"},
+		{"places-prefixed id only", "places.id", "IDs-Only"},
+		{"nearby discovery mask is Enterprise (rating)", places.NearbyFieldMask, "Enterprise"},
+		{"the full live detail mask is Enterprise+Atmosphere (reviews)", "rating,userRatingCount,reviews,editorialSummary", "Enterprise+Atmosphere"},
+		{"the narrowed audit mask is still Enterprise+Atmosphere (reviews)", places.AuditFieldMask, "Enterprise+Atmosphere"},
+		{"pro fields with no rating/reviews", "regularOpeningHours,websiteUri,primaryTypeDisplayName", "Pro"},
+		{"photos only", "photos", "Photos"},
+		{"location-shape fields fall back to Essentials", "displayName,formattedAddress,location", "Essentials"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := places.SKUTier(tt.mask); got != tt.want {
+				t.Errorf("SKUTier(%q) = %q, want %q", tt.mask, got, tt.want)
+			}
+		})
+	}
+}
