@@ -47,7 +47,10 @@ func main() {
 
 	// Public photo serving (T1): read-only off the shared volume
 	// activities-service writes to; no adminAuth, the app needs it.
-	api.RegisterPhotoRoutes(mux, sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos"))
+	if err := api.RegisterPhotoRoutes(mux, sharedconfig.OrDefault("PHOTOS_DIR", "/data/photos"), logger); err != nil {
+		logger.Error("startup failed", "error", err)
+		os.Exit(1)
+	}
 
 	// Admin surface (T2): fail closed. An unset/empty ADMIN_API_TOKEN means
 	// these routes are never registered at all — never "everything

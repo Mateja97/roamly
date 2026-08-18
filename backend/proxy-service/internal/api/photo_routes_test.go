@@ -8,7 +8,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// symlinkOrSkip creates a symlink and skips the test (not fails) if the
+// platform/environment refuses symlink creation (e.g. no privilege).
+func symlinkOrSkip(t *testing.T, oldname, newname string) {
+	t.Helper()
+	if err := os.Symlink(oldname, newname); err != nil {
+		t.Skipf("symlinks not supported here: %v", err)
+	}
+}
+
+// discardLogger is the silent *slog.Logger every RegisterPhotoRoutes call
+// in this file passes — these tests assert on HTTP responses and (for
+// TestRegisterPhotoRoutes_LogsAnomalies) captured log records, not on
+// stderr noise from a real logger.
+var discardLogger = slog.New(slog.DiscardHandler)
 
 func TestRegisterPhotoRoutes_ServesFileFromRoot(t *testing.T) {
 	root := t.TempDir()
@@ -20,7 +36,9 @@ func TestRegisterPhotoRoutes_ServesFileFromRoot(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	RegisterPhotoRoutes(mux, root)
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/photos/1/abc.jpg", nil)
 	rec := httptest.NewRecorder()
@@ -39,7 +57,9 @@ func TestRegisterPhotoRoutes_ServesFileFromRoot(t *testing.T) {
 
 func TestRegisterPhotoRoutes_MissingFileIs404(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterPhotoRoutes(mux, t.TempDir())
+	if err := RegisterPhotoRoutes(mux, t.TempDir(), discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/photos/1/missing.jpg", nil)
 	rec := httptest.NewRecorder()
@@ -65,7 +85,9 @@ func TestRegisterPhotoRoutes_DirectoriesAreNotListed(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	RegisterPhotoRoutes(mux, root)
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
 
 	tests := []struct {
 		path         string
@@ -114,7 +136,9 @@ func TestRegisterPhotoRoutes_TraversalStillRejected(t *testing.T) {
 	}
 
 	mux := http.NewServeMux()
-	RegisterPhotoRoutes(mux, root)
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
 
 	tests := []struct {
 		path     string
@@ -143,7 +167,9 @@ func TestRegisterPhotoRoutes_TraversalStillRejected(t *testing.T) {
 // admin traffic.
 func TestRegisterPhotoRoutes_DoesNotShadowAdminRoutes(t *testing.T) {
 	mux := http.NewServeMux()
-	RegisterPhotoRoutes(mux, t.TempDir())
+	if err := RegisterPhotoRoutes(mux, t.TempDir(), discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
 	if !RegisterAdminRoutes(mux, &fakeAdminActivitiesClient{}, "secret", slog.New(slog.DiscardHandler)) {
 		t.Fatal("RegisterAdminRoutes() = false")
 	}
@@ -156,4 +182,288 @@ func TestRegisterPhotoRoutes_DoesNotShadowAdminRoutes(t *testing.T) {
 	if rec.Code == http.StatusNotFound {
 		t.Error("GET /admin/activities = 404, want the admin route still registered")
 	}
+}
+
+// TestRegisterPhotoRoutes_SymlinkEscapingRootNotServed is the regression
+// guard for the symlink-escape exposure: http.Dir follows a symlink inside
+// root straight to a target outside it, serving that target's bytes with a
+// 200. os.Root (via RegisterPhotoRoutes) must refuse this instead.
+func TestRegisterPhotoRoutes_SymlinkEscapingRootNotServed(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("outside-root-secret-bytes"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	relTarget, err := filepath.Rel(root, secret)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+	symlinkOrSkip(t, relTarget, filepath.Join(root, "link.txt"))
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/photos/link.txt", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("status = 200, want the escaping symlink rejected")
+	}
+	if strings.Contains(rec.Body.String(), "outside-root-secret-bytes") {
+		t.Errorf("body leaked file outside root: %q", rec.Body.String())
+	}
+}
+
+// TestRegisterPhotoRoutes_SymlinkToOutsideDirNotServed is the directory
+// variant: a symlink inside root pointing at a directory outside it must
+// not make that directory's files reachable through the subtree.
+func TestRegisterPhotoRoutes_SymlinkToOutsideDirNotServed(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("outside-dir-secret"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	relTarget, err := filepath.Rel(root, outside)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+	symlinkOrSkip(t, relTarget, filepath.Join(root, "linkdir"))
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/photos/linkdir/secret.txt", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("status = 200, want the escaping symlink rejected")
+	}
+	if strings.Contains(rec.Body.String(), "outside-dir-secret") {
+		t.Errorf("body leaked file outside root: %q", rec.Body.String())
+	}
+}
+
+// TestRegisterPhotoRoutes_SymlinkInsideRootIsServed pins the chosen
+// behaviour for a symlink that stays inside root: it does not escape, so
+// os.Root permits it and it stays servable — same as any other file.
+func TestRegisterPhotoRoutes_SymlinkInsideRootIsServed(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "real.jpg"), []byte("fake-jpeg-bytes"), 0o644); err != nil {
+		t.Fatalf("write fixture file: %v", err)
+	}
+	symlinkOrSkip(t, "real.jpg", filepath.Join(root, "link.jpg"))
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/photos/link.jpg", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if rec.Body.String() != "fake-jpeg-bytes" {
+		t.Errorf("body = %q, want fixture contents", rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("Content-Type = %q, want image/jpeg", ct)
+	}
+}
+
+// TestRegisterPhotoRoutes_SymlinkChainEscapingRootNotServed is the
+// multi-hop variant: link1 (inside root) points at link2 (also inside
+// root), which points outside root. os.Root must reject the chain at
+// whichever hop actually escapes, not just a single-hop symlink.
+func TestRegisterPhotoRoutes_SymlinkChainEscapingRootNotServed(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("chain-secret-bytes"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	relTarget, err := filepath.Rel(root, secret)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+	symlinkOrSkip(t, relTarget, filepath.Join(root, "link2"))
+	symlinkOrSkip(t, "link2", filepath.Join(root, "link1"))
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/photos/link1", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("status = 200, want the escaping symlink chain rejected")
+	}
+	if strings.Contains(rec.Body.String(), "chain-secret-bytes") {
+		t.Errorf("body leaked file outside root: %q", rec.Body.String())
+	}
+}
+
+// TestRegisterPhotoRoutes_AbsoluteSymlinkNotServed: os.Root refuses an
+// absolute-path symlink outright ("Symbolic links must not be absolute",
+// per go doc os.Root), even faster than resolving where it points — pinned
+// here so a future Go version or refactor can't silently start following
+// one.
+func TestRegisterPhotoRoutes_AbsoluteSymlinkNotServed(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("absolute-secret-bytes"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	symlinkOrSkip(t, secret, filepath.Join(root, "abslink.txt")) // absolute target
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/photos/abslink.txt", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusOK {
+		t.Errorf("status = 200, want the absolute-path symlink rejected")
+	}
+	if strings.Contains(rec.Body.String(), "absolute-secret-bytes") {
+		t.Errorf("body leaked file outside root: %q", rec.Body.String())
+	}
+}
+
+// TestRegisterPhotoRoutes_LogsAnomalies is N1's regression guard: a
+// rejected symlink escape must leave a log line an operator can find, but
+// a plain missing file — by far the most common 404 on this route — must
+// not, or every routine "photo doesn't exist yet" request becomes log
+// noise indistinguishable from a real anomaly.
+func TestRegisterPhotoRoutes_LogsAnomalies(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("nope"), 0o644); err != nil {
+		t.Fatalf("write outside fixture: %v", err)
+	}
+	relTarget, err := filepath.Rel(root, secret)
+	if err != nil {
+		t.Fatalf("filepath.Rel: %v", err)
+	}
+	symlinkOrSkip(t, relTarget, filepath.Join(root, "link.txt"))
+
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, logger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	// Missing file first: must produce no log output at all.
+	req := httptest.NewRequest(http.MethodGet, "/photos/missing.jpg", nil)
+	mux.ServeHTTP(httptest.NewRecorder(), req)
+	if buf.Len() != 0 {
+		t.Errorf("missing file logged something, want silence: %q", buf.String())
+	}
+
+	// Then the escaping symlink: must log, and the line must be
+	// findable/greppable as a rejected-open warning, not a generic message.
+	req = httptest.NewRequest(http.MethodGet, "/photos/link.txt", nil)
+	mux.ServeHTTP(httptest.NewRecorder(), req)
+	if !strings.Contains(buf.String(), "rejected open") {
+		t.Errorf("symlink escape did not log a rejected-open line, got: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "level=WARN") {
+		t.Errorf("symlink escape log line wasn't WARN level: %q", buf.String())
+	}
+}
+
+// TestRegisterPhotoRoutes_RangeAndConditionalRequests re-pins the
+// byte-identical serving behaviour #210 verified manually (http.Dir):
+// Range, If-Range, If-Modified-Since, and plain serving must all still
+// work unchanged now that the volume is opened via os.Root instead.
+func TestRegisterPhotoRoutes_RangeAndConditionalRequests(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("0123456789abcdef")
+	path := filepath.Join(root, "abc.jpg")
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write fixture file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat fixture: %v", err)
+	}
+	modTime := info.ModTime()
+
+	mux := http.NewServeMux()
+	if err := RegisterPhotoRoutes(mux, root, discardLogger); err != nil {
+		t.Fatalf("RegisterPhotoRoutes: %v", err)
+	}
+
+	do := func(headers map[string]string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/photos/abc.jpg", nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	t.Run("plain", func(t *testing.T) {
+		rec := do(nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if rec.Body.String() != string(content) {
+			t.Errorf("body = %q, want %q", rec.Body.String(), content)
+		}
+	})
+
+	t.Run("range", func(t *testing.T) {
+		rec := do(map[string]string{"Range": "bytes=0-3"})
+		if rec.Code != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", rec.Code)
+		}
+		if rec.Body.String() != "0123" {
+			t.Errorf("body = %q, want %q", rec.Body.String(), "0123")
+		}
+	})
+
+	t.Run("bad range", func(t *testing.T) {
+		rec := do(map[string]string{"Range": "bytes=999-9999"})
+		if rec.Code != http.StatusRequestedRangeNotSatisfiable {
+			t.Fatalf("status = %d, want 416", rec.Code)
+		}
+	})
+
+	t.Run("if-modified-since not modified", func(t *testing.T) {
+		rec := do(map[string]string{"If-Modified-Since": modTime.Add(time.Hour).UTC().Format(http.TimeFormat)})
+		if rec.Code != http.StatusNotModified {
+			t.Fatalf("status = %d, want 304", rec.Code)
+		}
+	})
+
+	t.Run("if-range satisfied serves partial", func(t *testing.T) {
+		rec := do(map[string]string{
+			"Range":    "bytes=0-3",
+			"If-Range": modTime.UTC().Format(http.TimeFormat),
+		})
+		if rec.Code != http.StatusPartialContent {
+			t.Fatalf("status = %d, want 206", rec.Code)
+		}
+	})
 }
