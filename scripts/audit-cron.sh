@@ -8,9 +8,12 @@
 # corrupted checkout is not. Environment problems (missing binaries) FAIL
 # loudly instead, because a FAIL that looks like a SKIP hides the real cause.
 #
-# ponytail: no `-e`. `cd ""` and a failed `git status` both still exit 0, so
-# `-e` would not have caught the bugs that mattered here anyway — every site
-# that must not silently succeed gets its own explicit `|| exit` below.
+# ponytail: no `-e`. It wouldn't have caught either bug that mattered here:
+# `cd ""` itself returns 0 (nothing to catch), and the original script never
+# even looked at `git status`'s exit code, so a failed status (index.lock, an
+# FDA denial) produced empty stdout that read as a clean tree regardless of
+# `-e`. Every site that must not silently succeed gets its own explicit
+# `|| exit` below instead.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
