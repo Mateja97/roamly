@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -35,11 +36,18 @@ const defaultGoogleSyncTTLDays = "30"
 // service.defaultGoogleSyncTTL — via defaultGoogleSyncTTLDays — on anything
 // that isn't a positive integer, so a malformed override degrades to the
 // default instead of killing startup over a config knob that was already
-// optional.
-func googleSyncTTLFromEnv(raw string) time.Duration {
-	days, err := strconv.Atoi(raw)
-	if err != nil || days <= 0 {
-		days, _ = strconv.Atoi(defaultGoogleSyncTTLDays)
+// optional. raw is the env var as read directly (unset ⇒ ""), so an unset
+// var falls back quietly while a set-but-invalid value logs a warning naming
+// the bad value — the operator sees their override was ignored.
+func googleSyncTTLFromEnv(logger *slog.Logger, raw string) time.Duration {
+	days, _ := strconv.Atoi(defaultGoogleSyncTTLDays)
+	if raw != "" {
+		if parsed, perr := strconv.Atoi(raw); perr == nil && parsed > 0 {
+			days = parsed
+		} else {
+			logger.Warn("invalid GOOGLE_SYNC_TTL_DAYS, using default",
+				"value", raw, "default_days", defaultGoogleSyncTTLDays)
+		}
 	}
 	return time.Duration(days) * 24 * time.Hour
 }
@@ -68,7 +76,7 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo).WithGoogleSyncTTL(googleSyncTTLFromEnv(sharedconfig.OrDefault("GOOGLE_SYNC_TTL_DAYS", defaultGoogleSyncTTLDays)))
+	svc := service.New(repo).WithGoogleSyncTTL(googleSyncTTLFromEnv(logger, os.Getenv("GOOGLE_SYNC_TTL_DAYS")))
 	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
 	// fine, GetActivityPhotos just always answers from stored photos with no
 	// live Google call — same fallback behavior a configured client hits on

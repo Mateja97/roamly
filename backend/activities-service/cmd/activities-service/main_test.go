@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -8,23 +11,34 @@ import (
 // TestGoogleSyncTTLFromEnv covers T4 (places-api-cost-reduction)'s config
 // acceptance criterion: GOOGLE_SYNC_TTL_DAYS is readable from configuration,
 // defaulting to 30 days, and a malformed value falls back to that default
-// rather than panicking or producing a zero/negative TTL.
+// rather than panicking or producing a zero/negative TTL. It also covers the
+// operator-visibility requirement: a set-but-invalid value logs a warning
+// naming the bad value, while an unset value logs nothing.
 func TestGoogleSyncTTLFromEnv(t *testing.T) {
 	tests := []struct {
-		name string
-		raw  string
-		want time.Duration
+		name    string
+		raw     string
+		want    time.Duration
+		wantLog bool
 	}{
-		{"default (unset resolves via sharedconfig.OrDefault before this is called)", "30", 30 * 24 * time.Hour},
-		{"explicit override", "45", 45 * 24 * time.Hour},
-		{"non-numeric falls back to default", "banana", 30 * 24 * time.Hour},
-		{"zero falls back to default", "0", 30 * 24 * time.Hour},
-		{"negative falls back to default", "-5", 30 * 24 * time.Hour},
+		{"unset falls back to default silently", "", 30 * 24 * time.Hour, false},
+		{"explicit override", "45", 45 * 24 * time.Hour, false},
+		{"non-numeric falls back to default and logs", "banana", 30 * 24 * time.Hour, true},
+		{"zero falls back to default and logs", "0", 30 * 24 * time.Hour, true},
+		{"negative falls back to default and logs", "-5", 30 * 24 * time.Hour, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := googleSyncTTLFromEnv(tt.raw); got != tt.want {
+			var buf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+			if got := googleSyncTTLFromEnv(logger, tt.raw); got != tt.want {
 				t.Errorf("googleSyncTTLFromEnv(%q) = %v, want %v", tt.raw, got, tt.want)
+			}
+
+			gotLog := strings.Contains(buf.String(), "invalid GOOGLE_SYNC_TTL_DAYS")
+			if gotLog != tt.wantLog {
+				t.Errorf("googleSyncTTLFromEnv(%q) logged = %v, want %v (log: %q)", tt.raw, gotLog, tt.wantLog, buf.String())
 			}
 		})
 	}
