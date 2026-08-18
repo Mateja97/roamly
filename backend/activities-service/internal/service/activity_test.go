@@ -226,7 +226,13 @@ func (f *fakeGooglePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]
 	return f.photosOut, f.photosErr
 }
 
-func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
+func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _, _ string) (placesmap.PlaceDetail, error) {
+	return placesmap.PlaceDetail{}, nil
+}
+
+// PlaceDetailsForAudit: this fake stands in for the background discovery
+// sweep's placesClient, never for WithAuditFieldMask — no test here calls it.
+func (f *fakeGooglePlaces) PlaceDetailsForAudit(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
 	return placesmap.PlaceDetail{}, nil
 }
 

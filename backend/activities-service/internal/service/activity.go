@@ -78,9 +78,17 @@ const (
 // serves stored data, it just never resolves anything live.
 type placesClient interface {
 	ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error)
-	// PlaceDetails fetches live Place Details for one placeID — the data
-	// source for GetByID's live merge (see withLiveDetails).
-	PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
+	// PlaceDetails fetches live Place Details for one placeID, restricted to
+	// fieldMask — the data source for GetByID's live merge (see
+	// withLiveDetails). Callers size fieldMask themselves (T3,
+	// places-api-cost-reduction): placesmap.DetailFieldMask(category) or
+	// placesmap.ReviewFieldMask, per call site.
+	PlaceDetails(ctx context.Context, placeID, fieldMask string) (placesmap.PlaceDetail, error)
+	// PlaceDetailsForAudit is PlaceDetails sent with places.AuditFieldMask
+	// instead of the caller's own mask (T7, places-api-cost-reduction) —
+	// resolvePlaceDetails' data source when WithAuditFieldMask has been set
+	// (cmd/auditcontent only).
+	PlaceDetailsForAudit(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
 	// SearchNearby is the type-driven discovery call: one per (cell,
 	// category, subtype) row, circle-restricted, max 20 results.
 	SearchNearby(ctx context.Context, req places.NearbyRequest, fieldMask string) ([]placesmap.Place, error)
@@ -160,10 +168,45 @@ type Activities struct {
 	// tripadvisorSync tracks in-flight background Tripadvisor sync sweeps —
 	// same test-only join contract as googleSync (see waitForTripadvisorSync).
 	tripadvisorSync sync.WaitGroup
+	// maxResolvedPhotos caps how many photos GetPhotos resolves and persists
+	// per venue on first view (T5, places-api-cost-reduction). A field, not a
+	// const, so ops can tune it via config without a deploy-time code change
+	// (see WithMaxResolvedPhotos).
+	maxResolvedPhotos int
+	// auditFieldMask, when set (see WithAuditFieldMask), routes
+	// resolvePlaceDetails to PlaceDetailsForAudit instead of PlaceDetails
+	// (T7, places-api-cost-reduction) — cmd/auditcontent's own Activities
+	// instance opts in; the live detail-page path never does.
+	auditFieldMask bool
 }
 
+// DefaultMaxResolvedPhotos is maxResolvedPhotos' value absent an explicit
+// WithMaxResolvedPhotos call — lowered from the pre-T5 8 (T5,
+// places-api-cost-reduction): most venues barely need more than a handful of
+// photos rendered, and each one is a billed PhotoMediaURL call. Exported so
+// cmd/activities-service can fall back to the same value its
+// MAX_RESOLVED_PHOTOS env var overrides.
+const DefaultMaxResolvedPhotos = 5
+
 func New(repo repository) *Activities {
-	return &Activities{repo: repo, syncTimeout: tripadvisorSyncTimeout, googleSyncTTL: defaultGoogleSyncTTL}
+	return &Activities{
+		repo:              repo,
+		syncTimeout:       tripadvisorSyncTimeout,
+		maxResolvedPhotos: DefaultMaxResolvedPhotos,
+		googleSyncTTL:     defaultGoogleSyncTTL,
+	}
+}
+
+// WithMaxResolvedPhotos overrides the default cap on how many photos
+// GetPhotos resolves and persists per venue on first view (T5,
+// places-api-cost-reduction). n <= 0 is ignored (keeps the default) rather
+// than disabling photo resolution outright — 0 photos is never a sane
+// operator intent for this knob.
+func (a *Activities) WithMaxResolvedPhotos(n int) *Activities {
+	if n > 0 {
+		a.maxResolvedPhotos = n
+	}
+	return a
 }
 
 // WithGoogleSyncTTL overrides the default googleSyncTTL (T4,
@@ -182,6 +225,16 @@ func (a *Activities) WithGoogleSyncTTL(ttl time.Duration) *Activities {
 // back to on error/timeout. Returns itself so call sites can chain it onto New.
 func (a *Activities) WithPlaces(p placesClient) *Activities {
 	a.places = p
+	return a
+}
+
+// WithAuditFieldMask switches every future PlaceDetails resolve this
+// Activities makes onto places.AuditFieldMask instead of the live
+// detail-page mask (T7, places-api-cost-reduction) — cmd/auditcontent's own
+// opt-in, since it judges rows on less than the live detail page renders.
+// Returns itself so call sites can chain it onto New/WithPlaces.
+func (a *Activities) WithAuditFieldMask() *Activities {
+	a.auditFieldMask = true
 	return a
 }
 
@@ -956,7 +1009,8 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		return activity, true
 	}
 
-	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID)
+	fieldMask := placesmap.DetailFieldMask(activity.Category)
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID, fieldMask)
 	if !ok {
 		return activity, false
 	}
@@ -975,7 +1029,19 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		activity.Rating = detail.Rating
 		activity.ReviewCount = detail.UserRatingCount
 	}
-	activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	// Guarded on the mask actually having asked for reviews (round-2 review
+	// finding, T3 places-api-cost-reduction): GoogleReviews is never
+	// persisted, so an unconditional overwrite here silently clobbers it to
+	// nil the moment any category's DetailFieldMask ever narrows away
+	// "reviews" — exactly the bug that broke Sport's reviews card. Today
+	// every category's mask requests reviews (DetailFieldMask no longer
+	// narrows it away, see that func's doc), so this is a no-op in practice;
+	// it's the guard that stops the next mask narrowing from reintroducing
+	// the same silent-stomp regression, mirroring liveDescription's existing
+	// "only overwrite when Places actually returned something" pattern above.
+	if strings.Contains(fieldMask, "reviews") {
+		activity.GoogleReviews = toGoogleReviews(detail.Reviews)
+	}
 	activity.GoogleMapsURI = detail.GoogleMapsURI
 	return activity, true
 }
@@ -1017,7 +1083,7 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 		return activity, true
 	}
 
-	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.GooglePlaceID)
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.GooglePlaceID, placesmap.ReviewFieldMask)
 	if !ok {
 		return activity, false
 	}
@@ -1029,16 +1095,23 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 	return activity, true
 }
 
-// resolvePlaceDetails calls PlaceDetails for placeID within
-// detailResolveTimeout, the fallback-on-error step withLiveDetails and
-// withTripadvisorGoogleReviews both need identically: any error (including
-// a timeout, surfaced as ctx.Err()) logs one warning and reports ok=false so
-// the caller returns its bare stored row, no error surfaced to the request.
-func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeID string) (placesmap.PlaceDetail, bool) {
+// resolvePlaceDetails calls PlaceDetails for placeID, restricted to
+// fieldMask, within detailResolveTimeout — the fallback-on-error step
+// withLiveDetails and withTripadvisorGoogleReviews both need identically:
+// any error (including a timeout, surfaced as ctx.Err()) logs one warning
+// and reports ok=false so the caller returns its bare stored row, no error
+// surfaced to the request.
+func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeID, fieldMask string) (placesmap.PlaceDetail, bool) {
 	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
 	defer cancel()
 
-	detail, err := a.places.PlaceDetails(resolveCtx, placeID)
+	var detail placesmap.PlaceDetail
+	var err error
+	if a.auditFieldMask {
+		detail, err = a.places.PlaceDetailsForAudit(resolveCtx, placeID)
+	} else {
+		detail, err = a.places.PlaceDetails(resolveCtx, placeID, fieldMask)
+	}
 	if err != nil {
 		slog.Warn("live place details resolve failed, falling back to stored row", "activity_id", activityID, "error", err)
 		return placesmap.PlaceDetail{}, false
@@ -1111,10 +1184,6 @@ func toGoogleReviews(reviews []placesmap.Review) []activitiessvc.GoogleReview {
 // the first live per-request Places call in the codebase.
 const photoResolveTimeout = 4 * time.Second
 
-// maxResolvedPhotos caps how many Google photos GetPhotos resolves and
-// persists per venue on first view.
-const maxResolvedPhotos = 8
-
 // GetPhotos returns activity id's full photo set (T2): resolve-on-first-
 // view-and-persist. A stored photo count of <= 1 is the "provisional only,
 // never fully resolved" signal (see product-tasks.md's T2 note on this
@@ -1146,9 +1215,9 @@ func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.
 	var resolved []activitiessvc.Photo
 	switch {
 	case activity.Source == "tripadvisor" && a.tripadvisor != nil:
-		resolved, err = a.tripadvisor.LocationPhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+		resolved, err = a.tripadvisor.LocationPhotos(resolveCtx, activity.ExternalID, a.maxResolvedPhotos)
 	case activity.Source != "tripadvisor" && a.places != nil:
-		resolved, err = a.places.ResolvePhotos(resolveCtx, activity.ExternalID, maxResolvedPhotos)
+		resolved, err = a.places.ResolvePhotos(resolveCtx, activity.ExternalID, a.maxResolvedPhotos)
 	default:
 		return activity.Photos, nil
 	}
@@ -1667,10 +1736,12 @@ func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitie
 				}
 
 				// One provisional photo at ingest time, the rest resolved later on
-				// first view via GetPhotos — same pattern as cmd/scrapecity's Google
-				// seed (minPhotos = 1). LocationDetails carries no photo of its own
-				// in the real API, so this is the only source for it. A failure or
-				// empty result here must never block the sync.
+				// first view via GetPhotos. Unlike Google discovery (T5,
+				// places-api-cost-reduction, which dropped its own per-venue photo
+				// resolve at sync time), Tripadvisor's LocationDetails carries no
+				// photo of its own in the real API, so this call is the only source
+				// for one at all — there's no zero-photo fallback to prefer here. A
+				// failure or empty result here must never block the sync.
 				photos, err := a.tripadvisor.LocationPhotos(syncCtx, details.LocationID, 1)
 				if err != nil {
 					slog.Warn("tripadvisor location photos failed", "location_id", details.LocationID, "error", err)

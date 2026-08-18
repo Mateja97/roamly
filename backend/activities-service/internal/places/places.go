@@ -21,6 +21,8 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"activities-service/internal/placesmap"
@@ -41,18 +43,29 @@ const defaultBase = "https://places.googleapis.com"
 // product from Places (New) above. See ReverseGeocodeCity.
 const defaultGeocodeBase = "https://maps.googleapis.com"
 
-// detailFieldMask selects the live atmosphere/review fields PlaceDetails
-// needs for BuildLiveDetails (T1, places-live-details) — distinct from
-// scrapecity's scrape mask (cmd/scrapecity/main.go's fieldMask), which feeds
-// discovery and is unchanged by this. This mask sits in the Enterprise /
-// Enterprise+Atmosphere SKU tiers (reviews, editorialSummary, priceLevel,
-// amenities) and is never persisted (Places Terms §14.3) — fetched fresh on
-// every detail-page open.
-const detailFieldMask = "rating,userRatingCount,reviews,reviews.authorAttribution," +
-	"editorialSummary,generativeSummary,priceLevel,priceRange,regularOpeningHours," +
-	"primaryTypeDisplayName,websiteUri,googleMapsUri,goodForChildren,goodForGroups," +
-	"allowsDogs,restroom,outdoorSeating,liveMusic,parkingOptions,accessibilityOptions," +
-	"servesCoffee,servesVegetarianFood,menuForChildren,dineIn,takeout,reservable"
+// AuditFieldMask is cmd/auditcontent's own Place Details mask (T7,
+// places-api-cost-reduction) — narrower than placesmap.DetailFieldMask's
+// widest category mask, restricted to exactly the fields
+// service.Renderability's content scoring reads once a row is live-merged:
+// editorialSummary/generativeSummary (feeds Activity.Description), reviews
+// (feeds GoogleReviews, whose length alone is scored — no
+// reviews.authorAttribution needed), regularOpeningHours/
+// primaryTypeDisplayName/websiteUri (the opening_hours/venue_type/hours/
+// website_url presentational keys), and the amenity booleans
+// placesmap.BuildLiveDetails turns into a body-block key for at least one
+// category (natureGoodToKnow, kidsFacilities, cafeKnownFor).
+//
+// Dropped versus a detail-page open's mask, because nothing in the audit's
+// scoring path reads them: rating/userRatingCount (contentScore never looks
+// at Activity.Rating), priceLevel/priceRange (BuildLiveDetails never
+// consumes either — see placesmap.PriceRange's own doc), googleMapsUri
+// (stored on Activity but never scored), and liveMusic — the one amenity
+// boolean no category's amenityLabels() call (natureGoodToKnow/
+// kidsFacilities/cafeKnownFor in placesmap.go) ever reads.
+const AuditFieldMask = "editorialSummary,generativeSummary,reviews,regularOpeningHours," +
+	"primaryTypeDisplayName,websiteUri,goodForChildren,goodForGroups,allowsDogs," +
+	"restroom,outdoorSeating,parkingOptions,accessibilityOptions,servesCoffee," +
+	"servesVegetarianFood,menuForChildren,dineIn,takeout,reservable"
 
 // maxAttempts caps retries on transient (429/5xx) failures. Small and fixed:
 // this is a seed-time tool, not a service under load.
@@ -385,23 +398,35 @@ func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) (
 	return out, nil
 }
 
-// PlaceDetails fetches the live, on-view-only fields for placeID (rating,
-// reviews, editorial summary, price, hours, amenities) via one Place Details
-// call — the T2 live-merge caller's data source for BuildLiveDetails. Per the
+// PlaceDetails fetches the live, on-view-only fields for placeID via one
+// Place Details call, restricted to fieldMask — the T2 live-merge callers'
+// data source for BuildLiveDetails. fieldMask is the caller's job to size
+// (T3, places-api-cost-reduction): placesmap.DetailFieldMask(category) for a
+// detail-page open, placesmap.ReviewFieldMask for a review-only merge, or a
+// one-off literal for a narrower need (e.g. websitesync's "websiteUri") —
+// this method no longer hard-codes a single mask for every caller. Per the
 // package doc comment, this is a live, per-request call: the caller must wrap
 // ctx with its own short, request-scoped timeout; PlaceDetails itself just
 // takes ctx and respects it. Never cached, never persisted downstream
 // (Places Terms §14.3).
-func (c *Client) PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error) {
+func (c *Client) PlaceDetails(ctx context.Context, placeID, fieldMask string) (placesmap.PlaceDetail, error) {
 	url := fmt.Sprintf("%s/v1/places/%s", c.base, placeID)
 	var parsed placesmap.PlaceDetail
 	if err := c.doJSON(ctx, http.MethodGet, url, nil, map[string]string{
 		"X-Goog-Api-Key":   c.key,
-		"X-Goog-FieldMask": detailFieldMask,
+		"X-Goog-FieldMask": fieldMask,
 	}, &parsed); err != nil {
 		return placesmap.PlaceDetail{}, fmt.Errorf("fetching place %s details: %w", placeID, err)
 	}
 	return parsed, nil
+}
+
+// PlaceDetailsForAudit is PlaceDetails sent with AuditFieldMask (T7,
+// places-api-cost-reduction), so a full-catalog audit run always requests
+// only what its content scoring reads, regardless of what mask the caller
+// would otherwise size for a live detail-page open.
+func (c *Client) PlaceDetailsForAudit(ctx context.Context, placeID string) (placesmap.PlaceDetail, error) {
+	return c.PlaceDetails(ctx, placeID, AuditFieldMask)
 }
 
 // doJSON sends one request, retrying on 429/5xx with capped, jittered
@@ -462,4 +487,67 @@ func truncate(b []byte, n int) string {
 		return string(b)
 	}
 	return string(b[:n])
+}
+
+// skuTierFields maps each SKU tier this package's callers can hit to the
+// field names that force it, highest-cost tier first — PlaceholderSKUTier
+// walks this in order and returns the first tier any field in the mask
+// belongs to, because a mask that mixes tiers (nearly all of them do: id +
+// displayName + reviews, say) bills at its most expensive field, not its
+// cheapest.
+//
+// Placeholder for T1 ("Count every Places call by SKU tier"), which was not
+// yet merged when this was written: T1 owns the definitive, call-counted
+// version of this classification (type SKUTier, func SKUTierForMask, both
+// in internal/places/metrics.go), ideally covering every field the Places
+// API can return. This copy only needs to classify the fields this
+// package's own masks (NearbyFieldMask, detailFieldMask, AuditFieldMask)
+// actually send — so, deliberately, it lists only those, not the full
+// Places API field catalog. Named PlaceholderSKUTier, not SKUTier, so it
+// cannot collide with T1's exported SKUTier type once both PRs land on
+// main. When T1 lands, delete this placeholder and switch these call sites
+// to SKUTierForMask instead (see engineering-notes.md).
+var skuTierFields = []struct {
+	tier   string
+	fields []string
+}{
+	{"Enterprise+Atmosphere", []string{
+		"reviews", "editorialSummary", "generativeSummary", "priceRange",
+		"goodForChildren", "goodForGroups", "allowsDogs", "restroom",
+		"outdoorSeating", "liveMusic", "parkingOptions", "accessibilityOptions",
+		"servesCoffee", "servesVegetarianFood", "menuForChildren", "dineIn",
+		"takeout", "reservable",
+	}},
+	{"Enterprise", []string{"rating", "userRatingCount", "priceLevel"}},
+	{"Pro", []string{"regularOpeningHours", "websiteUri", "primaryTypeDisplayName"}},
+	{"Photos", []string{"photos"}},
+}
+
+// PlaceholderSKUTier classifies fieldMask — a comma-separated
+// X-Goog-FieldMask value, with or without a "places." per-field prefix —
+// into the Google SKU tier its priciest requested field belongs to.
+// "IDs-Only" for a mask requesting nothing but id; "Essentials" is the
+// fallback for a mask whose fields are all outside skuTierFields
+// (location/name/address-shape fields, the tier Places bills those at).
+func PlaceholderSKUTier(fieldMask string) string {
+	fields := strings.Split(fieldMask, ",")
+	onlyID := true
+	for i, f := range fields {
+		f = strings.TrimSpace(strings.TrimPrefix(f, "places."))
+		fields[i] = f
+		if f != "id" && f != "" {
+			onlyID = false
+		}
+	}
+	if onlyID {
+		return "IDs-Only"
+	}
+	for _, tier := range skuTierFields {
+		for _, f := range fields {
+			if slices.Contains(tier.fields, f) {
+				return tier.tier
+			}
+		}
+	}
+	return "Essentials"
 }

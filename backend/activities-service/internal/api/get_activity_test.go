@@ -40,6 +40,27 @@ func TestGetActivity_HappyPath(t *testing.T) {
 	}
 }
 
+// TestGetActivity_NoResolvedPhotoRendersEmptyPhotoList is T5's
+// (places-api-cost-reduction) placeholder-path acceptance criterion: a
+// venue with no resolved photo (Photos left nil — the state a newly
+// discovered, never-viewed venue is now stored in) must still serialize a
+// valid response with an empty photo list, not error or panic — the
+// client's missing-image placeholder handles the rest.
+func TestGetActivity_NoResolvedPhotoRendersEmptyPhotoList(t *testing.T) {
+	fake := &fakeQueryService{getOut: activitiessvc.Activity{
+		ID: "1", Title: "New Venue", Status: activitiessvc.StatusPublished, Photos: nil,
+	}}
+	client := dialServer(t, fake)
+
+	resp, err := client.GetActivity(context.Background(), &activitiesv1.GetActivityRequest{Id: "1"})
+	if err != nil {
+		t.Fatalf("GetActivity() error: %v", err)
+	}
+	if len(resp.GetPhotos()) != 0 {
+		t.Errorf("resp.GetPhotos() = %+v, want empty", resp.GetPhotos())
+	}
+}
+
 func TestGetActivity_NotFoundMapsTo404(t *testing.T) {
 	fake := &fakeQueryService{getErr: sharederrors.ErrNotFound}
 	client := dialServer(t, fake)

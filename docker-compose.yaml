@@ -62,6 +62,9 @@ services:
       # category as cmd/backfilltripadvisor. Kept here so it's set from the
       # same .env this compose file already reads for the other keys above.
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      # T5: optional, caps how many Google photos GetActivityPhotos resolves
+      # per venue. Unset falls back to service.DefaultMaxResolvedPhotos.
+      MAX_RESOLVED_PHOTOS: ${MAX_RESOLVED_PHOTOS:-5}
     ports:
       - "9090:9090"
     volumes:

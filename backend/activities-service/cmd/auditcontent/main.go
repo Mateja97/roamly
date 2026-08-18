@@ -57,6 +57,17 @@ const auditPace = 200 * time.Millisecond
 // few dollars and still reads clearly per category.
 const defaultLimit = 200
 
+// defaultMaxCalls is -max-calls' bounded default (T7, places-api-cost-
+// reduction) — a hard ceiling on Place Details calls, independent of
+// -limit. -limit only selects which rows the run considers; -max-calls is
+// the actual spend guard, so it stays enforced even when an operator passes
+// -limit 0 for a full-catalog pass — "one absent-minded -limit 0" no longer
+// buys an unbounded bill. Same value as defaultLimit: today the two move
+// together (one row costs at most one call), but they are independent
+// knobs, checked independently, so a future change to either never silently
+// removes the other's ceiling.
+const defaultMaxCalls = 200
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	slog.SetDefault(logger)
@@ -64,6 +75,7 @@ func main() {
 	limit := flag.Int("limit", defaultLimit, "stop after this many rows (0 = the whole catalog; every row costs a billed Places call)")
 	category := flag.String("category", "", "restrict the audit to one category slug (default: all)")
 	minContent := flag.Int("min-content", service.DefaultMinContentScore, "content score a row needs to stay published")
+	maxCalls := flag.Int("max-calls", defaultMaxCalls, "hard ceiling on Place Details calls this run may make, enforced independently of -limit; there is no unlimited setting")
 	flag.Parse()
 
 	// Fail fast on an unrecognized -category rather than silently filtering
@@ -71,6 +83,10 @@ func main() {
 	// empty catalog.
 	if *category != "" && !activitiessvc.Category(*category).Valid() {
 		logger.Error("startup failed: unknown -category", "category", *category)
+		os.Exit(1)
+	}
+	if *maxCalls <= 0 {
+		logger.Error("startup failed: -max-calls must be positive; there is no unlimited run")
 		os.Exit(1)
 	}
 
@@ -100,7 +116,7 @@ func main() {
 	defer pool.Close()
 
 	repo := repository.New(pool)
-	svc := service.New(repo).WithPlaces(placesClient)
+	svc := service.New(repo).WithPlaces(placesClient).WithAuditFieldMask()
 
 	rows, err := publishedRows(ctx, repo, listPageSize, activitiessvc.Category(*category))
 	if err != nil {
@@ -115,7 +131,7 @@ func main() {
 		rows = truncated
 	}
 
-	report := runAudit(ctx, svc, rows, *minContent, func() { time.Sleep(auditPace) })
+	report := runAudit(ctx, svc, rows, *minContent, *maxCalls, func() { time.Sleep(auditPace) })
 	fmt.Print(report.render(*minContent))
 }
 
@@ -203,13 +219,36 @@ type auditReport struct {
 	// different numbers per category.
 	scannedByCategory map[string]int
 	okByCategory      map[string]int
+	// rowsInput is len(rows) as given to runAudit — the input this run was
+	// asked to cover, before -max-calls may have cut it short. Distinct from
+	// scanned+skipped, which is how much it actually reached.
+	rowsInput int
+	// callsMade is one per row runAudit attempted a live-details call for
+	// (see the callsByTier doc below for why this is a per-row estimate, not
+	// an instrumented HTTP count). partial is true when -max-calls stopped
+	// the run before rowsInput was fully covered — the report must say so
+	// rather than silently reading as a complete pass.
+	callsMade   int
+	callsByTier map[string]int
+	partial     bool
 }
 
 // runAudit merges and judges rows in place, one at a time, in the order
 // given — sequential, not worker-pool, see the package doc. pace is called
 // once per row (a func, not a raw sleep, so tests run instantly). It writes
 // nothing.
-func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activity, minScore int, pace func()) auditReport {
+//
+// maxCalls bounds how many rows this run will attempt a live-details call
+// for (T7, places-api-cost-reduction): the tool's own architecture already
+// makes at most one Place Details call per row (see the package doc's
+// "fixed pace between Places calls") — zero for an admin-created row or one
+// with no external place id, one otherwise — so counting attempted rows is a
+// conservative over-count of actual billed calls, never an under-count,
+// which is the safe direction for a spend cap. Reaching maxCalls stops the
+// loop before merger.WithLiveDetails is called for the next row — a
+// genuinely unattempted row, not a failed or skipped one — and marks the
+// report partial.
+func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activity, minScore, maxCalls int, pace func()) auditReport {
 	report := auditReport{
 		byReason:          map[string]int{},
 		byCategory:        map[string]map[string]int{},
@@ -217,10 +256,18 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 		byPassingSignals:  map[string]int{},
 		scannedByCategory: map[string]int{},
 		okByCategory:      map[string]int{},
+		callsByTier:       map[string]int{},
+		rowsInput:         len(rows),
 	}
 
 	for _, stored := range rows {
+		if report.callsMade >= maxCalls {
+			report.partial = true
+			break
+		}
 		merged, resolved := merger.WithLiveDetails(ctx, stored)
+		report.callsMade++
+		report.callsByTier[places.PlaceholderSKUTier(places.AuditFieldMask)]++
 		pace()
 		if !resolved {
 			report.skipped++
@@ -261,7 +308,24 @@ func (r auditReport) render(minScore int) string {
 	out += fmt.Sprintf("  would stay published: %d\n", r.ok)
 	out += fmt.Sprintf("  would be drafted:     %d\n\n", r.scanned-r.ok)
 
+	out += fmt.Sprintf("Places calls: %d", r.callsMade)
+	if r.partial {
+		out += fmt.Sprintf(" (PARTIAL RUN — covered %d of %d input rows, stopped by -max-calls)\n", r.scanned+r.skipped, r.rowsInput)
+	} else {
+		out += fmt.Sprintf(" (covered %d of %d input rows)\n", r.scanned+r.skipped, r.rowsInput)
+	}
+	tiers := make([]string, 0, len(r.callsByTier))
+	for tier := range r.callsByTier {
+		tiers = append(tiers, tier)
+	}
+	sort.Strings(tiers)
+	for _, tier := range tiers {
+		out += fmt.Sprintf("  %-22s %d\n", tier, r.callsByTier[tier])
+	}
+	out += "\n"
+
 	out += "by reason\n"
+	out += "  no_photo (T5, places-api-cost-reduction): Google sync no longer resolves photos at ingest time, so every never-opened Google row now reports no_photo until its detail page is first requested — this count no longer means \"venue has no photo\", it also includes \"not yet opened\"\n"
 	for _, reason := range []string{service.ReasonNoPhoto, service.ReasonNoPlaceID, service.ReasonNoContent} {
 		out += fmt.Sprintf("  %-14s %d\n", reason, r.byReason[reason])
 	}

@@ -258,15 +258,12 @@ func TestResolvePhotos_RespectsLimit(t *testing.T) {
 	}
 }
 
-// wantDetailFieldMask is places.go's detailFieldMask, duplicated here (an
-// external test package can't reference the unexported const) so the
-// assertion below is a real behavioral check, not a tautology against the
-// implementation.
-const wantDetailFieldMask = "rating,userRatingCount,reviews,reviews.authorAttribution," +
-	"editorialSummary,generativeSummary,priceLevel,priceRange,regularOpeningHours," +
-	"primaryTypeDisplayName,websiteUri,googleMapsUri,goodForChildren,goodForGroups," +
-	"allowsDogs,restroom,outdoorSeating,liveMusic,parkingOptions,accessibilityOptions," +
-	"servesCoffee,servesVegetarianFood,menuForChildren,dineIn,takeout,reservable"
+// wantDetailFieldMask stands in for whatever mask a caller passes (T3,
+// places-api-cost-reduction: PlaceDetails no longer owns a single hard-coded
+// mask — placesmap.DetailFieldMask/ReviewFieldMask size it per call site,
+// tested in placesmap's own package). This test only checks PlaceDetails
+// puts whatever mask it's given on the wire, verbatim.
+const wantDetailFieldMask = "rating,userRatingCount,reviews,websiteUri"
 
 func TestPlaceDetails(t *testing.T) {
 	tests := []struct {
@@ -333,7 +330,7 @@ func TestPlaceDetails(t *testing.T) {
 			defer srv.Close()
 
 			c := places.NewWithBase("k", srv.URL)
-			got, err := c.PlaceDetails(context.Background(), "place-1")
+			got, err := c.PlaceDetails(context.Background(), "place-1", wantDetailFieldMask)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -380,7 +377,7 @@ func TestPlaceDetails_FullResponseDecodesEverything(t *testing.T) {
 	defer srv.Close()
 
 	c := places.NewWithBase("k", srv.URL)
-	got, err := c.PlaceDetails(context.Background(), "place-1")
+	got, err := c.PlaceDetails(context.Background(), "place-1", "reviews,editorialSummary,generativeSummary,priceRange,websiteUri,googleMapsUri,goodForChildren,allowsDogs,parkingOptions,accessibilityOptions")
 	if err != nil {
 		t.Fatalf("PlaceDetails(): %v", err)
 	}
@@ -423,7 +420,7 @@ func TestPlaceDetails_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	if _, err := c.PlaceDetails(ctx, "place-1"); err == nil {
+	if _, err := c.PlaceDetails(ctx, "place-1", "rating"); err == nil {
 		t.Fatal("expected timeout error")
 	}
 }
@@ -558,5 +555,65 @@ func TestClient_ReverseGeocodeCity_ZeroResults(t *testing.T) {
 	}
 	if city != "" || country != "" {
 		t.Errorf("city/country = %q/%q, want empty for ZERO_RESULTS", city, country)
+	}
+}
+
+// TestPlaceDetailsForAudit_SendsAuditFieldMask is T7's "the mask that goes
+// on the wire" assertion: cmd/auditcontent's own Place Details call must
+// carry AuditFieldMask, not the live detail page's wider detailFieldMask.
+func TestPlaceDetailsForAudit_SendsAuditFieldMask(t *testing.T) {
+	var gotMask string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMask = r.Header.Get("X-Goog-FieldMask")
+		if _, err := io.WriteString(w, `{}`); err != nil {
+			t.Errorf("writing response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	if _, err := c.PlaceDetailsForAudit(context.Background(), "place-1"); err != nil {
+		t.Fatalf("PlaceDetailsForAudit() error: %v", err)
+	}
+	if gotMask != places.AuditFieldMask {
+		t.Errorf("field mask sent = %q, want places.AuditFieldMask", gotMask)
+	}
+}
+
+// TestAuditFieldMask_ExcludesFieldsContentScoringNeverReads is T7's own
+// acceptance criterion, checked directly against the constant: no field that
+// service.Renderability's content scoring never reads once a row is merged —
+// in particular, no amenity boolean it discards (liveMusic) and no field
+// that only ever set Activity.Rating/GoogleMapsURI (never scored).
+func TestAuditFieldMask_ExcludesFieldsContentScoringNeverReads(t *testing.T) {
+	unused := []string{"rating", "userRatingCount", "priceLevel", "priceRange", "googleMapsUri", "liveMusic", "reviews.authorAttribution"}
+	for _, field := range unused {
+		if strings.Contains(places.AuditFieldMask, field) {
+			t.Errorf("AuditFieldMask = %q, must not contain %q — content scoring never reads it", places.AuditFieldMask, field)
+		}
+	}
+}
+
+func TestPlaceholderSKUTier(t *testing.T) {
+	tests := []struct {
+		name string
+		mask string
+		want string
+	}{
+		{"id only", "id", "IDs-Only"},
+		{"places-prefixed id only", "places.id", "IDs-Only"},
+		{"nearby discovery mask is Enterprise (rating)", places.NearbyFieldMask, "Enterprise"},
+		{"the full live detail mask is Enterprise+Atmosphere (reviews)", "rating,userRatingCount,reviews,editorialSummary", "Enterprise+Atmosphere"},
+		{"the narrowed audit mask is still Enterprise+Atmosphere (reviews)", places.AuditFieldMask, "Enterprise+Atmosphere"},
+		{"pro fields with no rating/reviews", "regularOpeningHours,websiteUri,primaryTypeDisplayName", "Pro"},
+		{"photos only", "photos", "Photos"},
+		{"location-shape fields fall back to Essentials", "displayName,formattedAddress,location", "Essentials"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := places.PlaceholderSKUTier(tt.mask); got != tt.want {
+				t.Errorf("PlaceholderSKUTier(%q) = %q, want %q", tt.mask, got, tt.want)
+			}
+		})
 	}
 }
