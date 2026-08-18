@@ -101,37 +101,40 @@ anywhere. You read it only to report deltas.
      merge, see step 1, hit a conflict and something failed to clean up
      after it). **STOP.** Never try to resolve or heal a conflict here; tell
      the user the checkout needs manual attention.
-   - Otherwise, if every dirty path is a subset of the four files Phase 6
-     writes — `CHANGELOG.md`, `app/package.json`, `app/app.json`,
-     `frontend/package.json` (a plain modification, staged or not, or
-     untracked) — that's Phase 6 having crashed before it could clean up
-     after itself (see Phase 6 step 6, which now covers all four) — stash
-     them rather than discard them, in case one is actually the user's own
-     hand-edit and not pipeline debris. **One `git stash push -u --
-     <path>` call per path, never all four in a single call**:
+   - Otherwise, if every dirty path is a subset of the five files Phase 6
+     writes — `CHANGELOG.md`, `API_CONTRACT.md`, `app/package.json`,
+     `app/app.json`, `frontend/package.json` (a plain modification, staged
+     or not, or untracked) — that's Phase 6 having crashed before it could
+     clean up after itself (see Phase 6 step 6, which now covers all five)
+     — stash them rather than discard them, in case one is actually the
+     user's own hand-edit and not pipeline debris. **One `git stash push -u
+     -- <path>` call per path, never all five in a single call**:
      ```
      git stash push -u -- CHANGELOG.md
+     git stash push -u -- API_CONTRACT.md
      git stash push -u -- app/package.json
      git stash push -u -- app/app.json
      git stash push -u -- frontend/package.json
      ```
-     A single call with all four is unsafe here specifically because
+     A single call with all five is unsafe here specifically because
      `CHANGELOG.md` does not exist yet in this repo (the first real run is
-     what creates it): `git stash push -u -- <path list>` containing even
-     one pathspec that matches nothing fails with `fatal: pathspec ... did
-     not match any files`, exit 1 — and it fails *after* stashing whatever
-     it already resolved, leaving that partial stash sitting alongside an
-     unchanged, still-dirty worktree (verified against git 2.50.1). Run
-     one at a time and a nonexistent or already-clean path is a harmless
-     `No local changes to save`, exit 0; a real dirty path stashes cleanly.
-     This may leave more than one stash entry — that's fine, note every ref
-     it created.
+     what creates it) and `API_CONTRACT.md` is only ever touched by Phase 6
+     on the runs where step 4 actually found a wire-contract change: `git
+     stash push -u -- <path list>` containing even one pathspec that
+     matches nothing fails with `fatal: pathspec ... did not match any
+     files`, exit 1 — and it fails *after* stashing whatever it already
+     resolved, leaving that partial stash sitting alongside an unchanged,
+     still-dirty worktree (verified against git 2.50.1). Run one at a time
+     and a nonexistent or already-clean path is a harmless `No local
+     changes to save`, exit 0; a real dirty path stashes cleanly. This may
+     leave more than one stash entry — that's fine, note every ref it
+     created.
      **Re-run `git status --porcelain` after stashing — do not assume the
      heal worked.** If it's now clean, note the recovery (and every stash
      ref, so the user can `git stash pop` each to recover a hand-edit) in
      the report, and continue. If it's still dirty, treat it as the "any
      other dirt" case below.
-   - Any other dirt, or dirt alongside those four files, or dirt on a path
+   - Any other dirt, or dirt alongside those five files, or dirt on a path
      outside that set — is someone's real work — **STOP**. Phase 5 moves
      this checkout's branch, so an unattended run must never be able to lose
      uncommitted work. Tell the user to commit or stash.
@@ -715,11 +718,12 @@ paths, rather than checking a branch out over someone's work.
 
 The user's remaining job is releases; this phase does the writing part of it
 and stops short of the deciding part. This is the one place in the pipeline
-where the orchestrator writes a real tracked repo file instead of its own
-`pipeline/bugs/**` bookkeeping — `CHANGELOG.md` is not under that path, so
-the Token discipline exception above does not cover it. It does so on its
-own branch, never on `main`. It never touches `ledger.json` — that stays the
-triager's, written during Phase 5.
+where the orchestrator writes real tracked repo files instead of its own
+`pipeline/bugs/**` bookkeeping — `CHANGELOG.md`, and, on the runs where
+step 4 finds a genuine wire-contract change, `API_CONTRACT.md` too —
+neither is under that path, so the Token discipline exception above does
+not cover either. It does so on its own branch, never on `main`. It never
+touches `ledger.json` — that stays the triager's, written during Phase 5.
 
 **Deliberate exception to the cut-fresh-from-`origin/main` rule.** Every
 other branch in this pipeline — the worktree, task branches,
@@ -730,11 +734,11 @@ shared **across runs**, not cut per-run, because the changelog PR is meant
 to sit open until the user merges it — a fresh per-run branch would leave
 two open PRs racing to edit the same section the moment a week goes by
 unmerged. It's sound specifically because `audit-changelog` carries no
-application code (only `CHANGELOG.md` and the three version-field edits
-from step 4 below), nothing else is ever branched off it, and it is
-recreated from `origin/main` the instant its PR is merged or closed — it
-never goes stale the way a real feature branch would. Do not "fix" this
-back to a per-run branch.
+application code (only `CHANGELOG.md`, the three version-field edits, and
+`API_CONTRACT.md` when step 4 below touches it), nothing else is ever
+branched off it, and it is recreated from `origin/main` the instant its PR
+is merged or closed — it never goes stale the way a real feature branch
+would. Do not "fix" this back to a per-run branch.
 
 **What multiple runs against one still-open PR actually produce.** Before
 this phase computed versions, "entries accumulate under `[Unreleased]`
@@ -876,7 +880,93 @@ than this phase makes.
    `backend/proxy-service/cmd/proxy-service/main.go`'s route table), their
    parameters, and their response shapes. Nothing else in the repo — the
    frontend, the app, any other service's internals — counts as a public API
-   here.
+   here. `API_CONTRACT.md` (repo root) is the written-down authority for
+   that contract — every route, parameter, response field, and the
+   breaking-vs-additive call for this API.
+
+   **Classify against whether the document was accurate about the *old*
+   behavior — never against whether it still agrees with the *new* one.**
+   Those are different questions, and conflating them breaks
+   classification entirely: a document describing current behavior is, by
+   definition, contradicted by *every* breaking change the moment that
+   change lands (removing a route, requiring a previously-optional
+   parameter, changing a response type all disagree with what the document
+   said, because that's what "breaking" means). Reading that disagreement
+   as "can't classify" would make the MAJOR bullet below unreachable
+   forever, and because the ambiguous outcome is sticky, the very first
+   real breaking change would freeze classification for every later run
+   too. So split on the one question that actually distinguishes the two
+   cases — was the document right *before* this task's diff:
+
+   - **The document correctly described the old behavior, and this task's
+     diff moves the wire contract away from it.** This is exactly what an
+     addition, deprecation, or breaking change *is* — classify it normally
+     by the addition/backward-incompatible/deprecated rules below, using
+     the document as evidence of what the *old* behavior was. The
+     resulting disagreement between the (still-old) document and the
+     (already-merged) new code is expected and momentary, not ambiguity —
+     "keep the document in sync" below closes it in the same commit.
+   - **The document was already wrong about the *old* behavior**,
+     independent of this task — it described something the code never
+     actually did. That's a documentation defect, not a signal about this
+     task, and always report it as its own finding for a human to fix. It
+     does **not** automatically send this task to the ambiguous outcome —
+     whether it can still be classified depends on what kind of change
+     this task's diff shows:
+     - **Structural changes stay diff-decidable, document or no
+       document.** A route present in the base commit and gone in the
+       diff, a request field that lost its optional shape, a response
+       field removed from the DTO struct — whether the route/parameter/
+       field existed before and what changed about it is visible directly
+       in the diff, not read off the document. Classify these normally by
+       the addition/backward-incompatible/deprecated rules below; a wrong
+       document elsewhere doesn't touch this, because the document was
+       never the test for this category.
+     - **Status-code *semantics* changes are the one category that is
+       not diff-decidable this way.** Unlike a route, a parameter's
+       required-ness, or a response field's presence/type — all facts a
+       diff states directly — a status code's *meaning* for a given
+       condition isn't visible in the diff by itself; the only codified
+       MAJOR test for it (see the Backward-incompatible bullet below) is
+       explicitly "away from what `API_CONTRACT.md` documented as the
+       established response," and that test has nothing left to stand on
+       once the document is known wrong about the very old behavior in
+       question. **Do not** fall back to the "an existing client might
+       have branched on it" test to fill the gap — that bullet explicitly
+       bans it a few lines below, for exactly this reason: it's how a real
+       MAJOR silently collapses into PATCH with no self-consistent rule
+       catching it. When the document is known wrong about the pre-change
+       status-code behavior *and* this task's diff changes that same
+       status code, that combination **is** the ambiguous outcome: defer
+       to a human, and report both the document's pre-existing error and
+       the change itself, so whoever resolves it has the real old-vs-new
+       behavior in front of them instead of a document that can't be
+       trusted for it.
+
+   **Keep the document in sync.** When this phase's own classification
+   identifies a genuine MINOR/MAJOR wire-contract change from this run's
+   merged diffs — whether via the first case above, or the diff-decidable
+   structural sub-case under the second — update `API_CONTRACT.md` to
+   match as part
+   of this phase's own edit — on the same `audit-changelog` branch, in the
+   same commit as the `CHANGELOG.md`/version-field edits in step 5 below —
+   so the document never drifts stale behind the contract it's supposed to
+   be the authority for. This phase is the right place for that edit: it
+   runs after merge with the real diffs already in hand, and it already
+   writes real tracked repo files (`CHANGELOG.md`, the three version
+   fields) on its own branch — `API_CONTRACT.md` is the same kind of edit,
+   not a new exception to the Token discipline note above.
+
+   **This sync has exactly two blind spots, both accepted, neither
+   silent:** it never fires on the ambiguous path (a human resolves the
+   version and the document together when they clear the
+   `**PENDING CLASSIFICATION**` marker, deliberately, not automatically);
+   and it never fires for a fix that lands outside this pipeline entirely
+   — a manual PR merged straight to `main` never passes through Phase 4 or
+   this phase, so nothing here ever sees its diff. `API_CONTRACT.md` can
+   go stale behind either path until a human updates it by hand or a later
+   pipeline run's own diff-classification happens to touch the same route
+   again; nothing in this phase polls for that drift proactively.
 
    **Sticky ambiguity — check this before anything else in this step.**
    Step 3 already added this run's bullets to `[Unreleased]`. Before
@@ -985,8 +1075,15 @@ than this phase makes.
        response field — is MINOR.
      - **Backward-incompatible** — a route removed or renamed, a
        previously-optional parameter made required, a response field removed
-       or type-changed, or status-code semantics changed in a way an
-       existing client would break on — is MAJOR.
+       or type-changed, or a status code changed away from what
+       `API_CONTRACT.md` itself documented as the established response for
+       that condition — is MAJOR. The test is whether *the document* said
+       so, never the weaker "an existing client might have branched on the
+       old code": a fix that makes a route conform to what the document
+       already stated is the PATCH/bug-fix case `API_CONTRACT.md`'s own
+       Breaking vs. additive section describes, not this one — see that
+       section (and this step's own doc-accuracy split above) before
+       calling a status-code change MAJOR.
      - **Deprecated** — a route, parameter or response field marked
        deprecated (still present and working, but flagged for future
        removal) — is MINOR. This is [SemVer 2.0.0 item
@@ -1068,9 +1165,11 @@ than this phase makes.
    outcome, the pre-existing version-field skew outcome, *or* the
    inherited-marker outcome (all three leave `[Unreleased]` unrenamed and
    all three version fields untouched — none of them is unique to one code
-   path), the `[Unreleased]` rename plus all three version-field edits, all
-   in one commit — then push and open/update the PR per the classification
-   from step 1:
+   path), the `[Unreleased]` rename plus all three version-field edits, plus
+   step 4's `API_CONTRACT.md` edit **if step 4 made one** (only on a run
+   where it identified a genuine MINOR/MAJOR wire-contract change — most
+   runs commit nothing there), all in one commit — then push and
+   open/update the PR per the classification from step 1:
    - **Live** → `git push origin audit-changelog` (plain push — no force
      needed; the branch started at `origin/audit-changelog` and only grew a
      commit). The existing open PR now carries this run's commit. Do not
@@ -1143,8 +1242,8 @@ than this phase makes.
    missing changelog entry is not worth failing a green run over.
 
    **This phase must never return dirty or mid-merge** — a leftover
-   modified/untracked file among the four this phase can write
-   (`CHANGELOG.md`, `app/package.json`, `app/app.json`,
+   modified/untracked file among the five this phase can write
+   (`CHANGELOG.md`, `API_CONTRACT.md`, `app/package.json`, `app/app.json`,
    `frontend/package.json`), or a checkout stuck mid-merge from step 1's
    conflict case, would trip Phase 0's clean-tree STOP on the *next*
    scheduled run, which has nothing to do with this failure and shouldn't be
@@ -1177,44 +1276,49 @@ than this phase makes.
       else surfaces this, so note it for Phase 7 now: "a
       `PENDING CLASSIFICATION` marker was written this run but never
       committed, and was discarded by crash cleanup — the deferral did not
-      persist." Then clean **only these four paths**: `CHANGELOG.md`,
-      `app/package.json`, `app/app.json`, `frontend/package.json`. First
-      restore, **one `git restore --staged --worktree -- <path>` call per
-      path** — never all four in a single call:
+      persist." Then clean **only these five paths**: `CHANGELOG.md`,
+      `API_CONTRACT.md`, `app/package.json`, `app/app.json`,
+      `frontend/package.json`. First restore, **one `git restore --staged
+      --worktree -- <path>` call per path** — never all five in a single
+      call:
       ```
       git restore --staged --worktree -- CHANGELOG.md
+      git restore --staged --worktree -- API_CONTRACT.md
       git restore --staged --worktree -- app/package.json
       git restore --staged --worktree -- app/app.json
       git restore --staged --worktree -- frontend/package.json
       ```
       This split matters, and is not interchangeable with a single
-      four-path call the way the `git clean -f` step below is: unlike
+      five-path call the way the `git clean -f` step below is: unlike
       `git clean -f`, `git restore` with several pathspecs **aborts the
       entire call** the moment any one of them doesn't resolve, restoring
       *none* of the others (verified against git 2.50.1) — so a single call
-      covering all four, in the documented crash state (an untracked fresh
+      covering all five, in the documented crash state (an untracked fresh
       `CHANGELOG.md` plus a modified, tracked `app/package.json`), restores
       nothing at all and leaves `app/package.json` still dirty. One call per
       path confines a failure to that one path. Ignore each call's exit
-      code and run all four regardless: against a modified-or-staged
+      code and run all five regardless: against a modified-or-staged
       tracked file (always the case for `app/package.json`, `app/app.json`,
       `frontend/package.json`, which exist unconditionally once this repo
-      has a first commit) `git restore` exits 0 and does the restore.
-      Against an **untracked** file — the state a crash leaves when Phase 6
-      wrote a fresh `CHANGELOG.md` but never got to commit it — `git
-      restore --staged --worktree` has nothing tracked to restore: `error:
-      pathspec 'CHANGELOG.md' did not match any file(s) known to git`, exit
-      1, **not a no-op**, and the file is still there afterward. That
-      non-zero exit means exactly "this file wasn't tracked," not "cleanup
-      failed" — do not stop here.
+      has a first commit, and for `API_CONTRACT.md`, which is tracked from
+      this document's own merge onward and so is never the untracked-fresh
+      case below) `git restore` exits 0 and does the restore. Against an
+      **untracked** file — the state a crash leaves when Phase 6 wrote a
+      fresh `CHANGELOG.md` but never got to commit it — `git restore
+      --staged --worktree` has nothing tracked to restore: `error: pathspec
+      'CHANGELOG.md' did not match any file(s) known to git`, exit 1, **not
+      a no-op**, and the file is still there afterward. That non-zero exit
+      means exactly "this file wasn't tracked," not "cleanup failed" — do
+      not stop here.
 
       Then, separately, `git clean -f` **is** safe to call once with all
-      four paths together (verified tolerant of paths that don't exist or
-      aren't dirty): `git clean -f CHANGELOG.md app/package.json
-      app/app.json frontend/package.json`. This is what actually removes an
-      untracked leftover like a crash-written `CHANGELOG.md`; for the three
-      always-tracked version files it's a genuine no-op.
-   3. Re-run `git status --porcelain`. None of the four paths above may
+      five paths together (verified tolerant of paths that don't exist or
+      aren't dirty): `git clean -f CHANGELOG.md API_CONTRACT.md
+      app/package.json app/app.json frontend/package.json`. This is what
+      actually removes an untracked leftover like a crash-written
+      `CHANGELOG.md`; for `API_CONTRACT.md` and the three always-tracked
+      version files it's a genuine no-op.
+   3. Re-run `git status --porcelain`. None of the five paths above may
       still be listed. Anything else still listed is **not yours to
       remove** — report it and stop; do not widen the cleanup to make the
       output empty.
@@ -1227,7 +1331,7 @@ than this phase makes.
    uncommitted work on a schedule. The narrow reasoning that once justified it
    ("Phase 0 gated the tree clean, so nothing else can be dirty") is exactly
    the assumption that is false hours later on a shared machine: the only
-   files this phase writes are those same four, so they are the only files
+   files this phase writes are those same five, so they are the only files
    this phase may destroy. Anything else in `git status` arrived from outside
    the pipeline and belongs to whoever put it there.
 
@@ -1307,7 +1411,7 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 ## Failure handling
 | Failure | Behavior |
 | --- | --- |
-| Dirty working tree at phase 0 | STOP, unless every dirty path is a subset of `CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json` and none is conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via one `git stash push -u -- <path>` call **per path** (never one call with all four — a nonexistent `CHANGELOG.md` in that single call still creates a stash entry for whatever it resolved first, then fatals, leaving the worktree exactly as dirty as before), re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt outside that four-file set still STOPs |
+| Dirty working tree at phase 0 | STOP, unless every dirty path is a subset of `CHANGELOG.md`, `API_CONTRACT.md`, `app/package.json`, `app/app.json`, `frontend/package.json` and none is conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via one `git stash push -u -- <path>` call **per path** (never one call with all five — a nonexistent `CHANGELOG.md` in that single call still creates a stash entry for whatever it resolved first, then fatals, leaving the worktree exactly as dirty as before), re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt outside that five-file set still STOPs |
 | Stack won't reach healthy | STOP |
 | One perspective fails | record `skipped`, continue |
 | Every dispatched perspective fails | STOP |
@@ -1322,7 +1426,7 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 | Working tree dirty at Phase 5 step 1 or at Phase 6's re-check | skip that phase (and Phase 6 too, if it was Phase 5) — report unverified/unwritten with the dirty paths. Never stash, reset or move HEAD over someone's work; the fixes are already merged |
 | No traffic-generating perspective available before a `logs` re-probe | report `logs` as **unverifiable**, exclude its entries from the verification set — never `resolved` |
 | Any `gh pr list` in Phase 6 step 1 exits non-zero | fail the phase (non-fatal, per the changelog row) — never fall through to the `fresh` branch, which force-pushes |
-| Changelog phase fails (including a merge conflict merging `origin/main` into `audit-changelog`) | non-fatal: report changelog as unwritten, run still counts as successful; always `git merge --abort` (if mid-merge) then clean **only the four files this phase writes** (`CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json`) before returning, verifying they're gone from `git status` rather than assuming it — never a repo-wide `reset --hard`; other dirty paths get reported, not removed |
+| Changelog phase fails (including a merge conflict merging `origin/main` into `audit-changelog`) | non-fatal: report changelog as unwritten, run still counts as successful; always `git merge --abort` (if mid-merge) then clean **only the five files this phase writes** (`CHANGELOG.md`, `API_CONTRACT.md`, `app/package.json`, `app/app.json`, `frontend/package.json`) before returning, verifying they're gone from `git status` rather than assuming it — never a repo-wide `reset --hard`; other dirty paths get reported, not removed |
 | Changelog commit succeeded but push failed | non-fatal, no retry: tree is already clean, just report the unpushed commit's sha in Phase 7 |
 | Proxy-service's wire contract visibly changed and the phase can't classify the change as clearly backward compatible or clearly breaking (touching the API files alone, with no wire-contract change, does NOT trigger this) | **not a failure, the feature's designed safety valve**: changelog bullets from step 3 still land under `[Unreleased]` (left unversioned, not renamed), all three version fields stay untouched, a `**PENDING CLASSIFICATION**` marker is written under `[Unreleased]` so no later run renames over it, and the ambiguous PR/route is named in both the PR body and Phase 7 report for a human to classify — run still counts as green |
 | `app/package.json`'s version and `app/app.json`'s `expo.version` disagree before Phase 6 step 4 edits anything | same non-guessing posture as the row above, including the `**PENDING CLASSIFICATION**` marker: report the pre-existing skew, don't compute or apply a bump, but step 3's changelog bullets still land under `[Unreleased]` |

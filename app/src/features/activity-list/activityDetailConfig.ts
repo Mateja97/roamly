@@ -212,6 +212,16 @@ export function artAttribution(activity: Activity): ArtAttribution | undefined {
   return { artist, workYear, medium };
 }
 
+// reviews-description-graceful-degrade T2: single home for "is there a real
+// description" — trims/empties/denylists via the same `prose` classification
+// `ProseBlock` applies. `useActivityDetailData` threads this into `DetailBody`
+// so the screen decides presence once instead of re-deciding inside
+// `ProseBlock` (which keeps its own `classifyField` call for every other
+// consumer — see ProseBlock.tsx).
+export function descriptionText(activity: Activity): string | undefined {
+  return classifyField('prose', activity.description);
+}
+
 // Restaurants/bars are Tripadvisor-exclusive; cafés joined as a third,
 // dual-sourced category per fix(activities-service) #104 ("restore Google as
 // a Café source alongside Tripadvisor" — a café can genuinely come from
@@ -277,6 +287,38 @@ export function tripadvisorReviews(activity: Activity): TripadvisorReview[] {
 export function tripadvisorAddressLine(activity: Activity): string | undefined {
   const parts = [activity.address, activity.city].filter(Boolean);
   return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+// reviews-description-graceful-degrade T1: the single named gate for "does
+// the Google Reviews section render at all" — moved here from
+// useActivityDetailData.ts's old `googleReviewsAllowed` so a future backend
+// content-mask narrowing (nulling `google_maps_uri` per category) has one
+// seam to take effect at, instead of a hook-level boolean plus a duplicated
+// JSX condition.
+//
+// Compliance: a Google-sourced reviews section (score, cards, attribution)
+// must always be able to link back to Google Maps, so it never renders
+// without `google_maps_uri` — no pending-state exception, since a
+// seed/cached payload can carry `google_reviews`/`rating` before the live
+// merge completes. This is also why a maps-link-only row (no score, no
+// review cards) still renders the section: the link's presence alone is
+// sufficient content — see GoogleAttributionPlate's own "Google Maps" mark +
+// "View on Google Maps" link, which is the only thing that slot needs.
+export function googleReviewsSectionShown(activity: Activity): boolean {
+  return Boolean(activity.google_maps_uri);
+}
+
+// Companion to `googleReviewsSectionShown` above: "does the section, once
+// shown, also carry the aggregate score header" — the same
+// `rating > 0 && review_count !== undefined` check `ReviewsSection` itself
+// gates its header on, plus the section-level compliance gate (a score can
+// never render without the maps link either).
+export function googleReviewsScoreShown(activity: Activity): boolean {
+  return (
+    googleReviewsSectionShown(activity) &&
+    activity.rating > 0 &&
+    activity.review_count !== undefined
+  );
 }
 
 // design-spec.md T8 addendum #6: Wellness' external-booking note, lifted
