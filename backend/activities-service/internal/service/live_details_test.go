@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -541,4 +542,47 @@ func TestActivities_WithAuditFieldMask_RoutesToPlaceDetailsForAudit(t *testing.T
 			t.Errorf("auditDetailCalls = %d, want 0 — the live detail path must never opt into the audit mask", places.auditDetailCalls)
 		}
 	})
+}
+
+// TestActivities_WithLiveDetails_SendsCategoryMask covers T3
+// (places-api-cost-reduction): withLiveDetails must ask for
+// placesmap.DetailFieldMask(activity.Category), not a fixed mask shared by
+// every category.
+func TestActivities_WithLiveDetails_SendsCategoryMask(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategorySport, City: "Belgrade",
+		Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{}
+	svc := New(&fakeRepo{getOut: stored}).WithPlaces(places)
+
+	if _, err := svc.GetByIDWithLiveDetails(context.Background(), "1"); err != nil {
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+	}
+	want := placesmap.DetailFieldMask(activitiessvc.CategorySport)
+	if places.lastFieldMask != want {
+		t.Errorf("lastFieldMask = %q, want %q (Sport's mask)", places.lastFieldMask, want)
+	}
+	if strings.Contains(places.lastFieldMask, "reviews") {
+		t.Errorf("Sport's mask = %q, must not carry reviews", places.lastFieldMask)
+	}
+}
+
+// TestActivities_WithTripadvisorGoogleReviews_SendsReviewMask covers T3:
+// the Tripadvisor Google-review fallback must ask for
+// placesmap.ReviewFieldMask, not the category detail mask.
+func TestActivities_WithTripadvisorGoogleReviews_SendsReviewMask(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryRestaurants, City: "Belgrade",
+		Status: activitiessvc.StatusPublished, Source: "tripadvisor", GooglePlaceID: "place-1",
+	}
+	places := &fakePlaces{}
+	svc := New(&fakeRepo{getOut: stored}).WithPlaces(places)
+
+	if _, err := svc.GetByIDWithLiveDetails(context.Background(), "1"); err != nil {
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+	}
+	if places.lastFieldMask != placesmap.ReviewFieldMask {
+		t.Errorf("lastFieldMask = %q, want placesmap.ReviewFieldMask %q", places.lastFieldMask, placesmap.ReviewFieldMask)
+	}
 }

@@ -258,15 +258,12 @@ func TestResolvePhotos_RespectsLimit(t *testing.T) {
 	}
 }
 
-// wantDetailFieldMask is places.go's detailFieldMask, duplicated here (an
-// external test package can't reference the unexported const) so the
-// assertion below is a real behavioral check, not a tautology against the
-// implementation.
-const wantDetailFieldMask = "rating,userRatingCount,reviews,reviews.authorAttribution," +
-	"editorialSummary,generativeSummary,priceLevel,priceRange,regularOpeningHours," +
-	"primaryTypeDisplayName,websiteUri,googleMapsUri,goodForChildren,goodForGroups," +
-	"allowsDogs,restroom,outdoorSeating,liveMusic,parkingOptions,accessibilityOptions," +
-	"servesCoffee,servesVegetarianFood,menuForChildren,dineIn,takeout,reservable"
+// wantDetailFieldMask stands in for whatever mask a caller passes (T3,
+// places-api-cost-reduction: PlaceDetails no longer owns a single hard-coded
+// mask — placesmap.DetailFieldMask/ReviewFieldMask size it per call site,
+// tested in placesmap's own package). This test only checks PlaceDetails
+// puts whatever mask it's given on the wire, verbatim.
+const wantDetailFieldMask = "rating,userRatingCount,reviews,websiteUri"
 
 func TestPlaceDetails(t *testing.T) {
 	tests := []struct {
@@ -333,7 +330,7 @@ func TestPlaceDetails(t *testing.T) {
 			defer srv.Close()
 
 			c := places.NewWithBase("k", srv.URL)
-			got, err := c.PlaceDetails(context.Background(), "place-1")
+			got, err := c.PlaceDetails(context.Background(), "place-1", wantDetailFieldMask)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error")
@@ -380,7 +377,7 @@ func TestPlaceDetails_FullResponseDecodesEverything(t *testing.T) {
 	defer srv.Close()
 
 	c := places.NewWithBase("k", srv.URL)
-	got, err := c.PlaceDetails(context.Background(), "place-1")
+	got, err := c.PlaceDetails(context.Background(), "place-1", "reviews,editorialSummary,generativeSummary,priceRange,websiteUri,googleMapsUri,goodForChildren,allowsDogs,parkingOptions,accessibilityOptions")
 	if err != nil {
 		t.Fatalf("PlaceDetails(): %v", err)
 	}
@@ -423,7 +420,7 @@ func TestPlaceDetails_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 
-	if _, err := c.PlaceDetails(ctx, "place-1"); err == nil {
+	if _, err := c.PlaceDetails(ctx, "place-1", "rating"); err == nil {
 		t.Fatal("expected timeout error")
 	}
 }

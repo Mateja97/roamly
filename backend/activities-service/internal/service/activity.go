@@ -78,13 +78,16 @@ const (
 // serves stored data, it just never resolves anything live.
 type placesClient interface {
 	ResolvePhotos(ctx context.Context, placeID string, limit int) ([]activitiessvc.Photo, error)
-	// PlaceDetails fetches live Place Details for one placeID — the data
-	// source for GetByID's live merge (see withLiveDetails).
-	PlaceDetails(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
+	// PlaceDetails fetches live Place Details for one placeID, restricted to
+	// fieldMask — the data source for GetByID's live merge (see
+	// withLiveDetails). Callers size fieldMask themselves (T3,
+	// places-api-cost-reduction): placesmap.DetailFieldMask(category) or
+	// placesmap.ReviewFieldMask, per call site.
+	PlaceDetails(ctx context.Context, placeID, fieldMask string) (placesmap.PlaceDetail, error)
 	// PlaceDetailsForAudit is PlaceDetails sent with places.AuditFieldMask
-	// instead of the live detail-page's wider mask (T7,
-	// places-api-cost-reduction) — resolvePlaceDetails' data source when
-	// WithAuditFieldMask has been set (cmd/auditcontent only).
+	// instead of the caller's own mask (T7, places-api-cost-reduction) —
+	// resolvePlaceDetails' data source when WithAuditFieldMask has been set
+	// (cmd/auditcontent only).
 	PlaceDetailsForAudit(ctx context.Context, placeID string) (placesmap.PlaceDetail, error)
 	// SearchNearby is the type-driven discovery call: one per (cell,
 	// category, subtype) row, circle-restricted, max 20 results.
@@ -976,7 +979,7 @@ func (a *Activities) withLiveDetails(ctx context.Context, activity activitiessvc
 		return activity, true
 	}
 
-	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID)
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.ExternalID, placesmap.DetailFieldMask(activity.Category))
 	if !ok {
 		return activity, false
 	}
@@ -1037,7 +1040,7 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 		return activity, true
 	}
 
-	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.GooglePlaceID)
+	detail, ok := a.resolvePlaceDetails(ctx, activity.ID, activity.GooglePlaceID, placesmap.ReviewFieldMask)
 	if !ok {
 		return activity, false
 	}
@@ -1049,12 +1052,13 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 	return activity, true
 }
 
-// resolvePlaceDetails calls PlaceDetails for placeID within
-// detailResolveTimeout, the fallback-on-error step withLiveDetails and
-// withTripadvisorGoogleReviews both need identically: any error (including
-// a timeout, surfaced as ctx.Err()) logs one warning and reports ok=false so
-// the caller returns its bare stored row, no error surfaced to the request.
-func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeID string) (placesmap.PlaceDetail, bool) {
+// resolvePlaceDetails calls PlaceDetails for placeID, restricted to
+// fieldMask, within detailResolveTimeout — the fallback-on-error step
+// withLiveDetails and withTripadvisorGoogleReviews both need identically:
+// any error (including a timeout, surfaced as ctx.Err()) logs one warning
+// and reports ok=false so the caller returns its bare stored row, no error
+// surfaced to the request.
+func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeID, fieldMask string) (placesmap.PlaceDetail, bool) {
 	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
 	defer cancel()
 
@@ -1063,7 +1067,7 @@ func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeI
 	if a.auditFieldMask {
 		detail, err = a.places.PlaceDetailsForAudit(resolveCtx, placeID)
 	} else {
-		detail, err = a.places.PlaceDetails(resolveCtx, placeID)
+		detail, err = a.places.PlaceDetails(resolveCtx, placeID, fieldMask)
 	}
 	if err != nil {
 		slog.Warn("live place details resolve failed, falling back to stored row", "activity_id", activityID, "error", err)

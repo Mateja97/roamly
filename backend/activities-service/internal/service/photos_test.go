@@ -37,6 +37,10 @@ type fakePlaces struct {
 	// WithAuditFieldMask actually routes resolvePlaceDetails to the audit
 	// call instead of the live detail-page one.
 	auditDetailCalls int
+	// lastFieldMask records the mask the most recent PlaceDetails call sent
+	// (T3, places-api-cost-reduction) — lets a test assert withLiveDetails/
+	// withTripadvisorGoogleReviews picked the mask their call site owns.
+	lastFieldMask string
 }
 
 func (f *fakePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activitiessvc.Photo, error) {
@@ -44,8 +48,9 @@ func (f *fakePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]activi
 	return f.out, f.err
 }
 
-func (f *fakePlaces) PlaceDetails(ctx context.Context, _ string) (placesmap.PlaceDetail, error) {
+func (f *fakePlaces) PlaceDetails(ctx context.Context, _, fieldMask string) (placesmap.PlaceDetail, error) {
 	f.detailCalls++
+	f.lastFieldMask = fieldMask
 	return f.resolveDetail(ctx)
 }
 

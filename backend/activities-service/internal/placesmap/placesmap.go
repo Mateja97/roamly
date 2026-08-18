@@ -406,3 +406,60 @@ func BuildLiveDetails(cat activitiessvc.Category, country string, d PlaceDetail)
 	}
 	return b
 }
+
+// categoryDetailFields lists the extra Place Details fields, beyond the
+// header baseline in DetailFieldMask, that BuildLiveDetails' switch case for
+// cat actually reads. Kept next to BuildLiveDetails so the two can never
+// drift: add a field to a switch case above, add it here. CategorySport has
+// no entry — its switch case is a no-op, and its DetailFieldMask carries no
+// category-specific fields at all (T3, places-api-cost-reduction).
+var categoryDetailFields = map[activitiessvc.Category][]string{
+	activitiessvc.CategoryCafes: {
+		"regularOpeningHours", "websiteUri", // hours, opening_hours, website_url
+		"servesCoffee", "servesVegetarianFood", "outdoorSeating", "allowsDogs", // cafeKnownFor
+		"goodForGroups", "dineIn", "takeout", "reservable",
+	},
+	activitiessvc.CategoryNightlife: {"primaryTypeDisplayName", "regularOpeningHours"},
+	activitiessvc.CategoryNature: {
+		"websiteUri",
+		"goodForChildren", "allowsDogs", "restroom", "accessibilityOptions", "parkingOptions", // natureGoodToKnow
+	},
+	activitiessvc.CategoryKids: {
+		"websiteUri",
+		"goodForChildren", "menuForChildren", "restroom", "parkingOptions", "accessibilityOptions", // kidsFacilities
+	},
+	activitiessvc.CategoryCulture:       {"regularOpeningHours", "primaryTypeDisplayName", "websiteUri"},
+	activitiessvc.CategoryArt:           {"regularOpeningHours", "primaryTypeDisplayName", "websiteUri"},
+	activitiessvc.CategoryShopping:      {"regularOpeningHours", "primaryTypeDisplayName", "websiteUri"},
+	activitiessvc.CategoryWellness:      {"primaryTypeDisplayName", "websiteUri", "regularOpeningHours"},
+	activitiessvc.CategoryEntertainment: {"websiteUri", "regularOpeningHours"},
+}
+
+// DetailFieldMask is the X-Goog-FieldMask a detail-page open sends for cat
+// (T3, places-api-cost-reduction): the header fields withLiveDetails always
+// merges onto Activity (rating, review count, Google Maps link) plus exactly
+// the fields cat's BuildLiveDetails case reads, from categoryDetailFields
+// above. reviews/editorialSummary/generativeSummary — the fields that put a
+// request in the Enterprise+Atmosphere SKU tier alongside the amenity
+// booleans — ride along for every category except Sport: Sport's
+// BuildLiveDetails case is a no-op ("{}") and, uniquely, its header accepts
+// no live review/description refresh in exchange for dropping out of
+// Enterprise+Atmosphere entirely (down to Enterprise, since rating stays).
+// Every other category still pays for reviews, but none is charged for an
+// amenity boolean its own BuildLiveDetails case never reads.
+func DetailFieldMask(cat activitiessvc.Category) string {
+	fields := []string{"rating", "userRatingCount", "googleMapsUri"}
+	if cat != activitiessvc.CategorySport {
+		fields = append(fields, "reviews", "reviews.authorAttribution", "editorialSummary", "generativeSummary")
+	}
+	fields = append(fields, categoryDetailFields[cat]...)
+	return strings.Join(fields, ",")
+}
+
+// ReviewFieldMask is the X-Goog-FieldMask withTripadvisorGoogleReviews sends
+// (T3, places-api-cost-reduction): only the fields it actually merges
+// (Rating, ReviewCount, GoogleReviews, GoogleMapsURI) — it never touches
+// Description or a category's Details payload, so it needs none of
+// DetailFieldMask's category-specific or editorialSummary/generativeSummary
+// fields.
+const ReviewFieldMask = "rating,userRatingCount,reviews,reviews.authorAttribution,googleMapsUri"

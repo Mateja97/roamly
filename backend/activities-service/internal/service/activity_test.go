@@ -226,7 +226,7 @@ func (f *fakeGooglePlaces) ResolvePhotos(_ context.Context, _ string, _ int) ([]
 	return f.photosOut, f.photosErr
 }
 
-func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _ string) (placesmap.PlaceDetail, error) {
+func (f *fakeGooglePlaces) PlaceDetails(_ context.Context, _, _ string) (placesmap.PlaceDetail, error) {
 	return placesmap.PlaceDetail{}, nil
 }
 

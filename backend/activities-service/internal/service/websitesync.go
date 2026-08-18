@@ -390,7 +390,10 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	}
 
 	resolveCtx, cancel := context.WithTimeout(ctx, websiteResolveTimeout)
-	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID)
+	// fieldMask "websiteUri": this sync only ever reads WebsiteURI below (T3,
+	// places-api-cost-reduction) — no need for the detail-page open's wider,
+	// category-aligned mask.
+	detail, err := a.places.PlaceDetails(resolveCtx, activity.ExternalID, "websiteUri")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("resolving website for %s: %w", id, err)
