@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -27,10 +28,15 @@ import (
 // maxResolvedPhotosFromEnv parses raw as a positive int, falling back to
 // service.DefaultMaxResolvedPhotos on anything else (unset, non-numeric,
 // <= 0) — bad config degrading to the safe default beats refusing to start
-// over a photo cap.
-func maxResolvedPhotosFromEnv(raw string) int {
+// over a photo cap. A non-empty but invalid raw is logged so a typo'd env
+// var doesn't silently become the default.
+func maxResolvedPhotosFromEnv(raw string, logger *slog.Logger) int {
+	if raw == "" {
+		return service.DefaultMaxResolvedPhotos
+	}
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {
+		logger.Warn("invalid MAX_RESOLVED_PHOTOS, using default", "value", raw, "default", service.DefaultMaxResolvedPhotos)
 		return service.DefaultMaxResolvedPhotos
 	}
 	return n
@@ -60,7 +66,7 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo).WithMaxResolvedPhotos(maxResolvedPhotosFromEnv(sharedconfig.OrDefault("MAX_RESOLVED_PHOTOS", strconv.Itoa(service.DefaultMaxResolvedPhotos))))
+	svc := service.New(repo).WithMaxResolvedPhotos(maxResolvedPhotosFromEnv(os.Getenv("MAX_RESOLVED_PHOTOS"), logger))
 	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
 	// fine, GetActivityPhotos just always answers from stored photos with no
 	// live Google call — same fallback behavior a configured client hits on

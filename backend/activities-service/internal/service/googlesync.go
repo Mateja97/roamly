@@ -133,17 +133,19 @@ func googleDueRows(req Request, fresh func(cell, category, subtype string) bool)
 const googleSyncTimeout = 2 * time.Minute
 
 // googleSyncConcurrency bounds how many sweeps run at once across the whole
-// process. One sweep can run up to maxGoogleRowsPerQuery (8) searches, each
-// with up to 20 results, plus one geocode call per cell — roughly 169 Google
-// API calls worst case (T5, places-api-cost-reduction: no per-result photo
-// call at sync time any more, so this is 1 Places call per result, not 2).
-// Left unbounded, a 100-request burst spawns 100 concurrent sweeps (~17k
+// process. One sweep issues at most maxGoogleRowsPerQuery (8) searchNearby
+// calls plus one geocode call per cell — 8 searchNearby + 1 geocode ≈ 9
+// Google API calls per sweep (T5, places-api-cost-reduction: no per-result
+// photo call at sync time any more, so a sweep costs 9 calls total, down
+// from ~169 when each of a search's up-to-20 results also drew its own
+// photo call).
+// Left unbounded, a 100-request burst spawns 100 concurrent sweeps (~900
 // calls, 100 live goroutines) with nothing shedding load, and doJSON's
 // 429/5xx retry then multiplies quota pressure instead of backing off. 4
-// keeps worst-case concurrent cost in the low thousands of calls while still
-// letting several distinct cells make progress at once; raise it only
-// alongside a real per-process Google API budget (see the "out of scope"
-// note on pgxpool.MaxConns — same shape of problem, deliberately deferred).
+// keeps at most ~36 calls in flight at once while still letting several
+// distinct cells make progress in parallel; raise it only alongside a real
+// per-process Google API budget (see the "out of scope" note on
+// pgxpool.MaxConns — same shape of problem, deliberately deferred).
 const googleSyncConcurrency = 4
 
 // googleSyncSem is a non-blocking semaphore: acquiring a slot is a buffered

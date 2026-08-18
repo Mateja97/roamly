@@ -12,6 +12,11 @@ import (
 // vocabulary — renaming one needs a data migration, not just a constant
 // edit.
 const (
+	// ReasonNoPhoto (T5, places-api-cost-reduction): Google sync no longer
+	// resolves photos at ingest time, so every Google row that has not yet
+	// had its detail page requested has zero photos until then. This reason
+	// now means "no photo yet resolved", not "venue has no photo" —
+	// cmd/auditcontent's report legend carries the same caveat.
 	ReasonNoPhoto   = "no_photo"
 	ReasonNoPlaceID = "no_place_id"
 	ReasonNoContent = "no_content"

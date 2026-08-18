@@ -215,6 +215,32 @@ func TestQueryActivities_HappyPath(t *testing.T) {
 	}
 }
 
+// TestQueryActivities_NilPhotos covers AC2's list-response half: a row
+// synced without a photo resolve (T5, places-api-cost-reduction) must come
+// back with an empty photos list, not a nil-dereference or a fabricated
+// entry. toProtoPhotos is shared with GetActivity (see get_activity_test.go
+// for the detail-response case), so this closes the gap this test file left
+// only inferred.
+func TestQueryActivities_NilPhotos(t *testing.T) {
+	fake := &fakeQueryService{out: []activitiessvc.Activity{
+		{ID: "1", Title: "Kayaking", Category: activitiessvc.CategorySport, Photos: nil},
+	}}
+	client := dialServer(t, fake)
+
+	resp, err := client.QueryActivities(context.Background(), &activitiesv1.QueryActivitiesRequest{
+		Scope: activitiesv1.Scope_SCOPE_NEARBY,
+	})
+	if err != nil {
+		t.Fatalf("QueryActivities() unexpected error: %v", err)
+	}
+	if len(resp.GetActivities()) != 1 {
+		t.Fatalf("got %d activities, want 1", len(resp.GetActivities()))
+	}
+	if got := resp.GetActivities()[0].GetPhotos(); len(got) != 0 {
+		t.Errorf("photos = %+v, want empty", got)
+	}
+}
+
 func TestDetailsJSON(t *testing.T) {
 	tests := []struct {
 		name string
