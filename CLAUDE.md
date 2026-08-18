@@ -13,6 +13,7 @@ web client), and `app/` (React Native + Expo, iOS/Android).
 - `APP_STANDARDS.md` — React Native/Expo conventions for `app/`. Read before writing any mobile code.
 - `DESIGN_STANDARDS.md` — the visual design system shared by `frontend/` and `app/` (deep-wine background, gold accents, cream text — a premium palette). Read before writing any frontend or mobile UI.
 - `BUSINESS_STANDARDS.md` — domain rules: the activity category taxonomy and Nearby/Anywhere search-scope behavior. Read before touching activity categories, search-scope logic, or filters in any of `backend/`, `frontend/`, or `app/`.
+- `API_CONTRACT.md` — the declared public API: every `proxy-service` HTTP route, its request/response shapes, and what counts as a breaking vs. additive change. Read before adding, removing, or changing any `proxy-service` route, and consult it whenever classifying a change's SemVer impact.
 
 ## Claude Design project
 
