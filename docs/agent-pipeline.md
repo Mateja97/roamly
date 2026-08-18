@@ -223,10 +223,15 @@ pending question in this run's PR-body block and the run report. Without
 this, a later clean run would rename `[Unreleased]` and sweep an earlier
 run's still-unclassified bullets into a dated version along with its
 own — a possibly-breaking change shipping labeled PATCH, silently, which is
-the exact harm the escape hatch exists to prevent. Only a human clears it:
-renaming `[Unreleased]` to a version themselves, or deleting just the
-marker line to tell the next run the section is safe to classify normally
-again.
+the exact harm the escape hatch exists to prevent. Only a human clears it,
+one of two ways: resolve it — rename `[Unreleased]`'s heading to the
+version they've decided on, write that same version into all three version
+fields, and open a fresh empty `[Unreleased]` above it, all three together
+(the fields, not the changelog, are what step 4 treats as the source of
+truth, so a heading rename with no field write just leaves a stale version
+for the next run to build on top of) — or defer it further by deleting
+just the marker line, which tells the next run the section is safe to
+classify normally again.
 
 **A changelog PR left open across several weekly runs accumulates several
 dated version sections, not one growing list** — as long as no run along

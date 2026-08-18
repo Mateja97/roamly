@@ -893,6 +893,22 @@ than this phase makes.
    still sees it, not just the run that first raised it. Then skip the rest
    of this step.
 
+   **Known and accepted: while a marker is pending, later runs' own tasks
+   go unclassified too**, not just unbumped — a second, independent
+   breaking change merged during the deferral window is never evaluated
+   against the API surface and lands as a bullet with no route evidence,
+   same as any other. Not fixed here: doing so would mean running full
+   per-task classification on every run regardless of the marker (to catch
+   a *new* case) while still suppressing the bump (because of the *old*
+   one), then merging multiple pending reasons into one marker without
+   duplicating or going stale — a real expansion of this step, not a small
+   patch. Accepted because the marker is already a manual-review gate on
+   the whole section, not just the item that raised it: its own text tells
+   the human to decide the version for what's *under* `[Unreleased]`, which
+   is already an invitation to read the accumulated bullets, not just the
+   original flagged route. Revisit if false negatives here turn out to
+   matter in practice.
+
    This is what makes the ambiguous and skew outcomes below actually safe
    *across* runs, not just within one: without it, a later run's own clean
    classification would rename `[Unreleased]` and sweep an earlier run's
@@ -914,9 +930,23 @@ than this phase makes.
    else; if it doesn't, that's a pre-existing skew this phase must not
    silently resolve — same non-guessing posture as the ambiguous outcome
    below: report the skew, compute and apply no bump, but still let step 3's
-   bullets land under `[Unreleased]`, and write the same
-   `**PENDING CLASSIFICATION**` marker described below so a later run
-   doesn't rename over it. `frontend/package.json`'s
+   bullets land under `[Unreleased]`, and write a marker so a later run
+   doesn't rename over it — **a skew-specific one, not the ambiguous-outcome
+   marker below**, since "rename this section to the version you've decided
+   on" is advice for a human classification call, and a field skew isn't
+   one:
+   ```
+   > **PENDING CLASSIFICATION** — app/package.json's version (<X>) and
+   > app/app.json's expo.version (<Y>) disagree. Originated in run <slug>,
+   > <date>. Resolve by making the two fields agree (whichever value is
+   > correct), then deleting this line — the next run resumes normal
+   > automatic classification and computes its bump from the now-consistent
+   > version, folding in whatever accumulated under `[Unreleased]` since
+   > this one.
+   ```
+   Both markers share the same `**PENDING CLASSIFICATION**` lead-in, so the
+   sticky-ambiguity check above (which only greps for that string) catches
+   either one without needing to tell them apart. `frontend/package.json`'s
    *current* value is irrelevant to the bump math — it is about to be
    overwritten to match the other two. As of this writing `app/package.json`
    is `1.0.0` and `frontend/package.json` is `0.0.0`; on the first run this
@@ -982,16 +1012,29 @@ than this phase makes.
    that change is clearly backward compatible or clearly breaking. When it
    fires: do **not** guess in either direction. Skip renaming
    `[Unreleased]` — leave step 3's bullets under it exactly as written —
-   and leave all three version fields untouched. Write a
-   `> **PENDING CLASSIFICATION** — <the specific route/PR, and why>.
-   Originated in run <slug>, <date>. Resolve by renaming this section to a
-   version yourself, or by deleting this line to tell the next run to
-   resume normal classification.` line directly under the `## [Unreleased]`
-   heading (above any `### Fixed`/`### Changed` subheadings) — this is the
-   marker the sticky-ambiguity check above looks for on every later run, so
-   a clean run next week can't quietly rename over an unresolved one. State
-   the same thing plainly in both the PR body and the Phase 7 report, which
-   PR/route is ambiguous and that a human must classify it before a version
+   and leave all three version fields untouched. Write a marker line
+   directly under the `## [Unreleased]` heading (above any `### Fixed`/
+   `### Changed` subheadings):
+   ```
+   > **PENDING CLASSIFICATION** — <the specific route/PR, and why>.
+   > Originated in run <slug>, <date>. Resolve by (1) renaming this
+   > section's heading to the version you've decided on, e.g.
+   > `## [2.0.0] - <date>`; (2) writing that same version into
+   > app/package.json, app/app.json's expo.version, and
+   > frontend/package.json; and (3) opening a fresh empty `## [Unreleased]`
+   > above it — all three together, not just the heading: step 4 below
+   > treats the version *fields*, never the changelog, as the source of
+   > truth, so a rename with no field write leaves the old version sitting
+   > in the fields for the next clean run to read, compute its own small
+   > bump on top of, and ship above your real one. To instead tell the
+   > next run to resume automatic classification, delete just this marker
+   > line and leave the heading as `[Unreleased]`.
+   ```
+   This is the marker the sticky-ambiguity check above looks for on every
+   later run, so a clean run next week can't quietly rename over an
+   unresolved one. State the same thing plainly in both the PR body and
+   the Phase 7 report, which PR/route is ambiguous and that a human must
+   classify it before a version
    can be cut. This is not a failure of the phase: the changelog entries
    still land, just without a version, and the run still counts as green.
 
@@ -1021,12 +1064,13 @@ than this phase makes.
    catches both. A mismatch anywhere is exactly the skew `CLAUDE.md`'s
    pinned-version rule warns about; treat it as a phase failure per step 6
    and do not commit.
-5. Commit — step 3's bullets, and, unless step 4 hit the ambiguous outcome
-   *or* the pre-existing version-field skew outcome (both leave `[Unreleased]`
-   unrenamed and all three version fields untouched — neither is unique to
-   one code path), the `[Unreleased]` rename plus all three version-field
-   edits, all in one commit — then push and open/update the PR per the
-   classification from step 1:
+5. Commit — step 3's bullets, and, unless step 4 landed on the ambiguous
+   outcome, the pre-existing version-field skew outcome, *or* the
+   inherited-marker outcome (all three leave `[Unreleased]` unrenamed and
+   all three version fields untouched — none of them is unique to one code
+   path), the `[Unreleased]` rename plus all three version-field edits, all
+   in one commit — then push and open/update the PR per the classification
+   from step 1:
    - **Live** → `git push origin audit-changelog` (plain push — no force
      needed; the branch started at `origin/audit-changelog` and only grew a
      commit). The existing open PR now carries this run's commit. Do not
@@ -1037,7 +1081,21 @@ than this phase makes.
      exactly the ambiguity notice this Live-path update exists to keep
      visible.
      ```
-     old_body="$(gh pr view audit-changelog --json body -q .body)"
+     old_body="$(gh pr view audit-changelog --json body -q .body)" || fail
+     ```
+     **A non-zero exit here fails the phase — same rule as step 1's `gh pr
+     list` guard, same reason.** Don't fall through to writing the body
+     anyway: an empty `old_body` from a failed call is indistinguishable
+     downstream from a PR that genuinely has an empty body, and writing
+     `$this_run_block` alone over that unions with the *append* failure
+     case, not the safe one — it silently reproduces the exact
+     whole-body-overwrite erasure this Live-path append exists to prevent,
+     just on the failure path instead of by direct design. Treat a failed
+     `gh pr view` here as a phase failure per step 6, not as "no prior
+     body."
+
+     On success:
+     ```
      this_run_block="## Run <slug> — <date>
      <the run's merged tasks, and, per step 4, either the computed version
      and the evidence that justified it, or — restated in full, not just
@@ -1104,11 +1162,25 @@ than this phase makes.
       means exactly "there was no merge to abort," not "this step failed."
       Ignore it and continue to step 2 regardless of this command's exit
       code.
-   2. `git status --porcelain` — if non-empty, clean **only these four
-      paths**: `CHANGELOG.md`, `app/package.json`, `app/app.json`,
-      `frontend/package.json`. First restore, **one `git restore --staged
-      --worktree -- <path>` call per path** — never all four in a single
-      call:
+   2. `git status --porcelain` — if non-empty, **before discarding
+      anything, check whether the dirty `CHANGELOG.md` you're about to
+      wipe contains a `PENDING CLASSIFICATION` marker** (`git diff
+      CHANGELOG.md | grep -q 'PENDING CLASSIFICATION'` for a tracked-dirty
+      copy, or `grep -q 'PENDING CLASSIFICATION' CHANGELOG.md` for an
+      untracked one). A crash between step 4 writing that marker and this
+      commit landing is a narrow window, but it's a real one: the
+      underlying task's PR is already merged to `main` by Phase 4, the
+      marker never got committed, and the cleanup below is about to
+      discard it right along with everything else — leaving the *next*
+      run with no marker to find and no reason not to auto-classify and
+      rename over what should have stayed a human's open question. Nothing
+      else surfaces this, so note it for Phase 7 now: "a
+      `PENDING CLASSIFICATION` marker was written this run but never
+      committed, and was discarded by crash cleanup — the deferral did not
+      persist." Then clean **only these four paths**: `CHANGELOG.md`,
+      `app/package.json`, `app/app.json`, `frontend/package.json`. First
+      restore, **one `git restore --staged --worktree -- <path>` call per
+      path** — never all four in a single call:
       ```
       git restore --staged --worktree -- CHANGELOG.md
       git restore --staged --worktree -- app/package.json
@@ -1193,7 +1265,10 @@ One summary:
   marker's question — don't let a run that did nothing but inherit someone
   else's open question report as if nothing happened. This is a distinct,
   always-reported line covering all four outcomes, not folded into the
-  changelog-PR bullet above
+  changelog-PR bullet above. **Also report, whenever it happened, Phase
+  6's crash-cleanup step 2 finding and discarding an uncommitted
+  `PENDING CLASSIFICATION` marker** — the deferral didn't persist, so say
+  so plainly rather than letting the run read as an ordinary clean pass
 - polish accepted vs rejected, with the product agent's rationale (name the
   rejected task ids — Phase 3 leaves their ledger entries alone, so this
   report is the only record of the rejection)
