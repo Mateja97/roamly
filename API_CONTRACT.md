@@ -363,20 +363,38 @@ Public city-name typeahead. No auth.
 Public, static file serving straight off the shared `/data/photos` volume
 (configured via `PHOTOS_DIR`, default `/data/photos`) using stdlib
 `http.FileServer` wrapped in a directory-refusing `http.FileSystem`
-(`noDirListingFS`, added in #210 — see below). No auth. Registered as the
-subtree pattern `GET /photos/`, which cannot collide with any other route
-including `/admin/*`.
+(`noDirListingFS`, added in #210 — see below), fed by an `os.Root` opened
+on the volume (see the symlink-escape fix below) rather than `http.Dir`.
+No auth. Registered as the subtree pattern `GET /photos/`, which cannot
+collide with any other route including `/admin/*`.
 
 - **200** — a file, streamed with `http.FileServer`'s standard headers
   (`Content-Type` sniffed from extension/content, `Content-Length`, etc. —
   not the JSON envelope used elsewhere in this API). Probe-verified against
-  a real fixture: `Content-Type: image/jpeg` for a `.jpg`.
+  a real fixture: `Content-Type: image/jpeg` for a `.jpg`. A symlink inside
+  the volume whose target also resolves inside it is unaffected by the fix
+  below and stays servable exactly like any other file — deliberate, not
+  an oversight: it doesn't escape the volume, so there's nothing to refuse
+  (probe-verified).
 - **404** — no *file* at that path, **and, as of #210, any directory
   path too** — `GET /photos/`, `GET /photos/sub`, `GET /photos/sub/` all
   `404` now, whether or not `sub` actually exists as a directory
   (probe-verified). Directories are made indistinguishable from missing
   files on purpose (see below); a `404` here does not imply the path never
-  existed, only that nothing servable does.
+  existed, only that nothing servable does. **As of the symlink-escape fix
+  (`c89f907`), also covers:** a symlink inside the volume whose target
+  resolves *outside* `/data/photos` (file or directory target, both
+  probe-verified), and a file the process can't read due to filesystem
+  permissions — `noDirListingFS` now normalizes every `Open` failure from
+  the volume, not just "is a directory," to `fs.ErrNotExist`, so a
+  rejected symlink and an unreadable file both collapse into the same
+  `404` as a plain missing file, on purpose: an unauthenticated caller
+  gets no signal distinguishing "not there" from "refused." This is a
+  status-code change worth flagging precisely: this document never
+  previously stated what an unreadable file returned, so there was no
+  established `403` here for this route to break — see "Breaking vs.
+  additive" below for why that makes it a bug fix, not a `403`→`404`
+  regression against a documented promise.
 - **307** — the bare, no-trailing-slash request for this route's own root,
   `GET /photos` (no path after it) *only*, redirects to `/photos/` —
   `net/http.ServeMux`'s own subtree-pattern redirect, fired before
@@ -401,13 +419,34 @@ before it ever gets far enough to list one or to redirect a bare
 subdirectory path toward a trailing slash (that redirect only used to fire
 *because* `FileServer` had successfully opened the directory; refusing the
 `Open` removes the precondition for both behaviors at once, not just the
-listing). File serving itself (content, `Content-Type`, `..`-traversal
-rejection via the wrapped `http.Dir`) is unaffected.
+listing).
 
-Conditional-request headers (`If-Modified-Since`, `Range`, etc.) are honored
-by `http.FileServer` on this route per its stdlib defaults, not
-independently re-verified here — treat everything else about this route as
-"whatever `net/http`'s file server does," not a bespoke JSON endpoint.
+**Fixed (`c89f907`, this branch): a symlink inside the volume that pointed
+outside `/data/photos` used to be followed and served with a `200`,
+leaking the target's bytes.** `http.Dir` rejects a `..` in the request
+path but still follows a symlink already sitting in the volume out past
+the root — a gap in the previous mechanism, not something #210's fix
+touched. `RegisterPhotoRoutes` now opens the volume with `os.OpenRoot`
+instead of `http.Dir` and serves via `http.FS(root.FS())`: `os.Root`
+confines every `Open` — symlink or not — to inside `root` and errors on
+anything that would resolve outside it, so `noDirListingFS`'s
+`fs.ErrNotExist` normalization (above) turns that rejection into the same
+`404` a missing file gets, never a `200` with the target's bytes
+(probe-verified for both a symlink-to-file and a symlink-to-directory
+target outside the volume). File serving itself — content, `Content-Type`,
+`..`-traversal rejection, Range/conditional-request handling — is
+unaffected; it is still the same `http.FileServer`, only fed a
+traversal-resistant `fs.FS` instead of `http.Dir`.
+
+Conditional-request headers (`If-Modified-Since`, `Range`, `If-Range`, etc.)
+are honored by `http.FileServer` on this route per its stdlib defaults —
+probe-verified as of the symlink-escape fix above (`Range` → `206`, an
+out-of-range `Range` → `416`, a future `If-Modified-Since` → `304`, `Range`
++ a matching `If-Range` → `206`), specifically to re-pin that swapping
+`http.Dir` for `os.Root` didn't change this: `http.FS(root.FS())` still
+hands `http.FileServer` a `Seek`-able, `Stat`-able file, same as
+`http.Dir` did. Treat everything else about this route as "whatever
+`net/http`'s file server does," not a bespoke JSON endpoint.
 
 ### Admin surface (`RegisterAdminRoutes`, `backend/proxy-service/internal/api/admin_*.go`)
 
@@ -670,6 +709,25 @@ specific wire contract.
   already-stated rules* is PATCH; a status-code change that redefines what
   a documented rule means, or introduces a new documented rule an existing
   client wasn't told to expect, is the breaking case in the list above.
+- Concretely, a second instance: `c89f907` (the `/photos/{path}`
+  symlink-escape fix, this branch) makes a symlink inside the volume that
+  resolves outside `/data/photos` return `404` instead of `200` with the
+  target's bytes, and — as a side effect of the same `noDirListingFS`
+  normalization — makes an unreadable file return `404` instead of the
+  `403` `http.Dir`'s stdlib error path used to produce. Both are **PATCH**,
+  by two different routes through the same rule above:
+  - The symlink case is a bug fix outright, not even a close call — no
+    client could ever have legitimately depended on reading an arbitrary
+    host file through a public photo route by planting a symlink; that
+    capability was never something this document (or any sane reading of
+    "public photo serving") promised, so removing it isn't narrowing a
+    promise, it's closing a hole.
+  - The `403`→`404` collapse is the same "was it established behavior"
+    test the `500`→`400` case above turns on, applied to a case this
+    document has no prior claim about either way: nothing in this
+    document, before this fix, said what an unreadable file returned —
+    `http.Dir`'s `403` was stdlib's default, never written down here as a
+    promise. No established behavior, so nothing to break.
 
 ## Known gaps
 
@@ -718,18 +776,22 @@ specific wire contract.
   and the six-status `writeGRPCError` mapping are verified by reading
   handler source directly. Wire-visible edge behavior — the stdlib-mux
   404/405/307/HEAD responses, the `/photos/{path}` directory/file
-  distinction (both before and after #210), the PATCH `null`-vs-empty-value
-  semantics, the admin-auth 404-vs-403 distinguishability, and the
-  multipart upload's implicit `Content-Type` requirement — was verified by
-  **probing**: building a mux from this package's real route registrations
-  and issuing real `net/http/httptest` requests against it, not by reading
-  and assuming. An earlier version of this document got several of these
-  wrong by reasoning about `http.FileServer`/`encoding/json` from memory
-  instead of probing, and a later revision re-probed after `origin/main`
-  moved (#210 merged mid-review) to confirm this document's `/photos`
-  section still matched; treat any future edit to this document that isn't
-  probe- or test-verified as suspect, and re-probe rather than assume
-  nothing changed underneath a claim just because it was correct once.
+  distinction (both before and after #210), the `/photos/{path}`
+  symlink-escape rejection and Range/conditional-request behavior (both
+  before and after the `os.Root` fix, `c89f907`), the PATCH
+  `null`-vs-empty-value semantics, the admin-auth 404-vs-403
+  distinguishability, and the multipart upload's implicit `Content-Type`
+  requirement — was verified by **probing**: building a mux from this
+  package's real route registrations and issuing real
+  `net/http/httptest` requests against it, not by reading and assuming.
+  An earlier version of this document got several of these wrong by
+  reasoning about `http.FileServer`/`encoding/json` from memory instead
+  of probing, and later revisions re-probed after `origin/main` moved
+  (#210 merged mid-review; the `os.Root` symlink-escape fix again after
+  that) to confirm this document's `/photos` section still matched; treat
+  any future edit to this document that isn't probe- or test-verified as
+  suspect, and re-probe rather than assume nothing changed underneath a
+  claim just because it was correct once.
 
 ## Not part of the contract (unpinned)
 
