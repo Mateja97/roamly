@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -541,4 +542,83 @@ func TestActivities_WithAuditFieldMask_RoutesToPlaceDetailsForAudit(t *testing.T
 			t.Errorf("auditDetailCalls = %d, want 0 — the live detail path must never opt into the audit mask", places.auditDetailCalls)
 		}
 	})
+}
+
+// TestActivities_WithLiveDetails_SendsCategoryMask covers T3
+// (places-api-cost-reduction): withLiveDetails must ask for
+// placesmap.DetailFieldMask(activity.Category), not a fixed mask shared by
+// every category. Sport's mask still carries reviews (round-2 review
+// finding: dropping it broke Sport's reviews card — see DetailFieldMask's
+// doc) — Sport's per-category savings are in categoryDetailFields alone.
+func TestActivities_WithLiveDetails_SendsCategoryMask(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategorySport, City: "Belgrade",
+		Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{}
+	svc := New(&fakeRepo{getOut: stored}).WithPlaces(places)
+
+	if _, err := svc.GetByIDWithLiveDetails(context.Background(), "1"); err != nil {
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+	}
+	want := placesmap.DetailFieldMask(activitiessvc.CategorySport)
+	if places.lastFieldMask != want {
+		t.Errorf("lastFieldMask = %q, want %q (Sport's mask)", places.lastFieldMask, want)
+	}
+	if !strings.Contains(places.lastFieldMask, "reviews") {
+		t.Errorf("Sport's mask = %q, must carry reviews — Sport's reviews card needs it, same as every other Places category", places.lastFieldMask)
+	}
+}
+
+// TestActivities_WithLiveDetails_SportKeepsLiveReviewsAndDescription is the
+// round-2 review regression test: Sport's detail page must keep rendering
+// live GoogleReviews/Description end to end, the exact user-visible content
+// the Critical finding caught being silently dropped when Sport's mask
+// stopped requesting reviews/editorialSummary/generativeSummary.
+func TestActivities_WithLiveDetails_SportKeepsLiveReviewsAndDescription(t *testing.T) {
+	review := placesmap.Review{
+		AuthorAttribution: placesmap.AuthorAttribution{DisplayName: "Marko"},
+		Rating:            4,
+		PublishTime:       "2026-05-01T00:00:00Z",
+	}
+	review.Text.Text = "Great pitch, well maintained."
+	detail := placesmap.PlaceDetail{Reviews: []placesmap.Review{review}, Rating: 4.5, UserRatingCount: 30}
+	detail.EditorialSummary.Text = "A well-kept five-a-side football pitch."
+
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategorySport, City: "Belgrade",
+		Status: activitiessvc.StatusPublished, Source: "google_places", ExternalID: "place-1",
+	}
+	places := &fakePlaces{detailOut: detail}
+	svc := New(&fakeRepo{getOut: stored}).WithPlaces(places)
+
+	got, err := svc.GetByIDWithLiveDetails(context.Background(), "1")
+	if err != nil {
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+	}
+	if got.Description != "A well-kept five-a-side football pitch." {
+		t.Errorf("Description = %q, want the live editorialSummary text", got.Description)
+	}
+	if len(got.GoogleReviews) != 1 || got.GoogleReviews[0].Text != "Great pitch, well maintained." {
+		t.Errorf("GoogleReviews = %+v, want the one live review", got.GoogleReviews)
+	}
+}
+
+// TestActivities_WithTripadvisorGoogleReviews_SendsReviewMask covers T3:
+// the Tripadvisor Google-review fallback must ask for
+// placesmap.ReviewFieldMask, not the category detail mask.
+func TestActivities_WithTripadvisorGoogleReviews_SendsReviewMask(t *testing.T) {
+	stored := activitiessvc.Activity{
+		ID: "1", Category: activitiessvc.CategoryRestaurants, City: "Belgrade",
+		Status: activitiessvc.StatusPublished, Source: "tripadvisor", GooglePlaceID: "place-1",
+	}
+	places := &fakePlaces{}
+	svc := New(&fakeRepo{getOut: stored}).WithPlaces(places)
+
+	if _, err := svc.GetByIDWithLiveDetails(context.Background(), "1"); err != nil {
+		t.Fatalf("GetByIDWithLiveDetails() unexpected error: %v", err)
+	}
+	if places.lastFieldMask != placesmap.ReviewFieldMask {
+		t.Errorf("lastFieldMask = %q, want placesmap.ReviewFieldMask %q", places.lastFieldMask, placesmap.ReviewFieldMask)
+	}
 }
