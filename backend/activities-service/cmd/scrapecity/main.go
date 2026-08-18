@@ -46,6 +46,14 @@ import (
 // shared with the live sync — a dry run that filtered differently from the
 // real ingest would report numbers nobody could act on.
 
+// defaultMaxCalls bounds -max-calls when unset (T7, places-api-cost-
+// reduction): every discovery row costs at most one Places call in
+// count-only mode, or one search plus up to 20 photo resolves in pre-warm
+// mode, and there are ~53 rows in the full table — this covers one full
+// count-only sweep comfortably and a typical pre-warm city without needing
+// the flag, while still refusing an unbounded run.
+const defaultMaxCalls = 300
+
 // yield is one discovery row's outcome: how many places the API returned and
 // how many survived the quality floor.
 type yield struct {
@@ -90,19 +98,24 @@ func main() {
 	lng := flag.Float64("lng", 0, "anchor longitude (required)")
 	radiusKM := flag.Float64("radius-km", 10, "search radius in km, max 50 (count-only mode only; pre-warm always uses the sync's own radius)")
 	countOnly := flag.Bool("count-only", true, "report yields without writing anything")
+	maxCalls := flag.Int("max-calls", defaultMaxCalls, "stop after this many Places calls and report a partial run; there is no unlimited setting")
 	flag.Parse()
 
 	if *city == "" || *lat == 0 || *lng == 0 {
-		slog.Error("usage: scrapecity -city <city> -lat <lat> -lng <lng> [-radius-km 10]")
+		slog.Error("usage: scrapecity -city <city> -lat <lat> -lng <lng> [-radius-km 10] [-max-calls 300]")
 		os.Exit(1)
 	}
 	if *radiusKM > 50 {
 		slog.Error("radius-km exceeds the Places API maximum of 50")
 		os.Exit(1)
 	}
+	if *maxCalls <= 0 {
+		slog.Error("max-calls must be positive; there is no unlimited run")
+		os.Exit(1)
+	}
 
 	if !*countOnly {
-		prewarm(context.Background(), *lat, *lng)
+		prewarm(context.Background(), *lat, *lng, *maxCalls)
 		return
 	}
 
@@ -127,9 +140,22 @@ func main() {
 	counts := map[string]yield{}
 	seen := map[string]bool{}
 	var duplicates int
+	callsByTier := map[string]int{}
+	covered := 0
+	partial := false
 
 	for _, row := range googleRows {
+		if sumCalls(callsByTier) >= *maxCalls {
+			partial = true
+			slog.Warn("scrapecity call budget reached; stopping short of full coverage",
+				"rows_covered", covered, "rows_total", len(googleRows), "max_calls", *maxCalls)
+			break
+		}
 		found, err := discover(ctx, c, row, *lat, *lng, *radiusKM)
+		// discover always issues exactly one Places call, whether it errors
+		// or not, so this counts regardless of the error branch below.
+		callsByTier[places.PlaceholderSKUTier(places.NearbyFieldMask)]++
+		covered++
 		if err != nil {
 			slog.Warn("discovery row failed", "category", row.Category, "subtype", row.Subtype, "error", err)
 			continue
@@ -149,6 +175,37 @@ func main() {
 	}
 
 	report(rowYield(googleRows, counts), *city, len(seen), duplicates)
+	fmt.Print(budgetReport(covered, len(googleRows), callsByTier, partial))
+}
+
+func sumCalls(byTier map[string]int) int {
+	total := 0
+	for _, n := range byTier {
+		total += n
+	}
+	return total
+}
+
+// budgetReport formats T7's "calls made, per SKU tier, partial or not"
+// report — the same shape every batch Places tool (auditcontent, scrapecity,
+// PrewarmGoogle) prints after a budgeted run. A string, not a direct print,
+// so it's testable the same way auditReport.render is.
+func budgetReport(covered, total int, callsByTier map[string]int, partial bool) string {
+	out := fmt.Sprintf("\nPlaces calls: %d", sumCalls(callsByTier))
+	if partial {
+		out += fmt.Sprintf(" (PARTIAL RUN — covered %d of %d rows, stopped by -max-calls)\n", covered, total)
+	} else {
+		out += fmt.Sprintf(" (covered %d of %d rows)\n", covered, total)
+	}
+	tiers := make([]string, 0, len(callsByTier))
+	for tier := range callsByTier {
+		tiers = append(tiers, tier)
+	}
+	sort.Strings(tiers)
+	for _, tier := range tiers {
+		out += fmt.Sprintf("  %-22s %d\n", tier, callsByTier[tier])
+	}
+	return out
 }
 
 // discover runs one row: searchNearby when the row has Table A types,
@@ -201,7 +258,7 @@ func report(lines []yieldLine, city string, unique, duplicates int) {
 // It deliberately calls the same service code the lazy sync uses rather than
 // reimplementing discovery — two implementations of one job is how the batch
 // pipeline and the sync would drift apart again.
-func prewarm(ctx context.Context, lat, lng float64) {
+func prewarm(ctx context.Context, lat, lng float64, maxCalls int) {
 	dsn, err := sharedconfig.Require("DATABASE_URL")
 	if err != nil {
 		slog.Error("config", "error", err)
@@ -220,6 +277,7 @@ func prewarm(ctx context.Context, lat, lng float64) {
 		os.Exit(1)
 	}
 	svc := service.New(repository.New(pool)).WithPlaces(pc)
-	svc.PrewarmGoogle(ctx, activitiessvc.Point{Lat: lat, Lng: lng})
-	slog.Info("prewarm complete", "lat", lat, "lng", lng)
+	summary := svc.PrewarmGoogle(ctx, activitiessvc.Point{Lat: lat, Lng: lng}, maxCalls)
+	slog.Info("prewarm complete", "lat", lat, "lng", lng, "partial", summary.Partial)
+	fmt.Print(budgetReport(summary.RowsCovered, summary.RowsTotal, summary.CallsByTier, summary.Partial))
 }
