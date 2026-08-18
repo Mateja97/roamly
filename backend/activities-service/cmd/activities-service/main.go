@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 	_ "time/tzdata" // ponytail: alpine runtime has no /usr/share/zoneinfo; bundle IANA DB into binary instead of apk-installing tzdata
@@ -22,6 +23,26 @@ import (
 	"activities-service/internal/service"
 	"activities-service/internal/tripadvisor"
 )
+
+// defaultGoogleSyncTTLDays mirrors service.defaultGoogleSyncTTL — kept here,
+// not imported, since it's just the fallback string for
+// sharedconfig.OrDefault below and main.go stays the only place env vars are
+// read (GO_STANDARDS.md's config convention).
+const defaultGoogleSyncTTLDays = "30"
+
+// googleSyncTTLFromEnv parses GOOGLE_SYNC_TTL_DAYS (T4,
+// places-api-cost-reduction) into a duration, falling back to
+// service.defaultGoogleSyncTTL — via defaultGoogleSyncTTLDays — on anything
+// that isn't a positive integer, so a malformed override degrades to the
+// default instead of killing startup over a config knob that was already
+// optional.
+func googleSyncTTLFromEnv(raw string) time.Duration {
+	days, err := strconv.Atoi(raw)
+	if err != nil || days <= 0 {
+		days, _ = strconv.Atoi(defaultGoogleSyncTTLDays)
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
 
 func main() {
 	logger := logging.New(sharedconfig.OrDefault("LOG_LEVEL", "info"))
@@ -47,7 +68,7 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo)
+	svc := service.New(repo).WithGoogleSyncTTL(googleSyncTTLFromEnv(sharedconfig.OrDefault("GOOGLE_SYNC_TTL_DAYS", defaultGoogleSyncTTLDays)))
 	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
 	// fine, GetActivityPhotos just always answers from stored photos with no
 	// live Google call — same fallback behavior a configured client hits on
