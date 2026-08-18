@@ -101,24 +101,28 @@ anywhere. You read it only to report deltas.
      merge, see step 1, hit a conflict and something failed to clean up
      after it). **STOP.** Never try to resolve or heal a conflict here; tell
      the user the checkout needs manual attention.
-   - Otherwise, if `CHANGELOG.md` is the *only* path in the output (a plain
-     modification, staged or not, or untracked) — that's Phase 6 having
-     crashed before it could clean up after itself (see Phase 6 step 6) —
-     stash it rather than discard it, in case it's actually the user's own
-     hand-edit and not pipeline debris: `git stash push -u -- CHANGELOG.md`.
+   - Otherwise, if every dirty path is a subset of the four files Phase 6
+     writes — `CHANGELOG.md`, `app/package.json`, `app/app.json`,
+     `frontend/package.json` (a plain modification, staged or not, or
+     untracked) — that's Phase 6 having crashed before it could clean up
+     after itself (see Phase 6 step 6, which now covers all four) — stash
+     them rather than discard them, in case one is actually the user's own
+     hand-edit and not pipeline debris: `git stash push -u -- CHANGELOG.md
+     app/package.json app/app.json frontend/package.json` (safe even when
+     only some of the four are actually dirty — `git stash push` with a
+     pathspec only stashes the paths that have changes).
      **Re-run `git status --porcelain` after stashing — do not assume the
      heal worked.** If it's now clean, note the recovery (and the stash
      ref, so the user can `git stash pop` to recover a hand-edit) in the
      report, and continue. If it's still dirty, treat it as the "any other
      dirt" case below.
-   - Any other dirt, or dirt alongside `CHANGELOG.md` — is someone's real
-     work — **STOP**. Phase 5 moves this checkout's branch, so an
-     unattended run must never be able to lose uncommitted work. Tell the
-     user to commit or stash.
-   Without the `CHANGELOG.md`-only self-heal, one bad Phase-6 crash (a kill,
-   a timeout) would silently STOP every future scheduled run until a human
-   notices — but it must never fire on a conflict, and it must never assume
-   it worked.
+   - Any other dirt, or dirt alongside those four files, or dirt on a path
+     outside that set — is someone's real work — **STOP**. Phase 5 moves
+     this checkout's branch, so an unattended run must never be able to lose
+     uncommitted work. Tell the user to commit or stash.
+   Without this self-heal, one bad Phase-6 crash (a kill, a timeout) would
+   silently STOP every future scheduled run until a human notices — but it
+   must never fire on a conflict, and it must never assume it worked.
 6. `docker compose ps`. If services are missing or unhealthy, run
    `docker compose up -d --build` and wait for health.
 7. Stack cannot reach healthy → **STOP**. Every later phase needs a live stack.
@@ -712,7 +716,8 @@ to sit open until the user merges it — a fresh per-run branch would leave
 two open PRs racing to edit the same `[Unreleased]` section the moment a
 week goes by unmerged, exactly the conflict "entries accumulate under
 `[Unreleased]` across runs" is meant to avoid. It's sound specifically
-because `audit-changelog` carries no code (only `CHANGELOG.md`), nothing
+because `audit-changelog` carries no application code (only `CHANGELOG.md`
+and the three version-field edits from step 4 below), nothing
 else is ever branched off it, and it is recreated from `origin/main` the
 instant its PR is merged or closed — it never goes stale the way a real
 feature branch would. Do not "fix" this back to a per-run branch.
@@ -828,11 +833,97 @@ feature branch would. Do not "fix" this back to a per-run branch.
    `[Unreleased]` if one is already there; create it only when absent — never
    a second one. New bullets go at the top of their subheading (newest
    first); every existing bullet stays exactly as it is.
-4. **Never touch a version field.** Not `app/package.json`, not
-   `app/app.json`, not `frontend/package.json`, and never rename
-   `[Unreleased]` to a version number. The user decides semver and cuts the
-   release; entries accumulate under `[Unreleased]` across runs until they do.
-5. Commit, then push and open/update the PR per the classification from
+4. **Compute the bump and apply it — evidence from the merged diffs, per
+   [SemVer 2.0.0](https://semver.org/).** The declared public API, for this
+   purpose, is **proxy-service's HTTP contract only**: its routes
+   (`backend/proxy-service/internal/api/**`,
+   `backend/proxy-service/cmd/proxy-service/main.go`'s route table), their
+   parameters, and their response shapes. Nothing else in the repo — the
+   frontend, the app, any other service's internals — counts as a public API
+   here.
+
+   All three version fields move together as one product version:
+   `app/package.json` (`version`), `app/app.json` (`expo.version`),
+   `frontend/package.json` (`version`) — they must always end up identical.
+   Read the current version from `app/package.json` and verify
+   `app/app.json`'s `expo.version` already matches it before doing anything
+   else; if it doesn't, that's a pre-existing skew this phase must not
+   silently resolve — same non-guessing posture as the ambiguous outcome
+   below: report the skew, compute and apply no bump, but still let step 3's
+   bullets land under `[Unreleased]`. `frontend/package.json`'s
+   *current* value is irrelevant to the bump math — it is about to be
+   overwritten to match the other two. The first time this runs,
+   `frontend` leaves SemVer's `0.y.z` initial-development phase and jumps to
+   the product version. That is deliberate: one product version, not three.
+
+   For every task that MERGED this run:
+   - `kind: bug` is PATCH by default — a fix to incorrect behavior is a
+     backward-compatible bug fix, full stop, unless its diff also touches
+     the API surface below.
+   - `kind: polish` is MINOR — Phase 3's product gate already established
+     that a merged polish task adds user-visible functionality; this phase
+     does not re-litigate that call.
+   - Regardless of `kind`, check whether the task's diff touches the API
+     surface: `gh pr diff <pr-number> -- backend/proxy-service/internal/api
+     backend/proxy-service/cmd/proxy-service/main.go`. Touching those files is
+     necessary but not sufficient to escalate — a diff that lands there but
+     leaves the wire contract itself unchanged (routes, parameters, response
+     fields and status codes all identical; the change is internal — a fixed
+     nil check, a refactor, a comment) is not "the public API moved," and
+     this task's contribution stays whatever `kind` already assigned. Only
+     when the wire contract itself changes does *this task's* contribution
+     get reclassified from the diff, not from `kind`:
+     - **Addition only** — a new route, a new optional parameter, a new
+       response field — is MINOR.
+     - **Backward-incompatible** — a route removed or renamed, a
+       previously-optional parameter made required, a response field removed
+       or type-changed, or status-code semantics changed in a way an
+       existing client would break on — is MAJOR.
+     - **Can't tell with confidence** — the wire contract visibly changed but
+       you cannot classify the change as clearly one or the other — do not
+       guess. This task pushes the whole phase to the ambiguous outcome
+       below, and that overrides every other task's classification, even an
+       otherwise-clean PATCH-only run.
+
+     Whenever a task's diff justifies MINOR or MAJOR, name the specific
+     route, parameter or response field that justifies it, for the PR body
+     and the Phase 7 report — never bump on a general sense that "something
+     changed."
+
+   **The ambiguous outcome is this feature's safety property, not a
+   footnote.** If proxy-service's route surface changed at all and you
+   cannot confidently classify the change as backward compatible or not: do
+   **not** guess in either direction. Skip renaming `[Unreleased]` — leave
+   step 3's bullets under it exactly as written — and leave all three
+   version fields untouched. State plainly, in both the PR body and the
+   Phase 7 report, which PR/route is ambiguous and that a human must
+   classify it before a version can be cut. This is not a failure of the
+   phase: the changelog entries still land, just without a version, and the
+   run still counts as green.
+
+   Otherwise, the bump for this run is the highest severity found across
+   every merged task (MAJOR > MINOR > PATCH), defaulting to PATCH when
+   nothing merged qualifies for higher — which is exactly the all-`kind:
+   bug`-and-no-API-surface-touched case the brief calls out.
+
+   Apply the bump to the current `X.Y.Z` (non-negative integers, no leading
+   zeroes, each element increasing numerically): MAJOR increments X and
+   resets Y and Z to 0; MINOR increments Y and resets Z to 0; PATCH
+   increments Z only. This repo has zero git tags, so the version field
+   itself — not a tag, not the changelog — is the only source of truth for
+   "current version"; as long as nothing outside this phase hand-edits it
+   backward, always incrementing forward from it is sufficient to guarantee
+   a released version is never rewritten.
+
+   Write the new `X.Y.Z` to all three fields, rename `## [Unreleased]` to
+   `## [X.Y.Z] - <YYYY-MM-DD>` (today's date, UTC), and add a fresh empty
+   `## [Unreleased]` above it. **Verify all three fields read back
+   identical before continuing** — if they don't, that's exactly the skew
+   `CLAUDE.md`'s pinned-version rule warns about; treat it as a phase
+   failure per step 6 and do not commit.
+5. Commit — step 3's bullets, and, unless step 4 hit the ambiguous outcome,
+   the `[Unreleased]` rename plus all three version-field edits, all in one
+   commit — then push and open/update the PR per the classification from
    step 1:
    - **Live** → `git push origin audit-changelog` (plain push — no force
      needed; the branch started at `origin/audit-changelog` and only grew a
@@ -852,8 +943,11 @@ feature branch would. Do not "fix" this back to a per-run branch.
      and is **not a draft** — unlike every task PR from Phase 4, which is
      opened `--draft`, this one must be immediately mergeable by the user
      with no extra step to un-draft it: `gh pr create --title "changelog:
-     audit <slug>" --body "<the run's merged tasks>" --head audit-changelog
-     --base main`. Report the new PR's URL.
+     audit <slug>" --body "<the run's merged tasks, and, per step 4, either
+     the computed version and the specific route/parameter/response-field
+     evidence that justified its bump, or which route/PR is ambiguous and
+     needs a human's classification>" --head audit-changelog --base main`.
+     Report the new PR's URL.
    In every case: do NOT mark it ready-and-merge it the way Phase 4 merges
    task PRs, and never open a second concurrent changelog PR — this is the
    one PR the pipeline deliberately leaves for the user.
@@ -862,15 +956,17 @@ feature branch would. Do not "fix" this back to a per-run branch.
    missing changelog entry is not worth failing a green run over.
 
    **This phase must never return dirty or mid-merge** — a leftover
-   modified/untracked `CHANGELOG.md`, or a checkout stuck mid-merge from
-   step 1's conflict case, would trip Phase 0's clean-tree STOP on the
-   *next* scheduled run, which has nothing to do with this failure and
-   shouldn't be blocked by it. Don't infer whether cleanup is needed from
-   which step failed (a push can fail *after* a commit already succeeded,
-   which still leaves the file tracked-and-committed, not merely
-   "modified" — and `git restore CHANGELOG.md` alone does not clear a
-   *staged* modification, it exits 0 and changes nothing) — before
-   reporting, always run this sequence:
+   modified/untracked file among the four this phase can write
+   (`CHANGELOG.md`, `app/package.json`, `app/app.json`,
+   `frontend/package.json`), or a checkout stuck mid-merge from step 1's
+   conflict case, would trip Phase 0's clean-tree STOP on the *next*
+   scheduled run, which has nothing to do with this failure and shouldn't be
+   blocked by it. Don't infer whether cleanup is needed from which step
+   failed (a push can fail *after* a commit already succeeded, which still
+   leaves the files tracked-and-committed, not merely "modified" — and
+   `git restore <path>` alone does not clear a *staged* modification, it
+   exits 0 and changes nothing) — before reporting, always run this
+   sequence:
    1. `git merge --abort 2>/dev/null` — the only thing that clears a
       conflicted `UU CHANGELOG.md` left by step 1 (it also unwinds the
       merge's other bookkeeping, which no per-path command can). If there's
@@ -879,22 +975,32 @@ feature branch would. Do not "fix" this back to a per-run branch.
       means exactly "there was no merge to abort," not "this step failed."
       Ignore it and continue to step 2 regardless of this command's exit
       code.
-   2. `git status --porcelain` — if non-empty, clean **only `CHANGELOG.md`**:
-      run `git restore --staged --worktree CHANGELOG.md`, then
-      `git clean -f CHANGELOG.md`, in that order, regardless of either
-      command's exit code. Against a modified-or-staged file, `git restore`
-      is exit 0 and `git clean -f` is a genuine no-op (nothing untracked to
-      remove). Against an **untracked** file — the state a crash leaves when
-      Phase 6 wrote a fresh `CHANGELOG.md` but never got to commit it —
-      `git restore --staged --worktree` has nothing tracked to restore:
-      `error: pathspec 'CHANGELOG.md' did not match any file(s) known to
-      git`, exit 1, **not** a no-op, and the file is still there afterward.
-      That non-zero exit means exactly "this file wasn't tracked," not
-      "cleanup failed" — do not stop here; `git clean -f` right after it is
-      what actually removes the file in this case.
-   3. Re-run `git status --porcelain`. `CHANGELOG.md` must be gone from it.
-      Anything else still listed is **not yours to remove** — report it and
-      stop; do not widen the cleanup to make the output empty.
+   2. `git status --porcelain` — if non-empty, clean **only these four
+      paths**: `CHANGELOG.md`, `app/package.json`, `app/app.json`,
+      `frontend/package.json`. Run `git restore --staged --worktree
+      CHANGELOG.md app/package.json app/app.json frontend/package.json`,
+      then `git clean -f CHANGELOG.md app/package.json app/app.json
+      frontend/package.json`, in that order, regardless of either command's
+      exit code. Against a modified-or-staged tracked file, `git restore` is
+      exit 0 and `git clean -f` is a genuine no-op for it (nothing untracked
+      to remove) — this covers `app/package.json`, `app/app.json` and
+      `frontend/package.json`, which always exist as tracked files, so they
+      are never in the untracked case below. Against an **untracked**
+      file — the state a crash leaves when Phase 6 wrote a fresh
+      `CHANGELOG.md` but never got to commit it — `git restore --staged
+      --worktree` has nothing tracked to restore for that one path: `error:
+      pathspec 'CHANGELOG.md' did not match any file(s) known to git`, exit
+      1, **not** a no-op, and the file is still there afterward. That
+      non-zero exit means exactly "this file wasn't tracked," not "cleanup
+      failed" — do not stop here; `git clean -f` right after it is what
+      actually removes the file in this case. Running `git restore` and
+      `git clean -f` with all four paths as one call each is fine even when
+      only some of them are actually dirty — a clean path is simply a no-op
+      within that call.
+   3. Re-run `git status --porcelain`. None of the four paths above may
+      still be listed. Anything else still listed is **not yours to
+      remove** — report it and stop; do not widen the cleanup to make the
+      output empty.
 
    **Never `git reset --hard` here, and never anything else repo-wide.** This
    phase runs hours after Phase 0's clean-tree check, on a weekly cron the
@@ -903,20 +1009,20 @@ feature branch would. Do not "fix" this back to a per-run branch.
    repo-wide reset on an expected failure path is a machine that destroys
    uncommitted work on a schedule. The narrow reasoning that once justified it
    ("Phase 0 gated the tree clean, so nothing else can be dirty") is exactly
-   the assumption that is false hours later on a shared machine: the only file
-   this phase created is `CHANGELOG.md`, so it is the only file this phase may
-   destroy. Anything else in `git status` arrived from outside the pipeline
-   and belongs to whoever put it there.
+   the assumption that is false hours later on a shared machine: the only
+   files this phase writes are those same four, so they are the only files
+   this phase may destroy. Anything else in `git status` arrived from outside
+   the pipeline and belongs to whoever put it there.
 
    Then report the changelog as unwritten. **One case needs no cleanup and
    no retry — just a note:** if the commit succeeded but the push failed
    (network blip, expired `gh`/git auth — plausible on an unattended cron),
    the tree is already clean (the commit succeeded) and step 2 above is a
-   no-op. The entries exist only as a local, unpushed commit that the next
-   run's step 1 `checkout -B` will silently discard. Don't build
-   retry/recovery machinery for this, matching the phase's non-fatal
-   posture — just report the unpushed commit's `git rev-parse HEAD` in
-   Phase 7 so the user can recover it by hand if they want to.
+   no-op. The entries (and any version bump) exist only as a local, unpushed
+   commit that the next run's step 1 `checkout -B` will silently discard.
+   Don't build retry/recovery machinery for this, matching the phase's
+   non-fatal posture — just report the unpushed commit's `git rev-parse
+   HEAD` in Phase 7 so the user can recover it by hand if they want to.
 
 ## Phase 7 — Report
 One summary:
@@ -930,6 +1036,12 @@ One summary:
   if entries were committed locally but never pushed (push failed after a
   successful commit), the unpushed commit's sha instead, so it can be
   recovered by hand
+- **the SemVer outcome of Phase 6 step 4**: the computed bump and resulting
+  `X.Y.Z` with the specific route/parameter/response-field (or `kind:
+  polish` task) that justified it, **or**, if the ambiguous escape hatch
+  fired, which PR/route needs a human's classification and that no version
+  fields were touched this run — this is a distinct, always-reported line,
+  not folded into the changelog-PR bullet above
 - polish accepted vs rejected, with the product agent's rationale (name the
   rejected task ids — Phase 3 leaves their ledger entries alone, so this
   report is the only record of the rejection)
@@ -968,7 +1080,7 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 ## Failure handling
 | Failure | Behavior |
 | --- | --- |
-| Dirty working tree at phase 0 | STOP, unless `CHANGELOG.md` is the *only* dirty path and it's non-conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via `git stash push -u -- CHANGELOG.md`, re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt elsewhere still STOPs |
+| Dirty working tree at phase 0 | STOP, unless every dirty path is a subset of `CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json` and none is conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via `git stash push -u -- CHANGELOG.md app/package.json app/app.json frontend/package.json`, re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt outside that four-file set still STOPs |
 | Stack won't reach healthy | STOP |
 | One perspective fails | record `skipped`, continue |
 | Every dispatched perspective fails | STOP |
@@ -983,8 +1095,10 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 | Working tree dirty at Phase 5 step 1 or at Phase 6's re-check | skip that phase (and Phase 6 too, if it was Phase 5) — report unverified/unwritten with the dirty paths. Never stash, reset or move HEAD over someone's work; the fixes are already merged |
 | No traffic-generating perspective available before a `logs` re-probe | report `logs` as **unverifiable**, exclude its entries from the verification set — never `resolved` |
 | Any `gh pr list` in Phase 6 step 1 exits non-zero | fail the phase (non-fatal, per the changelog row) — never fall through to the `fresh` branch, which force-pushes |
-| Changelog phase fails (including a merge conflict merging `origin/main` into `audit-changelog`) | non-fatal: report changelog as unwritten, run still counts as successful; always `git merge --abort` (if mid-merge) then clean **only `CHANGELOG.md`** before returning, verifying that file is gone from `git status` rather than assuming it — never a repo-wide `reset --hard`; other dirty paths get reported, not removed |
+| Changelog phase fails (including a merge conflict merging `origin/main` into `audit-changelog`) | non-fatal: report changelog as unwritten, run still counts as successful; always `git merge --abort` (if mid-merge) then clean **only the four files this phase writes** (`CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json`) before returning, verifying they're gone from `git status` rather than assuming it — never a repo-wide `reset --hard`; other dirty paths get reported, not removed |
 | Changelog commit succeeded but push failed | non-fatal, no retry: tree is already clean, just report the unpushed commit's sha in Phase 7 |
+| Proxy-service's route surface changed and the phase can't confidently classify the change as backward compatible | **not a failure, the feature's designed safety valve**: changelog bullets from step 3 still land under `[Unreleased]` (left unversioned, not renamed), all three version fields stay untouched, and the ambiguous PR/route is named in both the PR body and Phase 7 report for a human to classify — run still counts as green |
+| `app/package.json`'s version and `app/app.json`'s `expo.version` disagree before Phase 6 step 4 edits anything | same non-guessing posture as the row above: report the pre-existing skew, don't compute or apply a bump, but step 3's changelog bullets still land under `[Unreleased]` |
 | A ledger entry reaches 3 filed attempts without the finding going away | triager sets `needs-human` and stops filing; report it — do not override or reset the counter |
 
 ## Untrusted input
