@@ -134,16 +134,22 @@ On macOS, cron needs Full Disk Access (System Settings → Privacy & Security) o
 the job cannot read the repo — if a scheduled run leaves no log at all, that is
 why.
 
-**Stale lock recovery is automatic.** The lock directory
-(`pipeline/bugs/cron/.lock`) records its owner's pid and start time; a run
-that finds an existing lock reclaims it (and logs `WARN: reclaiming stale
-lock ...`) if the owner process is no longer alive or the lock is older than
-6 hours — a `SIGKILL` skips the EXIT trap that would otherwise clean it up,
-so without this, one hard kill would silently skip every future scheduled
-run. The `claude -p` call itself is capped at 4 hours (TERM, then KILL 30s
-later) so a hung run can't hold the lock that long in the first place. You
-should never need to `rmdir` the lock by hand; if you do, something upstream
-of this script is misbehaving.
+**Stale lock recovery is automatic, on liveness alone.** The lock directory
+(`pipeline/bugs/cron/.lock`) records its owner's pid; a run that finds an
+existing lock reclaims it (logging `WARN: reclaiming stale lock ...`) when
+that pid is no longer running, and never otherwise. A `SIGKILL` skips the
+EXIT trap that would clean the lock up, so without this one hard kill would
+silently skip every future scheduled run. A live owner is never preempted at
+any age — the alternative, reclaiming from a process that is still working,
+would mean two audits racing a merge to `main`.
+
+The `claude -p` call is capped at 4 hours (TERM, then KILL 30s later) by a
+watcher that outlives the script, so a hung run releases the lock rather than
+holding it indefinitely. One case is left deliberately unhandled: if the
+owner's pid is recycled by an unrelated process, the lock reads as live and
+every run logs `SKIP: a previous run still holds ...` until you
+`rmdir pipeline/bugs/cron/.lock` by hand. That is the trade — a loudly logged
+block you can clear in one command, rather than a silent double run.
 
 Headless runs cannot always start the browser tools, so the `ui` perspective may
 report itself `skipped`; the run continues on the other three.
