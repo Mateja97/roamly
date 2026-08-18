@@ -909,18 +909,45 @@ than this phase makes.
    - **The document was already wrong about the *old* behavior**,
      independent of this task — it described something the code never
      actually did. That's a documentation defect, not a signal about this
-     task. Don't classify this task from a document already known to be
-     wrong nearby; fall back to the diff itself (and a quick probe of the
-     actual route where the diff alone doesn't settle it), the same way
-     this step worked before `API_CONTRACT.md` existed. Report the
-     doc/code mismatch as its own finding for a human to fix, but let it
-     push *this task* to the ambiguous outcome only if this task's *own*
-     change can't itself be classified with confidence — a pre-existing,
-     unrelated documentation error is not that.
+     task, and always report it as its own finding for a human to fix. It
+     does **not** automatically send this task to the ambiguous outcome —
+     whether it can still be classified depends on what kind of change
+     this task's diff shows:
+     - **Structural changes stay diff-decidable, document or no
+       document.** A route present in the base commit and gone in the
+       diff, a request field that lost its optional shape, a response
+       field removed from the DTO struct — whether the route/parameter/
+       field existed before and what changed about it is visible directly
+       in the diff, not read off the document. Classify these normally by
+       the addition/backward-incompatible/deprecated rules below; a wrong
+       document elsewhere doesn't touch this, because the document was
+       never the test for this category.
+     - **Status-code *semantics* changes are the one category that is
+       not diff-decidable this way.** Unlike a route, a parameter's
+       required-ness, or a response field's presence/type — all facts a
+       diff states directly — a status code's *meaning* for a given
+       condition isn't visible in the diff by itself; the only codified
+       MAJOR test for it (see the Backward-incompatible bullet below) is
+       explicitly "away from what `API_CONTRACT.md` documented as the
+       established response," and that test has nothing left to stand on
+       once the document is known wrong about the very old behavior in
+       question. **Do not** fall back to the "an existing client might
+       have branched on it" test to fill the gap — that bullet explicitly
+       bans it a few lines below, for exactly this reason: it's how a real
+       MAJOR silently collapses into PATCH with no self-consistent rule
+       catching it. When the document is known wrong about the pre-change
+       status-code behavior *and* this task's diff changes that same
+       status code, that combination **is** the ambiguous outcome: defer
+       to a human, and report both the document's pre-existing error and
+       the change itself, so whoever resolves it has the real old-vs-new
+       behavior in front of them instead of a document that can't be
+       trusted for it.
 
-   **Keep the document in sync.** When this phase's own classification (the
-   first case above) identifies a genuine MINOR/MAJOR wire-contract change
-   from this run's merged diffs, update `API_CONTRACT.md` to match as part
+   **Keep the document in sync.** When this phase's own classification
+   identifies a genuine MINOR/MAJOR wire-contract change from this run's
+   merged diffs — whether via the first case above, or the diff-decidable
+   structural sub-case under the second — update `API_CONTRACT.md` to
+   match as part
    of this phase's own edit — on the same `audit-changelog` branch, in the
    same commit as the `CHANGELOG.md`/version-field edits in step 5 below —
    so the document never drifts stale behind the contract it's supposed to
@@ -1215,8 +1242,8 @@ than this phase makes.
    missing changelog entry is not worth failing a green run over.
 
    **This phase must never return dirty or mid-merge** — a leftover
-   modified/untracked file among the four this phase can write
-   (`CHANGELOG.md`, `app/package.json`, `app/app.json`,
+   modified/untracked file among the five this phase can write
+   (`CHANGELOG.md`, `API_CONTRACT.md`, `app/package.json`, `app/app.json`,
    `frontend/package.json`), or a checkout stuck mid-merge from step 1's
    conflict case, would trip Phase 0's clean-tree STOP on the *next*
    scheduled run, which has nothing to do with this failure and shouldn't be
