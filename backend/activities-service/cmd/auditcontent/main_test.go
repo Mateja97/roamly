@@ -361,7 +361,7 @@ func TestRunAudit_DoesNotStopBeforeTheBudgetIsReached(t *testing.T) {
 // sends places.AuditFieldMask, so every attempted row lands in the same
 // tier; the assertion is that the tier breakdown is populated and rendered,
 // not which exact tier name AuditFieldMask happens to classify as (that
-// belongs to TestSKUTier in internal/places).
+// belongs to TestPlaceholderSKUTier in internal/places).
 func TestRunAudit_ReportsCallsBySKUTier(t *testing.T) {
 	rows := []activitiessvc.Activity{row("a", "sport", 1, `{}`), row("b", "sport", 1, `{}`)}
 	merger := &fakeMerger{upgrades: map[string]activitiessvc.Activity{}}

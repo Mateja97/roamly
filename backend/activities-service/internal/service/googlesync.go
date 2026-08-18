@@ -310,7 +310,7 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 }
 
 // placesCallTally counts Places API calls a batch run makes, split by SKU
-// tier (places.SKUTier) — T7's "report calls made, per SKU tier" contract
+// tier (places.PlaceholderSKUTier) — T7's "report calls made, per SKU tier" contract
 // for every batch Places tool. nil-safe: syncGoogleIfNeeded's live
 // per-request sync passes nil into syncGoogleRow and skips tallying
 // entirely, since that path is already capped by maxGoogleRowsPerQuery and
@@ -330,7 +330,7 @@ func (t *placesCallTally) record(fieldMask string) {
 	if t.byTier == nil {
 		t.byTier = map[string]int{}
 	}
-	t.byTier[places.SKUTier(fieldMask)]++
+	t.byTier[places.PlaceholderSKUTier(fieldMask)]++
 	t.total++
 }
 

@@ -267,7 +267,7 @@ func runAudit(ctx context.Context, merger liveMerger, rows []activitiessvc.Activ
 		}
 		merged, resolved := merger.WithLiveDetails(ctx, stored)
 		report.callsMade++
-		report.callsByTier[places.SKUTier(places.AuditFieldMask)]++
+		report.callsByTier[places.PlaceholderSKUTier(places.AuditFieldMask)]++
 		pace()
 		if !resolved {
 			report.skipped++

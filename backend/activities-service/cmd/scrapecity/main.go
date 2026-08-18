@@ -154,7 +154,7 @@ func main() {
 		found, err := discover(ctx, c, row, *lat, *lng, *radiusKM)
 		// discover always issues exactly one Places call, whether it errors
 		// or not, so this counts regardless of the error branch below.
-		callsByTier[places.SKUTier(places.NearbyFieldMask)]++
+		callsByTier[places.PlaceholderSKUTier(places.NearbyFieldMask)]++
 		covered++
 		if err != nil {
 			slog.Warn("discovery row failed", "category", row.Category, "subtype", row.Subtype, "error", err)

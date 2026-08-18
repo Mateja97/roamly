@@ -502,19 +502,23 @@ func truncate(b []byte, n int) string {
 }
 
 // skuTierFields maps each SKU tier this package's callers can hit to the
-// field names that force it, highest-cost tier first — SKUTier walks this in
-// order and returns the first tier any field in the mask belongs to, because
-// a mask that mixes tiers (nearly all of them do: id + displayName +
-// reviews, say) bills at its most expensive field, not its cheapest.
+// field names that force it, highest-cost tier first — PlaceholderSKUTier
+// walks this in order and returns the first tier any field in the mask
+// belongs to, because a mask that mixes tiers (nearly all of them do: id +
+// displayName + reviews, say) bills at its most expensive field, not its
+// cheapest.
 //
 // Placeholder for T1 ("Count every Places call by SKU tier"), which was not
 // yet merged when this was written: T1 owns the definitive, call-counted
-// version of this classification, ideally covering every field the Places
+// version of this classification (type SKUTier, func SKUTierForMask, both
+// in internal/places/metrics.go), ideally covering every field the Places
 // API can return. This copy only needs to classify the fields this
 // package's own masks (NearbyFieldMask, detailFieldMask, AuditFieldMask)
 // actually send — so, deliberately, it lists only those, not the full
-// Places API field catalog. When T1 lands, switch these call sites to its
-// exported labeller instead of this one (see engineering-notes.md).
+// Places API field catalog. Named PlaceholderSKUTier, not SKUTier, so it
+// cannot collide with T1's exported SKUTier type once both PRs land on
+// main. When T1 lands, delete this placeholder and switch these call sites
+// to SKUTierForMask instead (see engineering-notes.md).
 var skuTierFields = []struct {
 	tier   string
 	fields []string
@@ -531,13 +535,13 @@ var skuTierFields = []struct {
 	{"Photos", []string{"photos"}},
 }
 
-// SKUTier classifies fieldMask — a comma-separated X-Goog-FieldMask value,
-// with or without a "places." per-field prefix — into the Google SKU tier
-// its priciest requested field belongs to. "IDs-Only" for a mask requesting
-// nothing but id; "Essentials" is the fallback for a mask whose fields are
-// all outside skuTierFields (location/name/address-shape fields, the tier
-// Places bills those at).
-func SKUTier(fieldMask string) string {
+// PlaceholderSKUTier classifies fieldMask — a comma-separated
+// X-Goog-FieldMask value, with or without a "places." per-field prefix —
+// into the Google SKU tier its priciest requested field belongs to.
+// "IDs-Only" for a mask requesting nothing but id; "Essentials" is the
+// fallback for a mask whose fields are all outside skuTierFields
+// (location/name/address-shape fields, the tier Places bills those at).
+func PlaceholderSKUTier(fieldMask string) string {
 	fields := strings.Split(fieldMask, ",")
 	onlyID := true
 	for i, f := range fields {

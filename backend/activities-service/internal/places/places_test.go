@@ -597,7 +597,7 @@ func TestAuditFieldMask_ExcludesFieldsContentScoringNeverReads(t *testing.T) {
 	}
 }
 
-func TestSKUTier(t *testing.T) {
+func TestPlaceholderSKUTier(t *testing.T) {
 	tests := []struct {
 		name string
 		mask string
@@ -614,8 +614,8 @@ func TestSKUTier(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := places.SKUTier(tt.mask); got != tt.want {
-				t.Errorf("SKUTier(%q) = %q, want %q", tt.mask, got, tt.want)
+			if got := places.PlaceholderSKUTier(tt.mask); got != tt.want {
+				t.Errorf("PlaceholderSKUTier(%q) = %q, want %q", tt.mask, got, tt.want)
 			}
 		})
 	}
