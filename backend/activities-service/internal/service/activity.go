@@ -147,6 +147,12 @@ type Activities struct {
 	// a direct tripadvisorSyncTimeout read only so tests can shrink it to
 	// exercise deadline truncation without waiting out the real value.
 	syncTimeout time.Duration
+	// googleSyncTTL is how long a synced (cell, category, subtype) is
+	// considered fresh (T4, places-api-cost-reduction). A field, configurable
+	// via WithGoogleSyncTTL/GOOGLE_SYNC_TTL_DAYS (see cmd/activities-service),
+	// rather than the package-level const it replaced, defaulting to
+	// defaultGoogleSyncTTL in New.
+	googleSyncTTL time.Duration
 	// googleSync tracks in-flight background discovery passes. Production
 	// never waits on it — it exists so tests can join the goroutine instead
 	// of sleeping (see waitForGoogleSync).
@@ -157,7 +163,16 @@ type Activities struct {
 }
 
 func New(repo repository) *Activities {
-	return &Activities{repo: repo, syncTimeout: tripadvisorSyncTimeout}
+	return &Activities{repo: repo, syncTimeout: tripadvisorSyncTimeout, googleSyncTTL: defaultGoogleSyncTTL}
+}
+
+// WithGoogleSyncTTL overrides the default googleSyncTTL (T4,
+// places-api-cost-reduction) — the deploy-time knob cmd/activities-service
+// wires from GOOGLE_SYNC_TTL_DAYS. Returns itself so call sites can chain it
+// onto New, same shape as WithPlaces/WithTripadvisor/WithFirecrawl.
+func (a *Activities) WithGoogleSyncTTL(ttl time.Duration) *Activities {
+	a.googleSyncTTL = ttl
+	return a
 }
 
 // WithPlaces attaches a live Places client for GetPhotos' on-demand
