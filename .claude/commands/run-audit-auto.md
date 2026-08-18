@@ -880,12 +880,33 @@ than this phase makes.
    that contract — every route, parameter, response field, and the
    breaking-vs-additive call for this API. Classify each task's diff against
    what `API_CONTRACT.md` already documents, not only against the raw diff:
-   a change that matches what the document already states is not a contract
-   change even if the diff touches these files; a change that contradicts or
-   extends what the document states is. When a merged task actually changes
-   the wire contract, update `API_CONTRACT.md` to match as part of that
-   task's own scope, so the document never drifts stale behind the code it's
-   supposed to be the authority for.
+   a change whose actual wire behavior matches what the document already
+   states is not a contract change even if the diff touches these files; a
+   change whose actual wire behavior contradicts or extends what the
+   document states is.
+
+   **On a disagreement between the document and the code, the code is what
+   shipped — the document being wrong is itself a finding to report, never
+   a reason to wave the bump through or suppress it.** Do not let
+   `API_CONTRACT.md` silently override what the diff (and, where the diff
+   alone doesn't settle it, a quick probe of the actual route) shows really
+   happens on the wire. If a task's diff changes actual wire behavior in a
+   way that contradicts what `API_CONTRACT.md` currently states, that
+   contradiction pushes this task to the ambiguous outcome below the same
+   as any other "can't tell with confidence" case — name the specific
+   document line and the actual behavior in the PR body and the Phase 7
+   report, rather than trusting either source blindly.
+
+   When this phase's own classification identifies a genuine MINOR/MAJOR
+   wire-contract change from this run's merged diffs, update
+   `API_CONTRACT.md` to match as part of this phase's own edit — on the
+   same `audit-changelog` branch, in the same commit as the
+   `CHANGELOG.md`/version-field edits below — so the document never drifts
+   stale behind the contract it's supposed to be the authority for. This
+   phase is the right place for that edit: it runs after merge with the
+   real diffs already in hand, and it already writes one real tracked file
+   (`CHANGELOG.md`) on its own branch — `API_CONTRACT.md` is the same kind
+   of edit, not a new exception to the Token discipline note above.
 
    **Sticky ambiguity — check this before anything else in this step.**
    Step 3 already added this run's bullets to `[Unreleased]`. Before
