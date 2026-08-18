@@ -155,7 +155,14 @@ Headless runs cannot always start the browser tools, so the `ui` perspective may
 report itself `skipped`; the run continues on the other three.
 
 What a scheduled run leaves you: merged fixes on `main`, and one open changelog
-PR. Versions are never touched — you cut the release.
+PR. The PR usually carries a computed SemVer bump too — merging it is the
+release. If proxy-service's HTTP wire contract visibly changed and the run
+can't classify the change as clearly backward compatible or clearly
+breaking, it leaves the section as `[Unreleased]` and every version field
+untouched instead of guessing, and says so in the PR and the report: a
+human has to make that call. (Merely touching a route file with no
+observable contract change — an internal fix, a refactor — does not trigger
+this; see below.)
 
 Builds run **one task at a time**. Every task's engineer works in the same
 worktree directory — one HEAD, one index — so concurrent engineers would
@@ -166,13 +173,77 @@ wall-clock isn't the constraint.
 **The one thing it leaves for you: the changelog PR.** After the re-probe,
 the run writes a user-facing bullet per merged task under `## [Unreleased]`
 in `CHANGELOG.md` — `kind: bug` under `### Fixed`, `kind: polish` under
-`### Changed` — commits it to a long-lived `audit-changelog` branch, and
-opens (or updates) a **non-draft PR that it deliberately does not merge**.
-Entries accumulate there across runs until you merge it. It never renames
-`[Unreleased]` to a version and never touches a version field in
-`package.json`/`app.json`: deciding semver and cutting the release stays
-yours. If the phase fails, it says so and the run still counts as green —
-the fixes are already on `main` either way.
+`### Changed`. It then computes a bump per [SemVer 2.0.0](https://semver.org/)
+from evidence in the merged diffs — PATCH by default (a normal all-bugfix
+run), MINOR for a backward-compatible addition to proxy-service's HTTP
+contract (a new route, parameter or response field) or a route/param/field
+marked deprecated (SemVer item 7 requires this — a deprecation is never a
+PATCH), or any merged `kind: polish` task (this pipeline's own policy, not
+something the spec compels), MAJOR for a backward-incompatible change to
+that contract — renames `[Unreleased]` to `## [X.Y.Z] - <date>`, opens a
+fresh empty `[Unreleased]` above it, and bumps `app/package.json`,
+`app/app.json` (`expo.version`) and `frontend/package.json` together to the
+same `X.Y.Z`. All three fields move as one product version: as of this
+writing `app/package.json` is `1.0.0` and `frontend/package.json` is
+`0.0.0`, so the first PATCH-only run takes `frontend` straight from `0.0.0`
+to `1.0.1` — never through `1.0.0` — deliberately leaving SemVer's `0.y.z`
+phase for a number that was never a promise about `frontend`'s own API
+(only proxy-service's HTTP contract is the declared API here). All of that
+lands in one commit on the long-lived `audit-changelog` branch, which it
+opens (or updates) as a **non-draft PR that it deliberately does not
+merge** — merging it is the release, and that stays your call. Updating an
+already-open PR **appends** a dated block to its body rather than replacing
+it — the PR can span many runs, so overwriting the body would silently
+delete every earlier run's notes, including exactly the kind of notice the
+next paragraph depends on staying visible.
+
+**The one case it refuses to guess on** is this feature's safety property,
+not a footnote: if proxy-service's wire contract itself visibly changed —
+not merely a route *file* touched with no observable contract change, which
+stays whatever `kind: bug`/`kind: polish` already assigned — and the run
+can't classify that change as clearly backward compatible or clearly
+breaking, it does not bump in either direction. That run's bullets still
+land under `[Unreleased]` (left unversioned), all three version fields stay
+untouched, and the PR body and the run report both name which route/PR
+needs a human to classify. Guessing low would ship a breaking change
+labeled PATCH; guessing high would cry wolf on every clean run — so neither
+guess happens. If the phase fails outright, it says so and the run still
+counts as green — the fixes are already on `main` either way.
+
+**The deferral is sticky, on purpose.** A version and a changelog section
+are cross-run state — `[Unreleased]` can carry bullets from several weeks
+before anyone renames it — while a single run only ever sees its own diffs.
+So the run that hits the ambiguous case (or the pre-existing skew between
+`app/package.json` and `app/app.json`) writes a marker directly under
+`[Unreleased]`, and *every later run checks for that marker before doing
+anything else in this step*. Finding one means inheriting the deferral
+outright, even if this run's own tasks are all clean `kind: bug` fixes that
+would otherwise be an easy PATCH: no bump, no rename, just restate the same
+pending question in this run's PR-body block and the run report. Without
+this, a later clean run would rename `[Unreleased]` and sweep an earlier
+run's still-unclassified bullets into a dated version along with its
+own — a possibly-breaking change shipping labeled PATCH, silently, which is
+the exact harm the escape hatch exists to prevent. Only a human clears it,
+one of two ways: resolve it — rename `[Unreleased]`'s heading to the
+version they've decided on, write that same version into all three version
+fields, and open a fresh empty `[Unreleased]` above it, all three together
+(the fields, not the changelog, are what step 4 treats as the source of
+truth, so a heading rename with no field write just leaves a stale version
+for the next run to build on top of) — or defer it further by deleting
+just the marker line, which tells the next run the section is safe to
+classify normally again.
+
+**A changelog PR left open across several weekly runs accumulates several
+dated version sections, not one growing list** — as long as no run along
+the way deferred. Each run that merges tasks and computes a bump closes out
+`[Unreleased]` into its own dated section before opening a fresh one, so a
+PR sitting unmerged for a few weeks shows `## [1.0.2] - <date>` stacked
+above `## [1.0.1] - <date>`, each one real only once the PR is actually
+merged — read an unmerged section's date as "when this phase computed that
+bump," not "when it shipped." The numbers still only ever increase. A
+deferral breaks that cadence deliberately: once a run defers, no further
+dated section appears until a human resolves it, however many more runs add
+bullets in the meantime.
 
 A finding the pipeline tries and fails to fix three times is marked
 `needs-human` in the ledger and stops being re-filed; it shows up in the run
