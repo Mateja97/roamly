@@ -263,6 +263,10 @@ func report(lines []yieldLine, city string, unique, duplicates int) {
 // reimplementing discovery — two implementations of one job is how the batch
 // pipeline and the sync would drift apart again.
 func prewarm(ctx context.Context, lat, lng float64, maxCalls int) {
+	// CallerBatchTool (T1, places-api-cost-reduction): pre-warm is this same
+	// standalone tool, not live discovery — tag before PrewarmGoogle runs so
+	// its calls report as batch-tool, not discovery.
+	ctx = places.WithCaller(ctx, places.CallerBatchTool)
 	dsn, err := sharedconfig.Require("DATABASE_URL")
 	if err != nil {
 		slog.Error("config", "error", err)

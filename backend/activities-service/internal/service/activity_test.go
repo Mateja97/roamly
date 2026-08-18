@@ -199,6 +199,11 @@ type fakeGooglePlaces struct {
 	// can assert ResolveTripadvisorSubtype anchors the search on the
 	// venue's own coordinates/radius, not some other value.
 	gotSearchTextInArea []searchTextInAreaCall
+
+	// gotCallers records the places.CallerFrom(ctx) tag SearchNearby saw on
+	// each call, so tests can assert PrewarmGoogle/syncGoogleRow tag (or
+	// preserve) the ctx correctly.
+	gotCallers []places.CallerPath
 }
 
 type searchTextInAreaCall struct {
@@ -207,10 +212,11 @@ type searchTextInAreaCall struct {
 	fieldMask string
 }
 
-func (f *fakeGooglePlaces) SearchNearby(_ context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
+func (f *fakeGooglePlaces) SearchNearby(ctx context.Context, req places.NearbyRequest, _ string) ([]placesmap.Place, error) {
 	f.mu.Lock()
 	f.nearbyCalls++
 	f.gotNearby = append(f.gotNearby, req)
+	f.gotCallers = append(f.gotCallers, places.CallerFrom(ctx))
 	block := f.blockNearby
 	f.mu.Unlock()
 	if block != nil {

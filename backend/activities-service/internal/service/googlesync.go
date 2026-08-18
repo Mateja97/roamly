@@ -380,7 +380,12 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 	}
 	// Runs the same discovery pipeline as the live sync above, just
 	// triggered by a seed tool instead of a query (T1, places-api-cost-reduction).
-	ctx = places.WithCaller(ctx, places.CallerDiscovery)
+	// Only tags CallerDiscovery when the caller didn't already say otherwise
+	// — cmd/scrapecity's pre-warm mode tags its ctx CallerBatchTool before
+	// calling this, and that tag must survive, not get overwritten here.
+	if places.CallerFrom(ctx) == places.CallerUnset {
+		ctx = places.WithCaller(ctx, places.CallerDiscovery)
+	}
 	var cell cellLocation
 	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
 	if err != nil {

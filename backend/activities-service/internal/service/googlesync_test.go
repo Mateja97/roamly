@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"activities-service/internal/places"
 	"activities-service/internal/placesmap"
 
 	"backend/shared/models/activitiessvc"
@@ -985,6 +986,46 @@ func TestPrewarmGoogle_StopsAtCallBudget(t *testing.T) {
 	}
 	if summary.CallsMade != 3 {
 		t.Errorf("CallsMade = %d, want 3", summary.CallsMade)
+	}
+}
+
+// TestPrewarmGoogle_PreservesAnAlreadyTaggedCaller pins the round-3 minor:
+// cmd/scrapecity's pre-warm mode tags its ctx CallerBatchTool before calling
+// PrewarmGoogle; PrewarmGoogle must not clobber that with its own
+// CallerDiscovery default.
+func TestPrewarmGoogle_PreservesAnAlreadyTaggedCaller(t *testing.T) {
+	gp := &fakeGooglePlaces{geocodeCity: "Belgrade", geocodeCountry: "Serbia"}
+	svc := New(&fakeRepo{syncedAtOut: map[string]time.Time{}}).WithPlaces(gp)
+
+	ctx := places.WithCaller(context.Background(), places.CallerBatchTool)
+	svc.PrewarmGoogle(ctx, activitiessvc.Point{Lat: 44.81, Lng: 20.46}, 1)
+
+	if len(gp.gotCallers) == 0 {
+		t.Fatal("SearchNearby was never called")
+	}
+	for _, c := range gp.gotCallers {
+		if c != places.CallerBatchTool {
+			t.Errorf("caller tag = %q, want %q (PrewarmGoogle must not overwrite an already-tagged ctx)", c, places.CallerBatchTool)
+		}
+	}
+}
+
+// TestPrewarmGoogle_TagsDiscoveryWhenCtxUntagged is the guard's other edge:
+// an untagged ctx (no batch-tool caller set) still gets PrewarmGoogle's
+// default CallerDiscovery tag.
+func TestPrewarmGoogle_TagsDiscoveryWhenCtxUntagged(t *testing.T) {
+	gp := &fakeGooglePlaces{geocodeCity: "Belgrade", geocodeCountry: "Serbia"}
+	svc := New(&fakeRepo{syncedAtOut: map[string]time.Time{}}).WithPlaces(gp)
+
+	svc.PrewarmGoogle(context.Background(), activitiessvc.Point{Lat: 44.81, Lng: 20.46}, 1)
+
+	if len(gp.gotCallers) == 0 {
+		t.Fatal("SearchNearby was never called")
+	}
+	for _, c := range gp.gotCallers {
+		if c != places.CallerDiscovery {
+			t.Errorf("caller tag = %q, want %q (default for an untagged ctx)", c, places.CallerDiscovery)
+		}
 	}
 }
 

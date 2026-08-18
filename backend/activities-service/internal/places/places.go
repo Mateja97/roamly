@@ -295,7 +295,11 @@ func (c *Client) ReverseGeocodeCity(ctx context.Context, lat, lng float64) (stri
 	// Geocoding has no field mask to select from and only one priced tier in
 	// use here, so the tier is fixed rather than derived (SKUTierForMask
 	// only applies to the field-mask-driven Places endpoints above).
-	if err := c.doJSON(ctx, http.MethodGet, url, endpointReverseGeocodeCity, TierEssentials, nil, nil, &parsed); err != nil {
+	// Geocoding is billed under its own separate SKU, not Places' Essentials
+	// — TierGeocoding keeps it out of that bucket so Essentials still means
+	// "Places Essentials" (endpointReverseGeocodeCity is what keeps the two
+	// separable in the recorded counts either way).
+	if err := c.doJSON(ctx, http.MethodGet, url, endpointReverseGeocodeCity, TierGeocoding, nil, nil, &parsed); err != nil {
 		return "", "", fmt.Errorf("reverse geocoding %f,%f: %w", lat, lng, err)
 	}
 	switch parsed.Status {
@@ -431,7 +435,7 @@ func (c *Client) ResolvePhotos(ctx context.Context, placeID string, limit int) (
 func (c *Client) PlaceDetails(ctx context.Context, placeID, fieldMask string) (placesmap.PlaceDetail, error) {
 	url := fmt.Sprintf("%s/v1/places/%s", c.base, placeID)
 	var parsed placesmap.PlaceDetail
-	if err := c.doJSON(ctx, http.MethodGet, url, endpointPlaceDetails, SKUTierForMask(detailFieldMask, endpointPlaceDetails), nil, map[string]string{
+	if err := c.doJSON(ctx, http.MethodGet, url, endpointPlaceDetails, SKUTierForMask(fieldMask, endpointPlaceDetails), nil, map[string]string{
 		"X-Goog-Api-Key":   c.key,
 		"X-Goog-FieldMask": fieldMask,
 	}, &parsed); err != nil {
@@ -493,10 +497,15 @@ func (c *Client) doJSON(ctx context.Context, method, url, endpoint string, tier 
 		}
 
 		if resp.StatusCode == http.StatusOK {
+			// Google already billed this 2xx before we ever see the body, so
+			// it's recorded here — before the decode — rather than after: a
+			// 2xx whose body fails to decode is still a billable call, and
+			// counting it only on decode success would undercount exactly
+			// that case.
+			metrics.record(endpoint, tier, CallerFrom(ctx))
 			if err := json.Unmarshal(raw, out); err != nil {
 				return fmt.Errorf("decoding response: %w", err)
 			}
-			metrics.record(endpoint, tier, callerFrom(ctx))
 			return nil
 		}
 

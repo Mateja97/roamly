@@ -46,7 +46,8 @@ func TestSKUTierForMask(t *testing.T) {
 		{"search enterprise+atmosphere mask (reviews present)", "rating,userRatingCount,reviews,editorialSummary", "SearchText", places.TierEnterpriseAtmosphere},
 		{"search ids-only mask", "id,name", "SearchText", places.TierIDsOnly},
 
-		{"unrecognized field defaults to essentials", "someBrandNewGoogleField", "PlaceDetails", places.TierEssentials},
+		{"unrecognized field defaults to essentials on details", "someBrandNewGoogleField", "PlaceDetails", places.TierEssentials},
+		{"unrecognized field defaults to pro on search", "someBrandNewGoogleField", "SearchNearby", places.TierPro},
 		{"dotted subfield bills as its parent", "reviews.authorAttribution", "PlaceDetails", places.TierEnterpriseAtmosphere},
 		{"empty mask is ids-only", "", "PlaceDetails", places.TierIDsOnly},
 	}
@@ -146,5 +147,27 @@ func TestClient_RetriedThenSuccessfulCallCountsOnce(t *testing.T) {
 	}
 	if got := places.Count("SearchText", places.TierIDsOnly, places.CallerBatchTool); got != before+1 {
 		t.Errorf("count after retry-then-success = %d, want %d (counted once, not per attempt)", got, before+1)
+	}
+}
+
+// TestClient_CountsA2xxCallEvenWhenBodyFailsToDecode pins the round-3 minor:
+// Google has already billed a 2xx response before the client ever looks at
+// the body, so a call whose body fails to decode is still a billable event —
+// it must be recorded, not silently dropped.
+func TestClient_CountsA2xxCallEvenWhenBodyFailsToDecode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `not json`)
+	}))
+	defer srv.Close()
+
+	c := places.NewWithBase("k", srv.URL)
+	ctx := places.WithCaller(context.Background(), places.CallerBatchTool)
+	before := places.Count("SearchText", places.TierIDsOnly, places.CallerBatchTool)
+
+	if _, err := c.SearchText(ctx, "q", "", "id"); err == nil {
+		t.Fatal("expected a decode error")
+	}
+	if got := places.Count("SearchText", places.TierIDsOnly, places.CallerBatchTool); got != before+1 {
+		t.Errorf("count for undecodable 2xx body = %d, want %d (billed calls are counted before the decode)", got, before+1)
 	}
 }

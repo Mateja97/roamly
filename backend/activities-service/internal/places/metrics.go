@@ -19,6 +19,10 @@ const (
 	TierEnterprise           SKUTier = "Enterprise"
 	TierEnterpriseAtmosphere SKUTier = "Enterprise+Atmosphere"
 	TierPhotos               SKUTier = "Photos"
+	// TierGeocoding is the Geocoding API's own SKU — a different product
+	// from Places, so ReverseGeocodeCity's calls get their own bucket
+	// instead of inflating Places' Essentials count.
+	TierGeocoding SKUTier = "Geocoding"
 )
 
 // CallerPath identifies which product flow triggered a Places/Geocoding
@@ -31,10 +35,13 @@ const (
 	CallerDetailOpen   CallerPath = "detail-open"
 	CallerPhotoResolve CallerPath = "photo-resolve"
 	CallerBatchTool    CallerPath = "batch-tool"
-	// callerUnset marks a call whose ctx was never tagged with WithCaller —
+	// CallerUnset marks a call whose ctx was never tagged with WithCaller —
 	// still counted (never dropped), just visibly wrong instead of silently
-	// mislabeled as one of the four real paths.
-	callerUnset CallerPath = "unset"
+	// mislabeled as one of the four real paths. Exported so a call site that
+	// conditionally re-tags an inherited ctx (PrewarmGoogle, which must not
+	// clobber a batch tool's CallerBatchTool with its own CallerDiscovery)
+	// can check before overwriting.
+	CallerUnset CallerPath = "unset"
 )
 
 type callerCtxKey struct{}
@@ -46,11 +53,13 @@ func WithCaller(ctx context.Context, caller CallerPath) context.Context {
 	return context.WithValue(ctx, callerCtxKey{}, caller)
 }
 
-func callerFrom(ctx context.Context) CallerPath {
+// CallerFrom reports the CallerPath tagged on ctx via WithCaller, or
+// CallerUnset if none was ever set.
+func CallerFrom(ctx context.Context) CallerPath {
 	if c, ok := ctx.Value(callerCtxKey{}).(CallerPath); ok {
 		return c
 	}
-	return callerUnset
+	return CallerUnset
 }
 
 // tierRank orders SKU tiers cheapest to priciest. SKUTierForMask reports the
@@ -86,6 +95,7 @@ var fieldTiers = map[string]SKUTier{
 	"viewport":              TierEssentials,
 	"adrFormatAddress":      TierEssentials,
 	"types":                 TierEssentials,
+	"addressDescriptor":     TierEssentials,
 
 	"displayName":             TierPro,
 	"googleMapsUri":           TierPro,
@@ -100,6 +110,10 @@ var fieldTiers = map[string]SKUTier{
 	"pureServiceAreaBusiness": TierPro,
 	"googleMapsLinks":         TierPro,
 	"accessibilityOptions":    TierPro,
+	"entrances":               TierPro,
+	"navigationPoints":        TierPro,
+	"openingDate":             TierPro,
+	"timeZone":                TierPro,
 
 	"rating":                       TierEnterprise,
 	"userRatingCount":              TierEnterprise,
@@ -112,6 +126,7 @@ var fieldTiers = map[string]SKUTier{
 	"internationalPhoneNumber":     TierEnterprise,
 	"nationalPhoneNumber":          TierEnterprise,
 	"websiteUri":                   TierEnterprise,
+	"transitStation":               TierEnterprise,
 
 	"reviews":               TierEnterpriseAtmosphere,
 	"editorialSummary":      TierEnterpriseAtmosphere,
@@ -201,7 +216,16 @@ func SKUTierForMask(fieldMask, endpoint string) SKUTier {
 			t, ok = fieldTiers[field]
 		}
 		if !ok {
+			// Unknown field: fall back to the cheapest tier this endpoint
+			// can actually bill at. On Place Details that's Essentials. On
+			// Search, overrides is non-nil and nothing below Pro exists
+			// except id/name/attributions, so Essentials would under-report
+			// a brand-new Google field in the one direction that matters —
+			// fall back to Pro there instead.
 			t = TierEssentials
+			if overrides != nil {
+				t = TierPro
+			}
 		}
 		if tierRank[t] > tierRank[tier] {
 			tier = t
