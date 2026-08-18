@@ -1274,6 +1274,30 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByTestId('fact-strip-skeleton')).toBeNull();
     });
 
+    // reviews-description-graceful-degrade T2: the tightened
+    // `descriptionPending` gate in useActivityDetailData.ts — a denylisted
+    // seed description is a non-empty raw value, so it must never take the
+    // skeleton branch (the live merge isn't guaranteed to replace it,
+    // DESIGN_STANDARDS.md L268-277's flash-then-collapse ban).
+    it('renders nothing (no skeleton) while pending when the seed description is a denylisted placeholder', () => {
+      const denylistedActivity: Activity = { ...placesActivity, description: 'Not specified' };
+      render(<ActivityDetailScreen activity={denylistedActivity} showDistance onBack={jest.fn()} />);
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByText('Not specified')).toBeNull();
+    });
+
+    it('still renders nothing in the description slot once the merge settles, for a denylisted seed', async () => {
+      const denylistedActivity: Activity = { ...placesActivity, description: 'Not specified' };
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: { ...denylistedActivity, rating: 4.2, review_count: 12 },
+      });
+      render(<ActivityDetailScreen activity={denylistedActivity} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.queryByTestId('rating-skeleton')).toBeNull());
+      expect(screen.queryByTestId('description-skeleton')).toBeNull();
+      expect(screen.queryByText('Not specified')).toBeNull();
+    });
+
     it('merges the live fields onto local state on success, replacing every skeleton with real content', async () => {
       mockedGetActivity.mockResolvedValue({
         status: 'success',
@@ -3112,6 +3136,29 @@ describe('ActivityDetailScreen', () => {
       render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
       await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
       expect(screen.getByText('Wonderful collection.')).toBeTruthy();
+      expect(screen.queryByText('0.0')).toBeNull();
+      expect(screen.queryByText(/reviews$/)).toBeNull();
+    });
+
+    // reviews-description-graceful-degrade T1: the branch with no coverage
+    // before this task — a maps link with no score and no review cards.
+    // `googleReviewsSectionShown` (activityDetailConfig.ts) alone must still
+    // let the section render the bare Google Maps mark + "View on Google
+    // Maps" link; removing this card is explicitly out of scope.
+    it('maps-link-only: no score, no review cards — the section still renders with just the Google Maps link', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesRow,
+          rating: 0,
+          review_count: undefined,
+          google_reviews: [],
+          google_maps_uri: 'https://maps.google.com/place/moca',
+        },
+      });
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      expect(screen.getByText('View on Google Maps')).toBeTruthy();
       expect(screen.queryByText('0.0')).toBeNull();
       expect(screen.queryByText(/reviews$/)).toBeNull();
     });
