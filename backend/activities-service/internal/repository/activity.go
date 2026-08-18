@@ -259,7 +259,7 @@ const adminColumns = `id, title, description, category, ST_Y(location::geometry)
 	country, rating, photos, tags, details,
 	COALESCE(city, '') AS city, COALESCE(address, '') AS address, status, COALESCE(external_id, '') AS external_id,
 	COALESCE(source, '') AS source, subcategory, COALESCE(google_place_id, '') AS google_place_id,
-	COALESCE(draft_reason, '') AS draft_reason, created_at`
+	COALESCE(draft_reason, '') AS draft_reason, created_at, photos_resolved`
 
 func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 	var a activitiessvc.Activity
@@ -269,7 +269,7 @@ func scanAdminActivity(row pgx.Row) (activitiessvc.Activity, error) {
 		&a.Country, &a.Rating,
 		&a.Photos, &a.Tags, &a.Details,
 		&a.City, &a.Address, &a.Status, &a.ExternalID, &a.Source, &a.Subcategory, &a.GooglePlaceID,
-		&a.DraftReason, &a.CreatedAt,
+		&a.DraftReason, &a.CreatedAt, &a.PhotosResolved,
 	)
 	return a, err
 }
@@ -777,6 +777,9 @@ func (r *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 	}
 	if patch.DraftReason != nil {
 		sets = append(sets, "draft_reason = "+arg(nullIfEmpty(*patch.DraftReason)))
+	}
+	if patch.PhotosResolved != nil {
+		sets = append(sets, "photos_resolved = "+arg(*patch.PhotosResolved))
 	}
 
 	if len(sets) == 0 {

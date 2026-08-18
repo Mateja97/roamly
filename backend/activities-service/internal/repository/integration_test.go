@@ -1017,6 +1017,28 @@ func TestActivities_AdminCRUD_Integration(t *testing.T) {
 		}
 	})
 
+	t.Run("Create defaults photos_resolved to false, Update sets it explicitly (T6)", func(t *testing.T) {
+		created, err := repo.Create(ctx, activitiessvc.NewActivity{
+			Title: "Fresh Venue", Category: activitiessvc.CategoryRestaurants, Status: activitiessvc.StatusDraft,
+		})
+		if err != nil {
+			t.Fatalf("Create() error: %v", err)
+		}
+		t.Cleanup(func() { db.Exec(context.Background(), `DELETE FROM activities WHERE id = $1`, created.ID) })
+		if created.PhotosResolved {
+			t.Error("Create() PhotosResolved = true, want false (never resolved yet)")
+		}
+
+		resolvedTrue := true
+		updated, err := repo.Update(ctx, created.ID, activitiessvc.UpdatePatch{PhotosResolved: &resolvedTrue})
+		if err != nil {
+			t.Fatalf("Update() error: %v", err)
+		}
+		if !updated.PhotosResolved {
+			t.Error("Update() PhotosResolved = false, want true")
+		}
+	})
+
 	t.Run("Update with an empty-string field sets it, distinct from omitting it", func(t *testing.T) {
 		created, err := repo.Create(ctx, activitiessvc.NewActivity{
 			Title: "Has A City", Category: activitiessvc.CategoryArt, City: "Paris", Status: activitiessvc.StatusDraft,
@@ -1811,6 +1833,44 @@ func TestMigration0032BackfillsRadiusKM(t *testing.T) {
 	}
 	if nullCount != 0 {
 		t.Errorf("got %d sync_regions rows with no recorded radius_km, want 0 — every row must backfill", nullCount)
+	}
+}
+
+// TestMigration0034BackfillsPhotosResolved proves the backfill in 0034
+// only marks resolved exactly the rows the old len(Photos) > 1 heuristic
+// already treated as resolved (T6): a row with 0 or 1 stored photo comes
+// out unresolved (so it still gets a chance to resolve on its next view),
+// a row with 2+ stays resolved (so it never re-resolves), and no row's
+// backfill triggers a Google call — this is a pure SQL UPDATE.
+func TestMigration0034BackfillsPhotosResolved(t *testing.T) {
+	ctx := context.Background()
+	db := startTestPostgresPool(t)
+	if err := shareddb.Migrate(ctx, db, migrationsThrough("0033_draft_reason.sql")); err != nil {
+		t.Fatalf("running migrations through 0033: %v", err)
+	}
+
+	insert := func(title string, photos string) {
+		if _, err := db.Exec(ctx, `INSERT INTO activities (title, category, location, country, rating, photos) VALUES ($1, 'restaurants', ST_SetSRID(ST_MakePoint(0,0),4326)::geography, '', 0, $2::jsonb)`, title, photos); err != nil {
+			t.Fatalf("seeding pre-migration row %q: %v", title, err)
+		}
+	}
+	insert("zero-photo", `[]`)
+	insert("one-photo", `[{"url":"https://example.com/1.jpg"}]`)
+	insert("two-photo", `[{"url":"https://example.com/1.jpg"},{"url":"https://example.com/2.jpg"}]`)
+
+	if err := shareddb.Migrate(ctx, db, Migrations()); err != nil {
+		t.Fatalf("running remaining migrations (incl. 0034): %v", err)
+	}
+
+	wantResolved := map[string]bool{"zero-photo": false, "one-photo": false, "two-photo": true}
+	for title, want := range wantResolved {
+		var resolved bool
+		if err := db.QueryRow(ctx, `SELECT photos_resolved FROM activities WHERE title = $1`, title).Scan(&resolved); err != nil {
+			t.Fatalf("querying photos_resolved for %q: %v", title, err)
+		}
+		if resolved != want {
+			t.Errorf("%q photos_resolved = %v, want %v", title, resolved, want)
+		}
 	}
 }
 

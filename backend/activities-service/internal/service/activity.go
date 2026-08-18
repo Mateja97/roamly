@@ -1185,27 +1185,26 @@ func toGoogleReviews(reviews []placesmap.Review) []activitiessvc.GoogleReview {
 const photoResolveTimeout = 4 * time.Second
 
 // GetPhotos returns activity id's full photo set (T2): resolve-on-first-
-// view-and-persist. A stored photo count of <= 1 is the "provisional only,
-// never fully resolved" signal (see product-tasks.md's T2 note on this
-// heuristic) — GetPhotos then resolves the rest live via a.places using the
-// activity's own ExternalID and persists the result, so every later call
-// for the same activity returns the persisted set with no new Google call.
-// Returns the stored set with no Google call when: no places client is
-// configured, the activity has no ExternalID, or a resolve is already
-// unnecessary (count > 1). A live-resolve error, timeout, or empty result
-// also falls back to the stored set — this must never fail the request.
-//
-// ponytail: the <=1 heuristic misfires for a venue whose real Google photo
-// count is exactly 1 — every view re-attempts (harmless: same result,
-// bounded by photoResolveTimeout) rather than caching a "fully resolved"
-// state. Add a dedicated "photos_resolved" column if that traffic pattern
-// ever matters; product-tasks.md's T2 note explicitly defers this.
+// view-and-persist. Whether a resolve has already happened is the
+// activity's own PhotosResolved column (T6, places-api-cost-reduction) —
+// not inferred from photo count, since a venue whose real Google photo
+// count is exactly 1 is indistinguishable by count alone from one that was
+// never resolved (the old len(Photos) > 1 heuristic misfired forever on
+// exactly that case). GetPhotos resolves live via a.places using the
+// activity's own ExternalID and persists the result plus PhotosResolved =
+// true, so every later call for the same activity returns the persisted
+// set with no new Google call, regardless of how many photos it resolved
+// to. Returns the stored set with no Google call when: no places client is
+// configured, the activity has no ExternalID, or it's already resolved. A
+// live-resolve error, timeout, or empty result falls back to the stored
+// set without marking it resolved — this must never fail the request, and
+// leaves the retry available on the next view.
 func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.Photo, error) {
 	activity, err := a.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("getting activity %s: %w", id, err)
 	}
-	if activity.ExternalID == "" || len(activity.Photos) > 1 {
+	if activity.ExternalID == "" || activity.PhotosResolved {
 		return activity.Photos, nil
 	}
 
@@ -1224,11 +1223,13 @@ func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.
 	if err != nil || len(resolved) == 0 {
 		// Live resolve failure/timeout/empty result: fall back to what's
 		// already stored (at minimum the provisional photo) rather than
-		// error or block the request.
+		// error or block the request. Not marked resolved, so the next view
+		// retries.
 		return activity.Photos, nil
 	}
 
-	updated, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &resolved})
+	resolvedTrue := true
+	updated, err := a.repo.Update(ctx, id, activitiessvc.UpdatePatch{Photos: &resolved, PhotosResolved: &resolvedTrue})
 	if err != nil {
 		// Resolved successfully but couldn't persist: still answer this
 		// call with what was resolved, just don't claim it's cached yet —
