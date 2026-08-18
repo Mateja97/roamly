@@ -3140,6 +3140,29 @@ describe('ActivityDetailScreen', () => {
       expect(screen.queryByText(/reviews$/)).toBeNull();
     });
 
+    // reviews-description-graceful-degrade T1: the branch with no coverage
+    // before this task — a maps link with no score and no review cards.
+    // `googleReviewsSectionShown` (activityDetailConfig.ts) alone must still
+    // let the section render the bare Google Maps mark + "View on Google
+    // Maps" link; removing this card is explicitly out of scope.
+    it('maps-link-only: no score, no review cards — the section still renders with just the Google Maps link', async () => {
+      mockedGetActivity.mockResolvedValue({
+        status: 'success',
+        activity: {
+          ...placesRow,
+          rating: 0,
+          review_count: undefined,
+          google_reviews: [],
+          google_maps_uri: 'https://maps.google.com/place/moca',
+        },
+      });
+      render(<ActivityDetailScreen activity={placesRow} showDistance onBack={jest.fn()} />);
+      await waitFor(() => expect(screen.getByTestId('google-attribution-plate-detail')).toBeTruthy());
+      expect(screen.getByText('View on Google Maps')).toBeTruthy();
+      expect(screen.queryByText('0.0')).toBeNull();
+      expect(screen.queryByText(/reviews$/)).toBeNull();
+    });
+
     it('zero reviews: omits the section entirely, no "be the first to review" copy', async () => {
       mockedGetActivity.mockResolvedValue({
         status: 'success',

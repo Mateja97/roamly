@@ -8,6 +8,8 @@ import {
   factStripFields,
   getWebsiteURL,
   goodToKnowSection,
+  googleReviewsScoreShown,
+  googleReviewsSectionShown,
   isTripadvisorSourced,
   kidsAgeLabel,
   metaDistanceText,
@@ -632,6 +634,93 @@ describe('tripadvisorAddressLine (T4)', () => {
 
   it('is undefined when both are absent (row omitted, no dangling comma)', () => {
     expect(tripadvisorAddressLine(baseActivity(undefined))).toBeUndefined();
+  });
+});
+
+// reviews-description-graceful-degrade T1: the single named gate for "does
+// the Google Reviews section render" (score/reviews irrelevant — only the
+// maps link is compliance-required) plus its companion "does it also show
+// the aggregate score header" (needs the link AND both rating fields).
+describe('googleReviewsSectionShown / googleReviewsScoreShown (T1)', () => {
+  it('score only (no maps link): section stays hidden — no link, no compliance-safe render', () => {
+    const activity = { ...baseActivity(undefined), rating: 4.5, review_count: 10, google_maps_uri: undefined };
+    expect(googleReviewsSectionShown(activity)).toBe(false);
+    expect(googleReviewsScoreShown(activity)).toBe(false);
+  });
+
+  it('reviews only (no maps link): section stays hidden', () => {
+    const activity = {
+      ...baseActivity(undefined),
+      rating: 0,
+      review_count: undefined,
+      google_maps_uri: undefined,
+      google_reviews: [
+        { authorAttribution: { displayName: 'A', uri: 'https://x' }, rating: 5, text: 'Great.', date: '2026-01-01' },
+      ],
+    };
+    expect(googleReviewsSectionShown(activity)).toBe(false);
+    expect(googleReviewsScoreShown(activity)).toBe(false);
+  });
+
+  it('maps link only (no score, no reviews): section renders, no score header — the maps-link-only card', () => {
+    const activity = {
+      ...baseActivity(undefined),
+      rating: 0,
+      review_count: undefined,
+      google_reviews: undefined,
+      google_maps_uri: 'https://maps.google.com/place/x',
+    };
+    expect(googleReviewsSectionShown(activity)).toBe(true);
+    expect(googleReviewsScoreShown(activity)).toBe(false);
+  });
+
+  it('all present: section renders with a score header', () => {
+    const activity = {
+      ...baseActivity(undefined),
+      rating: 4.5,
+      review_count: 128,
+      google_reviews: [
+        { authorAttribution: { displayName: 'A', uri: 'https://x' }, rating: 5, text: 'Great.', date: '2026-01-01' },
+      ],
+      google_maps_uri: 'https://maps.google.com/place/x',
+    };
+    expect(googleReviewsSectionShown(activity)).toBe(true);
+    expect(googleReviewsScoreShown(activity)).toBe(true);
+  });
+
+  it('none present: section stays hidden', () => {
+    const activity = {
+      ...baseActivity(undefined),
+      rating: 0,
+      review_count: undefined,
+      google_reviews: undefined,
+      google_maps_uri: undefined,
+    };
+    expect(googleReviewsSectionShown(activity)).toBe(false);
+    expect(googleReviewsScoreShown(activity)).toBe(false);
+  });
+
+  it('rating present but review_count undefined (maps link present): section renders, score header does not', () => {
+    const activity = {
+      ...baseActivity(undefined),
+      rating: 4.5,
+      review_count: undefined,
+      google_maps_uri: 'https://maps.google.com/place/x',
+    };
+    expect(googleReviewsSectionShown(activity)).toBe(true);
+    expect(googleReviewsScoreShown(activity)).toBe(false);
+  });
+
+  it('empty google_reviews array (maps link present, no score): section still renders, no score header', () => {
+    const activity = {
+      ...baseActivity(undefined),
+      rating: 0,
+      review_count: undefined,
+      google_reviews: [],
+      google_maps_uri: 'https://maps.google.com/place/x',
+    };
+    expect(googleReviewsSectionShown(activity)).toBe(true);
+    expect(googleReviewsScoreShown(activity)).toBe(false);
   });
 });
 
