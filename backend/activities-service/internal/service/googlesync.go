@@ -236,6 +236,10 @@ func (a *Activities) syncGoogleIfNeeded(ctx context.Context, req Request) {
 		// would abort every pass the moment Query returns.
 		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), googleSyncTimeout)
 		defer cancel()
+		// Every Places/Geocoding call this sweep makes is discovery traffic
+		// (T1, places-api-cost-reduction) — tag once here rather than at
+		// each call site below.
+		syncCtx = places.WithCaller(syncCtx, places.CallerDiscovery)
 
 		// Resolved once for the whole sweep: every job below shares the same
 		// request, so they all sync (and are judged fresh against) the same
@@ -374,6 +378,9 @@ func (a *Activities) PrewarmGoogle(ctx context.Context, anchor activitiessvc.Poi
 		slog.Error("prewarm needs a Places client")
 		return PrewarmSummary{}
 	}
+	// Runs the same discovery pipeline as the live sync above, just
+	// triggered by a seed tool instead of a query (T1, places-api-cost-reduction).
+	ctx = places.WithCaller(ctx, places.CallerDiscovery)
 	var cell cellLocation
 	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
 	if err != nil {

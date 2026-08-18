@@ -124,7 +124,11 @@ func main() {
 		slog.Error("places client setup failed", "error", err)
 		os.Exit(1)
 	}
-	ctx := context.Background()
+	// CallerBatchTool (T1, places-api-cost-reduction): this dry run calls
+	// SearchNearby/SearchTextInArea directly, not through the live sync's
+	// syncGoogleRow, so it's labelled as the standalone tool it is rather
+	// than as "discovery" traffic.
+	ctx := places.WithCaller(context.Background(), places.CallerBatchTool)
 
 	// Restaurants/Bars rows exist in DiscoveryRows for classification only
 	// (placesmap.Subtype) — Google never discovers them, same gate as

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"activities-service/internal/firecrawl"
+	"activities-service/internal/places"
 
 	"backend/shared/models/activitiessvc"
 )
@@ -307,6 +308,8 @@ func (a *Activities) SyncWebsiteContent(ctx context.Context, id string, force bo
 	if a.places == nil || a.firecrawl == nil {
 		return fmt.Errorf("places and firecrawl clients must both be configured")
 	}
+	// This method's one caller is cmd/websitesync (T1, places-api-cost-reduction).
+	ctx = places.WithCaller(ctx, places.CallerBatchTool)
 
 	activity, err := a.repo.GetByID(ctx, id)
 	if err != nil {

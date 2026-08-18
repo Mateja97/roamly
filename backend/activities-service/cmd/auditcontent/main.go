@@ -90,7 +90,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
+	// CallerBatchTool (T1, places-api-cost-reduction): every Places call this
+	// tool makes goes through WithLiveDetails, the same merge the live
+	// detail-open path uses, but run by hand over stored rows.
+	ctx := places.WithCaller(context.Background(), places.CallerBatchTool)
 	dsn, err := sharedconfig.Require("DATABASE_URL")
 	if err != nil {
 		logger.Error("startup failed", "error", err)

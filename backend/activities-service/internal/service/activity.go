@@ -904,6 +904,7 @@ func (a *Activities) GetByID(ctx context.Context, id string) (activitiessvc.Acti
 // leaking unpublished catalog content and burning a billed Places call on a
 // row nobody should see yet.
 func (a *Activities) GetByIDWithLiveDetails(ctx context.Context, id string) (activitiessvc.Activity, error) {
+	ctx = places.WithCaller(ctx, places.CallerDetailOpen)
 	activity, err := a.GetByID(ctx, id)
 	if err != nil {
 		return activitiessvc.Activity{}, err
@@ -1104,6 +1105,11 @@ func (a *Activities) withTripadvisorGoogleReviews(ctx context.Context, activity 
 func (a *Activities) resolvePlaceDetails(ctx context.Context, activityID, placeID, fieldMask string) (placesmap.PlaceDetail, bool) {
 	resolveCtx, cancel := context.WithTimeout(ctx, detailResolveTimeout)
 	defer cancel()
+	// No caller tag set here (T1, places-api-cost-reduction): this is shared
+	// by both the live detail-open path (GetByIDWithLiveDetails) and
+	// cmd/auditcontent's batch reuse of the same merge (WithLiveDetails) —
+	// each entry point tags ctx with the right CallerPath before reaching
+	// here instead.
 
 	var detail placesmap.PlaceDetail
 	var err error
@@ -1210,6 +1216,7 @@ func (a *Activities) GetPhotos(ctx context.Context, id string) ([]activitiessvc.
 
 	resolveCtx, cancel := context.WithTimeout(ctx, photoResolveTimeout)
 	defer cancel()
+	resolveCtx = places.WithCaller(resolveCtx, places.CallerPhotoResolve)
 
 	var resolved []activitiessvc.Photo
 	switch {
@@ -1681,6 +1688,9 @@ func (a *Activities) syncTripadvisorIfNeeded(ctx context.Context, req Request) {
 func (a *Activities) syncTripadvisorAnchor(ctx context.Context, anchor activitiessvc.Point, categories []activitiessvc.Category) {
 	syncCtx, cancel := context.WithTimeout(ctx, a.syncTimeout)
 	defer cancel()
+	// Every Places call this sweep makes (city resolve, subtype resolve) is
+	// ingestion/discovery traffic (T1, places-api-cost-reduction).
+	syncCtx = places.WithCaller(syncCtx, places.CallerDiscovery)
 
 	summaries, err := a.tripadvisor.NearbySearch(syncCtx, anchor.Lat, anchor.Lng, tripadvisorSyncRadiusKM, terraNearbySearchCategory)
 	if err != nil {
@@ -1805,6 +1815,7 @@ func (a *Activities) resolveTripadvisorCity(ctx context.Context, anchor activiti
 	if a.places == nil {
 		return cellLocation{}
 	}
+	ctx = places.WithCaller(ctx, places.CallerDiscovery)
 	city, country, err := a.places.ReverseGeocodeCity(ctx, anchor.Lat, anchor.Lng)
 	if err != nil {
 		slog.Warn("tripadvisor reverse geocode failed; falling back to terra city", "error", err)
@@ -2114,6 +2125,8 @@ func (a *Activities) RefreshTripadvisorLocation(ctx context.Context, category ac
 	if a.tripadvisor == nil {
 		return fmt.Errorf("tripadvisor client not configured")
 	}
+	// This method's one caller is cmd/backfilltripadvisor (T1, places-api-cost-reduction).
+	ctx = places.WithCaller(ctx, places.CallerBatchTool)
 	details, reviews, err := a.resolveTripadvisorLocation(ctx, locationID)
 	if err != nil {
 		return err
