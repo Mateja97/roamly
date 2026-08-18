@@ -340,7 +340,7 @@ func (t *placesCallTally) record(fieldMask string) {
 // coverage as partial" for every batch Places tool.
 type PrewarmSummary struct {
 	RowsTotal, RowsCovered, CallsMade int
-	CallsByTier                      map[string]int
+	CallsByTier                       map[string]int
 	// Partial is true when maxCalls was reached before every discovery row
 	// at anchor got a turn — the run stopped short of full coverage.
 	Partial bool
