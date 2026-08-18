@@ -84,8 +84,21 @@ Plan:
 ## Build a task
 Work through these gates in order — don't skip ahead to PR because an earlier
 gate is "probably fine":
-1. Branch `feature/<slug>-<taskid>` off `main` — unless the orchestrator gives
-   you a different base branch (stacked dependent task), then branch off that.
+
+**Never push a red branch.** Before every `git push` — the first one, a
+force-push, or a resolve-pass update to an open PR — the gates below must pass
+for the WHOLE branch, not only the files in your last commit: a change that
+compiles on its own can still break a sibling package. Read each command's real
+exit status; a command piped into `tail` reports `tail`'s status, not the
+gate's. If a gate genuinely cannot be run, say so explicitly in the PR and in
+your report rather than pushing on the assumption it would have passed. See
+`CLAUDE.md`'s working rules.
+
+1. Create the branch directly from `origin/main` — do NOT `git checkout main`
+   first, that fails inside a linked worktree (`CLAUDE.md`'s worktree rule):
+   `git checkout -b feature/<slug>-<taskid> origin/main`. Unless the
+   orchestrator gives you a different base branch (stacked dependent task),
+   then branch off that instead.
 2. **Fix**: implement only what the task's acceptance criteria require, under
    `app/`, following the standards above. Every API call handles all
    outcomes the typed client can return (success + `400/403/404/409/500`,

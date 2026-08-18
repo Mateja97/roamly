@@ -132,7 +132,7 @@ the User entity).
 ## Tooling
 
 - Format: `gofmt` (enforced, no exceptions).
-- Lint: `golangci-lint run ./...`, run from inside each service's module directory, using the repo-root `.golangci.yml`. Part of the green gate for every PR — must be clean before requesting review.
+- Lint: `go vet ./...`, run from inside each service's module directory. Part of the green gate for every PR — must be clean before requesting review; this is what CI actually runs. `golangci-lint` is not a gate yet — no repo-root `.golangci.yml` exists — add one and switch this rule over when the repo genuinely wants it.
 - Vendoring decision deferred until first service.
 
 ## Shared package (`backend/shared/`)
