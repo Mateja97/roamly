@@ -1323,6 +1323,15 @@ func (a *Activities) Update(ctx context.Context, id string, patch activitiessvc.
 		return activitiessvc.Activity{}, fmt.Errorf("%w: subcategory %q does not belong to category %q", sharederrors.ErrInvalidInput, *patch.Subcategory, category)
 	}
 
+	// An admin setting Photos directly (curation) is itself a resolve: mark
+	// the row resolved so a later GetPhotos doesn't live-resolve and
+	// clobber the admin's curated set with Google's. Only when the caller
+	// didn't already say so explicitly.
+	if patch.Photos != nil && patch.PhotosResolved == nil {
+		resolvedTrue := true
+		patch.PhotosResolved = &resolvedTrue
+	}
+
 	updated, err := a.repo.Update(ctx, id, patch)
 	if err != nil {
 		return activitiessvc.Activity{}, fmt.Errorf("updating activity %s: %w", id, err)
