@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 	_ "time/tzdata" // ponytail: alpine runtime has no /usr/share/zoneinfo; bundle IANA DB into binary instead of apk-installing tzdata
@@ -22,6 +23,18 @@ import (
 	"activities-service/internal/service"
 	"activities-service/internal/tripadvisor"
 )
+
+// maxResolvedPhotosFromEnv parses raw as a positive int, falling back to
+// service.DefaultMaxResolvedPhotos on anything else (unset, non-numeric,
+// <= 0) — bad config degrading to the safe default beats refusing to start
+// over a photo cap.
+func maxResolvedPhotosFromEnv(raw string) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return service.DefaultMaxResolvedPhotos
+	}
+	return n
+}
 
 func main() {
 	logger := logging.New(sharedconfig.OrDefault("LOG_LEVEL", "info"))
@@ -47,7 +60,7 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo)
+	svc := service.New(repo).WithMaxResolvedPhotos(maxResolvedPhotosFromEnv(sharedconfig.OrDefault("MAX_RESOLVED_PHOTOS", strconv.Itoa(service.DefaultMaxResolvedPhotos))))
 	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
 	// fine, GetActivityPhotos just always answers from stored photos with no
 	// live Google call — same fallback behavior a configured client hits on

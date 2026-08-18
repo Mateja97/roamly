@@ -134,16 +134,16 @@ const googleSyncTimeout = 2 * time.Minute
 
 // googleSyncConcurrency bounds how many sweeps run at once across the whole
 // process. One sweep can run up to maxGoogleRowsPerQuery (8) searches, each
-// with up to 20 results, each costing up to 2 further Places calls
-// (provisional photo + upsert) plus one geocode call per cell — roughly 329
-// Google API calls worst case. Left unbounded, a 100-request burst spawns
-// 100 concurrent sweeps (~33k calls, 100 live goroutines) with nothing
-// shedding load, and doJSON's 429/5xx retry then multiplies quota pressure
-// instead of backing off. 4 keeps worst-case concurrent cost in the low
-// thousands of calls while still letting several distinct cells make
-// progress at once; raise it only alongside a real per-process Google API
-// budget (see the "out of scope" note on pgxpool.MaxConns — same shape of
-// problem, deliberately deferred).
+// with up to 20 results, plus one geocode call per cell — roughly 169 Google
+// API calls worst case (T5, places-api-cost-reduction: no per-result photo
+// call at sync time any more, so this is 1 Places call per result, not 2).
+// Left unbounded, a 100-request burst spawns 100 concurrent sweeps (~17k
+// calls, 100 live goroutines) with nothing shedding load, and doJSON's
+// 429/5xx retry then multiplies quota pressure instead of backing off. 4
+// keeps worst-case concurrent cost in the low thousands of calls while still
+// letting several distinct cells make progress at once; raise it only
+// alongside a real per-process Google API budget (see the "out of scope"
+// note on pgxpool.MaxConns — same shape of problem, deliberately deferred).
 const googleSyncConcurrency = 4
 
 // googleSyncSem is a non-blocking semaphore: acquiring a slot is a buffered
@@ -157,7 +157,7 @@ var googleSyncSem = make(chan struct{}, googleSyncConcurrency)
 // googleSyncCells is the set of sync cells with a Google sweep currently
 // running. Without it, two concurrent queries against the same uncovered
 // cell both see the same stale rows from SyncedAt and both sync them —
-// doubling every search, upsert and photo call for that sweep. Cells are
+// doubling every search and upsert for that sweep. Cells are
 // claimed synchronously in syncGoogleIfNeeded before its goroutine is
 // spawned (so a second call for the same cell sees the claim immediately,
 // not just once the first goroutine gets scheduled) and released via defer
@@ -175,8 +175,7 @@ var googleSyncCells = &syncCellGate{inFlight: make(map[string]struct{})}
 // (see that function's doc): Query returns immediately and results land for
 // the next search. Per-subtype granularity means one query can only ever
 // fetch maxGoogleRowsPerQuery of ~53 rows, so blocking a search for seconds
-// to deliver a fraction of a city is the worst of both options — and photo
-// resolution (below) would blow any in-request budget outright.
+// to deliver a fraction of a city is the worst of both options.
 //
 // googleDueRows itself — and every SyncedAt lookup it makes, up to ~53 per
 // anchor — runs inside the goroutine, not here. Only the "is a Places client
@@ -409,17 +408,14 @@ func (a *Activities) syncGoogleRow(ctx context.Context, job googleSyncJob, cell 
 			continue
 		}
 		passed++
-		// One provisional photo for the list screen. The full set resolves
-		// on first detail view (see GetPhotos), so this is a one-time cost
-		// per newly discovered venue rather than per query. A photo failure
-		// is not fatal: a venue with no image still beats no venue, and the
-		// client falls back to its missing-image state.
-		photos, err := a.places.ResolvePhotos(ctx, p.ID, 1)
-		if err != nil {
-			slog.Warn("google provisional photo failed", "place_id", p.ID, "error", err)
-			photos = nil
-		}
-		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, photos, cell)); err != nil {
+		// No photo resolve at discovery time (T5, places-api-cost-reduction):
+		// most discovered venues are never opened, so a Google-billed
+		// PhotoMediaURL call per venue here was mostly wasted spend. A venue
+		// lands with zero photos until GetPhotos resolves them on first
+		// detail view — the client already renders a missing-image
+		// placeholder for that case, same as a photo-resolve failure always
+		// produced before this change.
+		if _, err := a.repo.Upsert(ctx, toIngest(job.row, p, nil, cell)); err != nil {
 			slog.Warn("google sync upsert failed", "place_id", p.ID, "error", err)
 			continue
 		}

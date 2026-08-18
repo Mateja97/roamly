@@ -22,6 +22,9 @@ Environment variables, read once at startup in `main.go`:
   `postgres://user:pass@host:5432/activities?sslmode=disable`.
 - `GRPC_ADDR` — gRPC listen address, defaults to `:9090`.
 - `LOG_LEVEL` — slog level, defaults to `info`.
+- `MAX_RESOLVED_PHOTOS` — how many photos `GetPhotos` resolves and persists
+  per venue on first detail view, defaults to `5`. Unset, non-numeric, or
+  non-positive values fall back to the default.
 
 `nearby` scope always uses a fixed, non-adjustable 10 km radius
 (`service.NearbyRadiusKM`); any client-supplied `max_distance_km` is ignored
