@@ -1,3 +1,11 @@
+# Pinned so `docker compose` resolves to this same project from any
+# checkout, not just the primary one. Without an explicit name, compose
+# derives the project from the cwd's basename — a git worktree (a different
+# basename) would then see zero containers for a stack that's actually up,
+# and scripts/audit-cron.sh's stack-running guard would false-negative
+# every run. The live project, volumes (roamly_*) and networks are already
+# named "roamly", so this renames nothing — don't remove it as a redundant
+# no-op, it's the reason the guard works outside the primary checkout.
 name: roamly
 
 services:

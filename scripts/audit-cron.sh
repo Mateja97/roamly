@@ -24,7 +24,6 @@ LOG_DIR="$REPO/pipeline/bugs/cron"
 LOCK="$LOG_DIR/.lock"
 LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M).log"
 CLAUDE="${CLAUDE_BIN:-claude}"
-LOCK_CEILING=21600  # 6h — comfortably past RUN_TIMEOUT_SECS below
 RUN_TIMEOUT_SECS=14400  # 4h
 
 mkdir -p "$LOG_DIR"
@@ -33,8 +32,17 @@ echo "=== audit-cron $(date -Iseconds) ==="
 
 # cron's PATH is minimal (often just /usr/bin:/bin) and has neither docker
 # nor claude; without this, "docker: command not found" was silently read as
-# "stack is not running" and the run exited 0 every week.
-export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+# "stack is not running" and the run exited 0 every week. Deliberately
+# prepended, not appended: this pins a known, deterministic docker/claude for
+# every run regardless of what a minimal cron PATH would otherwise resolve
+# first — this box has two docker binaries (/usr/local/bin and
+# /opt/homebrew/bin), and cron must always get the same one, every run.
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+# $HOME isn't guaranteed set in every cron environment; only add ~/.local/bin
+# when it is, rather than fail on `set -u` or build a bogus "/.local/bin".
+if [ -n "${HOME:-}" ]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "FAIL: docker not found on PATH ($PATH)"
@@ -62,36 +70,32 @@ if [ -z "$(docker compose ps --status running --quiet)" ]; then
 fi
 
 # ponytail: mkdir is still the lock — atomic on every filesystem, no flock
-# dependency. What's new: the lock now records its owner (pid + start time)
-# so a dead owner (SIGKILL, since the EXIT trap can't run for that) or a
-# hung one (belt-and-suspenders alongside the timeout below) gets reclaimed
-# instead of blocking every future run forever. Reclaim is always logged —
-# a silent reclaim would hide a crash.
+# dependency. What's new: the lock records its owner's pid, and this is a
+# liveness check (kill -0), not a pid+start-time identity scheme — a lock is
+# reclaimed only when its owner is confirmed dead (a SIGKILL skips the EXIT
+# trap that would otherwise clean up, so nothing else ever would). An alive
+# owner is NEVER preempted, no matter how old the lock: reclaiming a live
+# owner would mean two audits running at once, which is worse than staying
+# locked. If a run somehow outlives RUN_TIMEOUT_SECS + its kill grace below
+# and is still alive, that's a stuck process needing a human, not a second
+# run racing it. Reclaim is always logged loudly — a silent reclaim would
+# hide a crash.
 acquire_lock() {
   if mkdir "$LOCK" 2>/dev/null; then
     echo "$$" >"$LOCK/pid"
-    date +%s >"$LOCK/started"
     return 0
   fi
 
-  local pid started now age alive=1
+  local pid
   pid="$(cat "$LOCK/pid" 2>/dev/null || true)"
-  started="$(cat "$LOCK/started" 2>/dev/null || true)"
-  now="$(date +%s)"
-  started="${started:-$now}"
-  age=$((now - started))
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    alive=0
-  fi
-  if [ "$alive" -eq 0 ] && [ "$age" -lt "$LOCK_CEILING" ]; then
     return 1
   fi
 
-  echo "WARN: reclaiming stale lock $LOCK (owner pid=${pid:-unknown} alive=$([ "$alive" -eq 0 ] && echo yes || echo no) age=${age}s)"
+  echo "WARN: reclaiming stale lock $LOCK (owner pid=${pid:-unknown} is not running)"
   rm -rf "$LOCK"
   mkdir "$LOCK" 2>/dev/null || return 1
   echo "$$" >"$LOCK/pid"
-  date +%s >"$LOCK/started"
   return 0
 }
 
@@ -103,11 +107,22 @@ trap 'rm -rf "$LOCK" 2>/dev/null' EXIT
 
 st="$(git status --porcelain)" || { echo "FAIL: git status"; exit 1; }
 if [ -n "$st" ]; then
-  # run-audit-auto.md's Phase 0 already self-heals a CHANGELOG.md-only tree
-  # (a crashed changelog phase) so that one bad crash there can't silently
-  # STOP every future scheduled run — mirror that here instead of being
-  # stricter than the run itself. Anything else, or dirt alongside
-  # CHANGELOG.md, is someone's real work: skip and leave it alone.
+  # run-audit-auto.md Phase 0 step 5: any unmerged status code (UU/AA/DD/
+  # AU/UA/DU/UD), for ANY path, is a mid-merge conflict — STOP, never
+  # self-heal. Must run before the CHANGELOG.md-only check below: reducing
+  # "UU CHANGELOG.md" to just its path would otherwise match that exemption
+  # and wave a real conflict through as ordinary Phase-0 debris.
+  if printf '%s\n' "$st" | awk '{print $1}' | grep -qE '^(UU|AA|DD|AU|UA|DU|UD)$'; then
+    echo "SKIP: working tree has an unmerged/conflicted path — never self-heal a conflict:"
+    printf '%s\n' "$st" | sed 's/^/      /'
+    exit 0
+  fi
+
+  # Phase 0 also self-heals a CHANGELOG.md-only tree (a crashed changelog
+  # phase) so that one bad crash there can't silently STOP every future
+  # scheduled run — mirror that here instead of being stricter than the run
+  # itself. Anything else, or dirt alongside CHANGELOG.md, is someone's real
+  # work: skip and leave it alone.
   dirty_paths="$(printf '%s\n' "$st" | awk '{print $NF}' | sort -u)"
   if [ "$dirty_paths" = "CHANGELOG.md" ]; then
     echo "INFO: only CHANGELOG.md is dirty — Phase 0 self-heals this, continuing"
@@ -124,13 +139,26 @@ echo "--- starting /run-audit-auto on $(git branch --show-current) @ $(git rev-p
 # ponytail: macOS ships no `timeout`(1) by default, so this is a hand-rolled
 # TERM-then-KILL watcher on bash's own job control rather than a coreutils
 # dependency. A hung `claude -p` would otherwise hold the lock forever.
+# Polls kill -0 every 30s instead of one long sleep: if this script itself
+# gets killed, the watcher subshell is orphaned but keeps running — a single
+# `sleep $RUN_TIMEOUT_SECS` would then fire hours later against whatever
+# process the kernel has since handed that pid to, having long outlived the
+# child it was meant to guard. Polling bounds that to one 30s interval and
+# self-exits the moment the child is gone, orphaned watcher or not.
 "$CLAUDE" -p "/run-audit-auto" --model sonnet &
 claude_pid=$!
 (
-  sleep "$RUN_TIMEOUT_SECS"
-  kill -TERM "$claude_pid" 2>/dev/null
-  sleep 30
-  kill -KILL "$claude_pid" 2>/dev/null
+  elapsed=0
+  while kill -0 "$claude_pid" 2>/dev/null; do
+    if [ "$elapsed" -ge "$RUN_TIMEOUT_SECS" ]; then
+      kill -TERM "$claude_pid" 2>/dev/null
+      sleep 30
+      kill -KILL "$claude_pid" 2>/dev/null
+      break
+    fi
+    sleep 30
+    elapsed=$((elapsed + 30))
+  done
 ) &
 watcher_pid=$!
 wait "$claude_pid"
