@@ -9,6 +9,8 @@ import {
   genericActionLabel,
   getWebsiteURL,
   goodToKnowSection,
+  googleReviewsScoreShown,
+  googleReviewsSectionShown,
   isTripadvisorSourced,
   kidsAgeLabel,
   metaDistanceText,
@@ -207,22 +209,18 @@ export function useActivityDetailData(seedActivity: Activity, showDistance: bool
   const primaryEnabled = isDirectionsPrimary || Boolean(websiteURL);
   const attribution = artAttribution(activity);
   const bookingNote = wellnessBookingNote(activity);
-  // Compliance: a Google-sourced reviews section (score, cards, attribution)
-  // must always be able to link back to Google Maps, so it never renders
-  // without `google_maps_uri` — no pending-state exception, since a
-  // seed/cached payload can carry `google_reviews`/`rating` before the live
-  // merge completes.
-  const googleReviewsAllowed = Boolean(activity.google_maps_uri);
+  // reviews-description-graceful-degrade T1: both the render gate and its
+  // compliance comment now live in `googleReviewsSectionShown`
+  // (activityDetailConfig.ts) — this is that single named decision, not a
+  // re-derivation of it.
+  const googleReviewsAllowed = googleReviewsSectionShown(activity);
   // A Places-live row's aggregate score has exactly one home — the Reviews
-  // slot below — once it actually renders a score header there (both
-  // `rating` and `review_count` present); the title-block gold star is
-  // this flag's sole consumer, suppressed only in that exact case so it
-  // still carries the rating alone whenever the Reviews slot doesn't
-  // (pending, a settled merge with no review count, or no
-  // `google_maps_uri` yet, pending or settled, per the maps-link compliance
-  // gate above).
-  const reviewsScoreShown =
-    isPlacesLive && googleReviewsAllowed && activity.rating > 0 && activity.review_count !== undefined;
+  // slot below — once it actually renders a score header there
+  // (`googleReviewsScoreShown`); the title-block gold star is this flag's
+  // sole consumer, suppressed only in that exact case so it still carries
+  // the rating alone whenever the Reviews slot doesn't (pending, a settled
+  // merge with no review count, or no `google_maps_uri` yet).
+  const reviewsScoreShown = isPlacesLive && googleReviewsScoreShown(activity);
   // tripadvisor-marks-require-reviews (T2) "rating trap": `activity.rating`
   // on a Tripadvisor-sourced row is Tripadvisor's own number until
   // `google_maps_uri` proves the live Places merge replaced it with
