@@ -84,6 +84,16 @@ Plan:
 ## Build a task
 Work through these gates in order — don't skip ahead to PR because an earlier
 gate is "probably fine":
+
+**Never push a red branch.** Before every `git push` — the first one, a
+force-push, or a resolve-pass update to an open PR — the gates below must pass
+for the WHOLE branch, not only the files in your last commit: a change that
+compiles on its own can still break a sibling package. Read each command's real
+exit status; a command piped into `tail` reports `tail`'s status, not the
+gate's. If a gate genuinely cannot be run, say so explicitly in the PR and in
+your report rather than pushing on the assumption it would have passed. See
+`CLAUDE.md`'s working rules.
+
 1. Branch `feature/<slug>-<taskid>` off `main` — unless the orchestrator gives
    you a different base branch (stacked dependent task), then branch off that.
 2. **Fix**: implement only what the task's acceptance criteria require, under
