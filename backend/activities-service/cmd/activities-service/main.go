@@ -42,6 +42,33 @@ func maxResolvedPhotosFromEnv(raw string, logger *slog.Logger) int {
 	return n
 }
 
+// defaultGoogleSyncTTLDays mirrors service.defaultGoogleSyncTTL — kept here,
+// not imported, since it's just the fallback string for
+// sharedconfig.OrDefault below and main.go stays the only place env vars are
+// read (GO_STANDARDS.md's config convention).
+const defaultGoogleSyncTTLDays = "30"
+
+// googleSyncTTLFromEnv parses GOOGLE_SYNC_TTL_DAYS (T4,
+// places-api-cost-reduction) into a duration, falling back to
+// service.defaultGoogleSyncTTL — via defaultGoogleSyncTTLDays — on anything
+// that isn't a positive integer, so a malformed override degrades to the
+// default instead of killing startup over a config knob that was already
+// optional. raw is the env var as read directly (unset ⇒ ""), so an unset
+// var falls back quietly while a set-but-invalid value logs a warning naming
+// the bad value — the operator sees their override was ignored.
+func googleSyncTTLFromEnv(logger *slog.Logger, raw string) time.Duration {
+	days, _ := strconv.Atoi(defaultGoogleSyncTTLDays)
+	if raw != "" {
+		if parsed, perr := strconv.Atoi(raw); perr == nil && parsed > 0 {
+			days = parsed
+		} else {
+			logger.Warn("invalid GOOGLE_SYNC_TTL_DAYS, using default",
+				"value", raw, "default_days", defaultGoogleSyncTTLDays)
+		}
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
 func main() {
 	logger := logging.New(sharedconfig.OrDefault("LOG_LEVEL", "info"))
 
@@ -66,7 +93,9 @@ func main() {
 	}
 
 	repo := repository.New(db)
-	svc := service.New(repo).WithMaxResolvedPhotos(maxResolvedPhotosFromEnv(os.Getenv("MAX_RESOLVED_PHOTOS"), logger))
+	svc := service.New(repo).
+		WithMaxResolvedPhotos(maxResolvedPhotosFromEnv(os.Getenv("MAX_RESOLVED_PHOTOS"), logger)).
+		WithGoogleSyncTTL(googleSyncTTLFromEnv(logger, os.Getenv("GOOGLE_SYNC_TTL_DAYS")))
 	// GOOGLE_MAPS_API_KEY is optional (T2): unset, the server still runs
 	// fine, GetActivityPhotos just always answers from stored photos with no
 	// live Google call — same fallback behavior a configured client hits on

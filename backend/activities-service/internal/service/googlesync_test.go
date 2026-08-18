@@ -590,6 +590,52 @@ func TestActivities_Query_GoogleSync_AnywhereWidensRadiusToPlacesCall(t *testing
 	}
 }
 
+// TestActivities_Query_GoogleSync_FreshButTooNarrowStillSyncs is T4
+// (places-api-cost-reduction)'s acceptance criterion: widening googleSyncTTL
+// must not let a cell synced at a smaller radius than the current request
+// needs pass as fresh. The (cell, nature, beach) row here is marked synced
+// moments ago (well within any TTL) but only at a 10km radius — an Anywhere
+// request needing 50km must still treat it as due and re-sync at 50km,
+// proving MarkSynced's radius_km bookkeeping still gates freshness
+// independently of the TTL widening.
+func TestActivities_Query_GoogleSync_FreshButTooNarrowStillSyncs(t *testing.T) {
+	cell := syncCellKey(44.81, 20.46)
+	key := syncKey(ProviderGoogle, cell, "nature", "beach")
+	repo := &fakeRepo{
+		syncedAtOut: map[string]time.Time{key: time.Now()},
+		radiusOut:   map[string]float64{key: 10},
+	}
+	gp := &fakeGooglePlaces{nearbyOut: []placesmap.Place{{ID: "beach-1", Rating: 4.4, UserRatingCount: 30, GoogleMapsURI: "https://maps.google/beach-1"}}}
+	svc := New(repo).WithPlaces(gp)
+	req := Request{
+		Scope:           activitiessvc.ScopeAnywhere,
+		CurrentLocation: &activitiessvc.Point{Lat: 44.81, Lng: 20.46},
+		MaxDistanceKM:   50,
+		Categories:      []activitiessvc.Category{activitiessvc.CategoryNature},
+		Subcategories:   []string{"beach"},
+	}
+	if _, err := svc.Query(context.Background(), req); err != nil {
+		t.Fatalf("Query() error: %v", err)
+	}
+	svc.waitForGoogleSync()
+
+	foundBeachCall := false
+	for _, call := range gp.gotNearby {
+		if slices.Contains(call.IncludedTypes, "beach") {
+			foundBeachCall = true
+			if call.RadiusM != 50*1000 {
+				t.Errorf("beach row RadiusM = %v, want 50000 — the request's actual need, not the stale 10km mark", call.RadiusM)
+			}
+		}
+	}
+	if !foundBeachCall {
+		t.Fatal("no searchNearby call for the beach row — a 10km mark within TTL must not satisfy a 50km request")
+	}
+	if r := repo.markSyncedRadius[key]; r != 50 {
+		t.Errorf("MarkSynced radius for %q = %v, want 50 — re-sync must overwrite the narrower mark", key, r)
+	}
+}
+
 func TestActivities_Query_GoogleSync_PhotoFailureStillUpserts(t *testing.T) {
 	repo := &fakeRepo{syncedAtOut: map[string]time.Time{}}
 	gp := &fakeGooglePlaces{

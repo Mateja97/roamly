@@ -26,6 +26,9 @@ Environment variables, read once at startup in `main.go`:
   per venue on first detail view, defaults to `5`. Unset, non-numeric, or
   non-positive values fall back to the default (a non-empty invalid value
   logs a warning).
+- `GOOGLE_SYNC_TTL_DAYS` — how long a Google discovery sync stays fresh,
+  defaults to `30`. A non-positive or non-numeric value falls back to the
+  default rather than failing startup (T4).
 
 `nearby` scope always uses a fixed, non-adjustable 10 km radius
 (`service.NearbyRadiusKM`); any client-supplied `max_distance_km` is ignored
@@ -52,8 +55,9 @@ off `QueryActivities`:
   query.
 
 Freshness for both is tracked in `sync_regions` (`provider`, `cell_key`,
-`category`, `subtype`), TTL 14 days (`googleSyncTTL` /
-`tripadvisorSyncTTL` in `internal/service/`), plus the radius each sync
+`category`, `subtype`), TTL 30 days for Google (`googleSyncTTL` in
+`internal/service/`, configurable via `GOOGLE_SYNC_TTL_DAYS`) and 14 days for
+Tripadvisor (`tripadvisorSyncTTL`), plus the radius each sync
 actually covered (`radius_km`) — a row is fresh only when it's both within
 TTL and covers at least the requesting query's distance, so a prior narrow
 sync doesn't block a later wider Anywhere search. Google's covered radius
