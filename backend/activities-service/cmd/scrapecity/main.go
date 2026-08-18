@@ -175,7 +175,7 @@ func main() {
 	}
 
 	report(rowYield(googleRows, counts), *city, len(seen), duplicates)
-	printBudget(covered, len(googleRows), callsByTier, partial)
+	fmt.Print(budgetReport(covered, len(googleRows), callsByTier, partial))
 }
 
 func sumCalls(byTier map[string]int) int {
@@ -186,25 +186,26 @@ func sumCalls(byTier map[string]int) int {
 	return total
 }
 
-// printBudget prints T7's "calls made, per SKU tier, partial or not" report
-// — the same shape every batch Places tool (auditcontent, scrapecity,
-// PrewarmGoogle) prints after a budgeted run.
-func printBudget(covered, total int, callsByTier map[string]int, partial bool) {
-	fmt.Printf("\nPlaces calls: %d", sumCalls(callsByTier))
+// budgetReport formats T7's "calls made, per SKU tier, partial or not"
+// report — the same shape every batch Places tool (auditcontent, scrapecity,
+// PrewarmGoogle) prints after a budgeted run. A string, not a direct print,
+// so it's testable the same way auditReport.render is.
+func budgetReport(covered, total int, callsByTier map[string]int, partial bool) string {
+	out := fmt.Sprintf("\nPlaces calls: %d", sumCalls(callsByTier))
 	if partial {
-		fmt.Printf(" (PARTIAL RUN — covered %d of %d rows, stopped by -max-calls)", covered, total)
+		out += fmt.Sprintf(" (PARTIAL RUN — covered %d of %d rows, stopped by -max-calls)\n", covered, total)
 	} else {
-		fmt.Printf(" (covered %d of %d rows)", covered, total)
+		out += fmt.Sprintf(" (covered %d of %d rows)\n", covered, total)
 	}
-	fmt.Println()
 	tiers := make([]string, 0, len(callsByTier))
 	for tier := range callsByTier {
 		tiers = append(tiers, tier)
 	}
 	sort.Strings(tiers)
 	for _, tier := range tiers {
-		fmt.Printf("  %-22s %d\n", tier, callsByTier[tier])
+		out += fmt.Sprintf("  %-22s %d\n", tier, callsByTier[tier])
 	}
+	return out
 }
 
 // discover runs one row: searchNearby when the row has Table A types,
@@ -278,5 +279,5 @@ func prewarm(ctx context.Context, lat, lng float64, maxCalls int) {
 	svc := service.New(repository.New(pool)).WithPlaces(pc)
 	summary := svc.PrewarmGoogle(ctx, activitiessvc.Point{Lat: lat, Lng: lng}, maxCalls)
 	slog.Info("prewarm complete", "lat", lat, "lng", lng, "partial", summary.Partial)
-	printBudget(summary.RowsCovered, summary.RowsTotal, summary.CallsByTier, summary.Partial)
+	fmt.Print(budgetReport(summary.RowsCovered, summary.RowsTotal, summary.CallsByTier, summary.Partial))
 }
