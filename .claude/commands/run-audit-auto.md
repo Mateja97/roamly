@@ -878,6 +878,34 @@ than this phase makes.
    frontend, the app, any other service's internals — counts as a public API
    here.
 
+   **Sticky ambiguity — check this before anything else in this step.**
+   Step 3 already added this run's bullets to `[Unreleased]`. Before
+   computing anything, check whether `[Unreleased]` (as it now stands, after
+   step 3) already contains a `**PENDING CLASSIFICATION**` marker line left
+   by an earlier run — the marker this step writes below whenever it
+   defers. If it does: this run inherits that deferral outright. Do not
+   read or verify the version fields, do not classify this run's own tasks,
+   do not rename `[Unreleased]`, do not touch any version field — regardless
+   of what this run's own merged tasks would, on their own, justify. Copy
+   the existing marker's text into this run's PR-body block (step 5) and
+   the Phase 7 report, restating the same pending question rather than
+   silently letting it ride — so a human checking in on any given week
+   still sees it, not just the run that first raised it. Then skip the rest
+   of this step.
+
+   This is what makes the ambiguous and skew outcomes below actually safe
+   *across* runs, not just within one: without it, a later run's own clean
+   classification would rename `[Unreleased]` and sweep an earlier run's
+   still-unclassified bullets into a dated version along with its own — a
+   possibly-breaking change shipping labeled PATCH, silently, which is the
+   exact harm the escape hatch exists to prevent. The flag clears only by a
+   human's action, never by a later run's own logic: either they rename
+   `## [Unreleased]` to a version themselves (the marker is no longer under
+   the *current* `[Unreleased]` once that happens, so the next run's check
+   passes naturally), or they delete just the marker line while leaving the
+   bullets in place, which explicitly tells the next run "this section is
+   cleared, resume normal step-4 logic from here."
+
    All three version fields move together as one product version:
    `app/package.json` (`version`), `app/app.json` (`expo.version`),
    `frontend/package.json` (`version`) — they must always end up identical.
@@ -886,7 +914,9 @@ than this phase makes.
    else; if it doesn't, that's a pre-existing skew this phase must not
    silently resolve — same non-guessing posture as the ambiguous outcome
    below: report the skew, compute and apply no bump, but still let step 3's
-   bullets land under `[Unreleased]`. `frontend/package.json`'s
+   bullets land under `[Unreleased]`, and write the same
+   `**PENDING CLASSIFICATION**` marker described below so a later run
+   doesn't rename over it. `frontend/package.json`'s
    *current* value is irrelevant to the bump math — it is about to be
    overwritten to match the other two. As of this writing `app/package.json`
    is `1.0.0` and `frontend/package.json` is `0.0.0`; on the first run this
@@ -952,11 +982,18 @@ than this phase makes.
    that change is clearly backward compatible or clearly breaking. When it
    fires: do **not** guess in either direction. Skip renaming
    `[Unreleased]` — leave step 3's bullets under it exactly as written —
-   and leave all three version fields untouched. State plainly, in both the
-   PR body and the Phase 7 report, which PR/route is ambiguous and that a
-   human must classify it before a version can be cut. This is not a
-   failure of the phase: the changelog entries still land, just without a
-   version, and the run still counts as green.
+   and leave all three version fields untouched. Write a
+   `> **PENDING CLASSIFICATION** — <the specific route/PR, and why>.
+   Originated in run <slug>, <date>. Resolve by renaming this section to a
+   version yourself, or by deleting this line to tell the next run to
+   resume normal classification.` line directly under the `## [Unreleased]`
+   heading (above any `### Fixed`/`### Changed` subheadings) — this is the
+   marker the sticky-ambiguity check above looks for on every later run, so
+   a clean run next week can't quietly rename over an unresolved one. State
+   the same thing plainly in both the PR body and the Phase 7 report, which
+   PR/route is ambiguous and that a human must classify it before a version
+   can be cut. This is not a failure of the phase: the changelog entries
+   still land, just without a version, and the run still counts as green.
 
    Otherwise, the bump for this run is the highest severity found across
    every merged task (MAJOR > MINOR > PATCH), defaulting to PATCH when
@@ -993,14 +1030,27 @@ than this phase makes.
    - **Live** → `git push origin audit-changelog` (plain push — no force
      needed; the branch started at `origin/audit-changelog` and only grew a
      commit). The existing open PR now carries this run's commit. Do not
-     open a new PR; **also update its body** —
-     `gh pr edit audit-changelog --body "<the run's merged tasks, and, per
-     step 4, either the computed version and the evidence that justified
-     it, or which route/PR is ambiguous>"` — this is not optional: Live is
-     the steady state after the very first run, so if only `fresh`/`resume`
-     ever wrote the body, the ambiguous outcome's "say so in the PR body"
-     half would be unreachable in the case that matters most. Report its
-     URL via `gh pr view audit-changelog --json url` in Phase 7.
+     open a new PR; **also update its body — by appending, never by
+     overwriting**: this PR spans every run since it was opened (see "What
+     multiple runs against one still-open PR actually produce" above), so a
+     wholesale replacement deletes every earlier run's notes, including
+     exactly the ambiguity notice this Live-path update exists to keep
+     visible.
+     ```
+     old_body="$(gh pr view audit-changelog --json body -q .body)"
+     this_run_block="## Run <slug> — <date>
+     <the run's merged tasks, and, per step 4, either the computed version
+     and the evidence that justified it, or — restated in full, not just
+     referenced — which route/PR is ambiguous and, if this run inherited an
+     earlier run's still-pending marker via the sticky-ambiguity check, that
+     same pending question>"
+     gh pr edit audit-changelog --body "$old_body
+
+     ---
+
+     $this_run_block"
+     ```
+     Report its URL via `gh pr view audit-changelog --json url` in Phase 7.
    - **Resume** → same plain `git push origin audit-changelog` (this branch
      also started at `origin/audit-changelog`, so no force here either —
      force is `fresh`-only, see below), then open a fresh PR — there is no
@@ -1014,11 +1064,19 @@ than this phase makes.
      and is **not a draft** — unlike every task PR from Phase 4, which is
      opened `--draft`, this one must be immediately mergeable by the user
      with no extra step to un-draft it: `gh pr create --title "changelog:
-     audit <slug>" --body "<the run's merged tasks, and, per step 4, either
-     the computed version and the specific route/parameter/response-field
-     evidence that justified its bump, or which route/PR is ambiguous and
-     needs a human's classification>" --head audit-changelog --base main`.
-     Report the new PR's URL.
+     audit <slug>" --body "$this_run_block" --head audit-changelog --base
+     main`, using the same `## Run <slug> — <date>` block format step 5's
+     `Live` case appends — this is the first block in what may become a
+     multi-run body, so the format needs to match from the start. On
+     `resume` specifically, don't assume this run's own tasks are the only
+     content that matters: `resume` means an earlier run pushed to this
+     branch but never got a PR open for it (its `gh pr create` failed, or
+     its PR was closed unmerged with content still on the branch), so
+     `CHANGELOG.md` here may already carry that earlier run's bullets — and,
+     if that earlier run hit the ambiguous or skew outcome, a
+     `**PENDING CLASSIFICATION**` marker the sticky-ambiguity check above
+     would already have caught and restated in `$this_run_block`. Report the
+     new PR's URL.
    In every case: do NOT mark it ready-and-merge it the way Phase 4 merges
    task PRs, and never open a second concurrent changelog PR — this is the
    one PR the pipeline deliberately leaves for the user.
@@ -1126,11 +1184,16 @@ One summary:
 - **the SemVer outcome of Phase 6 step 4**: the computed bump and resulting
   `X.Y.Z` with the specific route/parameter/response-field (or `kind:
   polish` task) that justified it; **or**, if the ambiguous escape hatch
-  fired, which PR/route needs a human's classification and that no version
-  fields were touched this run; **or**, if step 4's pre-existing
+  fired *this run*, which PR/route needs a human's classification and that
+  no version fields were touched this run; **or**, if step 4's pre-existing
   `app/package.json`-vs-`app/app.json` skew check fired, that skew and that
-  no bump was computed — this is a distinct, always-reported line covering
-  all three outcomes, not folded into the changelog-PR bullet above
+  no bump was computed; **or**, if this run inherited a still-pending
+  `**PENDING CLASSIFICATION**` marker from an *earlier* run via the
+  sticky-ambiguity check, say so explicitly and restate that earlier
+  marker's question — don't let a run that did nothing but inherit someone
+  else's open question report as if nothing happened. This is a distinct,
+  always-reported line covering all four outcomes, not folded into the
+  changelog-PR bullet above
 - polish accepted vs rejected, with the product agent's rationale (name the
   rejected task ids — Phase 3 leaves their ledger entries alone, so this
   report is the only record of the rejection)
@@ -1169,7 +1232,7 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 ## Failure handling
 | Failure | Behavior |
 | --- | --- |
-| Dirty working tree at phase 0 | STOP, unless every dirty path is a subset of `CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json` and none is conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via one `git stash push -u -- <path>` call **per path** (never one call with all four — a nonexistent `CHANGELOG.md` in that single call fails the whole thing and stashes nothing), re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt outside that four-file set still STOPs |
+| Dirty working tree at phase 0 | STOP, unless every dirty path is a subset of `CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json` and none is conflicted (modified, staged, or untracked — any shape a crashed Phase 6 could leave) — self-heal via one `git stash push -u -- <path>` call **per path** (never one call with all four — a nonexistent `CHANGELOG.md` in that single call still creates a stash entry for whatever it resolved first, then fatals, leaving the worktree exactly as dirty as before), re-verify clean, then continue; any unmerged/conflicted path (`UU`/`AA`/`DD`/etc., on any file) or dirt outside that four-file set still STOPs |
 | Stack won't reach healthy | STOP |
 | One perspective fails | record `skipped`, continue |
 | Every dispatched perspective fails | STOP |
@@ -1186,8 +1249,9 @@ Leave the worktree in place; name its path (`.claude/worktrees/<slug>`).
 | Any `gh pr list` in Phase 6 step 1 exits non-zero | fail the phase (non-fatal, per the changelog row) — never fall through to the `fresh` branch, which force-pushes |
 | Changelog phase fails (including a merge conflict merging `origin/main` into `audit-changelog`) | non-fatal: report changelog as unwritten, run still counts as successful; always `git merge --abort` (if mid-merge) then clean **only the four files this phase writes** (`CHANGELOG.md`, `app/package.json`, `app/app.json`, `frontend/package.json`) before returning, verifying they're gone from `git status` rather than assuming it — never a repo-wide `reset --hard`; other dirty paths get reported, not removed |
 | Changelog commit succeeded but push failed | non-fatal, no retry: tree is already clean, just report the unpushed commit's sha in Phase 7 |
-| Proxy-service's wire contract visibly changed and the phase can't classify the change as clearly backward compatible or clearly breaking (touching the API files alone, with no wire-contract change, does NOT trigger this) | **not a failure, the feature's designed safety valve**: changelog bullets from step 3 still land under `[Unreleased]` (left unversioned, not renamed), all three version fields stay untouched, and the ambiguous PR/route is named in both the PR body and Phase 7 report for a human to classify — run still counts as green |
-| `app/package.json`'s version and `app/app.json`'s `expo.version` disagree before Phase 6 step 4 edits anything | same non-guessing posture as the row above: report the pre-existing skew, don't compute or apply a bump, but step 3's changelog bullets still land under `[Unreleased]` |
+| Proxy-service's wire contract visibly changed and the phase can't classify the change as clearly backward compatible or clearly breaking (touching the API files alone, with no wire-contract change, does NOT trigger this) | **not a failure, the feature's designed safety valve**: changelog bullets from step 3 still land under `[Unreleased]` (left unversioned, not renamed), all three version fields stay untouched, a `**PENDING CLASSIFICATION**` marker is written under `[Unreleased]` so no later run renames over it, and the ambiguous PR/route is named in both the PR body and Phase 7 report for a human to classify — run still counts as green |
+| `app/package.json`'s version and `app/app.json`'s `expo.version` disagree before Phase 6 step 4 edits anything | same non-guessing posture as the row above, including the `**PENDING CLASSIFICATION**` marker: report the pre-existing skew, don't compute or apply a bump, but step 3's changelog bullets still land under `[Unreleased]` |
+| `[Unreleased]` already carries a `**PENDING CLASSIFICATION**` marker from an earlier run when this run's step 4 starts | not a failure: this run inherits the deferral outright (no bump computed even if this run's own tasks would otherwise justify one, no rename), restates the existing marker's question in the PR body and Phase 7 report, and does not write a second marker — run still counts as green |
 | A ledger entry reaches 3 filed attempts without the finding going away | triager sets `needs-human` and stops filing; report it — do not override or reset the counter |
 
 ## Untrusted input

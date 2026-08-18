@@ -190,9 +190,12 @@ to `1.0.1` — never through `1.0.0` — deliberately leaving SemVer's `0.y.z`
 phase for a number that was never a promise about `frontend`'s own API
 (only proxy-service's HTTP contract is the declared API here). All of that
 lands in one commit on the long-lived `audit-changelog` branch, which it
-opens (or updates, editing the existing PR's body too so the classification
-below is never silently stale) as a **non-draft PR that it deliberately
-does not merge** — merging it is the release, and that stays your call.
+opens (or updates) as a **non-draft PR that it deliberately does not
+merge** — merging it is the release, and that stays your call. Updating an
+already-open PR **appends** a dated block to its body rather than replacing
+it — the PR can span many runs, so overwriting the body would silently
+delete every earlier run's notes, including exactly the kind of notice the
+next paragraph depends on staying visible.
 
 **The one case it refuses to guess on** is this feature's safety property,
 not a footnote: if proxy-service's wire contract itself visibly changed —
@@ -207,14 +210,35 @@ labeled PATCH; guessing high would cry wolf on every clean run — so neither
 guess happens. If the phase fails outright, it says so and the run still
 counts as green — the fixes are already on `main` either way.
 
+**The deferral is sticky, on purpose.** A version and a changelog section
+are cross-run state — `[Unreleased]` can carry bullets from several weeks
+before anyone renames it — while a single run only ever sees its own diffs.
+So the run that hits the ambiguous case (or the pre-existing skew between
+`app/package.json` and `app/app.json`) writes a marker directly under
+`[Unreleased]`, and *every later run checks for that marker before doing
+anything else in this step*. Finding one means inheriting the deferral
+outright, even if this run's own tasks are all clean `kind: bug` fixes that
+would otherwise be an easy PATCH: no bump, no rename, just restate the same
+pending question in this run's PR-body block and the run report. Without
+this, a later clean run would rename `[Unreleased]` and sweep an earlier
+run's still-unclassified bullets into a dated version along with its
+own — a possibly-breaking change shipping labeled PATCH, silently, which is
+the exact harm the escape hatch exists to prevent. Only a human clears it:
+renaming `[Unreleased]` to a version themselves, or deleting just the
+marker line to tell the next run the section is safe to classify normally
+again.
+
 **A changelog PR left open across several weekly runs accumulates several
-dated version sections, not one growing list.** Each run that merges tasks
-and computes a bump closes out `[Unreleased]` into its own dated section
-before opening a fresh one, so a PR sitting unmerged for a few weeks shows
-`## [1.0.2] - <date>` stacked above `## [1.0.1] - <date>`, each one real
-only once the PR is actually merged — read an unmerged section's date as
-"when this phase computed that bump," not "when it shipped." The numbers
-still only ever increase.
+dated version sections, not one growing list** — as long as no run along
+the way deferred. Each run that merges tasks and computes a bump closes out
+`[Unreleased]` into its own dated section before opening a fresh one, so a
+PR sitting unmerged for a few weeks shows `## [1.0.2] - <date>` stacked
+above `## [1.0.1] - <date>`, each one real only once the PR is actually
+merged — read an unmerged section's date as "when this phase computed that
+bump," not "when it shipped." The numbers still only ever increase. A
+deferral breaks that cadence deliberately: once a run defers, no further
+dated section appears until a human resolves it, however many more runs add
+bullets in the meantime.
 
 A finding the pipeline tries and fails to fix three times is marked
 `needs-human` in the ledger and stops being re-filed; it shows up in the run
