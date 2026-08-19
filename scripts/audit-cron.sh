@@ -22,7 +22,9 @@ cd "$REPO" || exit 1
 
 LOG_DIR="$REPO/pipeline/bugs/cron"
 LOCK="$LOG_DIR/.lock"
-LOG="$LOG_DIR/$(date +%Y-%m-%d-%H%M).log"
+# AUDIT_CRON_LOG is set only by the self-update re-exec below, so one run
+# keeps one log file instead of opening a second one under a new timestamp.
+LOG="${AUDIT_CRON_LOG:-$LOG_DIR/$(date +%Y-%m-%d-%H%M).log}"
 CLAUDE="${CLAUDE_BIN:-claude}"
 RUN_TIMEOUT_SECS=14400  # 4h
 
@@ -51,6 +53,43 @@ fi
 if ! command -v "$CLAUDE" >/dev/null 2>&1; then
   echo "FAIL: $CLAUDE not found on PATH ($PATH) — set CLAUDE_BIN to an absolute path"
   exit 1
+fi
+
+# Keep the pipeline's own definition current. Phase 4 already fetches and cuts
+# every branch from origin/main, so the *code* a run fixes is always current —
+# but .claude/commands/run-audit-auto.md and .claude/agents/* are read from
+# this checkout, so without this a scheduled run executes whatever definition
+# was on disk the day the checkout was made, forever.
+#
+# --ff-only is the safety: it refuses rather than merges if this checkout has
+# local commits or dirty files that would be clobbered. Every failure here is
+# a WARN, never an exit — a network blip must degrade to "run last week's
+# definition", not "skip this week's audit".
+#
+# The re-exec is not optional. Bash reads a script incrementally as it runs,
+# so a fast-forward that rewrites this file mid-flight would leave the shell
+# reading from a changed offset and executing garbage. Re-exec only when HEAD
+# actually moved (an unchanged file is safe to keep reading), and guard it so
+# the new process cannot update-and-exec again. This runs before the lock is
+# taken: exec keeps the same pid but skips the EXIT trap, so re-execing while
+# holding the lock would leave the new process deadlocked against its own
+# still-held lock.
+if [ -z "${AUDIT_CRON_SELF_UPDATED:-}" ]; then
+  export AUDIT_CRON_SELF_UPDATED=1
+  before="$(git rev-parse HEAD 2>/dev/null || true)"
+  if [ -n "$before" ] && git fetch --quiet origin main 2>/dev/null &&
+     git merge --ff-only --quiet FETCH_HEAD 2>/dev/null; then
+    after="$(git rev-parse HEAD 2>/dev/null || true)"
+    if [ -n "$after" ] && [ "$before" != "$after" ]; then
+      echo "INFO: self-updated ${before:0:7} -> ${after:0:7}, re-execing"
+      # Carry the log forward so one run stays one log file, even though the
+      # re-exec recomputes LOG's timestamp.
+      export AUDIT_CRON_LOG="$LOG"
+      exec "$REPO/scripts/audit-cron.sh"
+    fi
+  else
+    echo "WARN: self-update skipped (fetch or ff-only merge failed) — running the definition at ${before:-unknown}"
+  fi
 fi
 
 # The command only exists on branches that carry it; a checkout parked on an
