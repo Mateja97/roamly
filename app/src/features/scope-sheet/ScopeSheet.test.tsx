@@ -16,12 +16,22 @@ jest.mock('../../api/cities', () => ({ suggestCities: jest.fn() }));
 const mockedLocation = jest.mocked(Location);
 const mockedSuggest = jest.mocked(suggestCities);
 
+// Fake timers, file-wide: this sheet's city typeahead (`useCitySearch`) and
+// live count both debounce 300ms, so under real timers every `waitFor` past
+// one of them raced a 1000ms budget against 300ms of debounce plus this
+// machine's render time — fine idle, flaky under parallel CPU load. RNTL's
+// `waitFor` drives Jest's fake clock itself, making that wait a constant
+// 300 fake ms. See ActivityListScreen.test.tsx for the full write-up.
 beforeEach(() => {
+  jest.useFakeTimers();
   jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
   jest.spyOn(AccessibilityInfo, 'addEventListener').mockReturnValue({ remove: jest.fn() } as never);
   mockedSuggest.mockResolvedValue({ status: 'success', suggestions: [] });
 });
-afterEach(() => jest.resetAllMocks());
+afterEach(() => {
+  jest.resetAllMocks();
+  jest.useRealTimers();
+});
 
 // The open-effect's reduce-motion check resolves on a microtask — flush it
 // inside `act` so the resulting Animated.Value writes aren't attributed to

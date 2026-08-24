@@ -28,9 +28,11 @@ Gates: `tsc --noEmit` clean. `npm test` full suite 774/774 pass (two tests
 flaked under parallel load on an unrelated file — `ActivityListScreen.test.tsx`
 and `App.test.tsx` — reran the full suite clean and in isolation on
 unmodified `main`, confirmed pre-existing flake unrelated to this change).
-`npm run lint` clean. Ponytail-review over the diff: lean already, ship (no
-new deps, one new style object doing exactly the job the old `spacer` did,
-comment explains the *why* not just what).
+**Follow-up (2026-08-07): that flake is now root-caused and fixed** — see the
+"Postscript" section at the end of this file. `npm run lint` clean.
+Ponytail-review over the diff: lean already, ship (no new deps, one new style
+object doing exactly the job the old `spacer` did, comment explains the *why*
+not just what).
 
 Dynamic-text-scaling state (design-spec.md T1): not captured — `PixelRatio.
 getFontScale()` always reports 1 in a browser web-preview, no OS-level
@@ -319,3 +321,29 @@ code, pure `jest` timeout flakiness under load, not caused by this diff
 `npx jest src/features/splash src/components/PrimaryTicket` → 9/9 green.
 
 PR: https://github.com/Mateja97/roamly/pull/155
+
+## Postscript (2026-08-07) — the load flake this pipeline hit twice is fixed
+
+Not part of this pipeline; recorded here because this file is where the flake
+was twice written off as "pre-existing, unrelated" (T1 gates, and the T3
+resolve pass above). It was never `ActivityListScreen.test.tsx`'s
+own logic: the Scope sheet reaches those assertions through two 300ms
+real-time debounces (`useCitySearch`'s city typeahead and ScopeSheet's
+live-count re-query, both `DEBOUNCE_MS = 300`), so every `waitFor` past one of
+them raced a 1000ms budget against 300ms of debounce plus however long the
+machine took to render — an inequality that holds idle and breaks under
+parallel CPU load. Enumerated deterministically by temporarily shrinking
+RNTL's `asyncUtilTimeout` below the debounce window (a stand-in for a loaded
+machine): exactly 13 tests across `ActivityListScreen.test.tsx` (6) and
+`ScopeSheet.test.tsx` (7). Fix is file-wide `jest.useFakeTimers()` in both —
+RNTL's `waitFor` drives Jest's fake clock itself, so the wait becomes 300
+*fake* ms against a 1000ms fake budget: constant, machine-speed-independent.
+Verified with 24 CPU spinners saturating the box: unfixed code failed 2 of 15
+concurrent runs, the fix passed 24 of 24.
+
+Still open after this fix: `ActivityDetailScreen.test.tsx` flakes under the
+same load with a *different* cause — no debounce, just heavy renders whose
+`waitFor` chain can exceed the 1000ms real budget on a saturated box. Not
+touched here.
+
+PR: https://github.com/Mateja97/roamly/pull/179
